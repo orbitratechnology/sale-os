@@ -7,6 +7,7 @@
 #![deny(clippy::float_arithmetic)]
 
 pub mod access;
+pub mod cart;
 pub mod catalog;
 pub mod error;
 pub mod geo;
