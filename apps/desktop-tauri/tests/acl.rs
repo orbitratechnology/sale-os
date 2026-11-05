@@ -8,6 +8,19 @@ use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
 use tauri::webview::InvokeRequest;
 use tauri::{WebviewWindow, WebviewWindowBuilder};
 
+/// The app's own origin as Tauri sees it: `http://tauri.localhost` on Windows (WebView2
+/// serves custom protocols over http), `tauri://localhost` elsewhere. Using the wrong one
+/// makes Tauri refuse every command as coming from a foreign URL, which would let refusal
+/// tests pass for the wrong reason.
+fn app_origin() -> tauri::Url {
+    let origin = if cfg!(windows) {
+        "http://tauri.localhost"
+    } else {
+        "tauri://localhost"
+    };
+    origin.parse().expect("valid origin")
+}
+
 fn window(label: &str) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
     let commands = desktop_tauri_lib::specta_builder::<MockRuntime>();
     let app = mock_builder()
@@ -27,7 +40,7 @@ fn invoke(w: &WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> Result<Stri
             cmd: cmd.into(),
             callback: CallbackFn(0),
             error: CallbackFn(1),
-            url: "tauri://localhost".parse().unwrap(),
+            url: app_origin(),
             body: InvokeBody::Json(body),
             headers: Default::default(),
             invoke_key: INVOKE_KEY.to_string(),
