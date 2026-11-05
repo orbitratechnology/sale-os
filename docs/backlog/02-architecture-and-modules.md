@@ -61,7 +61,7 @@ pos-receipts      ← pos-domain
 pos-device-ports  ← pos-domain
 pos-application   ← pos-domain, pos-sync, pos-receipts, pos-device-ports
 pos-local-db      ← pos-application, pos-domain, pos-sync
-pos-device-virtual← pos-device-ports, pos-domain
+pos-device-virtual← pos-device-ports, pos-domain, pos-receipts (decodes captures)
 pos-cloud-db      ← pos-domain, pos-sync
 desktop-tauri     ← everything desktop-side
 cloud-api         ← pos-domain, pos-sync, pos-cloud-db   (never pos-local-db, never tauri)

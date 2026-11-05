@@ -16,7 +16,10 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
         &["pos-domain", "pos-sync", "pos-receipts", "pos-device-ports"],
     ),
     ("pos-local-db", &["pos-application", "pos-domain", "pos-sync"]),
-    ("pos-device-virtual", &["pos-device-ports", "pos-domain"]),
+    (
+        "pos-device-virtual",
+        &["pos-device-ports", "pos-domain", "pos-receipts"],
+    ),
     ("pos-cloud-db", &["pos-domain", "pos-sync"]),
     ("pos-testkit", &["pos-domain"]),
     ("pos-observability", &[]),

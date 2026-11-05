@@ -2856,6 +2856,8 @@ version = "0.1.0"
 dependencies = [
  "pos-device-ports",
  "pos-domain",
+ "pos-receipts",
+ "tempfile",
 ]
 
 [[package]]
