@@ -11,6 +11,7 @@ pub mod error;
 pub mod ids;
 pub mod money;
 pub mod numbering;
+pub mod pricing;
 pub mod quantity;
 pub mod rate;
 pub mod rounding;
