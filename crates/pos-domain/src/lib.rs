@@ -9,6 +9,7 @@
 pub mod error;
 pub mod ids;
 pub mod money;
+pub mod numbering;
 pub mod quantity;
 pub mod rate;
 pub mod rounding;
@@ -18,6 +19,7 @@ pub mod time;
 pub use error::{ArithmeticError, ErrorCode, HasErrorCode};
 pub use ids::*;
 pub use money::{Currency, CurrencyCode, Money, NumberFormat};
+pub use numbering::receipt_number;
 pub use quantity::Quantity;
 pub use rate::RatePpm;
 pub use rounding::{RoundingMode, allocate, round_to_minor};

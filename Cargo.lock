@@ -844,16 +844,21 @@ dependencies = [
 name = "desktop-tauri"
 version = "0.1.0"
 dependencies = [
+ "pos-application",
+ "pos-device-virtual",
  "pos-domain",
  "pos-local-db",
  "pos-observability",
+ "pos-receipts",
  "serde",
  "serde_json",
  "specta",
  "specta-typescript",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-specta",
+ "tempfile",
  "tokio",
  "tracing",
  "uuid",

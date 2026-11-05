@@ -16,6 +16,7 @@
 
 use crate::audit::AuditEntry;
 use crate::records::{AggregateRef, BusinessRecord, LocationRecord, RegisterRecord, SettingRecord};
+use crate::spike::{SpikeCartAdd, SpikeProduct, SpikeSale};
 use pos_domain::{
     BusinessId, ErrorCode, EventId, HasErrorCode, IdGenerator, LocationId, RegisterId, Timestamp, UserId,
 };
@@ -80,29 +81,67 @@ pub enum WriteOp {
         counter: Counter,
         slot: NumberSlot,
     },
+    /// STAGE 0 SPIKE (E00-T06): delete with the spike module.
+    SpikePutProduct(SpikeProduct),
+    /// STAGE 0 SPIKE (E00-T06): a local-only cart edit.
+    SpikeCartAdd(SpikeCartAdd),
+    /// STAGE 0 SPIKE (E00-T06): uses the receipt number allocated for `receipt_slot`.
+    SpikeCompleteSale(SpikeSale),
+}
+
+/// How an op relates to sync.
+enum SyncKind {
+    /// Versioned master data: the version it writes and the version it expects (ADR-011).
+    Master {
+        aggregate: AggregateRef,
+        version: u64,
+        expected: Option<u64>,
+    },
+    /// An immutable fact: needs an outbox event, never versioned.
+    Fact { aggregate: AggregateRef },
+    /// Local only (draft carts, number allocation): no outbox event (ADR-009).
+    LocalOnly,
 }
 
 impl WriteOp {
-    /// The syncable aggregate this op writes, with the version it produces and expects.
-    fn syncable(&self) -> Option<(AggregateRef, u64, Option<u64>)> {
+    fn sync(&self) -> SyncKind {
+        let master = |aggregate, version, expected| SyncKind::Master {
+            aggregate,
+            version,
+            expected,
+        };
         match self {
             WriteOp::PutBusiness {
                 record,
                 expected_version,
-            } => Some((record.aggregate(), record.version, *expected_version)),
+            } => master(record.aggregate(), record.version, *expected_version),
             WriteOp::PutLocation {
                 record,
                 expected_version,
-            } => Some((record.aggregate(), record.version, *expected_version)),
+            } => master(record.aggregate(), record.version, *expected_version),
             WriteOp::PutRegister {
                 record,
                 expected_version,
-            } => Some((record.aggregate(), record.version, *expected_version)),
+            } => master(record.aggregate(), record.version, *expected_version),
             WriteOp::PutSetting {
                 record,
                 expected_version,
-            } => Some((record.aggregate(), record.version, *expected_version)),
-            WriteOp::AllocateNumber { .. } => None,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::SpikePutProduct(p) => master(
+                AggregateRef {
+                    aggregate_type: "spike_product",
+                    aggregate_id: p.product_id.to_string(),
+                },
+                1,
+                None,
+            ),
+            WriteOp::SpikeCompleteSale(sale) => SyncKind::Fact {
+                aggregate: AggregateRef {
+                    aggregate_type: "sale",
+                    aggregate_id: sale.sale_id.to_string(),
+                },
+            },
+            WriteOp::AllocateNumber { .. } | WriteOp::SpikeCartAdd(_) => SyncKind::LocalOnly,
         }
     }
 }
@@ -281,6 +320,21 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::AllocateNumber { counter, slot });
         self
     }
+    /// STAGE 0 SPIKE (E00-T06).
+    pub fn spike_put_product(mut self, product: SpikeProduct) -> Self {
+        self.ops.push(WriteOp::SpikePutProduct(product));
+        self
+    }
+    /// STAGE 0 SPIKE (E00-T06).
+    pub fn spike_cart_add(mut self, add: SpikeCartAdd) -> Self {
+        self.ops.push(WriteOp::SpikeCartAdd(add));
+        self
+    }
+    /// STAGE 0 SPIKE (E00-T06).
+    pub fn spike_complete_sale(mut self, sale: SpikeSale) -> Self {
+        self.ops.push(WriteOp::SpikeCompleteSale(sale));
+        self
+    }
     pub fn outbox(mut self, draft: OutboxDraft) -> Self {
         self.outbox.push(draft);
         self
@@ -292,7 +346,10 @@ impl WriteSetBuilder {
 
     /// Validates the ADR-008 invariants and returns the immutable set.
     pub fn build(self) -> Result<WriteSet, WriteSetError> {
-        if self.audit.is_empty() {
+        // Only purely local edits (e.g. adding a cart line) may skip the audit row.
+        let local_only =
+            self.outbox.is_empty() && self.ops.iter().all(|op| matches!(op.sync(), SyncKind::LocalOnly));
+        if self.audit.is_empty() && !(local_only && !self.ops.is_empty()) {
             return Err(WriteSetError::MissingAudit);
         }
 
@@ -320,8 +377,24 @@ impl WriteSetBuilder {
                 return Err(WriteSetError::DuplicateSlot(*slot));
             }
             self.check_business(op)?;
-            let Some((aggregate, version, expected)) = op.syncable() else {
-                continue;
+            let (aggregate, version, expected) = match op.sync() {
+                SyncKind::LocalOnly => continue,
+                SyncKind::Fact { aggregate } => match by_aggregate.get(&aggregate) {
+                    Some(event) if event.base_version.is_none() => continue,
+                    Some(event) => {
+                        return Err(WriteSetError::BaseVersionMismatch {
+                            aggregate,
+                            expected: None,
+                            actual: event.base_version,
+                        });
+                    }
+                    None => return Err(WriteSetError::MissingOutbox(aggregate)),
+                },
+                SyncKind::Master {
+                    aggregate,
+                    version,
+                    expected,
+                } => (aggregate, version, expected),
             };
             let required = expected.unwrap_or(0) + 1;
             if version != required {
@@ -358,7 +431,10 @@ impl WriteSetBuilder {
             WriteOp::PutLocation { record, .. } => record.business_id,
             WriteOp::PutRegister { record, .. } => record.business_id,
             WriteOp::PutSetting { record, .. } => record.business_id,
-            WriteOp::AllocateNumber { .. } => return Ok(()),
+            WriteOp::AllocateNumber { .. }
+            | WriteOp::SpikePutProduct(_)
+            | WriteOp::SpikeCartAdd(_)
+            | WriteOp::SpikeCompleteSale(_) => return Ok(()),
         };
         if found != self.context.business_id {
             return Err(WriteSetError::ForeignBusiness {
@@ -462,7 +538,19 @@ mod tests {
     fn audit_is_mandatory() {
         let ids = SeqIdGenerator::default();
         let err = WriteSet::builder(ctx(&ids)).build().unwrap_err();
-        assert_eq!(err, WriteSetError::MissingAudit);
+        assert_eq!(
+            err,
+            WriteSetError::MissingAudit,
+            "an empty set is not a local-only edit"
+        );
+        let err = WriteSet::builder(ctx(&ids))
+            .allocate_number(Counter::Receipt, NumberSlot("r"))
+            .outbox(OutboxDraft::setting_updated(&ids, &setting(&ctx(&ids), "k", 1)).unwrap());
+        assert_eq!(
+            err.build().unwrap_err(),
+            WriteSetError::MissingAudit,
+            "anything that syncs needs an audit row"
+        );
     }
 
     #[test]

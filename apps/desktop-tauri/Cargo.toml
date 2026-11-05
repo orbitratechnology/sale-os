@@ -15,9 +15,13 @@ name = "desktop_tauri_lib"
 tauri-build.workspace = true
 
 [dependencies]
+pos-application.workspace = true
+pos-device-virtual.workspace = true
 pos-domain = { workspace = true, features = ["specta"] }
 pos-local-db.workspace = true
 pos-observability.workspace = true
+pos-receipts.workspace = true
+serde_json.workspace = true
 serde.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true
@@ -27,7 +31,8 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
+tempfile.workspace = true
 tauri = { workspace = true, features = ["test"] }
 tokio.workspace = true
 

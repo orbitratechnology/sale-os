@@ -4,6 +4,7 @@
 
 pub mod audit;
 pub mod records;
+pub mod spike;
 pub mod write;
 
 pub use write::{

@@ -8,6 +8,7 @@
 mod error;
 mod migrate;
 mod pragmas;
+pub mod spike;
 mod store;
 
 pub use error::StoreError;

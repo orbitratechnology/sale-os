@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { commands, type AppInfo, type IpcError } from "./ipc";
-import { MoneyDemo } from "./features/devtools/MoneyDemo";
+import { Stage0Demo } from "./features/devtools/Stage0Demo";
 
 /** Stage 0 shell: shows build and database status. Checkout replaces this in Stage 1. */
 export function App() {
@@ -46,7 +46,7 @@ export function App() {
         </section>
       )}
 
-      <MoneyDemo />
+      <Stage0Demo />
     </main>
   );
 }

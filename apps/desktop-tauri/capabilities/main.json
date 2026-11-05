@@ -6,6 +6,10 @@
   "permissions": [
     "core:event:default",
     "allow-app-info",
-    "allow-dev-money-add"
+    "allow-dev-money-add",
+    "allow-dev-demo-setup",
+    "allow-dev-demo-cart",
+    "allow-dev-demo-scan",
+    "allow-dev-demo-complete-sale"
   ]
 }

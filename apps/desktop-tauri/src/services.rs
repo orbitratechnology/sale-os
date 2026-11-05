@@ -5,7 +5,7 @@ use crate::IpcError;
 use pos_domain::{Clock, IdGenerator, SystemClock, UuidV7Generator};
 use pos_local_db::{DbOptions, LocalDb, SqliteStore};
 use pos_observability::LogGuard;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub struct AppServices {
@@ -15,6 +15,8 @@ pub struct AppServices {
     pub store: Option<SqliteStore>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
+    /// The app data directory (database, logs, virtual-printer captures).
+    pub data_dir: PathBuf,
     _log: Option<LogGuard>,
 }
 
@@ -40,6 +42,7 @@ impl AppServices {
             store,
             clock: Arc::new(SystemClock),
             ids: Arc::new(UuidV7Generator),
+            data_dir: data_dir.to_path_buf(),
             _log: log,
         }
     }

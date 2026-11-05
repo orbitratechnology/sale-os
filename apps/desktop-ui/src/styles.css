@@ -41,3 +41,9 @@ input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); borde
 button { font: inherit; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .total { font-size: 2.2rem; font-weight: 700; margin: 16px 0 0; }
+.cart { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.cart th, .cart td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.cart td:last-child, .cart th:last-child { text-align: right; }
+.cart tfoot td { font-weight: 700; border-bottom: 0; }
+.cart .total { font-size: 1.6rem; margin: 0; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
