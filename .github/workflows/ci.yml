@@ -94,6 +94,10 @@ jobs:
       - run: pnpm lint:contracts
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Browser tests (keyboard-wedge capture in Chromium)
+        run: |
+          pnpm --filter @sale-os/desktop-ui exec playwright install --with-deps chromium
+          pnpm --filter @sale-os/desktop-ui test:e2e
       - run: pnpm --filter @sale-os/desktop-ui build
 
   desktop-windows:
