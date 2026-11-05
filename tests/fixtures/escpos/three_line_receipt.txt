@@ -1,0 +1,6 @@
+[INIT]
+[ALIGN center][BOLD on]"CORNER SHOP"[LF]
+[BOLD off][ALIGN left]"Cola 330ml        1.20"[LF]
+[BOLD on]"TOTAL             1.20"[LF]
+[BOLD off][FEED 3]
+[CUT partial]

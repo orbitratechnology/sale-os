@@ -3,14 +3,11 @@
 use anyhow::Context;
 use cloud_api::{AppState, Config, router};
 use std::sync::Arc;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .json()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .init();
+    // JSON lines on stderr with secret redaction (E16-T08 adds metrics and error reporting).
+    let _log = pos_observability::init(&pos_observability::LogConfig::stderr_only("info"))?;
 
     let config = Config::from_env()?;
     let command = std::env::args().nth(1).unwrap_or_else(|| "serve".to_owned());

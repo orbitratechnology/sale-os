@@ -17,6 +17,7 @@ chrono-tz.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 specta = { workspace = true, optional = true }
+strum.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 

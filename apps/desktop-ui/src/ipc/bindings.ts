@@ -14,6 +14,17 @@ export const commands = {
 	 *  formats the result. Money crosses IPC as minor-unit strings.
 	 */
 	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
+	/**  Creates the demo workspace and product if missing. */
+	devDemoSetup: () => typedError<DemoProduct, IpcError>(__TAURI_INVOKE("dev_demo_setup")),
+	/**  Current demo cart. */
+	devDemoCart: () => typedError<DemoCart, IpcError>(__TAURI_INVOKE("dev_demo_cart")),
+	/**
+	 *  Adds the scanned product to the cart. `scan_event_id` is accepted for the E07-T02
+	 *  contract; duplicate-delivery handling arrives with that task.
+	 */
+	devDemoScan: (raw: string, scanEventId: string) => typedError<DemoCart, IpcError>(__TAURI_INVOKE("dev_demo_scan", { raw, scanEventId })),
+	/**  Completes a cash sale atomically, then prints to the virtual printer. */
+	devDemoCompleteSale: (cashReceivedMinor: string) => typedError<DemoSaleResult, IpcError>(__TAURI_INVOKE("dev_demo_complete_sale", { cashReceivedMinor })),
 };
 
 /* Types */
@@ -24,6 +35,36 @@ export type AppInfo = {
 };
 
 export type DatabaseStatus = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError };
+
+export type DemoCart = {
+	lines: DemoCartLine[],
+	totalMinor: string,
+	totalFormatted: string,
+};
+
+export type DemoCartLine = {
+	name: string,
+	quantity: string,
+	lineTotalFormatted: string,
+};
+
+export type DemoProduct = {
+	name: string,
+	barcode: string,
+	priceFormatted: string,
+};
+
+export type DemoSaleResult = {
+	receiptNumber: string,
+	totalFormatted: string,
+	changeFormatted: string,
+	outboxSequence: number,
+	/**
+	 *  Path of the virtual printer's ESC/POS capture, or why printing failed (a print
+	 *  failure never undoes a committed sale).
+	 */
+	print: string,
+};
 
 /**
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.

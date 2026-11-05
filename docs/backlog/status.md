@@ -8,7 +8,7 @@ checked. Anything that could not be checked yet is listed under **Open**, with t
 | Task | Status | Evidence | Open |
 |---|---|---|---|
 | E00-T01 Monorepo scaffold | **Done** | Cargo and pnpm workspaces with the full crate layout; `cargo xtask check-deps` enforces the layering rules (`xtask/src/deps.rs` tests inject forbidden edges); README | A first build on a clean Windows checkout happens in CI |
-| E00-T02 CI pipeline | **Written, not yet run** | `.github/workflows/ci.yml`: fmt, clippy, tests on Windows and Linux; check-deps; generated-contract drift; traceability; Postgres-backed cloud tests; cargo-deny; frontend; Windows NSIS/MSI artefact; `deny.toml` | Confirm on the first PR run: a warning blocks the PR, the GPL licence check fails, wall time is under 15 min |
+| E00-T02 CI pipeline | **Done** | `.github/workflows/ci.yml`. Green on PR #1 (merged): Windows and Linux tests, the Postgres job, cargo-deny, the frontend, and the Windows NSIS/MSI artefact. 12.5 min wall time. The first run failed only on an untracked `contracts/events` folder (fixed). | That a warning blocks a PR is enforced by `-D warnings` but not demonstrated with a deliberately failing PR |
 | E00-T03 ADR records | **Drafted** | `docs/adr/0001–0020` (from 03-decisions), plus `0021` WebView2 distribution; template; PR template checkbox | Needs acceptance by the tech lead plus one engineer. Every status is "Proposed". |
 | E03-T01 IDs, Clock, IdGenerator | **Done** | `pos-domain/src/ids.rs` and `time.rs`; `pos-testkit` fakes; DST and day-boundary tests for London, New York, Kolkata and Chatham | ID ↔ SQLite TEXT round-trip is tested where IDs are first persisted (E02-T03). By design, `pos-domain` has no sqlx dependency. |
 | E03-T02 Money, Currency, Quantity, Rate | **Done** | Checked arithmetic with proptests over the full `i64` range; parse/format round-trip for exponents 0–4 in en-US, de-DE and plain formats; embedded ISO-4217 table; `clippy::float_arithmetic` denied in the domain, plus `f32`/`f64` disallowed workspace-wide | — |
@@ -27,8 +27,35 @@ checked. Anything that could not be checked yet is listed under **Open**, with t
 | `sqlx 0.8.6` | Well-known API for the persistence layer; 0.9.0 was only just released | A deliberate upgrade task after Stage 1 |
 | `tauri-specta =2.0.0-rc.26`, `specta =2.0.0-rc.26`, `specta-typescript =0.0.13` | These are pre-releases, so they are pinned exactly to avoid silent breaking changes | When 2.0 is stable |
 
-### Next up (Sprint 2 per [00-roadmap §4](00-roadmap.md#4-parallel-tracks-team-of-6))
+## Sprint 2 (2026-11-05). Stage 0 exit gate met on Linux; Windows deferred at the owner's request
 
-E02-T03 (`LocalStore::apply` + WriteSet), E02-T04 (crash harness), E03-T04 (error catalogue
-docs), E13-T01 (ESC/POS spike), E00-T05 (contracts skeleton), E01-T03 (capability lockdown),
-E01-T04 (logging + redaction), E07-T01 (keyboard-wedge spike), E00-T06 (Stage 0 vertical slice).
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E02-T03 `LocalStore::apply` + WriteSet | **Done** | The builder enforces the ADR-008/011 invariants (8 tests). One `BEGIN IMMEDIATE` transaction runs on a detached task, so it is safe under cancellation. A fault before each of the 18 statements leaves nothing behind. 10,000 concurrent applies give a gapless outbox (nightly). p95 is about 14 ms for a 20-record set (debug build). | Preconditions such as cart revision and return quantity land with their tasks |
+| E03-T04 Error catalogue | **Done** | `ErrorCode::doc()` uses an exhaustive match. `docs/errors.md` is generated and checked by a test. | — |
+| E01-T04 Logging + AppServices | **Done** | `pos-observability`: JSON lines, secret-field redaction, Luhn card masking, span/global context, 7 daily files. `Secret<T>`. A test logs a struct with a PIN and a token, and neither appears. Verified in the real app. | — |
+| E01-T03 Capabilities + CSP | **Done** | Commands are declared in `build.rs`, and the main window gets exactly those plus `core:event:default`. ACL tests on the mock runtime check for Tauri's "not allowed" refusal, and fail if `core:path` is granted. The CSP has no remote origins and no `unsafe-eval`. | — |
+| E13-T01 ESC/POS spike | **Done** | The encoder strips control characters (no command injection). A golden test checks hand-verified bytes. The virtual printer writes `.bin` and `.txt`. | — |
+| E00-T05 OpenAPI skeleton | **Done** | OpenAPI 3.1 spec, Spectral lint in CI, and a contract test that validates real responses (it catches drift). The ErrorCode enum equals the domain. | — |
+| E02-T04 Crash harness | **Done (Linux)** | 500 kills, 0 violations, 11,271 sales (`docs/perf/crash-harness.md`). The sabotage self-test fails as it should. Nightly runs 100 kills. | Windows run deferred |
+| E07-T01 Keyboard wedge | **Done (Chromium)** | 27 unit tests and 6 Playwright tests in Chromium, 12 consecutive runs green. **This found a truncation bug** (a 41 ms delivery stall split a scan), fixed with stall tolerance (ADR-022). | WebView2 measurement deferred with Windows |
+| E00-T06 Stage 0 vertical slice | **Done (Linux)** | Set up, scan through the wedge hook, atomic cash sale (sale, line, tender, movement, audit, outbox, receipt number), then the virtual-printer capture. Tested at store level, including faults at all 11 statements and the movement insert specifically, and over IPC on the mock runtime. Clicked through in the real app under Xvfb. | Runs from the Windows artefact: deferred. The sale event is outbox #5, not #1 as the task text said, because ADR-009 sends workspace and product events first. |
+
+### Spike to delete later
+
+The Stage 0 slice uses throwaway pieces, all marked `STAGE 0 SPIKE`, so the real catalogue,
+cart and sale tasks can replace them without a migration:
+
+- `spike_*` tables, created at runtime rather than by a migration;
+- `pos_application::spike`;
+- the `WriteOp::Spike*` variants;
+- the `pos_local_db::spike` module;
+- the `dev_demo_*` commands;
+- `Stage0Demo.tsx`.
+
+Delete them in E09-T08 at the latest.
+
+### Next up (Stage 1 per [00-roadmap §4](00-roadmap.md#4-parallel-tracks-team-of-6))
+
+E04-T01 (workspace creation), E05-T01/T02 (staff and PIN auth), E06-T01 (catalogue migration),
+E06-T03 (barcode normalisation), E08-T01 (tax engine).

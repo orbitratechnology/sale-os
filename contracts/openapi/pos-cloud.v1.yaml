@@ -1,0 +1,152 @@
+openapi: 3.1.0
+info:
+  title: Sale OS Cloud API
+  version: 1.0.0-stage0
+  summary: Device sync, owner accounts and consolidated reports for Sale OS registers.
+  description: |
+    Source of truth for the cloud REST contract (docs/backlog/07-contracts.md §3).
+    Stage 0 covers the unauthenticated service endpoints. Auth, sync and reports are added
+    by E16-T03..T06 and E17. Errors use RFC 9457 problem+json carrying a catalogued `code`
+    (docs/errors.md).
+  contact:
+    name: Sale OS engineering
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.sale-os.example
+    description: Placeholder until D-06 (hosting region) is decided.
+tags:
+  - name: service
+    description: Health and version policy.
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      tags: [service]
+      summary: Liveness and database reachability.
+      security: []
+      responses:
+        "200":
+          description: The API is up. `database` is `ok` or `not_configured`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: The API is up but its database is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        default:
+          description: Any error, as RFC 9457 problem+json with a catalogued `code`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/version-policy:
+    get:
+      operationId: getVersionPolicy
+      tags: [service]
+      summary: Minimum and latest supported desktop app versions (E19-T09).
+      security: []
+      responses:
+        "200":
+          description: The current policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionPolicy"
+        default:
+          description: Any error, as RFC 9457 problem+json with a catalogued `code`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, version, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        version:
+          type: string
+          description: Version of the running API build.
+        database:
+          type: string
+          enum: [ok, unavailable, not_configured]
+    VersionPolicy:
+      type: object
+      additionalProperties: false
+      required: [minSupported, latest]
+      properties:
+        minSupported:
+          type: string
+          description: Desktop builds below this version receive 426 SYNC_UPGRADE_REQUIRED.
+        latest:
+          type: string
+        updateUrl:
+          type: string
+          format: uri
+    Problem:
+      type: object
+      description: RFC 9457 problem details with a catalogued error code.
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+    ErrorCode:
+      type: string
+      description: Catalogued error codes (docs/errors.md). Must equal pos_domain::ErrorCode.
+      enum:
+            - SESSION_LOCKED
+            - AUTH_PIN_INVALID
+            - AUTH_LOCKED_OUT
+            - PERMISSION_DENIED
+            - APPROVAL_REQUIRED
+            - APPROVAL_INVALID
+            - VALIDATION_FAILED
+            - CATALOG_DUPLICATE_BARCODE
+            - CATALOG_DUPLICATE_SKU
+            - CATALOG_NOT_FOUND
+            - SCAN_NOT_FOUND
+            - SCAN_INVALID
+            - CART_REVISION_MISMATCH
+            - CART_EMPTY
+            - PRICING_DISCOUNT_EXCEEDS
+            - TENDER_INSUFFICIENT
+            - TENDER_CHANGE_FROM_NON_CASH
+            - TENDER_OVERPAY_NON_CASH
+            - STOCK_NEGATIVE_BLOCKED
+            - RETURN_QTY_EXCEEDS
+            - RETURN_REFUND_MISMATCH
+            - CASH_SESSION_REQUIRED
+            - CASH_SESSION_ALREADY_OPEN
+            - PRINT_ADAPTER_UNAVAILABLE
+            - PRINT_UNKNOWN_OUTCOME
+            - STORE_BUSY
+            - STORE_IO
+            - STORE_CORRUPT
+            - STORE_SCHEMA_TOO_NEW
+            - SYNC_NOT_LINKED
+            - SYNC_DEVICE_REVOKED
+            - SYNC_UPGRADE_REQUIRED
+            - SYNC_OUT_OF_ORDER
+            - CONFLICT_VERSION
+            - INTERNAL

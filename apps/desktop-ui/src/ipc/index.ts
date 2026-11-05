@@ -3,4 +3,13 @@
  * (`cargo xtask gen-bindings`); import commands from here, not from @tauri-apps/api.
  */
 export { commands } from "./bindings";
-export type { AppInfo, DatabaseStatus, ErrorCode, IpcError, MoneyAddResult } from "./bindings";
+export type {
+  AppInfo,
+  DatabaseStatus,
+  DemoCart,
+  DemoProduct,
+  DemoSaleResult,
+  ErrorCode,
+  IpcError,
+  MoneyAddResult,
+} from "./bindings";
