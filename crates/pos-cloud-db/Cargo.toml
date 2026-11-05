@@ -1,0 +1,15 @@
+[package]
+name = "pos-cloud-db"
+description = "PostgreSQL repositories, migrations and tenant-scoped transactions for the cloud API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+pos-domain.workspace = true
+sqlx = { workspace = true, features = ["postgres", "tls-rustls-ring-webpki"] }
+
+[lints]
+workspace = true

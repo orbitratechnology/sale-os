@@ -1,0 +1,15 @@
+[package]
+name = "pos-testkit"
+description = "Test fakes and fixtures. Dev-dependency only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+pos-domain.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

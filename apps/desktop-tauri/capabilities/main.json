@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main window. Kept minimal; E01-T03 narrows it further and adds dialog:save/open.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

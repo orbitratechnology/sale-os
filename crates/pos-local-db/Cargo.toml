@@ -1,0 +1,22 @@
+[package]
+name = "pos-local-db"
+description = "SQLite store for a register: connection policy, migrations, backups (ADR-007)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+pos-domain.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
