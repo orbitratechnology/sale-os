@@ -1,0 +1,5 @@
+# Money and quantities are never binary floats (ADR-001/002). pos-domain additionally denies float_arithmetic.
+disallowed-types = [
+  { path = "f32", reason = "use Money/Quantity/RatePpm (ADR-001..003)" },
+  { path = "f64", reason = "use Money/Quantity/RatePpm (ADR-001..003)" },
+]

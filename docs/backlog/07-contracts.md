@@ -159,6 +159,7 @@ the action available (PRD §5.1).
 | `STORE_BUSY` | Retryable | Automatic retry ×3, then show |
 | `STORE_IO` | Disk or permission error | Diagnostics; the sale is NOT saved |
 | `STORE_CORRUPT` | Integrity failure | Stop and guide to restore |
+| `STORE_SCHEMA_TOO_NEW` | The database was written by a newer app version (downgrade guard, E02-T02) | Update the app. The file is not modified. |
 | `SYNC_NOT_LINKED` | | Link wizard |
 | `SYNC_DEVICE_REVOKED` | | Contact owner; local-only mode |
 | `SYNC_UPGRADE_REQUIRED` | `details.minVersion` | Update prompt |

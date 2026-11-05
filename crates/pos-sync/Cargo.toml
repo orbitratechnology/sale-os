@@ -1,0 +1,14 @@
+[package]
+name = "pos-sync"
+description = "Sync event envelope, payload types and protocol DTOs (docs/backlog/07 §4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+pos-domain.workspace = true
+
+[lints]
+workspace = true
