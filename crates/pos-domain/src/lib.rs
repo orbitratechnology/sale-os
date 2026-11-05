@@ -15,6 +15,7 @@ pub mod rounding;
 pub mod time;
 
 pub use error::{ArithmeticError, ErrorCode, HasErrorCode};
+pub use ids::*;
 pub use money::{Currency, CurrencyCode, Money, NumberFormat};
 pub use quantity::Quantity;
 pub use rate::RatePpm;

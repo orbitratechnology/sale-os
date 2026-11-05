@@ -8,10 +8,12 @@
 mod error;
 mod migrate;
 mod pragmas;
+mod store;
 
 pub use error::StoreError;
 pub use migrate::{MIGRATOR, MigrationReport};
 pub use pragmas::PragmaReport;
+pub use store::SqliteStore;
 
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{
