@@ -3,12 +3,12 @@
 
 mod commands;
 mod error;
-mod state;
+mod services;
 
 pub use error::IpcError;
-pub use state::AppState;
+pub use services::AppServices;
 
-use pos_local_db::{DbOptions, LocalDb};
+use pos_observability::LogConfig;
 use std::path::Path;
 use tauri::Manager;
 
@@ -35,33 +35,31 @@ pub fn export_bindings(path: &Path) -> Result<(), String> {
 
 /// Starts the desktop application.
 pub fn run() {
-    init_tracing();
     let builder = specta_builder();
     tauri::Builder::default()
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
             let dir = app.path().app_data_dir()?;
-            // A database failure must not crash the app silently: the UI shows the error
-            // (e.g. "update the app" for a newer schema) via `app_info`.
-            let db = tauri::async_runtime::block_on(LocalDb::open(&DbOptions::in_dir(&dir)));
-            if let Err(e) = &db {
-                tracing::error!(error = %e, "local database unavailable");
-            }
-            app.manage(AppState::new(db.map_err(|e| IpcError::from_error(&e))));
+            // JSON lines with secret redaction, 7 daily files in <app data>/logs (E01-T04).
+            let log = pos_observability::init(&LogConfig {
+                dir: Some(dir.join("logs")),
+                file_prefix: "sale-os".into(),
+                retention_days: 7,
+                stderr: cfg!(debug_assertions),
+                default_filter: "info".into(),
+            })
+            .map_err(|e| eprintln!("logging unavailable: {e}"))
+            .ok();
+            tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
+            let services = tauri::async_runtime::block_on(AppServices::start(&dir, log));
+            app.manage(services);
             Ok(())
         })
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, "Sale OS failed to start");
+            eprintln!("Sale OS failed to start: {e}");
             std::process::exit(1);
         });
-}
-
-fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
-    // E01-T04 replaces this with a rolling JSON file appender plus a redaction layer.
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .try_init();
 }

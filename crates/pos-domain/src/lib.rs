@@ -12,6 +12,7 @@ pub mod money;
 pub mod quantity;
 pub mod rate;
 pub mod rounding;
+pub mod secret;
 pub mod time;
 
 pub use error::{ArithmeticError, ErrorCode, HasErrorCode};
@@ -20,4 +21,5 @@ pub use money::{Currency, CurrencyCode, Money, NumberFormat};
 pub use quantity::Quantity;
 pub use rate::RatePpm;
 pub use rounding::{RoundingMode, allocate, round_to_minor};
+pub use secret::Secret;
 pub use time::{BusinessDate, Clock, IdGenerator, SystemClock, Timestamp, UuidV7Generator, business_date};

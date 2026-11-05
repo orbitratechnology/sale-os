@@ -23,6 +23,7 @@ dependency rules, and how a command flows through the system.
   /pos-device-ports        Barcode / receipt-output / payment / cash-drawer port traits and event types
   /pos-device-virtual      Virtual scanner, virtual printer, mock payment provider, network fault injector
   /pos-receipts            ReceiptDocument model, builders, PDF + ESC/POS + plain-text renderers
+  /pos-observability       JSON logging with secret redaction and card-number masking (desktop + cloud)
   /pos-testkit             Builders, fixtures, golden-file helpers, fake clock/ids, in-memory transport
 /contracts
   /openapi                 pos-cloud.v1.yaml (source of truth for REST)
@@ -64,6 +65,7 @@ pos-device-virtual← pos-device-ports, pos-domain
 pos-cloud-db      ← pos-domain, pos-sync
 desktop-tauri     ← everything desktop-side
 cloud-api         ← pos-domain, pos-sync, pos-cloud-db   (never pos-local-db, never tauri)
+pos-observability ← (no internal deps; used by desktop-tauri and cloud-api)
 pos-testkit       ← dev-dependency only
 ```
 

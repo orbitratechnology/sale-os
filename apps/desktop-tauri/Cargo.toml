@@ -17,13 +17,13 @@ tauri-build.workspace = true
 [dependencies]
 pos-domain = { workspace = true, features = ["specta"] }
 pos-local-db.workspace = true
+pos-observability.workspace = true
 serde.workspace = true
 specta.workspace = true
 specta-typescript.workspace = true
 tauri.workspace = true
 tauri-specta.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

@@ -148,6 +148,15 @@ impl LocalDb {
         migrate::current_version(&self.readers).await
     }
 
+    /// The register this installation is, once set up (`device_identity`, docs/backlog/04).
+    pub async fn device_register_id(&self) -> Result<Option<String>, StoreError> {
+        sqlx::query_scalar("SELECT register_id FROM device_identity WHERE id = 1")
+            .fetch_optional(&self.readers)
+            .await
+            .map(Option::flatten)
+            .map_err(StoreError::from_sqlx)
+    }
+
     /// Effective pragmas on a writer and a reader connection (diagnostics and tests).
     pub async fn pragma_report(&self) -> Result<(PragmaReport, PragmaReport), StoreError> {
         Ok((

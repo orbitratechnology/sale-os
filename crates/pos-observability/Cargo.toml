@@ -1,0 +1,22 @@
+[package]
+name = "pos-observability"
+description = "Structured JSON logging with secret redaction, shared by the desktop shell and the cloud API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+pos-domain.workspace = true
+
+[lints]
+workspace = true

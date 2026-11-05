@@ -19,6 +19,7 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
     ("pos-device-virtual", &["pos-device-ports", "pos-domain"]),
     ("pos-cloud-db", &["pos-domain", "pos-sync"]),
     ("pos-testkit", &["pos-domain"]),
+    ("pos-observability", &[]),
     (
         "desktop-tauri",
         &[
@@ -29,9 +30,13 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
             "pos-device-ports",
             "pos-device-virtual",
             "pos-receipts",
+            "pos-observability",
         ],
     ),
-    ("cloud-api", &["pos-domain", "pos-sync", "pos-cloud-db"]),
+    (
+        "cloud-api",
+        &["pos-domain", "pos-sync", "pos-cloud-db", "pos-observability"],
+    ),
     ("xtask", &[]),
 ];
 
