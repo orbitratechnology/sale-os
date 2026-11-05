@@ -172,3 +172,77 @@ impl SessionEnd {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxRateRecord {
+    pub tax_rate_id: pos_domain::TaxRateId,
+    pub business_id: BusinessId,
+    pub name: String,
+    pub rate: pos_domain::RatePpm,
+    pub effective_from: Option<pos_domain::BusinessDate>,
+    pub effective_to: Option<pos_domain::BusinessDate>,
+    pub archived: bool,
+    pub version: u64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+impl TaxRateRecord {
+    pub fn aggregate(&self) -> AggregateRef {
+        AggregateRef {
+            aggregate_type: "tax_rate",
+            aggregate_id: self.tax_rate_id.to_string(),
+        }
+    }
+}
+
+/// A tax category and the rates it applies (one aggregate: rate membership changes bump it).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxCategoryRecord {
+    pub tax_category_id: pos_domain::TaxCategoryId,
+    pub business_id: BusinessId,
+    pub name: String,
+    pub is_default: bool,
+    pub rate_ids: Vec<pos_domain::TaxRateId>,
+    pub archived: bool,
+    pub version: u64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+impl TaxCategoryRecord {
+    pub fn aggregate(&self) -> AggregateRef {
+        AggregateRef {
+            aggregate_type: "tax_category",
+            aggregate_id: self.tax_category_id.to_string(),
+        }
+    }
+}
+
+/// Sandbox sales are excluded from reports; live is switched on by the owner (PRD §7.1).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegisterMode {
+    Sandbox,
+    Live,
+}
+
+impl RegisterMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            RegisterMode::Sandbox => "sandbox",
+            RegisterMode::Live => "live",
+        }
+    }
+}
+
+/// Which register this installation is (`device_identity`, local only).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeviceIdentity {
+    pub installation_id: String,
+    pub business_id: BusinessId,
+    pub register_id: RegisterId,
+    pub mode: RegisterMode,
+}

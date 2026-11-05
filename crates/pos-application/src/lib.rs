@@ -7,6 +7,8 @@ pub mod auth;
 pub mod context;
 pub mod queries;
 pub mod records;
+pub mod settings;
+pub mod setup;
 pub mod spike;
 pub mod staff;
 pub mod write;

@@ -80,6 +80,8 @@ pub enum AppError {
     #[error(transparent)]
     Staff(#[from] StaffError),
     #[error(transparent)]
+    Setup(#[from] crate::setup::SetupError),
+    #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
     WriteSet(#[from] WriteSetError),
@@ -97,6 +99,7 @@ impl HasErrorCode for AppError {
             AppError::PinInvalid { .. } => ErrorCode::AuthPinInvalid,
             AppError::LockedOut { .. } => ErrorCode::AuthLockedOut,
             AppError::Staff(e) => e.error_code(),
+            AppError::Setup(e) => e.error_code(),
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,

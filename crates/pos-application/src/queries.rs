@@ -20,3 +20,9 @@ pub trait StaffQueries: Send + Sync {
     async fn active_staff(&self) -> Result<Vec<StaffRecord>, QueryError>;
     async fn throttle(&self, user_id: UserId) -> Result<Option<ThrottleRecord>, QueryError>;
 }
+
+#[async_trait::async_trait]
+pub trait SetupQueries: Send + Sync {
+    /// `None` until setup has completed on this installation.
+    async fn device_identity(&self) -> Result<Option<crate::records::DeviceIdentity>, QueryError>;
+}

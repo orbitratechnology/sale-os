@@ -284,6 +284,110 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
             }
+            WriteOp::PutTaxRate {
+                record: r,
+                expected_version,
+            } => {
+                st.step()?;
+                check_version(
+                    &mut tx,
+                    "tax_rates",
+                    "tax_rate_id",
+                    &r.tax_rate_id.to_string(),
+                    *expected_version,
+                    r.aggregate(),
+                )
+                .await?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO tax_rates (tax_rate_id, business_id, name, rate_ppm, effective_from, effective_to, status,
+                       version, sync_status, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9, ?10)
+                     ON CONFLICT (tax_rate_id) DO UPDATE SET name = ?3, rate_ppm = ?4, effective_from = ?5,
+                       effective_to = ?6, status = ?7, version = ?8, sync_status = 'pending', updated_at = ?10",
+                )
+                .bind(r.tax_rate_id.to_string())
+                .bind(r.business_id.to_string())
+                .bind(&r.name)
+                .bind(i64::from(r.rate.ppm()))
+                .bind(r.effective_from.map(|d| d.to_string()))
+                .bind(r.effective_to.map(|d| d.to_string()))
+                .bind(if r.archived { "archived" } else { "active" })
+                .bind(as_i64(r.version)?)
+                .bind(r.created_at.as_millis())
+                .bind(r.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::PutTaxCategory {
+                record: r,
+                expected_version,
+            } => {
+                st.step()?;
+                check_version(
+                    &mut tx,
+                    "tax_categories",
+                    "tax_category_id",
+                    &r.tax_category_id.to_string(),
+                    *expected_version,
+                    r.aggregate(),
+                )
+                .await?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO tax_categories (tax_category_id, business_id, name, is_default, status, version,
+                       sync_status, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8)
+                     ON CONFLICT (tax_category_id) DO UPDATE SET name = ?3, is_default = ?4, status = ?5, version = ?6,
+                       sync_status = 'pending', updated_at = ?8",
+                )
+                .bind(r.tax_category_id.to_string())
+                .bind(r.business_id.to_string())
+                .bind(&r.name)
+                .bind(r.is_default)
+                .bind(if r.archived { "archived" } else { "active" })
+                .bind(as_i64(r.version)?)
+                .bind(r.created_at.as_millis())
+                .bind(r.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                // Rate membership is part of the aggregate: replace it wholesale.
+                st.step()?;
+                sqlx::query("DELETE FROM tax_category_rates WHERE tax_category_id = ?")
+                    .bind(r.tax_category_id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                for rate in &r.rate_ids {
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO tax_category_rates (tax_category_id, tax_rate_id) VALUES (?, ?)",
+                    )
+                    .bind(r.tax_category_id.to_string())
+                    .bind(rate.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+            }
+            WriteOp::SetDeviceIdentity(d) => {
+                st.step()?;
+                // Plain INSERT on the singleton row: a second setup can never overwrite it.
+                sqlx::query(
+                    "INSERT INTO device_identity (id, installation_id, business_id, register_id, mode, created_at)
+                     VALUES (1, ?, ?, ?, ?, ?)",
+                )
+                .bind(&d.installation_id)
+                .bind(d.business_id.to_string())
+                .bind(d.register_id.to_string())
+                .bind(d.mode.as_str())
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;
                 sqlx::query(

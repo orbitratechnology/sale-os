@@ -9,6 +9,7 @@
 pub mod access;
 pub mod catalog;
 pub mod error;
+pub mod geo;
 pub mod ids;
 pub mod money;
 pub mod numbering;

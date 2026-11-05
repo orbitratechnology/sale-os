@@ -1,8 +1,8 @@
 //! Read-port implementations over the read-only connection pool.
 
 use crate::SqliteStore;
-use pos_application::queries::{QueryError, StaffQueries};
-use pos_application::records::{StaffRecord, ThrottleRecord};
+use pos_application::queries::{QueryError, SetupQueries, StaffQueries};
+use pos_application::records::{DeviceIdentity, RegisterMode, StaffRecord, ThrottleRecord};
 use pos_domain::{Timestamp, UserId};
 
 type StaffRow = (
@@ -84,5 +84,30 @@ impl StaffQueries for SqliteStore {
             })
         })
         .transpose()
+    }
+}
+
+#[async_trait::async_trait]
+impl SetupQueries for SqliteStore {
+    async fn device_identity(&self) -> Result<Option<DeviceIdentity>, QueryError> {
+        let row: Option<(String, Option<String>, Option<String>, String)> = sqlx::query_as(
+            "SELECT installation_id, business_id, register_id, mode FROM device_identity WHERE id = 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        let Some((installation_id, Some(business), Some(register), mode)) = row else {
+            return Ok(None);
+        };
+        Ok(Some(DeviceIdentity {
+            installation_id,
+            business_id: business.parse().map_err(q)?,
+            register_id: register.parse().map_err(q)?,
+            mode: if mode == "live" {
+                RegisterMode::Live
+            } else {
+                RegisterMode::Sandbox
+            },
+        }))
     }
 }

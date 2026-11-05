@@ -16,8 +16,8 @@
 
 use crate::audit::AuditEntry;
 use crate::records::{
-    AggregateRef, BusinessRecord, LocationRecord, RegisterRecord, SessionEnd, SettingRecord, StaffRecord,
-    ThrottleRecord,
+    AggregateRef, BusinessRecord, DeviceIdentity, LocationRecord, RegisterRecord, SessionEnd, SettingRecord,
+    StaffRecord, TaxCategoryRecord, TaxRateRecord, ThrottleRecord,
 };
 use crate::spike::{SpikeCartAdd, SpikeProduct, SpikeSale};
 use pos_domain::{
@@ -89,6 +89,16 @@ pub enum WriteOp {
         record: StaffRecord,
         expected_version: Option<u64>,
     },
+    PutTaxRate {
+        record: TaxRateRecord,
+        expected_version: Option<u64>,
+    },
+    PutTaxCategory {
+        record: TaxCategoryRecord,
+        expected_version: Option<u64>,
+    },
+    /// Binds this installation to its register, once (E04-T01). Local only.
+    SetDeviceIdentity(DeviceIdentity),
     /// Device-local login throttle (never synced).
     PutLoginThrottle(ThrottleRecord),
     /// Device-local session start.
@@ -165,9 +175,18 @@ impl WriteOp {
                 record,
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutTaxRate {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutTaxCategory {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
             WriteOp::AllocateNumber { .. }
             | WriteOp::SpikeCartAdd(_)
             | WriteOp::PutLoginThrottle(_)
+            | WriteOp::SetDeviceIdentity(_)
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
@@ -234,6 +253,15 @@ impl OutboxDraft {
     }
     pub fn setting_updated(ids: &dyn IdGenerator, r: &SettingRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "setting.updated", r.aggregate(), r.version, r)
+    }
+    pub fn tax_rate_upserted(ids: &dyn IdGenerator, r: &TaxRateRecord) -> Result<Self, WriteSetError> {
+        Self::master(ids, "tax_rate.upserted", r.aggregate(), r.version, r)
+    }
+    pub fn tax_category_upserted(
+        ids: &dyn IdGenerator,
+        r: &TaxCategoryRecord,
+    ) -> Result<Self, WriteSetError> {
+        Self::master(ids, "tax_category.upserted", r.aggregate(), r.version, r)
     }
     pub fn staff_upserted(ids: &dyn IdGenerator, r: &StaffRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "staff.upserted", r.aggregate(), r.version, r)
@@ -373,6 +401,24 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn put_tax_rate(mut self, record: TaxRateRecord, expected_version: Option<u64>) -> Self {
+        self.ops.push(WriteOp::PutTaxRate {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn put_tax_category(mut self, record: TaxCategoryRecord, expected_version: Option<u64>) -> Self {
+        self.ops.push(WriteOp::PutTaxCategory {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn set_device_identity(mut self, identity: DeviceIdentity) -> Self {
+        self.ops.push(WriteOp::SetDeviceIdentity(identity));
+        self
+    }
     pub fn put_login_throttle(mut self, record: ThrottleRecord) -> Self {
         self.ops.push(WriteOp::PutLoginThrottle(record));
         self
@@ -497,6 +543,9 @@ impl WriteSetBuilder {
             WriteOp::PutRegister { record, .. } => record.business_id,
             WriteOp::PutSetting { record, .. } => record.business_id,
             WriteOp::PutStaff { record, .. } => record.business_id,
+            WriteOp::PutTaxRate { record, .. } => record.business_id,
+            WriteOp::PutTaxCategory { record, .. } => record.business_id,
+            WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::StartSession { .. }
