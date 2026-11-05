@@ -52,6 +52,9 @@ impl Quantity {
     pub const fn is_positive(self) -> bool {
         self.0 > 0
     }
+    pub const fn is_negative(self) -> bool {
+        self.0 < 0
+    }
     pub fn checked_add(self, rhs: Quantity) -> Result<Quantity, ArithmeticError> {
         self.0
             .checked_add(rhs.0)
