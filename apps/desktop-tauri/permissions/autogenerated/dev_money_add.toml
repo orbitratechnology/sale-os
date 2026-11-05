@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dev-money-add"
+description = "Enables the dev_money_add command without any pre-configured scope."
+commands.allow = ["dev_money_add"]
+
+[[permission]]
+identifier = "deny-dev-money-add"
+description = "Denies the dev_money_add command without any pre-configured scope."
+commands.deny = ["dev_money_add"]

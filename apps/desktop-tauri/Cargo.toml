@@ -28,6 +28,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+tauri = { workspace = true, features = ["test"] }
 tokio.workspace = true
 
 [lints]

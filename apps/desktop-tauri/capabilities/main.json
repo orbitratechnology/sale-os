@@ -1,7 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Main window. Kept minimal; E01-T03 narrows it further and adds dialog:save/open.",
+  "description": "Main window: the app's own IPC commands and event delivery only (E01-T03). No fs, shell, http or path access from the WebView; file saving goes through Rust commands.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:event:default",
+    "allow-app-info",
+    "allow-dev-money-add"
+  ]
 }
