@@ -82,12 +82,16 @@ fn gen_bindings(check: bool) -> Result<()> {
 fn gen_schemas(check: bool) -> Result<()> {
     // Event payload types and their schemars generator arrive with E17-T01.
     let dir = root().join("contracts/events");
-    let stray: Vec<_> = std::fs::read_dir(&dir)
-        .with_context(|| format!("reading {}", dir.display()))?
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".schema.json"))
-        .collect();
+    // A missing directory means "no schemas" (git does not track empty directories).
+    let stray: Vec<_> = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".schema.json"))
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", dir.display())),
+    };
     if check && !stray.is_empty() {
         bail!("contracts/events contains schemas but no generator exists yet: {stray:?}");
     }
