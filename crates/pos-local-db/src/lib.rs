@@ -8,6 +8,7 @@
 mod error;
 mod migrate;
 mod pragmas;
+mod queries;
 pub mod spike;
 mod store;
 

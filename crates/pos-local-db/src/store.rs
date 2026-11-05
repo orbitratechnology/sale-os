@@ -246,6 +246,84 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
             }
+            WriteOp::PutStaff {
+                record: r,
+                expected_version,
+            } => {
+                st.step()?;
+                check_version(
+                    &mut tx,
+                    "staff_users",
+                    "user_id",
+                    &r.user_id.to_string(),
+                    *expected_version,
+                    r.aggregate(),
+                )
+                .await?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO staff_users (user_id, business_id, display_name, role, pin_hash, pin_updated_at,
+                       must_change_pin, status, version, sync_status, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10, ?11)
+                     ON CONFLICT (user_id) DO UPDATE SET display_name = ?3, role = ?4, pin_hash = ?5,
+                       pin_updated_at = ?6, must_change_pin = ?7, status = ?8, version = ?9, sync_status = 'pending',
+                       updated_at = ?11",
+                )
+                .bind(r.user_id.to_string())
+                .bind(r.business_id.to_string())
+                .bind(&r.display_name)
+                .bind(r.role.as_str())
+                .bind(&r.pin_hash)
+                .bind(r.pin_updated_at.as_millis())
+                .bind(r.must_change_pin)
+                .bind(if r.active { "active" } else { "deactivated" })
+                .bind(as_i64(r.version)?)
+                .bind(r.created_at.as_millis())
+                .bind(r.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::PutLoginThrottle(t) => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO staff_login_throttle (user_id, failed_attempts, locked_until, last_failed_at)
+                     VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (user_id) DO UPDATE SET failed_attempts = ?2, locked_until = ?3, last_failed_at = ?4",
+                )
+                .bind(t.user_id.to_string())
+                .bind(i64::from(t.failed_attempts))
+                .bind(t.locked_until.map(|x| x.as_millis()))
+                .bind(t.last_failed_at.map(|x| x.as_millis()))
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::StartSession { session_id, user_id } => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO staff_sessions (session_id, user_id, register_id, started_at) VALUES (?, ?, ?, ?)",
+                )
+                .bind(session_id.to_string())
+                .bind(user_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::EndSession { session_id, reason } => {
+                st.step()?;
+                sqlx::query(
+                    "UPDATE staff_sessions SET ended_at = ?, end_reason = ? WHERE session_id = ? AND ended_at IS NULL",
+                )
+                .bind(ctx.occurred_at.as_millis())
+                .bind(reason.as_str())
+                .bind(session_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
             WriteOp::SpikePutProduct(p) => {
                 st.step()?;
                 sqlx::query(

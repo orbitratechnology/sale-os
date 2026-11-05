@@ -24,6 +24,8 @@ jobs:
         run: cargo test -p pos-local-db --release --test apply concurrent
         env:
           POS_APPLY_STRESS: "1250"
+      - name: PIN hash cost (E05-T02, 50-300 ms per verification)
+        run: cargo test -p pos-application --release -- --ignored production_pin_hash_cost --nocapture
       - uses: actions/upload-artifact@v4
         if: always()
         with:

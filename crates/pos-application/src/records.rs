@@ -103,3 +103,72 @@ impl SettingRecord {
         }
     }
 }
+
+/// A staff member as stored and synced (ADR-013: the PIN hash syncs so a cashier can sign
+/// in on any register offline; it is an Argon2id PHC string, never the PIN).
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffRecord {
+    pub user_id: pos_domain::UserId,
+    pub business_id: BusinessId,
+    pub display_name: String,
+    pub role: pos_domain::Role,
+    pub pin_hash: String,
+    pub pin_updated_at: Timestamp,
+    pub must_change_pin: bool,
+    pub active: bool,
+    pub version: u64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+impl std::fmt::Debug for StaffRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StaffRecord")
+            .field("user_id", &self.user_id)
+            .field("display_name", &self.display_name)
+            .field("role", &self.role)
+            .field("pin_hash", &"[REDACTED]")
+            .field("active", &self.active)
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
+impl StaffRecord {
+    pub fn aggregate(&self) -> AggregateRef {
+        AggregateRef {
+            aggregate_type: "staff_user",
+            aggregate_id: self.user_id.to_string(),
+        }
+    }
+}
+
+/// Device-local wrong-PIN counter (never synced).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThrottleRecord {
+    pub user_id: pos_domain::UserId,
+    pub failed_attempts: u32,
+    pub locked_until: Option<Timestamp>,
+    pub last_failed_at: Option<Timestamp>,
+}
+
+/// Why a staff session ended (`staff_sessions.end_reason`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SessionEnd {
+    Logout,
+    InactivityLock,
+    AppExit,
+    SwitchUser,
+}
+
+impl SessionEnd {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SessionEnd::Logout => "logout",
+            SessionEnd::InactivityLock => "inactivity_lock",
+            SessionEnd::AppExit => "app_exit",
+            SessionEnd::SwitchUser => "switch_user",
+        }
+    }
+}

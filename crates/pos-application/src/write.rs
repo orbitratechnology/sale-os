@@ -15,10 +15,14 @@
 //! `occurred_at`) and allocates register-local numbers inside the transaction.
 
 use crate::audit::AuditEntry;
-use crate::records::{AggregateRef, BusinessRecord, LocationRecord, RegisterRecord, SettingRecord};
+use crate::records::{
+    AggregateRef, BusinessRecord, LocationRecord, RegisterRecord, SessionEnd, SettingRecord, StaffRecord,
+    ThrottleRecord,
+};
 use crate::spike::{SpikeCartAdd, SpikeProduct, SpikeSale};
 use pos_domain::{
-    BusinessId, ErrorCode, EventId, HasErrorCode, IdGenerator, LocationId, RegisterId, Timestamp, UserId,
+    BusinessId, ErrorCode, EventId, HasErrorCode, IdGenerator, LocationId, RegisterId, SessionId, Timestamp,
+    UserId,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,6 +85,22 @@ pub enum WriteOp {
         counter: Counter,
         slot: NumberSlot,
     },
+    PutStaff {
+        record: StaffRecord,
+        expected_version: Option<u64>,
+    },
+    /// Device-local login throttle (never synced).
+    PutLoginThrottle(ThrottleRecord),
+    /// Device-local session start.
+    StartSession {
+        session_id: SessionId,
+        user_id: UserId,
+    },
+    /// Device-local session end (only if still open).
+    EndSession {
+        session_id: SessionId,
+        reason: SessionEnd,
+    },
     /// STAGE 0 SPIKE (E00-T06): delete with the spike module.
     SpikePutProduct(SpikeProduct),
     /// STAGE 0 SPIKE (E00-T06): a local-only cart edit.
@@ -141,7 +161,15 @@ impl WriteOp {
                     aggregate_id: sale.sale_id.to_string(),
                 },
             },
-            WriteOp::AllocateNumber { .. } | WriteOp::SpikeCartAdd(_) => SyncKind::LocalOnly,
+            WriteOp::PutStaff {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::AllocateNumber { .. }
+            | WriteOp::SpikeCartAdd(_)
+            | WriteOp::PutLoginThrottle(_)
+            | WriteOp::StartSession { .. }
+            | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
     }
 }
@@ -206,6 +234,24 @@ impl OutboxDraft {
     }
     pub fn setting_updated(ids: &dyn IdGenerator, r: &SettingRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "setting.updated", r.aggregate(), r.version, r)
+    }
+    pub fn staff_upserted(ids: &dyn IdGenerator, r: &StaffRecord) -> Result<Self, WriteSetError> {
+        Self::master(ids, "staff.upserted", r.aggregate(), r.version, r)
+    }
+    /// A standalone audit entry that must reach the cloud (login failures, lockouts...).
+    pub fn audit_recorded(ids: &dyn IdGenerator, entry: &AuditEntry) -> Result<Self, WriteSetError> {
+        let aggregate = AggregateRef {
+            aggregate_type: "audit",
+            aggregate_id: entry.audit_id.to_string(),
+        };
+        let payload = serde_json::json!({
+            "auditId": entry.audit_id,
+            "action": entry.action,
+            "entityType": entry.entity_type,
+            "entityId": entry.entity_id,
+            "metadata": entry.metadata,
+        });
+        Self::new(ids, "audit.recorded", 1, aggregate, None, &payload)
     }
 }
 
@@ -320,6 +366,25 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::AllocateNumber { counter, slot });
         self
     }
+    pub fn put_staff(mut self, record: StaffRecord, expected_version: Option<u64>) -> Self {
+        self.ops.push(WriteOp::PutStaff {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn put_login_throttle(mut self, record: ThrottleRecord) -> Self {
+        self.ops.push(WriteOp::PutLoginThrottle(record));
+        self
+    }
+    pub fn start_session(mut self, session_id: SessionId, user_id: UserId) -> Self {
+        self.ops.push(WriteOp::StartSession { session_id, user_id });
+        self
+    }
+    pub fn end_session(mut self, session_id: SessionId, reason: SessionEnd) -> Self {
+        self.ops.push(WriteOp::EndSession { session_id, reason });
+        self
+    }
     /// STAGE 0 SPIKE (E00-T06).
     pub fn spike_put_product(mut self, product: SpikeProduct) -> Self {
         self.ops.push(WriteOp::SpikePutProduct(product));
@@ -431,7 +496,11 @@ impl WriteSetBuilder {
             WriteOp::PutLocation { record, .. } => record.business_id,
             WriteOp::PutRegister { record, .. } => record.business_id,
             WriteOp::PutSetting { record, .. } => record.business_id,
+            WriteOp::PutStaff { record, .. } => record.business_id,
             WriteOp::AllocateNumber { .. }
+            | WriteOp::PutLoginThrottle(_)
+            | WriteOp::StartSession { .. }
+            | WriteOp::EndSession { .. }
             | WriteOp::SpikePutProduct(_)
             | WriteOp::SpikeCartAdd(_)
             | WriteOp::SpikeCompleteSale(_) => return Ok(()),

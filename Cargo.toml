@@ -29,6 +29,7 @@ pos-testkit = { path = "crates/pos-testkit" }
 
 # external
 anyhow = "1"
+argon2 = { version = "0.5.3", features = ["std"] }
 async-trait = "0.1"
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
