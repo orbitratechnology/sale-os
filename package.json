@@ -11,9 +11,11 @@
     "build:desktop": "tauri build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "lint:contracts": "spectral lint contracts/openapi/pos-cloud.v1.yaml --fail-severity=warn"
   },
   "devDependencies": {
+    "@stoplight/spectral-cli": "6.15.0",
     "@tauri-apps/cli": "2.12.4"
   }
 }

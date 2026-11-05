@@ -1,0 +1,6 @@
+# Lint rules for the cloud OpenAPI contract (E00-T05).
+extends: ["spectral:oas"]
+rules:
+  operation-operationId: error
+  operation-tags: error
+  operation-description: off

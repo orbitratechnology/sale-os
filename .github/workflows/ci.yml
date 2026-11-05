@@ -80,7 +80,7 @@ jobs:
           arguments: --all-features
 
   frontend:
-    name: Frontend (lint, typecheck, test, build)
+    name: Frontend + contracts (lint, typecheck, test, build)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +91,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm lint:contracts
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @sale-os/desktop-ui build
