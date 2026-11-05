@@ -89,6 +89,9 @@ pub enum AppError {
     WriteSet(#[from] WriteSetError),
     #[error("could not read local data: {0}")]
     Query(String),
+    /// A domain rule failed; carries its catalogued code (cart, pricing...).
+    #[error("{0}")]
+    Validation(String, ErrorCode),
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -106,6 +109,7 @@ impl HasErrorCode for AppError {
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,
+            AppError::Validation(_, code) => *code,
             AppError::Internal(_) => ErrorCode::Internal,
         }
     }

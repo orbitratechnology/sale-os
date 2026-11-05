@@ -535,6 +535,77 @@ async fn apply_in_transaction(
                     }
                 }
             }
+            WriteOp::PutCart { cart, opened_by } => {
+                use pos_domain::cart::{AddVia, CartStatus};
+                let status = match cart.status {
+                    CartStatus::Open => "open",
+                    CartStatus::Parked => "parked",
+                    CartStatus::Voided => "voided",
+                    CartStatus::Completed => "completed",
+                };
+                let json = |v: &Option<pos_domain::pricing::Discount>| -> Result<Option<String>, WriteError> {
+                    v.as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|e| WriteError::Io(e.to_string()))
+                };
+                let now = ctx.occurred_at.as_millis();
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO carts (cart_id, business_id, register_id, status, opened_by, order_discount_json, revision,
+                       void_reason, opened_at, updated_at, closed_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
+                     ON CONFLICT (cart_id) DO UPDATE SET status = ?4, order_discount_json = ?6, revision = ?7,
+                       void_reason = ?8, updated_at = ?9, closed_at = ?10",
+                )
+                .bind(cart.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(status)
+                .bind(opened_by.to_string())
+                .bind(json(&cart.order_discount)?)
+                .bind(as_i64(cart.revision)?)
+                .bind(&cart.void_reason)
+                .bind(now)
+                .bind((cart.status != CartStatus::Open).then_some(now))
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                st.step()?;
+                sqlx::query("DELETE FROM cart_lines WHERE cart_id = ?")
+                    .bind(cart.id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                for (pos, l) in cart.lines.iter().enumerate() {
+                    let (via, scan_id) = match &l.added_via {
+                        AddVia::Scan { event_id } => ("scan", Some(event_id.to_string())),
+                        AddVia::Search => ("search", None),
+                        AddVia::QuickSelect => ("quick_select", None),
+                        AddVia::ManualCode => ("manual_code", None),
+                    };
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO cart_lines (cart_line_id, cart_id, position, variant_id, quantity_milli,
+                           unit_price_override_minor, line_discount_json, added_via, last_scan_event_id, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(l.id.to_string())
+                    .bind(cart.id.to_string())
+                    .bind(i64::try_from(pos).unwrap_or(i64::MAX))
+                    .bind(l.variant.variant_id.to_string())
+                    .bind(l.quantity.milli())
+                    .bind(l.price_override.map(|m| m.minor()))
+                    .bind(json(&l.line_discount)?)
+                    .bind(via)
+                    .bind(scan_id)
+                    .bind(now)
+                    .bind(now)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+            }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;
                 sqlx::query(

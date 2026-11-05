@@ -65,3 +65,46 @@ pub trait CatalogQueries: Send + Sync {
     /// Name / SKU / barcode search with prefix matching, best matches first.
     async fn search(&self, query: &str, limit: u32) -> Result<Vec<CatalogHit>, QueryError>;
 }
+
+/// A cart line as stored: the variant is re-read from the catalogue on load, so a recovered
+/// cart is priced against the current catalogue (POS-011).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredCartLine {
+    pub line_id: pos_domain::CartLineId,
+    pub variant_id: pos_domain::VariantId,
+    pub quantity: pos_domain::Quantity,
+    pub price_override: Option<pos_domain::Money>,
+    pub line_discount: Option<pos_domain::pricing::Discount>,
+    pub added_via: pos_domain::cart::AddVia,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredCart {
+    pub cart_id: pos_domain::CartId,
+    pub revision: u64,
+    pub opened_by: pos_domain::UserId,
+    pub order_discount: Option<pos_domain::pricing::Discount>,
+    pub lines: Vec<StoredCartLine>,
+}
+
+/// How this business prices (from `businesses`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PricingSettings {
+    pub tax_mode: pos_domain::pricing::TaxMode,
+    pub currency: pos_domain::Currency,
+    pub timezone: String,
+}
+
+#[async_trait::async_trait]
+pub trait CartQueries: Send + Sync {
+    /// The register's open cart, if any (at most one, enforced by a unique index).
+    async fn open_cart(&self, register: pos_domain::RegisterId) -> Result<Option<StoredCart>, QueryError>;
+    /// A variant ready for the cart, with its tax rates resolved for `date`. Returned even
+    /// if since archived, so a recovered cart can still show (and remove) it.
+    async fn sellable(
+        &self,
+        variant: pos_domain::VariantId,
+        date: pos_domain::BusinessDate,
+    ) -> Result<Option<pos_domain::cart::SellableVariant>, QueryError>;
+    async fn pricing_settings(&self) -> Result<PricingSettings, QueryError>;
+}

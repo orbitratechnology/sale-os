@@ -105,6 +105,11 @@ pub enum WriteOp {
     },
     /// Binds this installation to its register, once (E04-T01). Local only.
     SetDeviceIdentity(DeviceIdentity),
+    /// The whole draft cart (E09-T01). Local only, never synced (ADR-009).
+    PutCart {
+        cart: pos_domain::cart::Cart,
+        opened_by: UserId,
+    },
     /// Device-local login throttle (never synced).
     PutLoginThrottle(ThrottleRecord),
     /// Device-local session start.
@@ -198,6 +203,7 @@ impl WriteOp {
             | WriteOp::SpikeCartAdd(_)
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
+            | WriteOp::PutCart { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
@@ -453,6 +459,10 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn put_cart(mut self, cart: pos_domain::cart::Cart, opened_by: UserId) -> Self {
+        self.ops.push(WriteOp::PutCart { cart, opened_by });
+        self
+    }
     pub fn set_device_identity(mut self, identity: DeviceIdentity) -> Self {
         self.ops.push(WriteOp::SetDeviceIdentity(identity));
         self
@@ -587,6 +597,7 @@ impl WriteSetBuilder {
             WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
             | WriteOp::PutLoginThrottle(_)
+            | WriteOp::PutCart { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. }
             | WriteOp::SpikePutProduct(_)

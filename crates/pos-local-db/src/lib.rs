@@ -5,6 +5,7 @@
 //! - One writer connection (all business writes are serialised) plus a small pool of
 //!   read-only connections for search and reports.
 
+mod cart_queries;
 mod catalog_queries;
 mod error;
 mod migrate;
