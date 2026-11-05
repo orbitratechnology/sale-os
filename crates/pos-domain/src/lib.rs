@@ -6,6 +6,7 @@
 //! - every fallible operation returns an error that maps to a catalogued [`ErrorCode`].
 #![deny(clippy::float_arithmetic)]
 
+pub mod catalog;
 pub mod error;
 pub mod ids;
 pub mod money;
