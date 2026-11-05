@@ -1,0 +1,32 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  durability:
+    name: Durability (crash harness + write-path stress)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Crash harness (E02-T04)
+        run: cargo xtask crash-harness --kills 100 --report crash-report.txt
+      - name: 10,000 concurrent applies (E02-T03)
+        run: cargo test -p pos-local-db --release --test apply concurrent
+        env:
+          POS_APPLY_STRESS: "1250"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crash-report-${{ github.run_id }}
+          path: crash-report.txt
+          if-no-files-found: ignore

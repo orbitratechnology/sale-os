@@ -12,10 +12,16 @@ async-trait.workspace = true
 pos-application.workspace = true
 pos-domain.workspace = true
 serde_json.workspace = true
+uuid.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[[bin]]
+# Crash-consistency harness (E02-T04). Run via `cargo xtask crash-harness`.
+name = "crash-harness"
+path = "src/bin/crash-harness.rs"
 
 [dev-dependencies]
 pos-testkit.workspace = true

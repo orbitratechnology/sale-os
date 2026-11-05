@@ -4,6 +4,7 @@
 //! - `gen-bindings [--check]` regenerate (or verify) the TypeScript IPC bindings (ADR-012)
 //! - `gen-schemas [--check]`  regenerate (or verify) sync event JSON Schemas (E17-T01)
 //! - `trace`                 verify every PRD P0 requirement is traced to a task
+//! - `crash-harness [--kills N] [--report FILE]`  kill-and-verify durability campaign (E02-T04)
 
 mod deps;
 mod trace;
@@ -20,6 +21,7 @@ fn main() -> Result<()> {
         Some("gen-bindings") => gen_bindings(check),
         Some("gen-schemas") => gen_schemas(check),
         Some("trace") => trace::run(&root()),
+        Some("crash-harness") => crash_harness(&args[1..]),
         _ => {
             eprintln!(
                 "usage: cargo xtask <check-deps | gen-bindings [--check] | gen-schemas [--check] | trace>"
@@ -34,6 +36,34 @@ fn root() -> PathBuf {
         .parent()
         .expect("xtask lives in the workspace root")
         .to_path_buf()
+}
+
+/// Builds the harness in release mode (realistic timing) and runs it.
+fn crash_harness(args: &[String]) -> Result<()> {
+    let status = Command::new(env!("CARGO"))
+        .current_dir(root())
+        .args([
+            "run",
+            "--quiet",
+            "--release",
+            "-p",
+            "pos-local-db",
+            "--bin",
+            "crash-harness",
+            "--",
+            "run",
+        ])
+        .args(if args.is_empty() {
+            vec!["--kills".to_owned(), "100".to_owned()]
+        } else {
+            args.to_vec()
+        })
+        .status()
+        .context("running crash-harness")?;
+    if !status.success() {
+        bail!("crash harness found a violation (see output above)");
+    }
+    Ok(())
 }
 
 const BINDINGS: &str = "apps/desktop-ui/src/ipc/bindings.ts";
