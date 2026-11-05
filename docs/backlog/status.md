@@ -55,7 +55,25 @@ cart and sale tasks can replace them without a migration:
 
 Delete them in E09-T08 at the latest.
 
-### Next up (Stage 1 per [00-roadmap §4](00-roadmap.md#4-parallel-tracks-team-of-6))
+## Stage 1, backend first (2026-11-05)
 
-E04-T01 (workspace creation), E05-T01/T02 (staff and PIN auth), E06-T01 (catalogue migration),
-E06-T03 (barcode normalisation), E08-T01 (tax engine).
+Domain and storage are built and tested before the IPC commands and screens, so each screen
+lands on a finished, tested service.
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E06-T03 Barcode normalisation | **Done** | UPC-A, UPC-E and GTIN-14 normalise to EAN-13; GS1 check digits; uniqueness per normalised code is enforced in the store | — |
+| E08-T01 Tax engine | **Done** | `price_cart` for inclusive and exclusive modes; multiple rates per category; effective dates by `business_date`; tax breakdown. The six golden scenarios and the inclusive-total proptest pass. | The 40-scenario JSON suite is E08-T03 |
+| E05-T01/T02 Staff and PIN sign-in | **Done** | Argon2id (64 MiB, t=3; p95 141 ms, ADR-013 updated); lockout 5 attempts then 30 s doubling to 15 min; sessions; display-name rules; owner-only PIN reset | Login UI is E05-T06 |
+| E06-T01 Catalogue migration | **Done** | `0003_catalogue.sql` from the spec, with FTS5 search; schema tests | — |
+| E04-T01 Workspace creation | **Done** | `SetupService::create_workspace` writes business, location, register, owner, tax rates and settings in one transaction, and binds the device to the register | Wizard UI is E04-T02 |
+| E06-T02 Product aggregate | **Done** | Create, update (optimistic version) and archive; barcode and SKU uniqueness; outbox events with `base_version` | — |
+| E09-T01 Cart backend | **Done** | `0004_carts.sql`; `CartService`: add, set quantity, remove, discounts, override, clear and void. 0 and fractional `ea` quantities refused; stale `clear` gives `CART_REVISION_MISMATCH`; one open cart per register; carts never reach the outbox. **Found and fixed a lost-update race**: 20 concurrent scans lost items. Mutations are now serialised, and the store compares the revision. | Discount limits and approvals are E08-T02/E05-T04 |
+| E07-T02 Scan pipeline | **Backend done** | `CartService::scan`: the scan event is recorded in the same transaction as the cart change, so a repeated delivery counts once; 10 scans = 10 items (AT-03); pack + unit = 13; a discounted line gets a new line; unknown codes change nothing; malformed codes give `SCAN_INVALID` | `SESSION_LOCKED` needs E05-T05. The p95 < 30 ms with `shop5k` needs the E06-T04 fixture. |
+| E09-T02 Cart recovery | **Partly done** | The open cart is reloaded from storage and repriced against the current catalogue after a restart (tested with a new service instance) | The Resume/Discard prompt, and highlighting changed prices (needs a price-at-add snapshot) |
+
+### Next up
+
+IPC commands for setup, sign-in, catalogue, cart and scan, with the E05-T03 table-driven
+permission harness over them; then E05-T04 approvals and E08-T02 discount limits; then the
+first-run, login and checkout screens.
