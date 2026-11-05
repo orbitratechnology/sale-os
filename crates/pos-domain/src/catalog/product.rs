@@ -28,6 +28,14 @@ pub enum ProductType {
 }
 
 impl ProductType {
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "stock" => Some(Self::Stock),
+            "non_stock" => Some(Self::NonStock),
+            "service" => Some(Self::Service),
+            _ => None,
+        }
+    }
     pub const fn as_str(self) -> &'static str {
         match self {
             ProductType::Stock => "stock",
@@ -47,6 +55,14 @@ pub enum BarcodeQualifier {
 }
 
 impl BarcodeQualifier {
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "primary" => Some(Self::Primary),
+            "alias" => Some(Self::Alias),
+            "pack" => Some(Self::Pack),
+            _ => None,
+        }
+    }
     pub const fn as_str(self) -> &'static str {
         match self {
             BarcodeQualifier::Primary => "primary",
@@ -203,13 +219,22 @@ pub enum CatalogError {
     Barcode(#[from] BarcodeError),
     #[error("the product is archived")]
     Archived,
+    #[error("product not found")]
+    NotFound,
+    #[error("barcode {value} already belongs to another product")]
+    BarcodeTaken { value: String, owner: ProductId },
+    #[error("SKU {sku} already belongs to another product")]
+    SkuTaken { sku: String, owner: ProductId },
 }
 
 impl HasErrorCode for CatalogError {
     fn error_code(&self) -> ErrorCode {
         match self {
-            CatalogError::DuplicateBarcode(_) => ErrorCode::CatalogDuplicateBarcode,
-            CatalogError::DuplicateSku(_) => ErrorCode::CatalogDuplicateSku,
+            CatalogError::DuplicateBarcode(_) | CatalogError::BarcodeTaken { .. } => {
+                ErrorCode::CatalogDuplicateBarcode
+            }
+            CatalogError::DuplicateSku(_) | CatalogError::SkuTaken { .. } => ErrorCode::CatalogDuplicateSku,
+            CatalogError::NotFound => ErrorCode::CatalogNotFound,
             CatalogError::Barcode(e) => e.error_code(),
             _ => ErrorCode::ValidationFailed,
         }

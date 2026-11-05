@@ -39,6 +39,15 @@ pub enum Symbology {
 }
 
 impl Symbology {
+    pub fn from_code(code: &str) -> Option<Symbology> {
+        use Symbology::*;
+        [
+            Ean13, Ean8, UpcA, UpcE, Code128, Code39, Itf14, Qr, DataMatrix, Internal, Unknown,
+        ]
+        .into_iter()
+        .find(|s| s.as_str() == code)
+    }
+
     /// The value stored in `product_barcodes.symbology` (docs/backlog/04, 0003).
     pub const fn as_str(self) -> &'static str {
         match self {

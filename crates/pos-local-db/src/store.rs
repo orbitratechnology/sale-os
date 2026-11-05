@@ -388,6 +388,153 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
             }
+            WriteOp::PutProduct {
+                product: p,
+                business_id,
+                expected_version,
+            } => {
+                let pid = p.id.to_string();
+                let bid = business_id.to_string();
+                st.step()?;
+                check_version(
+                    &mut tx,
+                    "products",
+                    "product_id",
+                    &pid,
+                    *expected_version,
+                    pos_application::write::product_aggregate(p),
+                )
+                .await?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO products (product_id, business_id, name, description, category_id, product_type, unit_code,
+                       tax_category_id, quick_select, status, version, sync_status, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12, ?12)
+                     ON CONFLICT (product_id) DO UPDATE SET name = ?3, description = ?4, category_id = ?5,
+                       product_type = ?6, unit_code = ?7, tax_category_id = ?8, quick_select = ?9, status = ?10,
+                       version = ?11, sync_status = 'pending', updated_at = ?12",
+                )
+                .bind(&pid)
+                .bind(&bid)
+                .bind(&p.name)
+                .bind(&p.description)
+                .bind(p.category_id.map(|c| c.to_string()))
+                .bind(p.product_type.as_str())
+                .bind(p.unit.code())
+                .bind(p.tax_category_id.to_string())
+                .bind(p.quick_select)
+                .bind(if p.archived { "archived" } else { "active" })
+                .bind(as_i64(p.version)?)
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                // Free every barcode of the product first, so moving a code between its
+                // variants never trips the unique index; current codes are re-activated below.
+                st.step()?;
+                sqlx::query(
+                    "UPDATE product_barcodes SET status = 'archived'
+                     WHERE variant_id IN (SELECT variant_id FROM product_variants WHERE product_id = ?)",
+                )
+                .bind(&pid)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                st.step()?;
+                sqlx::query("DELETE FROM product_search WHERE variant_id IN (SELECT variant_id FROM product_variants WHERE product_id = ?)")
+                    .bind(&pid)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                // Defaults move between variants: clear them first (one default per product).
+                st.step()?;
+                sqlx::query("UPDATE product_variants SET is_default = 0 WHERE product_id = ?")
+                    .bind(&pid)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                let category: Option<String> = match p.category_id {
+                    Some(c) => sqlx::query_scalar("SELECT name FROM categories WHERE category_id = ?")
+                        .bind(c.to_string())
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?,
+                    None => None,
+                };
+                // Default variant last, so the unique "one default" index never sees two.
+                let mut order: Vec<&pos_domain::catalog::Variant> = p.variants.iter().collect();
+                order.sort_by_key(|v| v.is_default);
+                for (pos, v) in order.into_iter().enumerate() {
+                    let variant_active = !v.archived && !p.archived;
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO product_variants (variant_id, business_id, product_id, is_default, sku, options_json,
+                           label, price_minor, cost_minor, track_stock, low_stock_threshold_milli, scan_qty_milli,
+                           sort_order, status, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)
+                         ON CONFLICT (variant_id) DO UPDATE SET is_default = ?4, sku = ?5, options_json = ?6, label = ?7,
+                           price_minor = ?8, cost_minor = ?9, track_stock = ?10, low_stock_threshold_milli = ?11,
+                           scan_qty_milli = ?12, sort_order = ?13, status = ?14, updated_at = ?15",
+                    )
+                    .bind(v.id.to_string())
+                    .bind(&bid)
+                    .bind(&pid)
+                    .bind(v.is_default && !v.archived)
+                    .bind(&v.sku)
+                    .bind(serde_json::to_string(&v.options).map_err(|e| WriteError::Io(e.to_string()))?)
+                    .bind(v.label())
+                    .bind(v.price.minor())
+                    .bind(v.cost.map(|c| c.minor()))
+                    .bind(v.track_stock)
+                    .bind(v.low_stock_threshold.map(|q| q.milli()))
+                    .bind(v.scan_qty.milli())
+                    .bind(i64::try_from(pos).unwrap_or(i64::MAX))
+                    .bind(if variant_active { "active" } else { "archived" })
+                    .bind(ctx.occurred_at.as_millis())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                    for b in &v.barcodes {
+                        st.step()?;
+                        sqlx::query(
+                            "INSERT INTO product_barcodes (barcode_id, business_id, variant_id, value_normalized, value_raw,
+                               symbology, qualifier, pack_qty_milli, status, created_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                             ON CONFLICT (barcode_id) DO UPDATE SET variant_id = ?3, value_normalized = ?4,
+                               value_raw = ?5, symbology = ?6, qualifier = ?7, pack_qty_milli = ?8, status = ?9",
+                        )
+                        .bind(b.id.to_string())
+                        .bind(&bid)
+                        .bind(v.id.to_string())
+                        .bind(&b.value)
+                        .bind(&b.raw)
+                        .bind(b.symbology.as_str())
+                        .bind(b.qualifier.as_str())
+                        .bind(b.pack_qty.milli())
+                        .bind(if variant_active { "active" } else { "archived" })
+                        .bind(ctx.occurred_at.as_millis())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                    }
+                    if variant_active {
+                        st.step()?;
+                        let codes: Vec<&str> = v.barcodes.iter().map(|b| b.value.as_str()).collect();
+                        sqlx::query(
+                            "INSERT INTO product_search (variant_id, name, label, sku, barcodes, category) VALUES (?, ?, ?, ?, ?, ?)",
+                        )
+                        .bind(v.id.to_string())
+                        .bind(&p.name)
+                        .bind(v.label())
+                        .bind(v.sku.clone().unwrap_or_default())
+                        .bind(codes.join(" "))
+                        .bind(category.clone().unwrap_or_default())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                    }
+                }
+            }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;
                 sqlx::query(

@@ -4,6 +4,7 @@
 
 pub mod audit;
 pub mod auth;
+pub mod catalog;
 pub mod context;
 pub mod queries;
 pub mod records;

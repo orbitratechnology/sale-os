@@ -82,6 +82,8 @@ pub enum AppError {
     #[error(transparent)]
     Setup(#[from] crate::setup::SetupError),
     #[error(transparent)]
+    Catalog(#[from] pos_domain::catalog::CatalogError),
+    #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
     WriteSet(#[from] WriteSetError),
@@ -100,6 +102,7 @@ impl HasErrorCode for AppError {
             AppError::LockedOut { .. } => ErrorCode::AuthLockedOut,
             AppError::Staff(e) => e.error_code(),
             AppError::Setup(e) => e.error_code(),
+            AppError::Catalog(e) => e.error_code(),
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,

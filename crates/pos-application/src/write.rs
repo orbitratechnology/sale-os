@@ -93,6 +93,12 @@ pub enum WriteOp {
         record: TaxRateRecord,
         expected_version: Option<u64>,
     },
+    /// The whole product aggregate (product + variants + barcodes), ADR-019.
+    PutProduct {
+        product: pos_domain::catalog::Product,
+        business_id: BusinessId,
+        expected_version: Option<u64>,
+    },
     PutTaxCategory {
         record: TaxCategoryRecord,
         expected_version: Option<u64>,
@@ -179,6 +185,11 @@ impl WriteOp {
                 record,
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutProduct {
+                product,
+                expected_version,
+                ..
+            } => master(product_aggregate(product), product.version, *expected_version),
             WriteOp::PutTaxCategory {
                 record,
                 expected_version,
@@ -190,6 +201,14 @@ impl WriteOp {
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
+    }
+}
+
+/// Aggregate identity of a product.
+pub fn product_aggregate(p: &pos_domain::catalog::Product) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "product",
+        aggregate_id: p.id.to_string(),
     }
 }
 
@@ -253,6 +272,12 @@ impl OutboxDraft {
     }
     pub fn setting_updated(ids: &dyn IdGenerator, r: &SettingRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "setting.updated", r.aggregate(), r.version, r)
+    }
+    pub fn product_upserted(
+        ids: &dyn IdGenerator,
+        p: &pos_domain::catalog::Product,
+    ) -> Result<Self, WriteSetError> {
+        Self::master(ids, "product.upserted", product_aggregate(p), p.version, p)
     }
     pub fn tax_rate_upserted(ids: &dyn IdGenerator, r: &TaxRateRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "tax_rate.upserted", r.aggregate(), r.version, r)
@@ -401,6 +426,19 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn put_product(
+        mut self,
+        product: pos_domain::catalog::Product,
+        expected_version: Option<u64>,
+    ) -> Self {
+        let business_id = self.context.business_id;
+        self.ops.push(WriteOp::PutProduct {
+            product,
+            business_id,
+            expected_version,
+        });
+        self
+    }
     pub fn put_tax_rate(mut self, record: TaxRateRecord, expected_version: Option<u64>) -> Self {
         self.ops.push(WriteOp::PutTaxRate {
             record,
@@ -544,6 +582,7 @@ impl WriteSetBuilder {
             WriteOp::PutSetting { record, .. } => record.business_id,
             WriteOp::PutStaff { record, .. } => record.business_id,
             WriteOp::PutTaxRate { record, .. } => record.business_id,
+            WriteOp::PutProduct { business_id, .. } => *business_id,
             WriteOp::PutTaxCategory { record, .. } => record.business_id,
             WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
