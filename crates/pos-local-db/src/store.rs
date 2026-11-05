@@ -535,7 +535,11 @@ async fn apply_in_transaction(
                     }
                 }
             }
-            WriteOp::PutCart { cart, opened_by } => {
+            WriteOp::PutCart {
+                cart,
+                opened_by,
+                expected_revision,
+            } => {
                 use pos_domain::cart::{AddVia, CartStatus};
                 let status = match cart.status {
                     CartStatus::Open => "open",
@@ -550,27 +554,61 @@ async fn apply_in_transaction(
                         .map_err(|e| WriteError::Io(e.to_string()))
                 };
                 let now = ctx.occurred_at.as_millis();
+                let closed_at = (cart.status != CartStatus::Open).then_some(now);
+                let stale = WriteError::CartRevisionMismatch {
+                    expected: *expected_revision,
+                };
                 st.step()?;
-                sqlx::query(
-                    "INSERT INTO carts (cart_id, business_id, register_id, status, opened_by, order_discount_json, revision,
-                       void_reason, opened_at, updated_at, closed_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)
-                     ON CONFLICT (cart_id) DO UPDATE SET status = ?4, order_discount_json = ?6, revision = ?7,
-                       void_reason = ?8, updated_at = ?9, closed_at = ?10",
-                )
-                .bind(cart.id.to_string())
-                .bind(ctx.business_id.to_string())
-                .bind(ctx.register_id.to_string())
-                .bind(status)
-                .bind(opened_by.to_string())
-                .bind(json(&cart.order_discount)?)
-                .bind(as_i64(cart.revision)?)
-                .bind(&cart.void_reason)
-                .bind(now)
-                .bind((cart.status != CartStatus::Open).then_some(now))
-                .execute(&mut *tx)
-                .await
-                .map_err(map_sqlx)?;
+                match expected_revision {
+                    // Never saved: insert. Another open cart for this register (a concurrent
+                    // first add) trips the unique index: the caller's view is stale.
+                    None => {
+                        sqlx::query(
+                            "INSERT INTO carts (cart_id, business_id, register_id, status, opened_by, order_discount_json,
+                               revision, void_reason, opened_at, updated_at, closed_at)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+                        )
+                        .bind(cart.id.to_string())
+                        .bind(ctx.business_id.to_string())
+                        .bind(ctx.register_id.to_string())
+                        .bind(status)
+                        .bind(opened_by.to_string())
+                        .bind(json(&cart.order_discount)?)
+                        .bind(as_i64(cart.revision)?)
+                        .bind(&cart.void_reason)
+                        .bind(now)
+                        .bind(closed_at)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| match map_sqlx(e) {
+                            WriteError::UniqueViolation { .. } => stale.clone(),
+                            other => other,
+                        })?;
+                    }
+                    // Compare-and-set on the revision the change was based on.
+                    Some(base) => {
+                        let done = sqlx::query(
+                            "UPDATE carts SET status = ?1, order_discount_json = ?2, revision = ?3, void_reason = ?4,
+                               updated_at = ?5, closed_at = ?6
+                             WHERE cart_id = ?7 AND register_id = ?8 AND revision = ?9 AND status = 'open'",
+                        )
+                        .bind(status)
+                        .bind(json(&cart.order_discount)?)
+                        .bind(as_i64(cart.revision)?)
+                        .bind(&cart.void_reason)
+                        .bind(now)
+                        .bind(closed_at)
+                        .bind(cart.id.to_string())
+                        .bind(ctx.register_id.to_string())
+                        .bind(as_i64(*base)?)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                        if done.rows_affected() != 1 {
+                            return Err(stale);
+                        }
+                    }
+                }
                 st.step()?;
                 sqlx::query("DELETE FROM cart_lines WHERE cart_id = ?")
                     .bind(cart.id.to_string())
@@ -605,6 +643,31 @@ async fn apply_in_transaction(
                     .await
                     .map_err(map_sqlx)?;
                 }
+            }
+            WriteOp::RecordScanEvent { scan_event_id } => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO scan_events_seen (scan_event_id, register_id, received_at) VALUES (?, ?, ?)",
+                )
+                .bind(scan_event_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| match map_sqlx(e) {
+                    WriteError::UniqueViolation { .. } => WriteError::ScanAlreadySeen,
+                    other => other,
+                })?;
+                // Keep a window of the last 500 per register (rowid order is insertion order).
+                st.step()?;
+                sqlx::query(
+                    "DELETE FROM scan_events_seen WHERE register_id = ?1 AND rowid NOT IN
+                       (SELECT rowid FROM scan_events_seen WHERE register_id = ?1 ORDER BY rowid DESC LIMIT 500)",
+                )
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
             }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;

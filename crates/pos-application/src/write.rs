@@ -106,9 +106,18 @@ pub enum WriteOp {
     /// Binds this installation to its register, once (E04-T01). Local only.
     SetDeviceIdentity(DeviceIdentity),
     /// The whole draft cart (E09-T01). Local only, never synced (ADR-009).
+    /// `expected_revision` is the stored revision the change was based on, `None` for a cart
+    /// that was never saved. A stale write fails with `CartRevisionMismatch` instead of
+    /// overwriting a concurrent change (a lost scan).
     PutCart {
         cart: pos_domain::cart::Cart,
         opened_by: UserId,
+        expected_revision: Option<u64>,
+    },
+    /// Marks a scan delivery as processed (E07-T02, BAR-007). Fails with `ScanAlreadySeen`
+    /// if it was. The store keeps the last 500 per register.
+    RecordScanEvent {
+        scan_event_id: pos_domain::ScanEventId,
     },
     /// Device-local login throttle (never synced).
     PutLoginThrottle(ThrottleRecord),
@@ -204,6 +213,7 @@ impl WriteOp {
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
             | WriteOp::PutCart { .. }
+            | WriteOp::RecordScanEvent { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
@@ -459,8 +469,21 @@ impl WriteSetBuilder {
         });
         self
     }
-    pub fn put_cart(mut self, cart: pos_domain::cart::Cart, opened_by: UserId) -> Self {
-        self.ops.push(WriteOp::PutCart { cart, opened_by });
+    pub fn put_cart(
+        mut self,
+        cart: pos_domain::cart::Cart,
+        opened_by: UserId,
+        expected_revision: Option<u64>,
+    ) -> Self {
+        self.ops.push(WriteOp::PutCart {
+            cart,
+            opened_by,
+            expected_revision,
+        });
+        self
+    }
+    pub fn record_scan(mut self, scan_event_id: pos_domain::ScanEventId) -> Self {
+        self.ops.push(WriteOp::RecordScanEvent { scan_event_id });
         self
     }
     pub fn set_device_identity(mut self, identity: DeviceIdentity) -> Self {
@@ -598,6 +621,7 @@ impl WriteSetBuilder {
             WriteOp::AllocateNumber { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::PutCart { .. }
+            | WriteOp::RecordScanEvent { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. }
             | WriteOp::SpikePutProduct(_)
@@ -642,6 +666,10 @@ pub enum WriteError {
     Io(String),
     #[error("fault injected before statement {statement}")]
     FaultInjected { statement: usize },
+    #[error("the cart changed since revision {expected:?}")]
+    CartRevisionMismatch { expected: Option<u64> },
+    #[error("scan event already processed")]
+    ScanAlreadySeen,
 }
 
 impl HasErrorCode for WriteError {
@@ -652,6 +680,9 @@ impl HasErrorCode for WriteError {
             WriteError::Busy => ErrorCode::StoreBusy,
             WriteError::Corrupt(_) => ErrorCode::StoreCorrupt,
             WriteError::Io(_) | WriteError::FaultInjected { .. } => ErrorCode::StoreIo,
+            WriteError::CartRevisionMismatch { .. } => ErrorCode::CartRevisionMismatch,
+            // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.
+            WriteError::ScanAlreadySeen => ErrorCode::ScanInvalid,
         }
     }
 }
