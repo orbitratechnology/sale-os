@@ -70,10 +70,15 @@ lands on a finished, tested service.
 | E06-T02 Product aggregate | **Done** | Create, update (optimistic version) and archive; barcode and SKU uniqueness; outbox events with `base_version` | — |
 | E09-T01 Cart backend | **Done** | `0004_carts.sql`; `CartService`: add, set quantity, remove, discounts, override, clear and void. 0 and fractional `ea` quantities refused; stale `clear` gives `CART_REVISION_MISMATCH`; one open cart per register; carts never reach the outbox. **Found and fixed a lost-update race**: 20 concurrent scans lost items. Mutations are now serialised, and the store compares the revision. | Discount limits and approvals are E08-T02/E05-T04 |
 | E07-T02 Scan pipeline | **Backend done** | `CartService::scan`: the scan event is recorded in the same transaction as the cart change, so a repeated delivery counts once; 10 scans = 10 items (AT-03); pack + unit = 13; a discounted line gets a new line; unknown codes change nothing; malformed codes give `SCAN_INVALID` | `SESSION_LOCKED` needs E05-T05. The p95 < 30 ms with `shop5k` needs the E06-T04 fixture. |
+| Stage 1 IPC commands | **Done (backend)** | 28 commands for bootstrap, setup, sign-in, staff, catalogue, scan and cart; bindings regenerated; one ACL permission per command. The session lives in Rust, and the actor is never an argument. **Found and fixed a sign-in bug**: a mistyped PIN on top of a session signed the current user out. | `cart://changed` and `session://locked` events land with the checkout screen and E05-T05 |
+| E05-T03 Permission harness | **Done for existing commands** | `tests/permissions.rs`: an unclassified command fails the build. Every command is called over IPC as owner, manager and cashier and checked against the matrix; after logout, everything needing a session gives `SESSION_LOCKED`. Verified it fails when a check is weakened. | AT-11 names `inventory_post_document`, `settings_update` and `return_create`, which do not exist yet; the harness covers each automatically when it is added. Approval cells give `PERMISSION_DENIED` until E05-T04 turns them into `APPROVAL_REQUIRED`. |
 | E09-T02 Cart recovery | **Partly done** | The open cart is reloaded from storage and repriced against the current catalogue after a restart (tested with a new service instance) | The Resume/Discard prompt, and highlighting changed prices (needs a price-at-add snapshot) |
 
 ### Next up
 
-IPC commands for setup, sign-in, catalogue, cart and scan, with the E05-T03 table-driven
-permission harness over them; then E05-T04 approvals and E08-T02 discount limits; then the
-first-run, login and checkout screens.
+The first screens on top of the commands: first-run wizard (E04-T02), PIN sign-in
+(E05-T06), checkout (E09-T03..T05) wired to `scan_submit` through the keyboard-wedge hook.
+Then E05-T04 approvals and E08-T02 discount limits.
+
+**Build note:** a debug build with full debug info fills the session disk (28 GB). Use
+`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
