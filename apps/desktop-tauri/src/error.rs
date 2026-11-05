@@ -24,6 +24,11 @@ impl IpcError {
         Self::new(ErrorCode::Internal, e.to_string())
     }
 
+    /// A catalogued code raised by the shell itself.
+    pub fn coded(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self::new(code, message.into())
+    }
+
     fn new(code: ErrorCode, message: String) -> Self {
         let correlation_id = uuid::Uuid::now_v7().to_string();
         if code == ErrorCode::Internal {

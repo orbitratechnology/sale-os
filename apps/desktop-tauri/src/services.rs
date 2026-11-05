@@ -1,12 +1,20 @@
 //! `AppServices`: the process-wide container of ports and services (E01-T04). Commands get
-//! it as Tauri managed state; nothing else holds database handles or clocks.
+//! it as Tauri managed state; nothing else holds database handles, clocks or the session.
 
 use crate::IpcError;
-use pos_domain::{Clock, IdGenerator, SystemClock, UuidV7Generator};
+use pos_application::auth::{Argon2PinHasher, AuthService, PinHasher};
+use pos_application::cart::CartService;
+use pos_application::catalog::CatalogService;
+use pos_application::context::{Actor, CommandContext};
+use pos_application::queries::SetupQueries;
+use pos_application::setup::SetupService;
+use pos_application::staff::StaffService;
+use pos_domain::{Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
 use pos_local_db::{DbOptions, LocalDb, SqliteStore};
 use pos_observability::LogGuard;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub struct AppServices {
     /// The local database, or why it could not be opened (shown by `app_info`).
@@ -17,12 +25,44 @@ pub struct AppServices {
     pub ids: Arc<dyn IdGenerator>,
     /// The app data directory (database, logs, virtual-printer captures).
     pub data_dir: PathBuf,
+    /// The use cases. `None` when the database failed to open.
+    app: Option<Services>,
+    /// The signed-in staff member. Lives only in memory: a restart signs everyone out.
+    session: RwLock<Option<Session>>,
     _log: Option<LogGuard>,
+}
+
+pub(crate) struct Services {
+    pub setup: SetupService,
+    pub auth: AuthService,
+    pub staff: StaffService,
+    pub catalog: CatalogService,
+    pub carts: CartService,
+    pub queries: SqliteStore,
+}
+
+/// The unlocked session. Commands take the actor from here, never from IPC arguments
+/// (docs/backlog/07 §1.1).
+#[derive(Clone, Debug)]
+pub(crate) struct Session {
+    pub actor: Actor,
+    pub display_name: String,
+    pub must_change_pin: bool,
 }
 
 impl AppServices {
     /// Opens the database under `data_dir` and wires the production ports.
     pub async fn start(data_dir: &Path, log: Option<LogGuard>) -> Self {
+        Self::start_with_hasher(data_dir, log, Arc::new(Argon2PinHasher::new())).await
+    }
+
+    /// As [`AppServices::start`] with a chosen PIN hasher. Tests use cheap Argon2 parameters;
+    /// the app always uses the production cost (ADR-013).
+    pub async fn start_with_hasher(
+        data_dir: &Path,
+        log: Option<LogGuard>,
+        hasher: Arc<dyn PinHasher>,
+    ) -> Self {
         let db = match LocalDb::open(&DbOptions::in_dir(data_dir)).await {
             Ok(db) => {
                 if let Ok(Some(register)) = db.device_register_id().await {
@@ -37,13 +77,86 @@ impl AppServices {
             }
         };
         let store = db.as_ref().ok().map(|db| SqliteStore::new(db.clone()));
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+        let ids: Arc<dyn IdGenerator> = Arc::new(UuidV7Generator);
+        let app = store.as_ref().map(|s| {
+            let a = Arc::new(s.clone());
+            Services {
+                setup: SetupService {
+                    store: a.clone(),
+                    setup: a.clone(),
+                    hasher: hasher.clone(),
+                    clock: clock.clone(),
+                    ids: ids.clone(),
+                },
+                auth: AuthService {
+                    store: a.clone(),
+                    staff: a.clone(),
+                    hasher: hasher.clone(),
+                },
+                staff: StaffService {
+                    store: a.clone(),
+                    staff: a.clone(),
+                    hasher,
+                },
+                catalog: CatalogService {
+                    store: a.clone(),
+                    catalog: a.clone(),
+                },
+                carts: CartService::new(a.clone(), a.clone(), a),
+                queries: s.clone(),
+            }
+        });
         Self {
             db,
             store,
-            clock: Arc::new(SystemClock),
-            ids: Arc::new(UuidV7Generator),
+            clock,
+            ids,
             data_dir: data_dir.to_path_buf(),
+            app,
+            session: RwLock::new(None),
             _log: log,
         }
+    }
+
+    /// The use cases, or the database error when it could not be opened.
+    pub(crate) fn app(&self) -> Result<&Services, IpcError> {
+        match (&self.app, &self.db) {
+            (Some(app), _) => Ok(app),
+            (None, Err(e)) => Err(e.clone()),
+            (None, Ok(_)) => Err(IpcError::internal("services not started")),
+        }
+    }
+
+    pub(crate) async fn session(&self) -> Option<Session> {
+        self.session.read().await.clone()
+    }
+
+    pub(crate) async fn set_session(&self, session: Option<Session>) {
+        *self.session.write().await = session;
+    }
+
+    /// The context for a command on this register, with the signed-in actor if there is one.
+    /// Services refuse with `SESSION_LOCKED` when they need an actor and there is none.
+    /// Before setup there is no register, and so nothing to act on.
+    pub(crate) async fn context(&self) -> Result<CommandContext, IpcError> {
+        let app = self.app()?;
+        let register = app
+            .queries
+            .register_context()
+            .await
+            .map_err(|e| IpcError::from_error(&pos_application::context::AppError::from(e)))?
+            .ok_or_else(|| {
+                IpcError::coded(
+                    ErrorCode::SessionLocked,
+                    "setup has not been completed on this computer",
+                )
+            })?;
+        Ok(CommandContext {
+            register,
+            actor: self.session().await.map(|s| s.actor),
+            clock: self.clock.clone(),
+            ids: self.ids.clone(),
+        })
     }
 }

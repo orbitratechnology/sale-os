@@ -1,7 +1,7 @@
 //! Catalogue reads (E06-T04): full aggregates, owner checks, code lookup and FTS search.
 
 use crate::SqliteStore;
-use pos_application::queries::{CatalogHit, CatalogQueries, MatchedBy, QueryError};
+use pos_application::queries::{CatalogHit, CatalogQueries, MatchedBy, QueryError, TaxCategorySummary};
 use pos_domain::catalog::{
     Barcode, BarcodeQualifier, Product, ProductType, Symbology, Unit, Variant, normalize_barcode,
 };
@@ -220,6 +220,37 @@ impl CatalogQueries for SqliteStore {
         rows.into_iter()
             .map(|row| hit(row, MatchedBy::Search, None))
             .collect()
+    }
+
+    async fn tax_categories(&self) -> Result<Vec<TaxCategorySummary>, QueryError> {
+        let rows: Vec<(String, String, bool, Option<String>, Option<i64>)> = sqlx::query_as(
+            "SELECT c.tax_category_id, c.name, c.is_default, r.name, r.rate_ppm
+             FROM tax_categories c
+             LEFT JOIN tax_category_rates cr ON cr.tax_category_id = c.tax_category_id
+             LEFT JOIN tax_rates r ON r.tax_rate_id = cr.tax_rate_id AND r.status = 'active'
+             WHERE c.status = 'active'
+             ORDER BY c.is_default DESC, c.name COLLATE NOCASE, c.tax_category_id, r.name",
+        )
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        let mut out: Vec<TaxCategorySummary> = Vec::new();
+        for (id, name, is_default, rate_name, rate) in rows {
+            let id: pos_domain::TaxCategoryId = id.parse().map_err(q)?;
+            if out.last().is_none_or(|c| c.tax_category_id != id) {
+                out.push(TaxCategorySummary {
+                    tax_category_id: id,
+                    name,
+                    is_default,
+                    rates: Vec::new(),
+                });
+            }
+            if let (Some(n), Some(r), Some(cat)) = (rate_name, rate, out.last_mut()) {
+                let rate = pos_domain::RatePpm::new(u32::try_from(r).map_err(q)?).map_err(q)?;
+                cat.rates.push((n, rate));
+            }
+        }
+        Ok(out)
     }
 }
 

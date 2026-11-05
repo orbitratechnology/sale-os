@@ -14,6 +14,61 @@ export const commands = {
 	 *  formats the result. Money crosses IPC as minor-unit strings.
 	 */
 	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
+	/**
+	 *  What the shell needs before anything else: set up yet? who is signed in? No session
+	 *  required.
+	 */
+	appBootstrapState: () => typedError<BootstrapState_Serialize, IpcError>(__TAURI_INVOKE("app_bootstrap_state")),
+	/**
+	 *  First run (E04-T01). Refused once setup has completed. Does not sign anyone in: the UI
+	 *  signs the owner in with `auth_login`, so every session is a real, audited sign-in.
+	 */
+	setupCreateWorkspace: (input: CreateWorkspaceInput_Deserialize) => typedError<CreatedWorkspaceDto, IpcError>(__TAURI_INVOKE("setup_create_workspace", { input })),
+	/**  Active staff for the PIN pad. No session required. */
+	authListUsers: () => typedError<SignInUser[], IpcError>(__TAURI_INVOKE("auth_list_users")),
+	/**
+	 *  PIN sign-in with lockout (E05-T02). On success it replaces any current session; a failed
+	 *  attempt leaves the current session untouched.
+	 */
+	authLogin: (userId: UserId, pin: string) => typedError<SessionDto, IpcError>(__TAURI_INVOKE("auth_login", { userId, pin })),
+	authLogout: () => typedError<null, IpcError>(__TAURI_INVOKE("auth_logout")),
+	/**  Changes the signed-in user's own PIN (required after an owner reset). */
+	authChangePin: (currentPin: string, newPin: string) => typedError<SessionDto, IpcError>(__TAURI_INVOKE("auth_change_pin", { currentPin, newPin })),
+	staffList: () => typedError<StaffDto[], IpcError>(__TAURI_INVOKE("staff_list")),
+	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_create", { input })),
+	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_update", { input })),
+	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
+	/**  Sets a temporary PIN; the user must change it at next sign-in. */
+	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
+	taxList: () => typedError<TaxCategoryDto[], IpcError>(__TAURI_INVOKE("tax_list")),
+	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_get", { productId })),
+	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_create", { product })),
+	/**  `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`. */
+	productUpdate: (productId: ProductId, baseVersion: number, product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_update", { productId, baseVersion, product })),
+	productArchive: (productId: ProductId, baseVersion: number) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_archive", { productId, baseVersion })),
+	/**  Barcode first, then SKU (BAR-004). `null` when nothing matches. */
+	catalogLookupCode: (code: string) => typedError<CatalogHitDto_Serialize | null, IpcError>(__TAURI_INVOKE("catalog_lookup_code", { code })),
+	catalogSearch: (query: string, limit: number) => typedError<CatalogHitDto_Serialize[], IpcError>(__TAURI_INVOKE("catalog_search", { query, limit })),
+	/**
+	 *  Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI
+	 *  per delivery: a repeated delivery is reported as `duplicate` and changes nothing.
+	 */
+	scanSubmit: (scanEventId: ScanEventId, raw: string, source: ScanSourceDto) => typedError<ScanOutcomeDto_Serialize, IpcError>(__TAURI_INVOKE("scan_submit", { scanEventId, raw, source })),
+	/**  The open cart, priced (also after a restart: POS-011). */
+	cartCurrent: () => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_current")),
+	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
+	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
+	/**  Zero is refused: use `cart_remove_line`. */
+	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
+	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_remove_line", { lineId })),
+	/**  `discount: null` removes it. */
+	cartSetLineDiscount: (lineId: CartLineId, discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_set_line_discount", { lineId, discount })),
+	cartSetOrderDiscount: (discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_set_order_discount", { discount })),
+	cartOverridePrice: (lineId: CartLineId, unitPriceMinor: string) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_override_price", { lineId, unitPriceMinor })),
+	/**  POS-003: `revision` must be the one the cashier saw when confirming. */
+	cartClear: (revision: number) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_clear", { revision })),
+	/**  Abandons the cart with a reason and returns the next (empty) one. */
+	cartVoid: (revision: number, reason: string) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_void", { revision, reason })),
 	/**  Creates the demo workspace and product if missing. */
 	devDemoSetup: () => typedError<DemoProduct, IpcError>(__TAURI_INVOKE("dev_demo_setup")),
 	/**  Current demo cart. */
@@ -28,10 +83,231 @@ export const commands = {
 };
 
 /* Types */
+/**  `cart_add_variant`'s `via`: scans go through `scan_submit` instead. */
+export type AddViaDto = "search" | "quickSelect";
+
 export type AppInfo = {
 	version: string,
 	debugBuild: boolean,
 	database: DatabaseStatus,
+};
+
+export type BarcodeDto = {
+	/**  Canonical form, the lookup key. */
+	value: string,
+	/**  As entered or scanned. */
+	raw: string,
+	symbology: Symbology,
+	qualifier: BarcodeQualifier,
+	packQtyMilli: string,
+};
+
+export type BarcodeInputDto = BarcodeInputDto_Serialize | BarcodeInputDto_Deserialize;
+
+export type BarcodeInputDto_Deserialize = {
+	raw: string,
+	symbology?: Symbology | null,
+	qualifier: BarcodeQualifier,
+	/**  Required for a pack barcode; ignored otherwise. */
+	packQtyMilli?: string | null,
+};
+
+export type BarcodeInputDto_Serialize = {
+	raw: string,
+	symbology: Symbology | null,
+	qualifier: BarcodeQualifier,
+	/**  Required for a pack barcode; ignored otherwise. */
+	packQtyMilli: string | null,
+};
+
+export type BarcodeQualifier = "primary" | "alias" | 
+/**  A case or multipack code: one scan adds `pack_qty` units (e.g. 12). */
+"pack";
+
+export type BootstrapState = BootstrapState_Serialize | BootstrapState_Deserialize;
+
+export type BootstrapState_Deserialize = {
+	setupComplete: boolean,
+	workspace?: WorkspaceDto | null,
+	session?: SessionDto | null,
+};
+
+export type BootstrapState_Serialize = {
+	setupComplete: boolean,
+	workspace: WorkspaceDto | null,
+	session: SessionDto | null,
+};
+
+export type CartId = string;
+
+export type CartLineDto = CartLineDto_Serialize | CartLineDto_Deserialize;
+
+export type CartLineDto_Deserialize = {
+	lineId: CartLineId,
+	variantId: VariantId,
+	productId: ProductId,
+	name: string,
+	label: string,
+	sku?: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	/**  The unit price charged: the override if any, else the catalogue price. */
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	lineDiscount?: DiscountDto_Deserialize | null,
+	grossMinor: string,
+	/**  This line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	/**  `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`. */
+	addedVia: string,
+};
+
+export type CartLineDto_Serialize = {
+	lineId: CartLineId,
+	variantId: VariantId,
+	productId: ProductId,
+	name: string,
+	label: string,
+	sku: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	/**  The unit price charged: the override if any, else the catalogue price. */
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	lineDiscount: DiscountDto_Serialize | null,
+	grossMinor: string,
+	/**  This line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	/**  `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`. */
+	addedVia: string,
+};
+
+export type CartLineId = string;
+
+export type CartViewDto = CartViewDto_Serialize | CartViewDto_Deserialize;
+
+export type CartViewDto_Deserialize = {
+	cartId: CartId,
+	/**  Send back with `cart_clear`, `cart_void` and checkout. */
+	revision: number,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	lines: CartLineDto_Deserialize[],
+	orderDiscount?: DiscountDto_Deserialize | null,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	taxBreakdown: TaxLineDto[],
+	/**  What the customer pays, before cash rounding. */
+	totalMinor: string,
+	itemCountMilli: string,
+	/**  Lines whose catalogue price changed since they were added (POS-011). */
+	repricedLines: CartLineId[],
+};
+
+export type CartViewDto_Serialize = {
+	cartId: CartId,
+	/**  Send back with `cart_clear`, `cart_void` and checkout. */
+	revision: number,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	lines: CartLineDto_Serialize[],
+	orderDiscount: DiscountDto_Serialize | null,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	taxBreakdown: TaxLineDto[],
+	/**  What the customer pays, before cash rounding. */
+	totalMinor: string,
+	itemCountMilli: string,
+	/**  Lines whose catalogue price changed since they were added (POS-011). */
+	repricedLines: CartLineId[],
+};
+
+export type CatalogHitDto = CatalogHitDto_Serialize | CatalogHitDto_Deserialize;
+
+export type CatalogHitDto_Deserialize = {
+	productId: ProductId,
+	variantId: VariantId,
+	name: string,
+	/**  Variant options, e.g. "M / Red"; empty for a simple product. */
+	label: string,
+	sku?: string | null,
+	priceMinor: string,
+	unit: Unit,
+	trackStock: boolean,
+	scanQtyMilli: string,
+	/**  `"barcode"`, `"sku"` or `"search"`. */
+	matchedBy: string,
+};
+
+export type CatalogHitDto_Serialize = {
+	productId: ProductId,
+	variantId: VariantId,
+	name: string,
+	/**  Variant options, e.g. "M / Red"; empty for a simple product. */
+	label: string,
+	sku: string | null,
+	priceMinor: string,
+	unit: Unit,
+	trackStock: boolean,
+	scanQtyMilli: string,
+	/**  `"barcode"`, `"sku"` or `"search"`. */
+	matchedBy: string,
+};
+
+export type CategoryId = string;
+
+export type CreateWorkspaceInput = CreateWorkspaceInput_Serialize | CreateWorkspaceInput_Deserialize;
+
+export type CreateWorkspaceInput_Deserialize = {
+	businessName: string,
+	legalName?: string | null,
+	/**  Printed on receipts, one line each. */
+	addressLines: string[],
+	phone?: string | null,
+	email?: string | null,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	locationName: string,
+	registerName: string,
+	ownerName: string,
+	ownerPin: string,
+	taxRates: TaxRateInput[],
+};
+
+export type CreateWorkspaceInput_Serialize = {
+	businessName: string,
+	legalName: string | null,
+	/**  Printed on receipts, one line each. */
+	addressLines: string[],
+	phone: string | null,
+	email: string | null,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	locationName: string,
+	registerName: string,
+	ownerName: string,
+	ownerPin: string,
+	taxRates: TaxRateInput[],
+};
+
+export type CreatedWorkspaceDto = {
+	/**  Sign the owner in with this and the PIN they just chose. */
+	ownerUserId: UserId,
+	registerCode: string,
 };
 
 export type DatabaseStatus = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError };
@@ -66,6 +342,12 @@ export type DemoSaleResult = {
 	print: string,
 };
 
+export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;
+
+export type DiscountDto_Deserialize = { kind: "percent"; ratePpm: number; reason?: string | null } | { kind: "fixed"; amountMinor: string; reason?: string | null };
+
+export type DiscountDto_Serialize = { kind: "percent"; ratePpm: number; reason: string | null } | { kind: "fixed"; amountMinor: string; reason: string | null };
+
 /**
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
  *  The UI maps codes to actionable copy; `message` strings are for logs only.
@@ -88,6 +370,259 @@ export type MoneyAddResult = {
 	/**  Decimal string of minor units (ADR-001): never a JS number. */
 	sumMinor: string,
 	formatted: string,
+};
+
+export type NewStaffInput = {
+	displayName: string,
+	role: Role,
+	pin: string,
+};
+
+export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
+
+export type ProductDto_Deserialize = {
+	productId: ProductId,
+	name: string,
+	description?: string | null,
+	categoryId?: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	archived: boolean,
+	version: number,
+	variants: VariantDto_Deserialize[],
+};
+
+export type ProductDto_Serialize = {
+	productId: ProductId,
+	name: string,
+	description: string | null,
+	categoryId: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	archived: boolean,
+	version: number,
+	variants: VariantDto_Serialize[],
+};
+
+export type ProductId = string;
+
+export type ProductInputDto = ProductInputDto_Serialize | ProductInputDto_Deserialize;
+
+export type ProductInputDto_Deserialize = {
+	name: string,
+	description?: string | null,
+	categoryId?: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	/**  The first variant becomes the default. */
+	variants: VariantInputDto_Deserialize[],
+};
+
+export type ProductInputDto_Serialize = {
+	name: string,
+	description: string | null,
+	categoryId: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	/**  The first variant becomes the default. */
+	variants: VariantInputDto_Serialize[],
+};
+
+export type ProductType = 
+/**  Physical goods with tracked stock. */
+"stock" | 
+/**  Physical goods without stock tracking (e.g. loose bags). */
+"non_stock" | 
+/**  Services; never stock-tracked. */
+"service";
+
+export type Role = "owner" | "manager" | "cashier";
+
+export type ScanEventId = string;
+
+export type ScanOutcomeDto = ScanOutcomeDto_Serialize | ScanOutcomeDto_Deserialize;
+
+export type ScanOutcomeDto_Deserialize = 
+/**  A new line. */
+{ outcome: "added"; cart: CartViewDto_Deserialize; lineId: CartLineId } | 
+/**  An existing line's quantity went up (BAR-005). */
+{ outcome: "incremented"; cart: CartViewDto_Deserialize; lineId: CartLineId } | 
+/**  This delivery was already processed; the cart is unchanged. */
+{ outcome: "duplicate"; cart: CartViewDto_Deserialize } | 
+/**  Nothing matches. The cart is unchanged (BAR-006). */
+{ outcome: "notFound"; code: string };
+
+export type ScanOutcomeDto_Serialize = 
+/**  A new line. */
+{ outcome: "added"; cart: CartViewDto_Serialize; lineId: CartLineId } | 
+/**  An existing line's quantity went up (BAR-005). */
+{ outcome: "incremented"; cart: CartViewDto_Serialize; lineId: CartLineId } | 
+/**  This delivery was already processed; the cart is unchanged. */
+{ outcome: "duplicate"; cart: CartViewDto_Serialize } | 
+/**  Nothing matches. The cart is unchanged (BAR-006). */
+{ outcome: "notFound"; code: string };
+
+/**  How a code reached `scan_submit`. */
+export type ScanSourceDto = "scanner" | "manual";
+
+export type SessionDto = {
+	userId: UserId,
+	displayName: string,
+	role: Role,
+	/**  The PIN was reset by an owner: ask for a new one before anything else. */
+	mustChangePin: boolean,
+};
+
+/**  For the PIN pad: no PIN state, no versions. */
+export type SignInUser = {
+	userId: UserId,
+	displayName: string,
+	role: Role,
+};
+
+export type StaffDto = {
+	userId: UserId,
+	displayName: string,
+	role: Role,
+	active: boolean,
+	mustChangePin: boolean,
+	version: number,
+};
+
+export type StaffUpdateInput = StaffUpdateInput_Serialize | StaffUpdateInput_Deserialize;
+
+export type StaffUpdateInput_Deserialize = {
+	userId: UserId,
+	baseVersion: number,
+	displayName?: string | null,
+	role?: Role | null,
+};
+
+export type StaffUpdateInput_Serialize = {
+	userId: UserId,
+	baseVersion: number,
+	displayName: string | null,
+	role: Role | null,
+};
+
+export type Symbology = "ean13" | "ean8" | "upc_a" | "upc_e" | "code128" | "code39" | "itf14" | "qr" | "data_matrix" | 
+/**  The shop's own numbering, or a numeric code that failed its GTIN check digit. */
+"internal" | "unknown";
+
+export type TaxCategoryDto = {
+	taxCategoryId: TaxCategoryId,
+	name: string,
+	isDefault: boolean,
+	rates: TaxRateDto[],
+};
+
+export type TaxCategoryId = string;
+
+export type TaxLineDto = {
+	name: string,
+	ratePpm: number,
+	taxableMinor: string,
+	taxMinor: string,
+};
+
+export type TaxMode = 
+/**  Shelf prices include tax (common for VAT/GST retail). */
+"inclusive" | 
+/**  Tax is added on top of shelf prices. */
+"exclusive";
+
+export type TaxRateDto = {
+	name: string,
+	ratePpm: number,
+};
+
+export type TaxRateInput = {
+	name: string,
+	/**  Parts per million: 200000 = 20%. */
+	ratePpm: number,
+};
+
+export type Unit = "ea" | "kg" | "g" | "l" | "ml" | "m" | "cm" | "box" | "pack";
+
+export type UserId = string;
+
+export type VariantDto = VariantDto_Serialize | VariantDto_Deserialize;
+
+export type VariantDto_Deserialize = {
+	variantId: VariantId,
+	isDefault: boolean,
+	sku?: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor?: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli?: string | null,
+	scanQtyMilli: string,
+	barcodes: BarcodeDto[],
+	archived: boolean,
+};
+
+export type VariantDto_Serialize = {
+	variantId: VariantId,
+	isDefault: boolean,
+	sku: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli: string | null,
+	scanQtyMilli: string,
+	barcodes: BarcodeDto[],
+	archived: boolean,
+};
+
+export type VariantId = string;
+
+export type VariantInputDto = VariantInputDto_Serialize | VariantInputDto_Deserialize;
+
+export type VariantInputDto_Deserialize = {
+	/**  Set when editing an existing variant. */
+	variantId?: VariantId | null,
+	sku?: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor?: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli?: string | null,
+	/**  Defaults to one unit. */
+	scanQtyMilli?: string | null,
+	barcodes: BarcodeInputDto_Deserialize[],
+};
+
+export type VariantInputDto_Serialize = {
+	/**  Set when editing an existing variant. */
+	variantId: VariantId | null,
+	sku: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli: string | null,
+	/**  Defaults to one unit. */
+	scanQtyMilli: string | null,
+	barcodes: BarcodeInputDto_Serialize[],
+};
+
+export type WorkspaceDto = {
+	businessName: string,
+	registerName: string,
+	registerCode: string,
+	currencyCode: string,
+	/**  `"sandbox"` until the owner goes live (PRD §7.1). */
+	mode: string,
 };
 
 /* Tauri Specta runtime */

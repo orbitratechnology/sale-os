@@ -18,6 +18,8 @@ pub trait StaffQueries: Send + Sync {
     async fn staff(&self, user_id: UserId) -> Result<Option<StaffRecord>, QueryError>;
     /// Active staff, owners first, then by name.
     async fn active_staff(&self) -> Result<Vec<StaffRecord>, QueryError>;
+    /// Everyone, including deactivated staff, active first, for staff management.
+    async fn all_staff(&self) -> Result<Vec<StaffRecord>, QueryError>;
     async fn throttle(&self, user_id: UserId) -> Result<Option<ThrottleRecord>, QueryError>;
 }
 
@@ -25,6 +27,29 @@ pub trait StaffQueries: Send + Sync {
 pub trait SetupQueries: Send + Sync {
     /// `None` until setup has completed on this installation.
     async fn device_identity(&self) -> Result<Option<crate::records::DeviceIdentity>, QueryError>;
+    /// The register this installation is bound to, `None` before setup.
+    async fn register_context(&self) -> Result<Option<crate::context::RegisterContext>, QueryError>;
+    /// What the shell shows before sign-in (`app_bootstrap_state`), `None` before setup.
+    async fn workspace_summary(&self) -> Result<Option<WorkspaceSummary>, QueryError>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceSummary {
+    pub business_name: String,
+    pub register_name: String,
+    pub register_code: String,
+    pub currency_code: String,
+    pub mode: crate::records::RegisterMode,
+}
+
+/// A tax category with its active rates, for the product editor (`tax_list`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaxCategorySummary {
+    pub tax_category_id: pos_domain::TaxCategoryId,
+    pub name: String,
+    pub is_default: bool,
+    /// `(name, rate)` of the linked active rates, by name.
+    pub rates: Vec<(String, pos_domain::RatePpm)>,
 }
 
 /// A sellable variant found by barcode, SKU or search (BAR-004, POS-002).
@@ -64,6 +89,8 @@ pub trait CatalogQueries: Send + Sync {
     async fn lookup_code(&self, raw: &str) -> Result<Option<CatalogHit>, QueryError>;
     /// Name / SKU / barcode search with prefix matching, best matches first.
     async fn search(&self, query: &str, limit: u32) -> Result<Vec<CatalogHit>, QueryError>;
+    /// Active tax categories, default first, then by name.
+    async fn tax_categories(&self) -> Result<Vec<TaxCategorySummary>, QueryError>;
 }
 
 /// A cart line as stored: the variant is re-read from the catalogue on load, so a recovered

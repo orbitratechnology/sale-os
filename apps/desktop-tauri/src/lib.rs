@@ -1,10 +1,13 @@
 //! Desktop shell. Commands here are thin adapters: deserialize, call an application
 //! service, map errors (ADR-012). Business rules live in `pos-domain` / `pos-application`.
 
+mod app_commands;
 mod command_names;
 mod commands;
 mod demo;
+mod dto;
 mod error;
+mod sale_commands;
 mod services;
 
 pub use command_names::COMMANDS;
@@ -24,6 +27,34 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
         commands::app_info,
         commands::dev_money_add,
+        app_commands::app_bootstrap_state,
+        app_commands::setup_create_workspace,
+        app_commands::auth_list_users,
+        app_commands::auth_login,
+        app_commands::auth_logout,
+        app_commands::auth_change_pin,
+        app_commands::staff_list,
+        app_commands::staff_create,
+        app_commands::staff_update,
+        app_commands::staff_deactivate,
+        app_commands::staff_reset_pin,
+        sale_commands::tax_list,
+        sale_commands::product_get,
+        sale_commands::product_create,
+        sale_commands::product_update,
+        sale_commands::product_archive,
+        sale_commands::catalog_lookup_code,
+        sale_commands::catalog_search,
+        sale_commands::scan_submit,
+        sale_commands::cart_current,
+        sale_commands::cart_add_variant,
+        sale_commands::cart_set_quantity,
+        sale_commands::cart_remove_line,
+        sale_commands::cart_set_line_discount,
+        sale_commands::cart_set_order_discount,
+        sale_commands::cart_override_price,
+        sale_commands::cart_clear,
+        sale_commands::cart_void,
         demo::dev_demo_setup,
         demo::dev_demo_cart,
         demo::dev_demo_scan,

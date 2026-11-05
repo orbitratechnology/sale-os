@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_BARCODE_LEN: usize = 64;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum Symbology {
     Ean13,

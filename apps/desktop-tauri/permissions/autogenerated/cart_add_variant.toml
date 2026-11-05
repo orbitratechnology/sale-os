@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-add-variant"
+description = "Enables the cart_add_variant command without any pre-configured scope."
+commands.allow = ["cart_add_variant"]
+
+[[permission]]
+identifier = "deny-cart-add-variant"
+description = "Denies the cart_add_variant command without any pre-configured scope."
+commands.deny = ["cart_add_variant"]

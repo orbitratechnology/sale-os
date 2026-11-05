@@ -17,6 +17,7 @@ pub const MAX_NAME_LEN: usize = 120;
 pub const MAX_SKU_LEN: usize = 40;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum ProductType {
     /// Physical goods with tracked stock.
@@ -46,6 +47,7 @@ impl ProductType {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum BarcodeQualifier {
     Primary,

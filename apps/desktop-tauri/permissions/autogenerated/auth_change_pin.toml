@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auth-change-pin"
+description = "Enables the auth_change_pin command without any pre-configured scope."
+commands.allow = ["auth_change_pin"]
+
+[[permission]]
+identifier = "deny-auth-change-pin"
+description = "Denies the auth_change_pin command without any pre-configured scope."
+commands.deny = ["auth_change_pin"]

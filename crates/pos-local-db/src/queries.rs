@@ -1,7 +1,8 @@
 //! Read-port implementations over the read-only connection pool.
 
 use crate::SqliteStore;
-use pos_application::queries::{QueryError, SetupQueries, StaffQueries};
+use pos_application::context::RegisterContext;
+use pos_application::queries::{QueryError, SetupQueries, StaffQueries, WorkspaceSummary};
 use pos_application::records::{DeviceIdentity, RegisterMode, StaffRecord, ThrottleRecord};
 use pos_domain::{Timestamp, UserId};
 
@@ -67,6 +68,18 @@ impl StaffQueries for SqliteStore {
         rows.into_iter().map(staff_from).collect()
     }
 
+    async fn all_staff(&self) -> Result<Vec<StaffRecord>, QueryError> {
+        let rows: Vec<StaffRow> = sqlx::query_as(&format!(
+            "SELECT {STAFF_COLUMNS} FROM staff_users
+             ORDER BY status = 'active' DESC,
+               CASE role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, display_name COLLATE NOCASE"
+        ))
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        rows.into_iter().map(staff_from).collect()
+    }
+
     async fn throttle(&self, user_id: UserId) -> Result<Option<ThrottleRecord>, QueryError> {
         let row: Option<(i64, Option<i64>, Option<i64>)> = sqlx::query_as(
             "SELECT failed_attempts, locked_until, last_failed_at FROM staff_login_throttle WHERE user_id = ?",
@@ -109,5 +122,50 @@ impl SetupQueries for SqliteStore {
                 RegisterMode::Sandbox
             },
         }))
+    }
+
+    async fn register_context(&self) -> Result<Option<RegisterContext>, QueryError> {
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT r.business_id, r.location_id, r.register_id
+             FROM device_identity d JOIN registers r ON r.register_id = d.register_id
+             WHERE d.id = 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        row.map(|(b, l, r)| {
+            Ok(RegisterContext {
+                business_id: b.parse().map_err(q)?,
+                location_id: l.parse().map_err(q)?,
+                register_id: r.parse().map_err(q)?,
+            })
+        })
+        .transpose()
+    }
+
+    async fn workspace_summary(&self) -> Result<Option<WorkspaceSummary>, QueryError> {
+        let row: Option<(String, String, String, String, String)> = sqlx::query_as(
+            "SELECT b.name, r.name, r.code, b.currency_code, d.mode
+             FROM device_identity d
+             JOIN registers r ON r.register_id = d.register_id
+             JOIN businesses b ON b.business_id = d.business_id
+             WHERE d.id = 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        Ok(row.map(
+            |(business_name, register_name, register_code, currency_code, mode)| WorkspaceSummary {
+                business_name,
+                register_name,
+                register_code,
+                currency_code,
+                mode: if mode == "live" {
+                    RegisterMode::Live
+                } else {
+                    RegisterMode::Sandbox
+                },
+            },
+        ))
     }
 }

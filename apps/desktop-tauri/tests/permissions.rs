@@ -1,0 +1,397 @@
+//! E05-T03 / AT-11: every IPC command, called directly (bypassing the UI) as each role, is
+//! allowed or refused exactly as the role matrix says (docs/backlog/07 §1.2).
+//!
+//! The table below must list every registered command. Adding a command without deciding
+//! what it requires fails `every_command_is_classified`.
+
+use desktop_tauri_lib::{AppServices, COMMANDS};
+use pos_application::auth::{Argon2PinHasher, PinHasher};
+use pos_domain::{Permission, Role, role_has};
+use serde_json::{Value, json};
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use tauri::Manager;
+use tauri::ipc::{CallbackFn, InvokeBody, InvokeResponseBody};
+use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
+use tauri::webview::InvokeRequest;
+use tauri::{WebviewWindow, WebviewWindowBuilder};
+
+/// What a command requires.
+#[derive(Clone, Copy, Debug)]
+enum Need {
+    /// Callable without a session (bootstrap, sign-in, diagnostics).
+    Public,
+    /// Only before setup; refused afterwards for everyone.
+    SetupOnly,
+    /// Any signed-in user.
+    Session,
+    /// A signed-in user whose role holds the permission.
+    Perm(Permission),
+    /// Stage 0 spike commands: removed in E09-T08, not exercised here.
+    Spike,
+}
+
+const UNKNOWN_ID: &str = "0190a5b0-0000-7000-8000-000000000000";
+
+/// Every command, what it needs, and well-formed arguments. Arguments use unknown IDs and
+/// stale revisions, so an *allowed* call fails harmlessly after authorization (not found,
+/// revision mismatch) and changes nothing.
+fn cases() -> Vec<(&'static str, Need, Value)> {
+    use Need::*;
+    use Permission::*;
+    let product = json!({"product": {
+        "name": "X", "description": null, "categoryId": null, "productType": "stock", "unit": "ea",
+        "taxCategoryId": UNKNOWN_ID, "quickSelect": false,
+        "variants": [{"variantId": null, "sku": null, "options": {}, "priceMinor": "100", "costMinor": null,
+            "trackStock": true, "lowStockThresholdMilli": null, "scanQtyMilli": null, "barcodes": []}]
+    }});
+    let mut update = product.clone();
+    update["productId"] = json!(UNKNOWN_ID);
+    update["baseVersion"] = json!(1);
+    vec![
+        ("app_info", Public, json!({})),
+        (
+            "dev_money_add",
+            Public,
+            json!({"aMinor": "1", "bMinor": "2", "currency": "GBP"}),
+        ),
+        ("app_bootstrap_state", Public, json!({})),
+        (
+            "setup_create_workspace",
+            SetupOnly,
+            json!({"input": workspace_input("Again", "9999")}),
+        ),
+        ("auth_list_users", Public, json!({})),
+        ("auth_login", Public, json!({"userId": UNKNOWN_ID, "pin": "0000"})),
+        // Exercised explicitly at the end of each role's run.
+        ("auth_logout", Session, Value::Null),
+        (
+            "auth_change_pin",
+            Session,
+            json!({"currentPin": "0000", "newPin": "1111"}),
+        ),
+        ("staff_list", Perm(StaffManage), json!({})),
+        (
+            "staff_create",
+            Perm(StaffManage),
+            json!({"input": {"displayName": "Temp", "role": "cashier", "pin": "4444"}}),
+        ),
+        (
+            "staff_update",
+            Perm(StaffManage),
+            json!({"input": {"userId": UNKNOWN_ID, "baseVersion": 1, "displayName": "Y", "role": null}}),
+        ),
+        (
+            "staff_deactivate",
+            Perm(StaffManage),
+            json!({"userId": UNKNOWN_ID, "baseVersion": 1}),
+        ),
+        (
+            "staff_reset_pin",
+            Perm(StaffManage),
+            json!({"userId": UNKNOWN_ID, "baseVersion": 1, "pin": "5555"}),
+        ),
+        ("tax_list", Perm(CatalogView), json!({})),
+        ("product_get", Perm(CatalogView), json!({"productId": UNKNOWN_ID})),
+        ("product_create", Perm(CatalogEdit), product),
+        ("product_update", Perm(CatalogEdit), update),
+        (
+            "product_archive",
+            Perm(CatalogEdit),
+            json!({"productId": UNKNOWN_ID, "baseVersion": 1}),
+        ),
+        ("catalog_lookup_code", Perm(CatalogView), json!({"code": "NOPE"})),
+        (
+            "catalog_search",
+            Perm(CatalogView),
+            json!({"query": "cola", "limit": 5}),
+        ),
+        (
+            "scan_submit",
+            Perm(SaleComplete),
+            json!({"scanEventId": UNKNOWN_ID, "raw": "NOPE", "source": "scanner"}),
+        ),
+        ("cart_current", Perm(SaleComplete), json!({})),
+        (
+            "cart_add_variant",
+            Perm(SaleComplete),
+            json!({"variantId": UNKNOWN_ID, "qtyMilli": null, "via": "search"}),
+        ),
+        (
+            "cart_set_quantity",
+            Perm(SaleComplete),
+            json!({"lineId": UNKNOWN_ID, "qtyMilli": "2000"}),
+        ),
+        (
+            "cart_remove_line",
+            Perm(SaleComplete),
+            json!({"lineId": UNKNOWN_ID}),
+        ),
+        (
+            "cart_set_line_discount",
+            Perm(CartLineDiscount),
+            json!({"lineId": UNKNOWN_ID, "discount": {"kind": "percent", "ratePpm": 50000, "reason": null}}),
+        ),
+        (
+            "cart_set_order_discount",
+            Perm(CartOrderDiscount),
+            json!({"discount": null}),
+        ),
+        (
+            "cart_override_price",
+            Perm(PriceOverride),
+            json!({"lineId": UNKNOWN_ID, "unitPriceMinor": "50"}),
+        ),
+        // The cart holds a line, so voiding needs CartVoid (an empty cart can always be closed).
+        (
+            "cart_void",
+            Perm(CartVoid),
+            json!({"revision": 0, "reason": "harness"}),
+        ),
+        ("cart_clear", Perm(CartClear), json!({"revision": 0})),
+        ("dev_demo_setup", Spike, Value::Null),
+        ("dev_demo_cart", Spike, Value::Null),
+        ("dev_demo_scan", Spike, Value::Null),
+        ("dev_demo_complete_sale", Spike, Value::Null),
+    ]
+}
+
+fn workspace_input(name: &str, pin: &str) -> Value {
+    json!({
+        "businessName": name, "legalName": null, "addressLines": ["1 High St"], "phone": null, "email": null,
+        "countryCode": "GB", "timezone": "Europe/London", "currencyCode": "GBP", "pricesIncludeTax": true,
+        "locationName": "Main", "registerName": "Till 1", "ownerName": "Olu", "ownerPin": pin,
+        "taxRates": [{"name": "VAT 20%", "ratePpm": 200000}]
+    })
+}
+
+#[test]
+fn every_command_is_classified() {
+    let classified: BTreeSet<&str> = cases().iter().map(|c| c.0).collect();
+    let registered: BTreeSet<&str> = COMMANDS.iter().copied().collect();
+    assert_eq!(
+        classified, registered,
+        "every IPC command needs an entry in the permission table"
+    );
+    // The registry the UI is generated from is the same list (no command outside the ACL).
+    let bindings = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../desktop-ui/src/ipc/bindings.ts"
+    ))
+    .unwrap();
+    for cmd in COMMANDS {
+        assert!(
+            bindings.contains(&format!("__TAURI_INVOKE(\"{cmd}\"")),
+            "{cmd} missing from the generated bindings"
+        );
+    }
+}
+
+fn app_origin() -> tauri::Url {
+    let origin = if cfg!(windows) {
+        "http://tauri.localhost"
+    } else {
+        "tauri://localhost"
+    };
+    origin.parse().expect("valid origin")
+}
+
+fn invoke(w: &WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> Result<Value, Value> {
+    get_ipc_response(
+        w,
+        InvokeRequest {
+            cmd: cmd.into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: app_origin(),
+            body: InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    )
+    .map(|r| match r {
+        InvokeResponseBody::Json(s) => serde_json::from_str(&s).unwrap(),
+        InvokeResponseBody::Raw(_) => Value::Null,
+    })
+}
+
+/// The catalogued code of a refusal. A plain string error means the arguments did not
+/// deserialize: a broken table entry, which must not pass as a refusal.
+fn code(cmd: &str, res: &Result<Value, Value>) -> Option<String> {
+    match res {
+        Ok(_) => None,
+        Err(e) => Some(
+            e["code"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{cmd}: not an IpcError (bad arguments?): {e}"))
+                .to_owned(),
+        ),
+    }
+}
+
+const REFUSED: [&str; 2] = ["PERMISSION_DENIED", "APPROVAL_REQUIRED"];
+
+fn start() -> (
+    tempfile::TempDir,
+    tauri::App<MockRuntime>,
+    WebviewWindow<MockRuntime>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    // Cheap Argon2 parameters: this test signs in many times. The app uses ADR-013's cost.
+    let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
+    let services = tauri::async_runtime::block_on(AppServices::start_with_hasher(dir.path(), None, hasher));
+    let app = mock_builder()
+        .invoke_handler(desktop_tauri_lib::specta_builder::<MockRuntime>().invoke_handler())
+        .build(tauri::generate_context!())
+        .unwrap();
+    app.manage(services);
+    let w = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    (dir, app, w)
+}
+
+#[test]
+fn each_role_gets_exactly_what_the_matrix_grants() {
+    let (_dir, _app, w) = start();
+
+    // Before setup there is no register: nothing that needs a session can run.
+    for (cmd, need, args) in cases() {
+        if matches!(need, Need::Session | Need::Perm(_)) && !args.is_null() {
+            let res = invoke(&w, cmd, args);
+            assert_eq!(
+                code(cmd, &res).as_deref(),
+                Some("SESSION_LOCKED"),
+                "{cmd} before setup"
+            );
+        }
+    }
+
+    // Set up, sign the owner in, and create the other roles and a product, all over IPC.
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let mut users = vec![(Role::Owner, owner, "1234")];
+    for (role, name, pin) in [(Role::Manager, "Mia", "2222"), (Role::Cashier, "Cal", "3333")] {
+        let s = invoke(
+            &w,
+            "staff_create",
+            json!({"input": {"displayName": name, "role": role, "pin": pin}}),
+        )
+        .unwrap();
+        users.push((role, s["userId"].as_str().unwrap().to_owned(), pin));
+    }
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["variants"][0]["sku"] = json!("COLA");
+    invoke(&w, "product_create", product).unwrap();
+    let scanned = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-000000000001", "raw": "COLA", "source": "manual"}),
+    )
+    .unwrap();
+    assert_eq!(scanned["outcome"], "added");
+
+    for (role, user_id, pin) in &users {
+        invoke(&w, "auth_login", json!({"userId": user_id, "pin": pin})).unwrap();
+        for (cmd, need, args) in cases() {
+            if args.is_null() {
+                continue;
+            }
+            let res = invoke(&w, cmd, args);
+            let got = code(cmd, &res);
+            match need {
+                Need::Public | Need::Session => assert!(
+                    !matches!(
+                        got.as_deref(),
+                        Some("SESSION_LOCKED" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED")
+                    ),
+                    "{role:?} {cmd}: {res:?}"
+                ),
+                Need::SetupOnly => assert_eq!(got.as_deref(), Some("PERMISSION_DENIED"), "{role:?} {cmd}"),
+                Need::Perm(p) if role_has(*role, p) => assert!(
+                    !matches!(
+                        got.as_deref(),
+                        Some("SESSION_LOCKED" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED")
+                    ),
+                    "{role:?} holds {p:?} but {cmd} refused: {res:?}"
+                ),
+                Need::Perm(p) => assert!(
+                    got.as_deref().is_some_and(|c| REFUSED.contains(&c)),
+                    "{role:?} lacks {p:?} but {cmd} gave {res:?}"
+                ),
+                Need::Spike => unreachable!(),
+            }
+        }
+        // Signing out locks everything that needs a session.
+        invoke(&w, "auth_logout", json!({})).unwrap();
+        for (cmd, need, args) in cases() {
+            if matches!(need, Need::Session | Need::Perm(_)) && !args.is_null() {
+                let res = invoke(&w, cmd, args);
+                assert_eq!(
+                    code(cmd, &res).as_deref(),
+                    Some("SESSION_LOCKED"),
+                    "{cmd} after {role:?} logout"
+                );
+            }
+        }
+    }
+
+    // Nothing the refused calls attempted happened: the cart still has its one line.
+    let owner = &users[0];
+    invoke(&w, "auth_login", json!({"userId": owner.1, "pin": owner.2})).unwrap();
+    let cart = invoke(&w, "cart_current", json!({})).unwrap();
+    assert_eq!(cart["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(cart["lines"][0]["quantityMilli"], "1000");
+}
+
+#[test]
+fn a_failed_sign_in_keeps_the_current_session() {
+    // Regression: auth_login used to end the current session before checking the PIN.
+    let (_dir, app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let wrong = invoke(&w, "auth_login", json!({"userId": owner, "pin": "9999"}));
+    assert_eq!(code("auth_login", &wrong).as_deref(), Some("AUTH_PIN_INVALID"));
+    let state = invoke(&w, "app_bootstrap_state", json!({})).unwrap();
+    assert_eq!(state["session"]["userId"], owner.as_str());
+    assert_eq!(state["setupComplete"], true);
+    assert_eq!(state["workspace"]["registerName"], "Till 1");
+    assert_eq!(state["workspace"]["mode"], "sandbox");
+    // A successful switch ends the previous session in the sessions table.
+    let cashier = invoke(
+        &w,
+        "staff_create",
+        json!({"input": {"displayName": "Cal", "role": "cashier", "pin": "3333"}}),
+    )
+    .unwrap();
+    let s = invoke(
+        &w,
+        "auth_login",
+        json!({"userId": cashier["userId"], "pin": "3333"}),
+    )
+    .unwrap();
+    assert_eq!(s["role"], "cashier");
+    let services = app.state::<AppServices>();
+    let db = services.db.as_ref().unwrap().clone();
+    let (open, closed): (i64, i64) = tauri::async_runtime::block_on(async move {
+        sqlx::query_as("SELECT sum(ended_at IS NULL), sum(ended_at IS NOT NULL) FROM staff_sessions")
+            .fetch_one(db.readers())
+            .await
+            .unwrap()
+    });
+    assert_eq!((open, closed), (1, 1));
+}

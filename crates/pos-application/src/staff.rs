@@ -24,6 +24,12 @@ pub struct NewStaff {
 }
 
 impl StaffService {
+    /// All staff for the management screen (deactivated included).
+    pub async fn list(&self, ctx: &CommandContext) -> Result<Vec<StaffRecord>, AppError> {
+        ctx.authorize(Permission::StaffManage)?;
+        Ok(self.staff.all_staff().await?)
+    }
+
     pub async fn create(&self, ctx: &CommandContext, input: NewStaff) -> Result<StaffRecord, AppError> {
         ctx.authorize(Permission::StaffManage)?;
         let name = validate_display_name(&input.display_name)?;

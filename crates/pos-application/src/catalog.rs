@@ -2,7 +2,7 @@
 
 use crate::audit::{self, AuditEntry};
 use crate::context::{AppError, CommandContext};
-use crate::queries::CatalogQueries;
+use crate::queries::{CatalogHit, CatalogQueries, TaxCategorySummary};
 use crate::{LocalStore, OutboxDraft, WriteSet};
 use pos_domain::catalog::{CatalogError, Product, ProductInput};
 use pos_domain::{Permission, ProductId};
@@ -13,7 +13,43 @@ pub struct CatalogService {
     pub catalog: Arc<dyn CatalogQueries>,
 }
 
+/// Most search results returned at once.
+pub const MAX_SEARCH_RESULTS: u32 = 100;
+
 impl CatalogService {
+    pub async fn get(&self, ctx: &CommandContext, id: ProductId) -> Result<Product, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self.catalog.product(id).await?.ok_or(CatalogError::NotFound)?)
+    }
+
+    /// Barcode, then SKU (BAR-004). `None` when nothing matches.
+    pub async fn lookup_code(
+        &self,
+        ctx: &CommandContext,
+        code: &str,
+    ) -> Result<Option<CatalogHit>, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self.catalog.lookup_code(code).await?)
+    }
+
+    pub async fn search(
+        &self,
+        ctx: &CommandContext,
+        query: &str,
+        limit: u32,
+    ) -> Result<Vec<CatalogHit>, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self
+            .catalog
+            .search(query, limit.clamp(1, MAX_SEARCH_RESULTS))
+            .await?)
+    }
+
+    pub async fn tax_categories(&self, ctx: &CommandContext) -> Result<Vec<TaxCategorySummary>, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self.catalog.tax_categories().await?)
+    }
+
     pub async fn create(&self, ctx: &CommandContext, input: ProductInput) -> Result<Product, AppError> {
         ctx.authorize(Permission::CatalogEdit)?;
         let product = Product::create(input, ctx.ids.as_ref())?;
