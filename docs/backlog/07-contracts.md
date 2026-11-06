@@ -85,8 +85,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `cart_current` | session | `→ CartView` (cart and `PricedCart`) | E09-T01 |
 | `cart_add_variant` | SaleComplete | `{ variantId, qty?, via } → CartView` | E09-T01 |
 | `cart_set_quantity` / `cart_remove_line` | SaleComplete | `→ CartView` | E09-T01 |
-| `cart_set_line_discount` / `cart_set_order_discount` | CartLineDiscount / CartOrderDiscount (+ approval) | `→ CartView` | E08-T02 |
-| `cart_override_price` | PriceOverride (+ approval) | `→ CartView` | E08-T02 |
+| `cart_set_line_discount` / `cart_set_order_discount` | CartLineDiscount / CartOrderDiscount (+ approval) | `{ …, discount (with `reason` above the limit), approvalTokenId? } → CartView` | E08-T02 |
+| `cart_override_price` | PriceOverride (+ approval) | `{ lineId, unitPriceMinor, reason, approvalTokenId? } → CartView` | E08-T02 |
 | `cart_clear` | CartClear | `{ revision } → CartView` | E09-T01 |
 | `cart_void` | CartVoid | `{ reason, revision } → ()` | E12-T04 |
 | `cart_recovery_state` / `cart_discard_recovered` | session | `→ { recovered: CartView? }` | E09-T02 |

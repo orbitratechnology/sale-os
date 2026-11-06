@@ -71,7 +71,7 @@ lands on a finished, tested service.
 | E09-T01 Cart backend | **Done** | `0004_carts.sql`; `CartService`: add, set quantity, remove, discounts, override, clear and void. 0 and fractional `ea` quantities refused; stale `clear` gives `CART_REVISION_MISMATCH`; one open cart per register; carts never reach the outbox. **Found and fixed a lost-update race**: 20 concurrent scans lost items. Mutations are now serialised, and the store compares the revision. | Discount limits and approvals are E08-T02/E05-T04 |
 | E07-T02 Scan pipeline | **Backend done** | `CartService::scan`: the scan event is recorded in the same transaction as the cart change, so a repeated delivery counts once; 10 scans = 10 items (AT-03); pack + unit = 13; a discounted line gets a new line; unknown codes change nothing; malformed codes give `SCAN_INVALID` | `SESSION_LOCKED` needs E05-T05. The p95 < 30 ms with `shop5k` needs the E06-T04 fixture. |
 | Stage 1 IPC commands | **Done (backend)** | 28 commands for bootstrap, setup, sign-in, staff, catalogue, scan and cart; bindings regenerated; one ACL permission per command. The session lives in Rust, and the actor is never an argument. **Found and fixed a sign-in bug**: a mistyped PIN on top of a session signed the current user out. | `cart://changed` and `session://locked` events land with the checkout screen and E05-T05 |
-| E05-T03 Permission harness | **Done for existing commands** | `tests/permissions.rs`: an unclassified command fails the build. Every command is called over IPC as owner, manager and cashier and checked against the matrix; after logout, everything needing a session gives `SESSION_LOCKED`. Verified it fails when a check is weakened. | AT-11 names `inventory_post_document`, `settings_update` and `return_create`, which do not exist yet; the harness covers each automatically when it is added. Approval cells give `PERMISSION_DENIED` until E05-T04 turns them into `APPROVAL_REQUIRED`. |
+| E05-T03 Permission harness | **Done for existing commands** | `tests/permissions.rs`: an unclassified command fails the build. Every command is called over IPC as owner, manager and cashier and checked against the matrix; after logout, everything needing a session gives `SESSION_LOCKED`. Verified it fails when a check is weakened. | AT-11 names `inventory_post_document`, `settings_update` and `return_create`, which do not exist yet; the harness covers each automatically when it is added. Approval cells now give `APPROVAL_REQUIRED` (E05-T04). |
 | E09-T02 Cart recovery | **Partly done** | The open cart is reloaded from storage and repriced against the current catalogue after a restart (tested with a new service instance) | The Resume/Discard prompt, and highlighting changed prices (needs a price-at-add snapshot) |
 
 ### Screens (2026-11-06)
@@ -94,11 +94,22 @@ Xvfb (real Rust, WebKitGTK): setup → checkout → unknown scan → lock.
 the wizard could not finish from the keyboard; debug builds took seconds per PIN hash (argon2
 is now optimised in the dev profile).
 
+### Approvals and discount limits (2026-11-06)
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E05-T04 Manager approval tokens | **Done** | Single use (taken from the registry before the command; put back only if the command fails for another reason); expires after 120 s on a fake clock; scoped to permission + cart + rate, so another cart or a larger discount gives `APPROVAL_INVALID`; the approver must hold the permission and is never the requester; the approver PIN has the sign-in lockout; recorded as `authorized_by` and `approver_user_id`, and in `auth.approval_granted` | Returns (`ReturnCreate`) use it when E12 lands |
+| E08-T02 Discount engine and permissions | **Done** | 10.00 across 3.33/3.33/3.34 allocates exactly; over-large discounts give `PRICING_DISCOUNT_EXCEEDS`; a cashier at 15% with a 10% limit gets `APPROVAL_REQUIRED` and succeeds with a manager token; an approved free item has zero tax; `cart.discount_applied` records before and after. The limit applies to the effective rate, so fixed amounts are covered. A reason is required above the limit and for price overrides. | — |
+| E05-T06 `ApprovalDialog` | **Done** | Reusable: any `APPROVAL_REQUIRED` opens it, a manager or owner enters their PIN, and the original command is retried with the token (browser test) | Staff management screens |
+
+**Bug found:** checkout's scan capture kept listening while the approval PIN pad was open, so a
+fast-typed PIN was submitted as a barcode. Scan capture now pauses while a dialog owns the
+keyboard.
+
 ### Next up
 
-E05-T04 manager approvals with the `ApprovalDialog`, then E08-T02 discount limits; product
-editor (E06-T06) so products can be created in the app; then E10 payment and E09-T08
-checkout, which also retires the Stage 0 spike.
+Product editor and list (E06-T05/T06) so products can be created in the app; then E10
+payment and E09-T08 checkout, which also retires the Stage 0 spike.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
 `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
