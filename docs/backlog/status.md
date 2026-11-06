@@ -74,11 +74,31 @@ lands on a finished, tested service.
 | E05-T03 Permission harness | **Done for existing commands** | `tests/permissions.rs`: an unclassified command fails the build. Every command is called over IPC as owner, manager and cashier and checked against the matrix; after logout, everything needing a session gives `SESSION_LOCKED`. Verified it fails when a check is weakened. | AT-11 names `inventory_post_document`, `settings_update` and `return_create`, which do not exist yet; the harness covers each automatically when it is added. Approval cells give `PERMISSION_DENIED` until E05-T04 turns them into `APPROVAL_REQUIRED`. |
 | E09-T02 Cart recovery | **Partly done** | The open cart is reloaded from storage and repriced against the current catalogue after a restart (tested with a new service instance) | The Resume/Discard prompt, and highlighting changed prices (needs a price-at-add snapshot) |
 
+### Screens (2026-11-06)
+
+Tested in Chromium against a recording fake backend (`e2e/screens.e2e.ts`); the Rust behind
+each command is covered by the Rust and IPC tests. Also clicked through the real app under
+Xvfb (real Rust, WebKitGTK): setup → checkout → unknown scan → lock.
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E04-T02 First-run wizard | **Partly done** | Business, region (OS-locale defaults), tax (mode + up to 3 rates), owner PIN, review; completed by keyboard only in an e2e test; sandbox banner; "not linked" explainer | Logo, the optional cashiers step, "add products now / import", the receipt preview, and the Live switch with owner PIN and `mode.changed` audit |
+| E05-T06 Sign-in UI | **Partly done** | PIN pad by mouse, touch and keyboard; tries left and a lockout countdown from typed `details`; forced PIN change after a reset | Staff management screens; `ApprovalDialog` comes with E05-T04 |
+| E09-T03 Checkout layout | **Done (Chromium)** | 40 lines at 1366×768: table, totals and actions visible, no page scroll; total 56 px at ≥ 7:1; inline qty/discount/remove; highlight ≤ 150 ms with no transition; clear and void confirm | WebView2 check with the Windows work |
+| E09-T04 Search and quick-select | **Partly done** | Search as you type (80 ms), ↑/↓/Enter adds, price and SKU shown | Quick-select grid, variant picker, on-hand stock (Stage 2) |
+| E09-T05 Key map and accessibility | **Mostly done** | `docs/keyboard.md`; keyboard-only e2e for scan 3 / qty / discount / remove; axe-core has no serious or critical issues; 150% text at 1920×1080 | "Open pay" waits for E10. **Deviation:** `+`/`−` are the numpad keys, because main-row `-` can be scanner input (see the doc) |
+| E09-T06 Status bar | **Mostly done** | User and role, register code, SANDBOX/LIVE, "Scanner ready" vs typing, "Not linked" | `scanner://status` for serial scanners (Stage 5) |
+
+**Bugs found while building the screens:** newer Chromium returns a Promise from
+`scrollIntoView`, which broke a brace-less React effect; `autoFocus` on a reused button meant
+the wizard could not finish from the keyboard; debug builds took seconds per PIN hash (argon2
+is now optimised in the dev profile).
+
 ### Next up
 
-The first screens on top of the commands: first-run wizard (E04-T02), PIN sign-in
-(E05-T06), checkout (E09-T03..T05) wired to `scan_submit` through the keyboard-wedge hook.
-Then E05-T04 approvals and E08-T02 discount limits.
+E05-T04 manager approvals with the `ApprovalDialog`, then E08-T02 discount limits; product
+editor (E06-T06) so products can be created in the app; then E10 payment and E09-T08
+checkout, which also retires the Stage 0 spike.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
 `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
