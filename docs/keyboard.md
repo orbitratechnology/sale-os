@@ -11,6 +11,7 @@ Every checkout action works from the keyboard. The screen is never left to do an
 | `Del` | Remove the selected line | |
 | `↑` / `↓` | Select the previous or next line | |
 | `Numpad +` / `Numpad −` | One more or one fewer of the selected line | Whole-unit items only, never below one |
+| `F6` | Products | The product list and editor; `Esc` comes back to the till |
 | `F9` | Pay | Payment arrives in Stage 2 (E10) |
 | `F12` | Lock | Signs out; the cart is kept for the next sign-in |
 | `Esc` | Back | Closes an editor, search or message, and returns to scanner-ready |
@@ -26,3 +27,9 @@ cannot be confused with scanner input. The scan capture hook lets those two keys
 
 The PIN pad takes digits from the keyboard, `Backspace` deletes the last one, and `Enter`
 signs in once four or more digits are entered.
+
+## Products and the editor
+
+`Esc` goes back (editor → list → till). In the editor, a scan while no text field has focus
+adds the barcode to the selected variant; a scan into a variant's barcode field adds it to that
+variant.

@@ -106,10 +106,21 @@ is now optimised in the dev profile).
 fast-typed PIN was submitted as a barcode. Scan capture now pauses while a dialog owns the
 keyboard.
 
+### Products (2026-11-06)
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E06-T06a Product list | **Done (Chromium)** | Virtualized: with 50,000 rows fewer than 40 are in the page and only the visible pages are fetched; debounced text filter (name, SKU, barcode, diacritics), status and stock-tracking filters; columns name, SKU, price (range), variants, barcodes, stock | Category filter (categories are E06-T05); low-stock filter (Stage 2); a 60 fps measurement on the reference machine |
+| E06-T06b Product editor | **Done (Chromium + real app)** | Simple products; option axes regrid into variants keeping typed values (3 × 2 = 6 variants tested); inline price, SKU, barcodes, low-stock alert, units per scan; a scan adds a barcode to the selected variant; errors from Rust shown at the input they name (typed `details.field/value/ownerProductId`); "Saved on this device"; archive with confirmation | Categories and cost price in the editor |
+| E07-T04 Unknown barcode flow | **Mostly done** | Managers and owners get "Create product" with the barcode filled in; saving adds the item to the cart; cashiers are told to ask a manager | "Ask a manager" opening the approval dialog (needs a `BarcodeCreateFromScan` approval scope); an audible cue setting |
+
+**Real app:** set up, created a product with a barcode in the editor, scanned it twice at the till
+(Rust + WebKitGTK under Xvfb): one line, quantity 2, total 5.00 with 0.83 VAT included.
+
 ### Next up
 
-Product editor and list (E06-T05/T06) so products can be created in the app; then E10
-payment and E09-T08 checkout, which also retires the Stage 0 spike.
+E06-T05 categories and tax configuration; then E10 payment and E09-T08 checkout (completing a
+sale), which also retires the Stage 0 spike.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
 `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
