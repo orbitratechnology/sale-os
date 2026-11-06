@@ -277,3 +277,35 @@ pub async fn staff_reset_pin(
         .map_err(err)?;
     StaffDto::from_record(&record)
 }
+
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalTokenDto {
+    /// Pass with the command that needed approval. Single use.
+    pub approval_token_id: pos_domain::ApprovalId,
+    /// Epoch ms as a decimal string.
+    pub expires_at_ms: String,
+}
+
+/// A manager approves `scope` with their PIN (E05-T04). Needs a signed-in requester; the
+/// approver must hold the permission and must be someone else.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_request_approval(
+    services: State<'_, AppServices>,
+    approver_user_id: UserId,
+    pin: String,
+    scope: pos_domain::ApprovalScope,
+) -> Result<ApprovalTokenDto, IpcError> {
+    let ctx = services.context().await?;
+    let token = services
+        .app()?
+        .auth
+        .request_approval(&ctx, approver_user_id, self::pin(&pin)?, scope)
+        .await
+        .map_err(err)?;
+    Ok(ApprovalTokenDto {
+        approval_token_id: token.id,
+        expires_at_ms: token.expires_at.as_millis().to_string(),
+    })
+}

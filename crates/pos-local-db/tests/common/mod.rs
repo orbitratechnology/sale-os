@@ -19,6 +19,8 @@ pub struct Shop {
     pub clock: Arc<FixedClock>,
     pub owner: CommandContext,
     pub tax_category: TaxCategoryId,
+    /// Cheap Argon2 parameters, for creating staff in tests.
+    pub hasher: Arc<dyn PinHasher>,
 }
 
 impl Shop {
@@ -44,7 +46,7 @@ pub async fn shop() -> Shop {
     let setup = SetupService {
         store: Arc::new(store.clone()),
         setup: Arc::new(store.clone()),
-        hasher,
+        hasher: hasher.clone(),
         clock: clock.clone() as Arc<dyn Clock>,
         ids: ids.clone(),
     };
@@ -83,6 +85,7 @@ pub async fn shop() -> Shop {
         }),
         clock: clock.clone(),
         ids,
+        approval: None,
     };
     Shop {
         _dir: dir,
@@ -90,5 +93,6 @@ pub async fn shop() -> Shop {
         clock,
         owner,
         tax_category: tax.parse().unwrap(),
+        hasher,
     }
 }

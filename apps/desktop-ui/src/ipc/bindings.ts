@@ -34,6 +34,11 @@ export const commands = {
 	authLogout: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_logout")),
 	/**  Changes the signed-in user's own PIN (required after an owner reset). */
 	authChangePin: (currentPin: string, newPin: string) => typedError<SessionDto, IpcError_Serialize>(__TAURI_INVOKE("auth_change_pin", { currentPin, newPin })),
+	/**
+	 *  A manager approves `scope` with their PIN (E05-T04). Needs a signed-in requester; the
+	 *  approver must hold the permission and must be someone else.
+	 */
+	authRequestApproval: (approverUserId: UserId, pin: string, scope: ApprovalScope_Deserialize) => typedError<ApprovalTokenDto, IpcError_Serialize>(__TAURI_INVOKE("auth_request_approval", { approverUserId, pin, scope })),
 	staffList: () => typedError<StaffDto[], IpcError_Serialize>(__TAURI_INVOKE("staff_list")),
 	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_create", { input })),
 	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_update", { input })),
@@ -61,14 +66,22 @@ export const commands = {
 	/**  Zero is refused: use `cart_remove_line`. */
 	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
 	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_remove_line", { lineId })),
-	/**  `discount: null` removes it. */
-	cartSetLineDiscount: (lineId: CartLineId, discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_line_discount", { lineId, discount })),
-	cartSetOrderDiscount: (discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_order_discount", { discount })),
-	cartOverridePrice: (lineId: CartLineId, unitPriceMinor: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_override_price", { lineId, unitPriceMinor })),
+	/**
+	 *  `discount: null` removes it. Above the cashier limit: a reason, and for a cashier an
+	 *  approval (`APPROVAL_REQUIRED` carries the scope; retry with `approvalTokenId`).
+	 */
+	cartSetLineDiscount: (lineId: CartLineId, discount: DiscountDto_Deserialize | null, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_line_discount", { lineId, discount, approvalTokenId })),
+	/**  As `cart_set_line_discount`, for the whole order. */
+	cartSetOrderDiscount: (discount: DiscountDto_Deserialize | null, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_order_discount", { discount, approvalTokenId })),
+	/**  A new unit price for a line, with a reason. A cashier needs an approval. */
+	cartOverridePrice: (lineId: CartLineId, unitPriceMinor: string, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_override_price", { lineId, unitPriceMinor, reason, approvalTokenId })),
 	/**  POS-003: `revision` must be the one the cashier saw when confirming. */
 	cartClear: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_clear", { revision })),
-	/**  Abandons the cart with a reason and returns the next (empty) one. */
-	cartVoid: (revision: number, reason: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason })),
+	/**
+	 *  Abandons the cart with a reason and returns the next (empty) one. A cashier needs an
+	 *  approval when the cart has lines.
+	 */
+	cartVoid: (revision: number, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason, approvalTokenId })),
 	/**  Creates the demo workspace and product if missing. */
 	devDemoSetup: () => typedError<DemoProduct, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_setup")),
 	/**  Current demo cart. */
@@ -98,6 +111,43 @@ export type AppInfo_Serialize = {
 	version: string,
 	debugBuild: boolean,
 	database: DatabaseStatus_Serialize,
+};
+
+export type ApprovalId = string;
+
+/**
+ *  What a manager approval covers (E05-T04): one permission, on one entity (a cart, a sale),
+ *  up to a limit. A token for a 15% discount on cart A does not cover 20%, or cart B.
+ */
+export type ApprovalScope = ApprovalScope_Serialize | ApprovalScope_Deserialize;
+
+/**
+ *  What a manager approval covers (E05-T04): one permission, on one entity (a cart, a sale),
+ *  up to a limit. A token for a 15% discount on cart A does not cover 20%, or cart B.
+ */
+export type ApprovalScope_Deserialize = {
+	permission: Permission,
+	entityId: string,
+	/**  For discounts: the largest effective rate approved, in parts per million. */
+	maxPpm?: number | null,
+};
+
+/**
+ *  What a manager approval covers (E05-T04): one permission, on one entity (a cart, a sale),
+ *  up to a limit. A token for a 15% discount on cart A does not cover 20%, or cart B.
+ */
+export type ApprovalScope_Serialize = {
+	permission: Permission,
+	entityId: string,
+	/**  For discounts: the largest effective rate approved, in parts per million. */
+	maxPpm: number | null,
+};
+
+export type ApprovalTokenDto = {
+	/**  Pass with the command that needed approval. Single use. */
+	approvalTokenId: ApprovalId,
+	/**  Epoch ms as a decimal string. */
+	expiresAtMs: string,
 };
 
 export type BarcodeDto = {
@@ -205,6 +255,8 @@ export type CartViewDto_Deserialize = {
 	currencyCode: string,
 	currencyExponent: number,
 	taxMode: TaxMode,
+	/**  Discounts above this rate need a reason, and a cashier needs an approval (E08-T02). */
+	discountLimitPpm: number,
 	lines: CartLineDto_Deserialize[],
 	orderDiscount?: DiscountDto_Deserialize | null,
 	subtotalMinor: string,
@@ -226,6 +278,8 @@ export type CartViewDto_Serialize = {
 	currencyCode: string,
 	currencyExponent: number,
 	taxMode: TaxMode,
+	/**  Discounts above this rate need a reason, and a cashier needs an approval (E08-T02). */
+	discountLimitPpm: number,
 	lines: CartLineDto_Serialize[],
 	orderDiscount: DiscountDto_Serialize | null,
 	subtotalMinor: string,
@@ -375,6 +429,8 @@ export type ErrorDetails_Deserialize = {
 	remainingAttempts?: number | null,
 	/**  `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string. */
 	retryAtMs?: string | null,
+	/**  `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`). */
+	scope?: ApprovalScope_Deserialize | null,
 };
 
 /**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
@@ -383,6 +439,8 @@ export type ErrorDetails_Serialize = {
 	remainingAttempts: number | null,
 	/**  `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string. */
 	retryAtMs: string | null,
+	/**  `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`). */
+	scope: ApprovalScope_Serialize | null,
 };
 
 /**
@@ -401,7 +459,10 @@ export type IpcError_Deserialize = {
 	retryable: boolean,
 	/**  Matches the log line written when the error was produced. */
 	correlationId: string,
-	/**  Structured facts the UI needs for some codes (07-contracts §2). */
+	/**
+	 *  Structured facts the UI needs for some codes (07-contracts §2). Boxed to keep
+	 *  `Result<_, IpcError>` small; the wire format is unaffected.
+	 */
 	details?: ErrorDetails_Deserialize | null,
 };
 
@@ -415,7 +476,10 @@ export type IpcError_Serialize = {
 	retryable: boolean,
 	/**  Matches the log line written when the error was produced. */
 	correlationId: string,
-	/**  Structured facts the UI needs for some codes (07-contracts §2). */
+	/**
+	 *  Structured facts the UI needs for some codes (07-contracts §2). Boxed to keep
+	 *  `Result<_, IpcError>` small; the wire format is unaffected.
+	 */
 	details: ErrorDetails_Serialize | null,
 };
 
@@ -430,6 +494,10 @@ export type NewStaffInput = {
 	role: Role,
 	pin: string,
 };
+
+export type Permission = "sale_complete" | "cart_line_discount" | "cart_order_discount" | "discount_above_threshold" | "price_override" | "cart_clear" | "cart_void" | "external_tender_record" | "sales_view" | "receipt_reprint" | "return_create" | "return_approve" | "catalog_view" | "catalog_edit" | "catalog_import" | "catalog_export" | "barcode_create_from_scan" | "inventory_view" | "inventory_receive" | "inventory_adjust" | "cash_session_open" | "cash_session_close" | "cash_session_view_variance" | "reports_view" | "reports_export" | "audit_view" | "settings_edit" | "staff_manage" | "device_link" | "sync_manage" | "conflict_resolve" | 
+/**  Simulators and dev panels; additionally restricted to debug builds by the shell. */
+"devtools_use";
 
 export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
 

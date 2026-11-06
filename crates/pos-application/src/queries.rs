@@ -120,6 +120,9 @@ pub struct PricingSettings {
     pub tax_mode: pos_domain::pricing::TaxMode,
     pub currency: pos_domain::Currency,
     pub timezone: String,
+    /// `discount.cashier_max_ppm`: above this, a discount needs `DiscountAboveThreshold`
+    /// (E08-T02). Default 10%.
+    pub discount_limit_ppm: u32,
 }
 
 #[async_trait::async_trait]

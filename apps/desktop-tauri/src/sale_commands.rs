@@ -9,7 +9,7 @@ use crate::dto::{
 use crate::{AppServices, IpcError};
 use pos_application::scan::{ScanOutcome, ScanSource};
 use pos_domain::cart::{AddVia, CartChange};
-use pos_domain::{CartLineId, ProductId, ScanEventId, VariantId};
+use pos_domain::{ApprovalId, CartLineId, ProductId, ScanEventId, VariantId};
 use tauri::State;
 
 #[tauri::command]
@@ -224,58 +224,72 @@ pub async fn cart_remove_line(
     CartViewDto::from_view(&view)
 }
 
-/// `discount: null` removes it.
+/// `discount: null` removes it. Above the cashier limit: a reason, and for a cashier an
+/// approval (`APPROVAL_REQUIRED` carries the scope; retry with `approvalTokenId`).
 #[tauri::command]
 #[specta::specta]
 pub async fn cart_set_line_discount(
     services: State<'_, AppServices>,
     line_id: CartLineId,
     discount: Option<DiscountDto>,
+    approval_token_id: Option<ApprovalId>,
 ) -> Result<CartViewDto, IpcError> {
-    let ctx = services.context().await?;
     let discount = discount.map(DiscountDto::into_domain).transpose()?;
-    let view = services
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services
         .app()?
         .carts
         .set_line_discount(&ctx, line_id, discount)
         .await
-        .map_err(err)?;
-    CartViewDto::from_view(&view)
+    {
+        Ok(view) => CartViewDto::from_view(&view),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
 }
 
+/// As `cart_set_line_discount`, for the whole order.
 #[tauri::command]
 #[specta::specta]
 pub async fn cart_set_order_discount(
     services: State<'_, AppServices>,
     discount: Option<DiscountDto>,
+    approval_token_id: Option<ApprovalId>,
 ) -> Result<CartViewDto, IpcError> {
-    let ctx = services.context().await?;
     let discount = discount.map(DiscountDto::into_domain).transpose()?;
-    let view = services
-        .app()?
-        .carts
-        .set_order_discount(&ctx, discount)
-        .await
-        .map_err(err)?;
-    CartViewDto::from_view(&view)
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services.app()?.carts.set_order_discount(&ctx, discount).await {
+        Ok(view) => CartViewDto::from_view(&view),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
 }
 
+/// A new unit price for a line, with a reason. A cashier needs an approval.
 #[tauri::command]
 #[specta::specta]
 pub async fn cart_override_price(
     services: State<'_, AppServices>,
     line_id: CartLineId,
     unit_price_minor: String,
+    reason: String,
+    approval_token_id: Option<ApprovalId>,
 ) -> Result<CartViewDto, IpcError> {
-    let ctx = services.context().await?;
     let price = money_in("unitPriceMinor", &unit_price_minor)?;
-    let view = services
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services
         .app()?
         .carts
-        .override_price(&ctx, line_id, price)
+        .override_price(&ctx, line_id, price, &reason)
         .await
-        .map_err(err)?;
-    CartViewDto::from_view(&view)
+    {
+        Ok(view) => CartViewDto::from_view(&view),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
 }
 
 /// POS-003: `revision` must be the one the cashier saw when confirming.
@@ -292,20 +306,26 @@ pub async fn cart_clear(services: State<'_, AppServices>, revision: u32) -> Resu
     CartViewDto::from_view(&view)
 }
 
-/// Abandons the cart with a reason and returns the next (empty) one.
+/// Abandons the cart with a reason and returns the next (empty) one. A cashier needs an
+/// approval when the cart has lines.
 #[tauri::command]
 #[specta::specta]
 pub async fn cart_void(
     services: State<'_, AppServices>,
     revision: u32,
     reason: String,
+    approval_token_id: Option<ApprovalId>,
 ) -> Result<CartViewDto, IpcError> {
-    let ctx = services.context().await?;
-    let view = services
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services
         .app()?
         .carts
         .void(&ctx, u64::from(revision), &reason)
         .await
-        .map_err(err)?;
-    CartViewDto::from_view(&view)
+    {
+        Ok(view) => CartViewDto::from_view(&view),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
 }

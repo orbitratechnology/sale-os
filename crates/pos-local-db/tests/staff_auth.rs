@@ -43,6 +43,7 @@ impl World {
             }),
             clock: self.clock.clone(),
             ids: Arc::new(UuidV7Generator),
+            approval: None,
         }
     }
     fn as_owner(&self) -> CommandContext {
@@ -160,6 +161,7 @@ async fn world() -> World {
             store: s,
             staff: q,
             hasher,
+            approvals: Arc::new(pos_application::approval::Approvals::default()),
         },
         store,
         clock,

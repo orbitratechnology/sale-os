@@ -2,14 +2,15 @@
 //! it as Tauri managed state; nothing else holds database handles, clocks or the session.
 
 use crate::IpcError;
+use pos_application::approval::Approvals;
 use pos_application::auth::{Argon2PinHasher, AuthService, PinHasher};
 use pos_application::cart::CartService;
 use pos_application::catalog::CatalogService;
-use pos_application::context::{Actor, CommandContext};
+use pos_application::context::{Actor, ApprovalToken, CommandContext};
 use pos_application::queries::SetupQueries;
 use pos_application::setup::SetupService;
 use pos_application::staff::StaffService;
-use pos_domain::{Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
+use pos_domain::{ApprovalId, Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
 use pos_local_db::{DbOptions, LocalDb, SqliteStore};
 use pos_observability::LogGuard;
 use std::path::{Path, PathBuf};
@@ -39,6 +40,8 @@ pub(crate) struct Services {
     pub catalog: CatalogService,
     pub carts: CartService,
     pub queries: SqliteStore,
+    /// Issued manager approvals waiting to be used (E05-T04).
+    pub approvals: Arc<Approvals>,
 }
 
 /// The unlocked session. Commands take the actor from here, never from IPC arguments
@@ -81,6 +84,7 @@ impl AppServices {
         let ids: Arc<dyn IdGenerator> = Arc::new(UuidV7Generator);
         let app = store.as_ref().map(|s| {
             let a = Arc::new(s.clone());
+            let approvals = Arc::new(Approvals::default());
             Services {
                 setup: SetupService {
                     store: a.clone(),
@@ -93,6 +97,7 @@ impl AppServices {
                     store: a.clone(),
                     staff: a.clone(),
                     hasher: hasher.clone(),
+                    approvals: approvals.clone(),
                 },
                 staff: StaffService {
                     store: a.clone(),
@@ -105,6 +110,7 @@ impl AppServices {
                 },
                 carts: CartService::new(a.clone(), a.clone(), a),
                 queries: s.clone(),
+                approvals,
             }
         });
         Self {
@@ -157,6 +163,36 @@ impl AppServices {
             actor: self.session().await.map(|s| s.actor),
             clock: self.clock.clone(),
             ids: self.ids.clone(),
+            approval: None,
         })
+    }
+
+    /// As [`AppServices::context`], with the approval the caller presented. The token is
+    /// taken from the registry now, so it can only ever be used once; hand it back with
+    /// [`AppServices::settle`].
+    pub(crate) async fn context_with_approval(
+        &self,
+        token: Option<ApprovalId>,
+    ) -> Result<(CommandContext, Option<ApprovalToken>), IpcError> {
+        let mut ctx = self.context().await?;
+        let token = match token {
+            Some(id) => Some(
+                self.app()?
+                    .approvals
+                    .take(id, ctx.now())
+                    .map_err(|e| IpcError::from_app(&e))?,
+            ),
+            None => None,
+        };
+        ctx.approval = token.clone();
+        Ok((ctx, token))
+    }
+
+    /// After the command: a token whose command failed is put back for a retry (it still
+    /// expires on time); a used one is gone for good.
+    pub(crate) fn settle<T>(&self, token: Option<ApprovalToken>, result: &Result<T, IpcError>) {
+        if let (Some(t), Err(_), Ok(app)) = (token, result, self.app()) {
+            app.approvals.restore(t);
+        }
     }
 }

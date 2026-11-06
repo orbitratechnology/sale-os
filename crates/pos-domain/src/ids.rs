@@ -78,6 +78,7 @@ id_type!(
     EventId,
     ScanEventId,
     ConflictId,
+    ApprovalId,
 );
 
 #[cfg(test)]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auth-request-approval"
+description = "Enables the auth_request_approval command without any pre-configured scope."
+commands.allow = ["auth_request_approval"]
+
+[[permission]]
+identifier = "deny-auth-request-approval"
+description = "Denies the auth_request_approval command without any pre-configured scope."
+commands.deny = ["auth_request_approval"]

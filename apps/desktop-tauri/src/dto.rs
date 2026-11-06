@@ -456,6 +456,8 @@ pub struct CartViewDto {
     pub currency_code: String,
     pub currency_exponent: u8,
     pub tax_mode: TaxMode,
+    /// Discounts above this rate need a reason, and a cashier needs an approval (E08-T02).
+    pub discount_limit_ppm: u32,
     pub lines: Vec<CartLineDto>,
     pub order_discount: Option<DiscountDto>,
     pub subtotal_minor: String,
@@ -615,6 +617,7 @@ impl CartViewDto {
             currency_code: v.settings.currency.code.to_string(),
             currency_exponent: v.settings.currency.exponent,
             tax_mode: v.settings.tax_mode,
+            discount_limit_ppm: v.settings.discount_limit_ppm,
             lines,
             order_discount: v.cart.order_discount.as_ref().map(DiscountDto::from_domain),
             subtotal_minor: money(v.priced.subtotal),

@@ -10,6 +10,7 @@ pub const COMMANDS: &[&str] = &[
     "auth_login",
     "auth_logout",
     "auth_change_pin",
+    "auth_request_approval",
     "staff_list",
     "staff_create",
     "staff_update",

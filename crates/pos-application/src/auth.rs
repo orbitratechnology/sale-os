@@ -1,7 +1,8 @@
 //! PIN sign-in, lockout and sessions (E05-T02, IAM-005, ADR-013).
 
+use crate::approval::{APPROVAL_TTL_MS, Approvals};
 use crate::audit::{self, AuditEntry};
-use crate::context::{AppError, CommandContext};
+use crate::context::{AppError, ApprovalToken, CommandContext};
 use crate::queries::StaffQueries;
 use crate::records::{SessionEnd, StaffRecord, ThrottleRecord};
 use crate::{LocalStore, OutboxDraft, WriteSet};
@@ -9,7 +10,7 @@ use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
 use pos_domain::staff::{FREE_ATTEMPTS, Pin, StaffError, lockout_duration_ms};
-use pos_domain::{Role, SessionId, Timestamp, UserId};
+use pos_domain::{ApprovalId, ApprovalScope, Role, SessionId, Timestamp, UserId, role_has};
 use std::sync::Arc;
 
 /// Hashes and verifies PINs. Implementations are CPU-heavy by design; callers run them on
@@ -94,6 +95,13 @@ pub struct AuthService {
     pub store: Arc<dyn LocalStore>,
     pub staff: Arc<dyn StaffQueries>,
     pub hasher: Arc<dyn PinHasher>,
+    pub approvals: Arc<Approvals>,
+}
+
+/// A PIN that checked out: the user, and the throttle reset to write with the success.
+struct Verified {
+    staff: StaffRecord,
+    reset: ThrottleRecord,
 }
 
 impl AuthService {
@@ -102,13 +110,15 @@ impl AuthService {
         Ok(self.staff.active_staff().await?)
     }
 
-    /// Verifies a PIN, applying the lockout policy, and starts a session.
-    pub async fn login(
+    /// Checks a PIN under the lockout policy (ADR-013). A wrong PIN is recorded, audited and
+    /// may lock the user, all before the error returns. Used for sign-in and for approvals,
+    /// so an approver's PIN is protected exactly like a sign-in.
+    async fn verify_pin(
         &self,
         ctx: &CommandContext,
         user_id: UserId,
         pin: Pin,
-    ) -> Result<SessionGrant, AppError> {
+    ) -> Result<Verified, AppError> {
         let staff = self.staff.staff(user_id).await?.ok_or(StaffError::NotFound)?;
         if !staff.active {
             return Err(StaffError::Deactivated.into());
@@ -128,32 +138,21 @@ impl AuthService {
 
         let phc = staff.pin_hash.clone();
         let ok = blocking(self.hasher.clone(), move |h| h.verify(&pin, &phc)).await?;
-        let ids = ctx.ids.as_ref();
-        let mut wctx = ctx.write_context();
-        wctx.actor = Some(user_id);
-
         if ok {
-            let session_id = SessionId::generate(ids);
-            let set = WriteSet::builder(wctx)
-                .put_login_throttle(ThrottleRecord {
+            return Ok(Verified {
+                staff,
+                reset: ThrottleRecord {
                     user_id,
                     failed_attempts: 0,
                     locked_until: None,
                     last_failed_at: None,
-                })
-                .start_session(session_id, user_id)
-                .audit(AuditEntry::new(ids, audit::AUTH_LOGIN, "staff_user", user_id))
-                .build()?;
-            self.store.apply(set).await?;
-            return Ok(SessionGrant {
-                session_id,
-                user_id,
-                display_name: staff.display_name,
-                role: staff.role,
-                must_change_pin: staff.must_change_pin,
+                },
             });
         }
 
+        let ids = ctx.ids.as_ref();
+        let mut wctx = ctx.write_context();
+        wctx.actor = ctx.actor.as_ref().map(|a| a.user_id).or(Some(user_id));
         let failed = throttle.failed_attempts.saturating_add(1);
         let locked_until = lockout_duration_ms(failed).map(|ms| Timestamp::from_millis(now.as_millis() + ms));
         let failed_entry = AuditEntry::new(ids, audit::AUTH_LOGIN_FAILED, "staff_user", user_id)
@@ -181,6 +180,79 @@ impl AuthService {
                 remaining_attempts: FREE_ATTEMPTS.saturating_sub(failed),
             }),
         }
+    }
+
+    /// Verifies a PIN, applying the lockout policy, and starts a session.
+    pub async fn login(
+        &self,
+        ctx: &CommandContext,
+        user_id: UserId,
+        pin: Pin,
+    ) -> Result<SessionGrant, AppError> {
+        let Verified { staff, reset } = self.verify_pin(ctx, user_id, pin).await?;
+        let ids = ctx.ids.as_ref();
+        let mut wctx = ctx.write_context();
+        wctx.actor = Some(user_id);
+        let session_id = SessionId::generate(ids);
+        let set = WriteSet::builder(wctx)
+            .put_login_throttle(reset)
+            .start_session(session_id, user_id)
+            .audit(AuditEntry::new(ids, audit::AUTH_LOGIN, "staff_user", user_id))
+            .build()?;
+        self.store.apply(set).await?;
+        Ok(SessionGrant {
+            session_id,
+            user_id,
+            display_name: staff.display_name,
+            role: staff.role,
+            must_change_pin: staff.must_change_pin,
+        })
+    }
+
+    /// A manager approves `scope` for the signed-in user with their PIN (E05-T04). The
+    /// approver must hold the permission and cannot be the requester. The token is
+    /// single-use and expires after [`APPROVAL_TTL_MS`].
+    pub async fn request_approval(
+        &self,
+        ctx: &CommandContext,
+        approver: UserId,
+        pin: Pin,
+        scope: ApprovalScope,
+    ) -> Result<ApprovalToken, AppError> {
+        let actor = ctx.actor()?.clone();
+        if approver == actor.user_id {
+            return Err(AppError::ApprovalInvalid("you cannot approve your own request"));
+        }
+        let Verified { staff, reset } = self.verify_pin(ctx, approver, pin).await?;
+        if !role_has(staff.role, scope.permission) {
+            return Err(AppError::ApprovalInvalid(
+                "the approver's role does not hold this permission",
+            ));
+        }
+        let ids = ctx.ids.as_ref();
+        let token = ApprovalToken {
+            id: ApprovalId::generate(ids),
+            approver,
+            scope,
+            expires_at: Timestamp::from_millis(ctx.now().as_millis() + APPROVAL_TTL_MS),
+        };
+        let entry = AuditEntry::new(ids, audit::AUTH_APPROVAL_GRANTED, "staff_user", approver)
+            .with_approver(approver)
+            .with_metadata(serde_json::json!({
+                "requestedBy": actor.user_id,
+                "permission": token.scope.permission,
+                "entityId": token.scope.entity_id,
+                "maxPpm": token.scope.max_ppm,
+                "approvalId": token.id,
+            }));
+        let set = WriteSet::builder(ctx.write_context())
+            .put_login_throttle(reset)
+            .outbox(OutboxDraft::audit_recorded(ids, &entry)?)
+            .audit(entry)
+            .build()?;
+        self.store.apply(set).await?;
+        self.approvals.issue(token.clone());
+        Ok(token)
     }
 
     /// Ends a session (logout, inactivity lock, user switch, app exit).

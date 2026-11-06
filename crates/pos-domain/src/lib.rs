@@ -22,7 +22,7 @@ pub mod secret;
 pub mod staff;
 pub mod time;
 
-pub use access::{Permission, Role, role_has};
+pub use access::{ApprovalScope, Permission, Role, approvable, role_has};
 pub use error::{ArithmeticError, ErrorCode, HasErrorCode};
 pub use ids::*;
 pub use money::{Currency, CurrencyCode, Money, NumberFormat};

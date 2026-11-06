@@ -11,8 +11,9 @@ pub struct IpcError {
     pub retryable: bool,
     /// Matches the log line written when the error was produced.
     pub correlation_id: String,
-    /// Structured facts the UI needs for some codes (07-contracts §2).
-    pub details: Option<ErrorDetails>,
+    /// Structured facts the UI needs for some codes (07-contracts §2). Boxed to keep
+    /// `Result<_, IpcError>` small; the wire format is unaffected.
+    pub details: Option<Box<ErrorDetails>>,
 }
 
 /// Typed `details` (07-contracts §2). Only the fields relevant to the code are set.
@@ -23,6 +24,8 @@ pub struct ErrorDetails {
     pub remaining_attempts: Option<u32>,
     /// `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string.
     pub retry_at_ms: Option<String>,
+    /// `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`).
+    pub scope: Option<pos_domain::ApprovalScope>,
 }
 
 impl IpcError {
@@ -41,14 +44,18 @@ impl IpcError {
         use pos_application::context::AppError;
         let mut out = Self::from_error(e);
         out.details = match e {
-            AppError::PinInvalid { remaining_attempts } => Some(ErrorDetails {
+            AppError::PinInvalid { remaining_attempts } => Some(Box::new(ErrorDetails {
                 remaining_attempts: Some(*remaining_attempts),
                 ..ErrorDetails::default()
-            }),
-            AppError::LockedOut { retry_at_ms } => Some(ErrorDetails {
+            })),
+            AppError::LockedOut { retry_at_ms } => Some(Box::new(ErrorDetails {
                 retry_at_ms: Some(retry_at_ms.to_string()),
                 ..ErrorDetails::default()
-            }),
+            })),
+            AppError::ApprovalRequired(scope) => Some(Box::new(ErrorDetails {
+                scope: Some(scope.clone()),
+                ..ErrorDetails::default()
+            })),
             _ => None,
         };
         out

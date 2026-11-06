@@ -153,12 +153,14 @@ async fn the_owner_can_sign_in_straight_after_setup() {
         store: Arc::new(e.store.clone()),
         staff: Arc::new(e.store.clone()),
         hasher: e.hasher.clone(),
+        approvals: Arc::new(pos_application::approval::Approvals::default()),
     };
     let ctx = CommandContext {
         register: ws.register.clone(),
         actor: None,
         clock: e.clock.clone(),
         ids: e.ids.clone(),
+        approval: None,
     };
     let grant = auth
         .login(&ctx, ws.owner_user_id, Pin::parse("1234").unwrap())

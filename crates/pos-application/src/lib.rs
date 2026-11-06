@@ -2,6 +2,7 @@
 //! the port traits implemented by `pos-local-db` and device adapters
 //! (docs/backlog/06-rust-interfaces.md §9).
 
+pub mod approval;
 pub mod audit;
 pub mod auth;
 pub mod cart;

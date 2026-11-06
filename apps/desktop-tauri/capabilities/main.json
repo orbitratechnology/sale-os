@@ -15,6 +15,7 @@
     "allow-auth-login",
     "allow-auth-logout",
     "allow-auth-change-pin",
+    "allow-auth-request-approval",
     "allow-staff-list",
     "allow-staff-create",
     "allow-staff-update",

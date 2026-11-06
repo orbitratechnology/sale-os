@@ -76,6 +76,7 @@ async fn env() -> Env {
         }),
         clock,
         ids,
+        approval: None,
     };
     Env {
         catalog: CatalogService {

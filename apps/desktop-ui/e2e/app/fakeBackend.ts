@@ -6,6 +6,7 @@
  * tested there (pricing goldens, cart integration tests, the IPC harness).
  */
 import type { CartLine, CartView, CatalogHit, IpcError, Session, SignInUser } from "../../src/ipc";
+import type { Permission } from "../../src/ipc/bindings";
 
 export interface FakeProduct {
   variantId: string;
@@ -32,6 +33,8 @@ export interface FakeState {
   revision: number;
   seenScans: Set<string>;
   lockedUntil: number | null;
+  /** Issued approval tokens: id → scope (single use). */
+  tokens: Map<string, { permission: Permission; entityId: string; maxPpm: number | null }>;
 }
 
 export type Preset = "fresh" | "signIn" | "checkout";
@@ -50,9 +53,10 @@ export function products(): FakeProduct[] {
 export function initialState(preset: Preset): FakeState {
   const owner: StaffUser = { userId: id(), displayName: "Olu", role: "owner", pin: "1234", failed: 0 };
   const cashier: StaffUser = { userId: id(), displayName: "Cal", role: "cashier", pin: "3333", failed: 0 };
+  const manager: StaffUser = { userId: id(), displayName: "Mia", role: "manager", pin: "2222", failed: 0 };
   return {
     setupComplete: preset !== "fresh",
-    users: preset === "fresh" ? [] : [owner, cashier],
+    users: preset === "fresh" ? [] : [owner, manager, cashier],
     session: preset === "checkout" ? { userId: owner.userId, displayName: owner.displayName, role: owner.role, mustChangePin: false } : null,
     products: products(),
     lines: [],
@@ -61,6 +65,7 @@ export function initialState(preset: Preset): FakeState {
     revision: 0,
     seenScans: new Set(),
     lockedUntil: null,
+    tokens: new Map(),
   };
 }
 
@@ -108,6 +113,7 @@ export function view(s: FakeState): CartView {
     currencyCode: "GBP",
     currencyExponent: 2,
     taxMode: "inclusive",
+    discountLimitPpm: 100_000,
     lines,
     orderDiscount: s.orderDiscountPpm === null ? null : { kind: "percent", ratePpm: s.orderDiscountPpm, reason: null },
     subtotalMinor: subtotal.toString(),
@@ -123,6 +129,18 @@ export function view(s: FakeState): CartView {
 
 function hit(p: FakeProduct): CatalogHit {
   return { productId: p.productId, variantId: p.variantId, name: p.name, label: "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search" };
+}
+
+/** The approval rule Rust applies (authorize_with_approval): cashiers need a covering token. */
+function approve(s: FakeState, permission: Permission, maxPpm: number | null, token: unknown) {
+  if (needSession(s).role !== "cashier") return;
+  const needed = { permission, entityId: s.cartId, maxPpm };
+  if (token === null || token === undefined) fail("APPROVAL_REQUIRED", { remainingAttempts: null, retryAtMs: null, scope: needed });
+  const granted = s.tokens.get(String(token));
+  s.tokens.delete(String(token));
+  const covers =
+    granted?.permission === permission && granted.entityId === s.cartId && (maxPpm === null || (granted.maxPpm ?? -1) >= maxPpm);
+  if (!covers) fail("APPROVAL_INVALID");
 }
 
 function needSession(s: FakeState): Session {
@@ -174,6 +192,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.session = { userId: u.userId, displayName: u.displayName, role: u.role, mustChangePin: false };
       return s.session;
     }
+    case "auth_request_approval": {
+      const me = needSession(s);
+      const u = s.users.find((x) => x.userId === a.approverUserId) ?? fail("VALIDATION_FAILED");
+      if (u.userId === me.userId || u.role === "cashier") fail("APPROVAL_INVALID");
+      if (a.pin !== u.pin) fail("AUTH_PIN_INVALID", { remainingAttempts: 4, retryAtMs: null });
+      const tokenId = id();
+      s.tokens.set(tokenId, a.scope as { permission: Permission; entityId: string; maxPpm: number | null });
+      return { approvalTokenId: tokenId, expiresAtMs: String(Date.now() + 120_000) };
+    }
     case "auth_logout":
       needSession(s);
       s.session = null;
@@ -218,7 +245,12 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "cart_set_line_discount": {
       needSession(s);
       const l = s.lines.find((x) => x.lineId === a.lineId) ?? fail("VALIDATION_FAILED");
-      l.discountPpm = (a.discount as { ratePpm: number } | null)?.ratePpm ?? null;
+      const d = a.discount as { ratePpm: number; reason: string | null } | null;
+      if (d && d.ratePpm > 100_000) {
+        if (!d.reason) fail("VALIDATION_FAILED");
+        approve(s, "discount_above_threshold", d.ratePpm, a.approvalTokenId);
+      }
+      l.discountPpm = d?.ratePpm ?? null;
       s.revision += 1;
       return view(s);
     }
@@ -235,8 +267,8 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.revision += 1;
       return view(s);
     case "cart_void": {
-      const who = needSession(s);
-      if (s.lines.length && who.role === "cashier") fail("PERMISSION_DENIED");
+      needSession(s);
+      if (s.lines.length) approve(s, "cart_void", null, a.approvalTokenId);
       if (a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
       s.lines = [];
       s.orderDiscountPpm = null;

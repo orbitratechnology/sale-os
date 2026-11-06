@@ -70,6 +70,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Session,
             json!({"currentPin": "0000", "newPin": "1111"}),
         ),
+        (
+            "auth_request_approval",
+            Session,
+            json!({"approverUserId": UNKNOWN_ID, "pin": "0000", "scope": {"permission": "cart_void", "entityId": "x", "maxPpm": null}}),
+        ),
         ("staff_list", Perm(StaffManage), json!({})),
         (
             "staff_create",
@@ -130,23 +135,23 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         (
             "cart_set_line_discount",
             Perm(CartLineDiscount),
-            json!({"lineId": UNKNOWN_ID, "discount": {"kind": "percent", "ratePpm": 50000, "reason": null}}),
+            json!({"lineId": UNKNOWN_ID, "discount": {"kind": "percent", "ratePpm": 50000, "reason": null}, "approvalTokenId": null}),
         ),
         (
             "cart_set_order_discount",
             Perm(CartOrderDiscount),
-            json!({"discount": null}),
+            json!({"discount": null, "approvalTokenId": null}),
         ),
         (
             "cart_override_price",
             Perm(PriceOverride),
-            json!({"lineId": UNKNOWN_ID, "unitPriceMinor": "50"}),
+            json!({"lineId": UNKNOWN_ID, "unitPriceMinor": "50", "reason": "harness", "approvalTokenId": null}),
         ),
         // The cart holds a line, so voiding needs CartVoid (an empty cart can always be closed).
         (
             "cart_void",
             Perm(CartVoid),
-            json!({"revision": 0, "reason": "harness"}),
+            json!({"revision": 0, "reason": "harness", "approvalTokenId": null}),
         ),
         ("cart_clear", Perm(CartClear), json!({"revision": 0})),
         ("dev_demo_setup", Spike, Value::Null),
@@ -394,4 +399,79 @@ fn a_failed_sign_in_keeps_the_current_session() {
             .unwrap()
     });
     assert_eq!((open, closed), (1, 1));
+}
+
+#[test]
+fn an_approval_round_trip_over_ipc() {
+    // E05-T04 through the shell: APPROVAL_REQUIRED carries the scope, a manager's PIN turns
+    // it into a token, a failed attempt keeps the token, a successful one uses it up.
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let manager = invoke(
+        &w,
+        "staff_create",
+        json!({"input": {"displayName": "Mia", "role": "manager", "pin": "2222"}}),
+    )
+    .unwrap();
+    let cashier = invoke(
+        &w,
+        "staff_create",
+        json!({"input": {"displayName": "Cal", "role": "cashier", "pin": "3333"}}),
+    )
+    .unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["variants"][0]["sku"] = json!("COLA");
+    invoke(&w, "product_create", product).unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": cashier["userId"], "pin": "3333"}),
+    )
+    .unwrap();
+    let cart = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-000000000009", "raw": "COLA", "source": "manual"}),
+    )
+    .unwrap()["cart"]
+        .clone();
+    let revision = cart["revision"].clone();
+
+    let void = |token: Value, revision: Value| {
+        invoke(
+            &w,
+            "cart_void",
+            json!({"revision": revision, "reason": "walked out", "approvalTokenId": token}),
+        )
+    };
+    let refused = void(Value::Null, revision.clone()).unwrap_err();
+    assert_eq!(refused["code"], "APPROVAL_REQUIRED");
+    let scope = refused["details"]["scope"].clone();
+    assert_eq!(scope["permission"], "cart_void");
+    assert_eq!(scope["entityId"], cart["cartId"]);
+
+    let token = invoke(
+        &w,
+        "auth_request_approval",
+        json!({"approverUserId": manager["userId"], "pin": "2222", "scope": scope}),
+    )
+    .unwrap();
+    let id = token["approvalTokenId"].clone();
+    // A stale revision fails for another reason: the token is kept for the retry.
+    let stale = void(id.clone(), json!(0)).unwrap_err();
+    assert_eq!(stale["code"], "CART_REVISION_MISMATCH");
+    let done = void(id.clone(), revision.clone()).unwrap();
+    assert_eq!(done["lines"].as_array().unwrap().len(), 0);
+    // Used up.
+    let again = void(id, json!(0)).unwrap_err();
+    assert_eq!(again["code"], "APPROVAL_INVALID");
 }

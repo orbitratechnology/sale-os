@@ -7,6 +7,9 @@ use pos_domain::catalog::Unit;
 use pos_domain::pricing::{TaxMode, TaxRate, resolve_rates};
 use pos_domain::{BusinessDate, Currency, CurrencyCode, Money, Quantity, RatePpm, RegisterId, VariantId};
 
+/// Used when the setting row is missing (setup always writes it).
+const DEFAULT_DISCOUNT_LIMIT_PPM: u32 = 100_000;
+
 fn q(e: impl std::fmt::Display) -> QueryError {
     QueryError(e.to_string())
 }
@@ -136,7 +139,21 @@ impl CartQueries for SqliteStore {
         .await
         .map_err(q)?
         .ok_or_else(|| QueryError("no business set up yet".into()))?;
+        let limit: Option<String> = sqlx::query_scalar(
+            "SELECT value_json FROM business_settings WHERE key = 'discount.cashier_max_ppm' LIMIT 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        let discount_limit_ppm = match limit {
+            Some(v) => serde_json::from_str::<u32>(&v)
+                .ok()
+                .filter(|p| *p <= 1_000_000)
+                .ok_or_else(|| QueryError(format!("discount.cashier_max_ppm is not a rate: {v}")))?,
+            None => DEFAULT_DISCOUNT_LIMIT_PPM,
+        };
         Ok(PricingSettings {
+            discount_limit_ppm,
             tax_mode: if inclusive {
                 TaxMode::Inclusive
             } else {

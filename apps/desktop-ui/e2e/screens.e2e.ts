@@ -250,7 +250,7 @@ describe("checkout (E09-T03..T06)", () => {
     expect(await field.inputValue()).toBe("");
   });
 
-  it("clear and void ask first; a cashier cannot void a sale with lines", async () => {
+  it("clear and void ask first; a cashier's void needs a manager", async () => {
     const page = await checkout();
     await scan(page, COLA);
     await page.locator("[data-testid=cart-line]").first().waitFor();
@@ -268,7 +268,10 @@ describe("checkout (E09-T03..T06)", () => {
     });
     await dialog.getByLabel("Reason").fill("customer left");
     await dialog.getByRole("button", { name: "Void sale" }).click();
-    await page.getByRole("alert").filter({ hasText: "Your role cannot do this" }).waitFor();
+    const approval = page.getByRole("dialog", { name: "Manager approval" });
+    await approval.getByText("voiding this sale").waitFor();
+    await page.keyboard.press("Escape"); // cancelled: nothing voided
+    await approval.waitFor({ state: "detached" });
     expect(await lines(page)).toHaveLength(1);
 
     await page.getByRole("button", { name: "Clear cart" }).click();
@@ -368,5 +371,67 @@ describe("layout and accessibility (E09-T03, E09-T05)", () => {
       expect(box).not.toBeNull();
       if (box) expect(box.y + box.height).toBeLessThanOrEqual(1080);
     }
+  });
+});
+
+describe("approvals and discount limits (E05-T04/T06, E08-T02)", () => {
+  /** Signs Cal (cashier) in through the sign-in screen, so the UI and backend agree. */
+  async function cashierCheckout(): Promise<Page> {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    return page;
+  }
+
+  it("15% from a cashier: reason, manager PIN, then the same command is retried with the token", async () => {
+    const page = await cashierCheckout();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+
+    await page.keyboard.press("F4");
+    await page.keyboard.type("15");
+    await page.keyboard.press("Enter");
+    // Above the 10% limit: a reason first (it goes to the audit log).
+    const reason = page.getByRole("dialog", { name: "Reason for 15% off" });
+    await reason.getByLabel(/Reason/).fill("damaged box");
+    await page.keyboard.press("Enter");
+
+    // Rust (here the fake) answers APPROVAL_REQUIRED; the dialog names what is approved.
+    const approval = page.getByRole("dialog", { name: "Manager approval" });
+    await approval.getByText("a 15% discount").waitFor();
+    // Only managers and owners are offered, never the requester (a cashier).
+    expect(await approval.getByRole("button", { name: /Cal/ }).count()).toBe(0);
+    await approval.getByRole("button", { name: /Olu/ }).waitFor();
+    await approval.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("9999");
+    await page.keyboard.press("Enter");
+    await approval.getByRole("alert").filter({ hasText: "4 tries left" }).waitFor();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await approval.waitFor({ state: "detached" });
+
+    const sent = await calls(page, "cart_set_line_discount");
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({ discount: { ratePpm: 150000, reason: "damaged box" }, approvalTokenId: null });
+    expect(sent[1]).toMatchObject({ discount: { ratePpm: 150000, reason: "damaged box" } });
+    expect(typeof sent[1]?.approvalTokenId).toBe("string");
+    const [request] = await calls(page, "auth_request_approval");
+    expect(request?.scope).toMatchObject({ permission: "discount_above_threshold", maxPpm: 150000 });
+    // 1.20 less 15% = 1.02
+    expect(await page.getByTestId("total").textContent()).toBe("1.02");
+  });
+
+  it("at or below the limit there is no reason prompt and no approval", async () => {
+    const page = await cashierCheckout();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F4");
+    await page.keyboard.type("10");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "cart_set_line_discount"));
+    expect(await page.getByRole("dialog").count()).toBe(0);
+    expect((await calls(page, "cart_set_line_discount"))[0]).toMatchObject({ discount: { reason: null } });
   });
 });

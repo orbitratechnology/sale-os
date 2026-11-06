@@ -33,6 +33,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         app_commands::auth_login,
         app_commands::auth_logout,
         app_commands::auth_change_pin,
+        app_commands::auth_request_approval,
         app_commands::staff_list,
         app_commands::staff_create,
         app_commands::staff_update,

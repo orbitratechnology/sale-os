@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
-import { percentToPpm, scaleDecimal, stepMilli } from "../../lib/decimal";
+import { percentToPpm, ppmToPercent, scaleDecimal, stepMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { ApprovalDialog } from "../auth/ApprovalDialog";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
@@ -10,7 +11,13 @@ import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
 import { useCart } from "./useCart";
 
-type Modal = "clear" | "void" | "orderDiscount" | "price" | null;
+type Modal =
+  | "clear"
+  | "void"
+  | "orderDiscount"
+  | "price"
+  | { reason: string; then: (reason: string) => void }
+  | null;
 
 /** The key map (E09-T05). Shown in the action bar; documented in docs/keyboard.md. */
 export const KEYS = {
@@ -43,10 +50,15 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
   const selectedLine = c.line(c.selected);
 
   // Wedge scans: in scanner-ready mode, or typed into the code field.
-  useScanCapture((scan) => {
-    if (scan.inScanField) setCode("");
-    void c.scan(scan.raw, scan.scanEventId, "scanner");
-  });
+  // Paused while a dialog owns the keyboard (approval PIN pad, reason, confirmations).
+  useScanCapture(
+    (scan) => {
+      if (scan.inScanField) setCode("");
+      void c.scan(scan.raw, scan.scanEventId, "scanner");
+    },
+    {},
+    modal === null && c.approval === null,
+  );
 
   useEffect(() => {
     const update = () => setScannerReady(!inTextField());
@@ -81,14 +93,22 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
         c.setNotice({ kind: "info", text: "Enter the discount as a percentage, e.g. 10." });
         return;
       }
-      void c.setLineDiscount(lineId, { kind: "percent", ratePpm: ppm, reason: null });
+      withReason(ppm, `Reason for ${ppmToPercent(ppm)}% off`, (reason) =>
+        void c.setLineDiscount(lineId, { kind: "percent", ratePpm: ppm, reason }),
+      );
     }
+  };
+
+  /** Above the cashier limit, a discount needs a reason (E08-T02): ask before sending. */
+  const withReason = (ppm: number, title: string, send: (reason: string | null) => void) => {
+    if (ppm > (c.cart?.discountLimitPpm ?? 1_000_000)) setModal({ reason: title, then: (r) => send(r.trim()) });
+    else send(null);
   };
 
   // Global keys. Ignored while a dialog is open (the dialog owns Esc and Enter).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (modal || e.defaultPrevented) return;
+      if (modal || c.approval || e.defaultPrevented) return;
       const typing = inTextField();
       const sel = c.selected;
       switch (e.key) {
@@ -287,7 +307,10 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
             setModal(null);
             const ppm = percentToPpm(value.replace("%", ""));
             if (ppm === null) return c.setNotice({ kind: "info", text: "Enter the discount as a percentage, e.g. 10." });
-            void c.setOrderDiscount(ppm === 0 ? null : { kind: "percent", ratePpm: ppm, reason: null });
+            if (ppm === 0) return void c.setOrderDiscount(null);
+            withReason(ppm, `Reason for ${ppmToPercent(ppm)}% off the order`, (reason) =>
+              void c.setOrderDiscount({ kind: "percent", ratePpm: ppm, reason }),
+            );
           }}
         />
       )}
@@ -301,7 +324,32 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
             setModal(null);
             const minor = scaleDecimal(value, exponent);
             if (minor === null) return c.setNotice({ kind: "info", text: "Enter a price like 1.20." });
-            void c.overridePrice(selectedLine.lineId, minor);
+            const lineId = selectedLine.lineId;
+            setModal({ reason: `Reason for changing the price of ${selectedLine.name}`, then: (r) => void c.overridePrice(lineId, minor, r.trim()) });
+          }}
+        />
+      )}
+      {modal !== null && typeof modal === "object" && (
+        <Dialog
+          title={modal.reason}
+          confirmLabel="Continue"
+          input={{ label: "Reason (kept in the audit log)" }}
+          onCancel={() => setModal(null)}
+          onConfirm={(reason) => {
+            setModal(null);
+            modal.then(reason);
+          }}
+        />
+      )}
+      {c.approval && (
+        <ApprovalDialog
+          scope={c.approval.scope}
+          requesterId={session.userId}
+          onCancel={() => c.setApproval(null)}
+          onApproved={(token) => {
+            const pending = c.approval;
+            c.setApproval(null);
+            if (pending) void pending.retry(token);
           }}
         />
       )}

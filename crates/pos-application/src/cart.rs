@@ -6,9 +6,9 @@ use crate::queries::{CartQueries, CatalogQueries, PricingSettings};
 use crate::{LocalStore, WriteSet};
 use pos_domain::cart::{AddVia, Cart, CartChange, CartLine, CartStatus, SellableVariant};
 use pos_domain::catalog::CatalogError;
-use pos_domain::pricing::{Discount, PricedCart, PricingPolicy, price_cart};
+use pos_domain::pricing::{Discount, PricedCart, PricedLine, PricingPolicy, price_cart};
 use pos_domain::time::{business_date, parse_time_zone};
-use pos_domain::{BusinessDate, CartLineId, Money, Permission, Quantity, ScanEventId, VariantId};
+use pos_domain::{BusinessDate, CartLineId, Money, Permission, Quantity, ScanEventId, UserId, VariantId};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -154,7 +154,7 @@ impl CartService {
         ctx: &CommandContext,
         cart: Cart,
         base: Option<u64>,
-        audited: Option<(audit::AuditAction, serde_json::Value)>,
+        audited: Option<Audited>,
         scan: Option<ScanEventId>,
     ) -> Result<CartView, AppError> {
         let actor = ctx.actor()?.clone();
@@ -164,8 +164,13 @@ impl CartService {
         if let Some(id) = scan {
             b = b.record_scan(id);
         }
-        if let Some((action, metadata)) = audited {
-            b = b.audit(AuditEntry::new(ctx.ids.as_ref(), action, "cart", cart.id).with_metadata(metadata));
+        if let Some(a) = audited {
+            let mut entry =
+                AuditEntry::new(ctx.ids.as_ref(), a.action, "cart", cart.id).with_metadata(a.metadata);
+            if let Some(approver) = a.approver {
+                entry = entry.with_approver(approver);
+            }
+            b = b.audit(entry);
         }
         self.store.apply(b.build()?).await?;
         Ok(view)
@@ -210,6 +215,9 @@ impl CartService {
     }
 
     /// Line discount. Permission thresholds and manager approval arrive with E08-T02.
+    /// A line discount (POS-004, E08-T02). Above the cashier limit it needs a reason and
+    /// `DiscountAboveThreshold`: a cashier gets `APPROVAL_REQUIRED` for exactly that rate.
+    /// The limit applies to the effective rate, so a fixed amount cannot get round it.
     pub async fn set_line_discount(
         &self,
         ctx: &CommandContext,
@@ -219,12 +227,39 @@ impl CartService {
         ctx.authorize(Permission::CartLineDiscount)?;
         let _guard = self.exclusive().await;
         let Loaded { mut cart, base } = self.load(ctx).await?;
+        let before = self.view(ctx, cart.clone(), Vec::new()).await?;
         cart.set_line_discount(line, discount.clone()).map_err(cart_err)?;
-        let meta = serde_json::json!({ "line": line, "discount": discount });
-        self.save(ctx, cart, base, Some((audit::CART_DISCOUNT_APPLIED, meta)), None)
-            .await
+        let after = self.view(ctx, cart.clone(), Vec::new()).await?;
+        let (old, new) = (line_priced(&before, line)?, line_priced(&after, line)?);
+        let rate = effective_ppm(new.line_discount, new.gross);
+        let approver = discount_approval(ctx, &after, rate, discount.as_ref())?;
+        if let Some(d) = cart
+            .lines
+            .iter_mut()
+            .find(|l| l.id == line)
+            .and_then(|l| l.line_discount.as_mut())
+        {
+            d.authorized_by = approver;
+        }
+        let metadata = serde_json::json!({
+            "line": line,
+            "discount": discount,
+            "effectivePpm": rate,
+            "beforeMinor": old.total.minor().to_string(),
+            "afterMinor": new.total.minor().to_string(),
+        });
+        self.save(
+            ctx,
+            cart,
+            base,
+            Some(Audited::new(audit::CART_DISCOUNT_APPLIED, metadata, approver)),
+            None,
+        )
+        .await
     }
 
+    /// An order discount, allocated across lines by Rust (ADR-004). Same limit and
+    /// approval rule as line discounts, on the rate of the order after line discounts.
     pub async fn set_order_discount(
         &self,
         ctx: &CommandContext,
@@ -233,38 +268,67 @@ impl CartService {
         ctx.authorize(Permission::CartOrderDiscount)?;
         let _guard = self.exclusive().await;
         let Loaded { mut cart, base } = self.load(ctx).await?;
+        let before = self.view(ctx, cart.clone(), Vec::new()).await?;
         cart.set_order_discount(discount.clone()).map_err(cart_err)?;
+        let after = self.view(ctx, cart.clone(), Vec::new()).await?;
+        let p = &after.priced;
+        let base_amount = p
+            .subtotal
+            .checked_sub(p.line_discount_total)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let rate = effective_ppm(p.order_discount_total, base_amount);
+        let approver = discount_approval(ctx, &after, rate, discount.as_ref())?;
+        if let Some(d) = cart.order_discount.as_mut() {
+            d.authorized_by = approver;
+        }
+        let metadata = serde_json::json!({
+            "order": discount,
+            "effectivePpm": rate,
+            "beforeMinor": before.priced.total.minor().to_string(),
+            "afterMinor": after.priced.total.minor().to_string(),
+        });
         self.save(
             ctx,
             cart,
             base,
-            Some((
-                audit::CART_DISCOUNT_APPLIED,
-                serde_json::json!({ "order": discount }),
-            )),
+            Some(Audited::new(audit::CART_DISCOUNT_APPLIED, metadata, approver)),
             None,
         )
         .await
     }
 
+    /// Sets the unit price of a line. Needs `PriceOverride` (a cashier: approval) and a reason.
     pub async fn override_price(
         &self,
         ctx: &CommandContext,
         line: CartLineId,
         price: Money,
+        reason: &str,
     ) -> Result<CartView, AppError> {
-        ctx.authorize(Permission::PriceOverride)?;
         let _guard = self.exclusive().await;
         let Loaded { mut cart, base } = self.load(ctx).await?;
+        let approver = ctx.authorize_with_approval(Permission::PriceOverride, cart.id, None)?;
+        let reason = required_reason(reason, "a price change")?;
         let before = cart
             .lines
             .iter()
             .find(|l| l.id == line)
             .map(|l| l.price_override.unwrap_or(l.variant.price));
         cart.override_price(line, price).map_err(cart_err)?;
-        let meta = serde_json::json!({ "line": line, "fromMinor": before.map(|m| m.minor().to_string()), "toMinor": price.minor().to_string() });
-        self.save(ctx, cart, base, Some((audit::CART_PRICE_OVERRIDDEN, meta)), None)
-            .await
+        let metadata = serde_json::json!({
+            "line": line,
+            "fromMinor": before.map(|m| m.minor().to_string()),
+            "toMinor": price.minor().to_string(),
+            "reason": reason,
+        });
+        self.save(
+            ctx,
+            cart,
+            base,
+            Some(Audited::new(audit::CART_PRICE_OVERRIDDEN, metadata, approver)),
+            None,
+        )
+        .await
     }
 
     /// POS-003 with confirmation in the UI and a revision guard here.
@@ -276,11 +340,12 @@ impl CartService {
         let CartChange::Cleared { lines } = change else {
             unreachable!("clear returns Cleared")
         };
+        let metadata = serde_json::json!({ "lines": lines });
         self.save(
             ctx,
             cart,
             base,
-            Some((audit::CART_CLEARED, serde_json::json!({ "lines": lines }))),
+            Some(Audited::new(audit::CART_CLEARED, metadata, None)),
             None,
         )
         .await
@@ -296,23 +361,94 @@ impl CartService {
         let guard = self.exclusive().await;
         let Loaded { mut cart, base } = self.load(ctx).await?;
         // An empty cart is simply closed; a cart with lines needs CartVoid (cashier: approval).
-        if !cart.lines.is_empty() {
-            ctx.authorize(Permission::CartVoid)?;
-        } else {
+        let approver = if cart.lines.is_empty() {
             ctx.authorize(Permission::SaleComplete)?;
-        }
+            None
+        } else {
+            ctx.authorize_with_approval(Permission::CartVoid, cart.id, None)?
+        };
         let lines = cart.lines.len();
         cart.void(revision, reason).map_err(cart_err)?;
         let meta = serde_json::json!({ "lines": lines, "reason": cart.void_reason });
         let actor = ctx.actor()?.clone();
+        let mut entry =
+            AuditEntry::new(ctx.ids.as_ref(), audit::CART_VOIDED, "cart", cart.id).with_metadata(meta);
+        if let Some(a) = approver {
+            entry = entry.with_approver(a);
+        }
         let set = WriteSet::builder(ctx.write_context())
             .put_cart(cart.clone(), actor.user_id, base)
-            .audit(AuditEntry::new(ctx.ids.as_ref(), audit::CART_VOIDED, "cart", cart.id).with_metadata(meta))
+            .audit(entry)
             .build()?;
         self.store.apply(set).await?;
         drop(guard);
         self.current(ctx).await
     }
+}
+
+/// An audit entry for a cart change.
+pub(crate) struct Audited {
+    action: audit::AuditAction,
+    metadata: serde_json::Value,
+    approver: Option<UserId>,
+}
+
+impl Audited {
+    fn new(action: audit::AuditAction, metadata: serde_json::Value, approver: Option<UserId>) -> Self {
+        Self {
+            action,
+            metadata,
+            approver,
+        }
+    }
+}
+
+fn line_priced(view: &CartView, line: CartLineId) -> Result<&PricedLine, AppError> {
+    view.priced
+        .lines
+        .iter()
+        .find(|l| l.line_id == line)
+        .ok_or_else(|| cart_err(pos_domain::cart::CartError::LineNotFound))
+}
+
+/// `discount / base` in parts per million, rounded up so a limit cannot be slipped under
+/// by rounding. Integer arithmetic only (ADR-001).
+pub fn effective_ppm(discount: Money, base: Money) -> u32 {
+    let (d, b) = (i128::from(discount.minor()), i128::from(base.minor()));
+    if d <= 0 || b <= 0 {
+        return 0;
+    }
+    let ppm = (d * 1_000_000 + b - 1) / b;
+    u32::try_from(ppm.min(1_000_000)).unwrap_or(1_000_000)
+}
+
+/// E08-T02: above the cashier limit, a reason is required and the actor needs
+/// `DiscountAboveThreshold` (or an approval from someone who has it).
+fn discount_approval(
+    ctx: &CommandContext,
+    view: &CartView,
+    rate: u32,
+    discount: Option<&Discount>,
+) -> Result<Option<UserId>, AppError> {
+    if rate <= view.settings.discount_limit_ppm {
+        return Ok(None);
+    }
+    required_reason(
+        discount.and_then(|d| d.reason.as_deref()).unwrap_or(""),
+        "a discount above the limit",
+    )?;
+    ctx.authorize_with_approval(Permission::DiscountAboveThreshold, view.cart.id, Some(rate))
+}
+
+fn required_reason<'a>(reason: &'a str, what: &str) -> Result<&'a str, AppError> {
+    let r = reason.trim();
+    if r.is_empty() {
+        return Err(AppError::Validation(
+            format!("{what} needs a reason"),
+            pos_domain::ErrorCode::ValidationFailed,
+        ));
+    }
+    Ok(r)
 }
 
 pub(crate) fn cart_err(e: pos_domain::cart::CartError) -> AppError {

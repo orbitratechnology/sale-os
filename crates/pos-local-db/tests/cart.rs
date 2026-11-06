@@ -189,7 +189,7 @@ async fn line_edits_discounts_and_overrides() {
     }
     let view = t
         .carts
-        .override_price(ctx, line, Money::from_minor(100))
+        .override_price(ctx, line, Money::from_minor(100), "price match")
         .await
         .unwrap();
     assert_eq!(view.cart.lines[0].price_override, Some(Money::from_minor(100)));
@@ -226,11 +226,12 @@ async fn clear_needs_the_current_revision_and_void_needs_permission() {
 
     added(scan(&t, "COLA").await);
     let rev = t.carts.current(owner).await.unwrap().cart.revision;
-    // A cashier cannot void a cart with lines (approval flow: E05-T04).
+    // A cashier voids a cart with lines only with a manager's approval (E05-T04).
     let cashier = t.shop.as_role(Role::Cashier);
-    assert_eq!(
-        t.carts.void(&cashier, rev, "changed mind").await.unwrap_err(),
-        AppError::PermissionDenied(pos_domain::Permission::CartVoid)
+    let err = t.carts.void(&cashier, rev, "changed mind").await.unwrap_err();
+    assert!(
+        matches!(&err, AppError::ApprovalRequired(s) if s.permission == pos_domain::Permission::CartVoid),
+        "{err:?}"
     );
     let fresh = t.carts.void(owner, rev, "customer left").await.unwrap();
     assert!(fresh.cart.lines.is_empty());

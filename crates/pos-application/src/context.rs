@@ -4,8 +4,8 @@ use crate::WriteContext;
 use crate::write::{WriteError, WriteSetError};
 use pos_domain::staff::StaffError;
 use pos_domain::{
-    BusinessId, Clock, ErrorCode, HasErrorCode, IdGenerator, LocationId, Permission, RegisterId, Role,
-    SessionId, Timestamp, UserId, role_has,
+    ApprovalId, ApprovalScope, BusinessId, Clock, ErrorCode, HasErrorCode, IdGenerator, LocationId,
+    Permission, RegisterId, Role, SessionId, Timestamp, UserId, approvable, role_has,
 };
 use std::sync::Arc;
 
@@ -26,12 +26,24 @@ pub struct Actor {
     pub session_id: SessionId,
 }
 
+/// A manager's approval (E05-T04): their verified PIN, for one scope, until `expires_at`.
+/// Single use: the shell takes it from the registry before the command runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApprovalToken {
+    pub id: ApprovalId,
+    pub approver: UserId,
+    pub scope: ApprovalScope,
+    pub expires_at: Timestamp,
+}
+
 #[derive(Clone)]
 pub struct CommandContext {
     pub register: RegisterContext,
     pub actor: Option<Actor>,
     pub clock: Arc<dyn Clock>,
     pub ids: Arc<dyn IdGenerator>,
+    /// An approval the caller presented with this command, if any.
+    pub approval: Option<ApprovalToken>,
 }
 
 impl CommandContext {
@@ -54,6 +66,40 @@ impl CommandContext {
         }
     }
 
+    /// For actions a role may do only with approval (07 §1.2 "approval" cells). Returns the
+    /// approver when an approval was needed and is valid, `None` when the actor's own role
+    /// suffices. `APPROVAL_REQUIRED` carries the scope the UI must get approved;
+    /// `APPROVAL_INVALID` means the presented token is expired or covers something else.
+    pub fn authorize_with_approval(
+        &self,
+        permission: Permission,
+        entity_id: impl ToString,
+        max_ppm: Option<u32>,
+    ) -> Result<Option<UserId>, AppError> {
+        let actor = self.actor()?;
+        if role_has(actor.role, permission) {
+            return Ok(None);
+        }
+        if !approvable(actor.role, permission) {
+            return Err(AppError::PermissionDenied(permission));
+        }
+        let needed = ApprovalScope {
+            permission,
+            entity_id: entity_id.to_string(),
+            max_ppm,
+        };
+        match &self.approval {
+            None => Err(AppError::ApprovalRequired(needed)),
+            Some(t) if t.expires_at <= self.now() => {
+                Err(AppError::ApprovalInvalid("the approval has expired"))
+            }
+            Some(t) if !t.scope.covers(&needed) => Err(AppError::ApprovalInvalid(
+                "the approval does not cover this action",
+            )),
+            Some(t) => Ok(Some(t.approver)),
+        }
+    }
+
     /// A write context stamped with the actor and the current time.
     pub fn write_context(&self) -> WriteContext {
         WriteContext {
@@ -73,6 +119,10 @@ pub enum AppError {
     SessionLocked,
     #[error("your role does not allow {0:?}")]
     PermissionDenied(Permission),
+    #[error("{:?} needs a manager's approval", .0.permission)]
+    ApprovalRequired(ApprovalScope),
+    #[error("approval not accepted: {0}")]
+    ApprovalInvalid(&'static str),
     #[error("wrong PIN; {remaining_attempts} attempt(s) left before a temporary lock")]
     PinInvalid { remaining_attempts: u32 },
     #[error("too many wrong PINs; try again after {retry_at_ms} (epoch ms)")]
@@ -101,6 +151,8 @@ impl HasErrorCode for AppError {
         match self {
             AppError::SessionLocked => ErrorCode::SessionLocked,
             AppError::PermissionDenied(_) => ErrorCode::PermissionDenied,
+            AppError::ApprovalRequired(_) => ErrorCode::ApprovalRequired,
+            AppError::ApprovalInvalid(_) => ErrorCode::ApprovalInvalid,
             AppError::PinInvalid { .. } => ErrorCode::AuthPinInvalid,
             AppError::LockedOut { .. } => ErrorCode::AuthLockedOut,
             AppError::Staff(e) => e.error_code(),

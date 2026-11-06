@@ -8,6 +8,7 @@
 export { commands } from "./bindings";
 export type {
   AppInfo,
+  ApprovalTokenDto,
   DatabaseStatus,
   DemoCart,
   DemoProduct,
@@ -24,6 +25,7 @@ export type {
   WorkspaceDto as Workspace,
 } from "./bindings";
 export type {
+  ApprovalScope_Serialize as ApprovalScope,
   BootstrapState_Serialize as BootstrapState,
   CartLineDto_Serialize as CartLine,
   CartViewDto_Serialize as CartView,

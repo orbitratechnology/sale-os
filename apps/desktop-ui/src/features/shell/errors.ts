@@ -8,6 +8,7 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   SESSION_LOCKED: "You are signed out. Sign in to continue.",
   PERMISSION_DENIED: "Your role cannot do this. Ask a manager.",
   APPROVAL_REQUIRED: "This needs a manager's approval.",
+  APPROVAL_INVALID: "That approval cannot be used: it was already used, has expired, or the approver cannot approve this.",
   VALIDATION_FAILED: "That value is not valid. Check it and try again.",
   CATALOG_NOT_FOUND: "That product no longer exists.",
   CATALOG_DUPLICATE_BARCODE: "Another product already uses that barcode.",

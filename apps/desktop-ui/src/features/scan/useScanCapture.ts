@@ -26,7 +26,15 @@ function isEditable(el: Element | null): boolean {
  *   typed; a detected scan is delivered with `inScanField: true` and its terminator swallowed.
  * - **Any other text field** (search, forms) is left alone: human typing is never a scan.
  */
-export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Partial<ScanDetectorConfig> = {}): void {
+export function useScanCapture(
+  onScan: (scan: CapturedScan) => void,
+  config: Partial<ScanDetectorConfig> = {},
+  /**
+   * False while a dialog owns the keyboard (e.g. a manager typing a PIN on the approval
+   * pad): a fast-typed PIN would otherwise look exactly like a scan.
+   */
+  enabled = true,
+): void {
   const onScanRef = useRef(onScan);
   useEffect(() => {
     onScanRef.current = onScan;
@@ -36,6 +44,7 @@ export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Par
   const configKey = JSON.stringify(merged);
 
   useEffect(() => {
+    if (!enabled) return;
     const cfg = JSON.parse(configKey) as ScanDetectorConfig;
     let inScanField = false;
     const detector = new ScanDetector(cfg, (scan) =>
@@ -70,5 +79,5 @@ export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Par
       window.removeEventListener("keydown", onKeyDown, { capture: true });
       clearTimeout(idleTimer);
     };
-  }, [configKey]);
+  }, [configKey, enabled]);
 }
