@@ -9,6 +9,8 @@ export interface CapturedScan extends DetectedScan {
   inScanField: boolean;
 }
 
+const NUMPAD_COMMANDS = new Set(["NumpadAdd", "NumpadSubtract"]);
+
 function isEditable(el: Element | null): boolean {
   if (!el) return false;
   if (el instanceof HTMLInputElement) return !["button", "checkbox", "radio", "submit", "reset"].includes(el.type);
@@ -43,6 +45,9 @@ export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Par
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+      // Numpad +/- are till commands (quantity), never scanner output: wedge scanners send
+      // main-row keys. Letting them through keeps them usable in scanner-ready mode.
+      if (NUMPAD_COMMANDS.has(e.code)) return;
       const target = e.target instanceof Element ? e.target : null;
       const field = target?.closest("[data-scan-field]") ?? null;
       const editable = isEditable(target);

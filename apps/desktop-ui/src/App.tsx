@@ -1,70 +1,53 @@
-import { useEffect, useState } from "react";
-import { commands, type AppInfo, type IpcError } from "./ipc";
-import { Stage0Demo } from "./features/devtools/Stage0Demo";
+import { useCallback, useEffect, useState } from "react";
+import { commands, type BootstrapState, type IpcError, type Result, type Session } from "./ipc";
+import { SetupWizard } from "./features/setup/SetupWizard";
+import { SignIn } from "./features/auth/SignIn";
+import { Checkout } from "./features/checkout/Checkout";
+import { ErrorPanel } from "./features/shell/ErrorPanel";
 
-/** Stage 0 shell: shows build and database status. Checkout replaces this in Stage 1. */
+/**
+ * The app shell: first run → sign-in → checkout. Rust holds the session; this component only
+ * mirrors it, and goes back to sign-in whenever a command reports `SESSION_LOCKED`.
+ */
 export function App() {
-  const [info, setInfo] = useState<AppInfo | null>(null);
+  const [state, setState] = useState<BootstrapState | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
 
-  useEffect(() => {
-    void commands.appInfo().then((res) => {
-      if (res.status === "ok") setInfo(res.data);
-      else setError(res.error);
-    });
+  const apply = useCallback((res: Result<BootstrapState>) => {
+    if (res.status === "ok") {
+      setState(res.data);
+      setError(null);
+    } else setError(res.error);
   }, []);
 
-  return (
-    <main className="shell">
-      <header>
-        <h1>Sale OS</h1>
-        {info && (
-          <span className="badge">
-            v{info.version}
-            {info.debugBuild ? " · debug" : ""}
-          </span>
-        )}
-      </header>
+  const refresh = useCallback(() => void commands.appBootstrapState().then(apply), [apply]);
 
-      {error && <ErrorPanel error={error} />}
+  useEffect(() => {
+    let live = true;
+    void commands.appBootstrapState().then((res) => live && apply(res));
+    return () => {
+      live = false;
+    };
+  }, [apply]);
 
-      {info && (
-        <section className="card" aria-label="Local database">
-          <h2>Local database</h2>
-          {info.database.state === "ready" ? (
-            <dl>
-              <dt>Status</dt>
-              <dd>Ready</dd>
-              <dt>Schema version</dt>
-              <dd>{info.database.schemaVersion}</dd>
-              <dt>File</dt>
-              <dd className="mono">{info.database.path}</dd>
-            </dl>
-          ) : (
-            <ErrorPanel error={info.database.error} />
-          )}
-        </section>
-      )}
+  const signedIn = useCallback((session: Session) => {
+    setState((s) => (s ? { ...s, session } : s));
+  }, []);
+  const signedOut = useCallback(() => {
+    setState((s) => (s ? { ...s, session: null } : s));
+  }, []);
 
-      <Stage0Demo />
-    </main>
-  );
-}
-
-const ERROR_COPY: Partial<Record<IpcError["code"], string>> = {
-  STORE_SCHEMA_TOO_NEW: "This database was created by a newer version of Sale OS. Update the app to continue.",
-  STORE_IO: "Sale OS cannot read or write its database. Check disk space and that the data folder is on this computer.",
-  STORE_CORRUPT: "The local database looks damaged. Do not delete it; contact support to restore from a backup.",
-};
-
-function ErrorPanel({ error }: { error: IpcError }) {
-  return (
-    <section className="card error" role="alert">
-      <h2>Something needs attention</h2>
-      <p>{ERROR_COPY[error.code] ?? "An unexpected error occurred."}</p>
-      <p className="mono small">
-        {error.code} · ref {error.correlationId}
-      </p>
-    </section>
-  );
+  if (error) {
+    return (
+      <main className="shell">
+        <ErrorPanel error={error} />
+      </main>
+    );
+  }
+  if (!state) return <main className="shell" aria-busy="true" />;
+  if (!state.setupComplete || !state.workspace) return <SetupWizard onDone={refresh} />;
+  if (!state.session || state.session.mustChangePin) {
+    return <SignIn workspace={state.workspace} session={state.session} onSignedIn={signedIn} />;
+  }
+  return <Checkout workspace={state.workspace} session={state.session} onSignedOut={signedOut} />;
 }

@@ -8,88 +8,96 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	/**  Version, build flavour and local database status. No session required. */
-	appInfo: () => typedError<AppInfo, IpcError>(__TAURI_INVOKE("app_info")),
+	appInfo: () => typedError<AppInfo_Serialize, IpcError_Serialize>(__TAURI_INVOKE("app_info")),
 	/**
 	 *  Stage 0 demo: adds two amounts with `pos-domain` (the same crate the cloud uses) and
 	 *  formats the result. Money crosses IPC as minor-unit strings.
 	 */
-	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
+	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError_Serialize>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
 	/**
 	 *  What the shell needs before anything else: set up yet? who is signed in? No session
 	 *  required.
 	 */
-	appBootstrapState: () => typedError<BootstrapState_Serialize, IpcError>(__TAURI_INVOKE("app_bootstrap_state")),
+	appBootstrapState: () => typedError<BootstrapState_Serialize, IpcError_Serialize>(__TAURI_INVOKE("app_bootstrap_state")),
 	/**
 	 *  First run (E04-T01). Refused once setup has completed. Does not sign anyone in: the UI
 	 *  signs the owner in with `auth_login`, so every session is a real, audited sign-in.
 	 */
-	setupCreateWorkspace: (input: CreateWorkspaceInput_Deserialize) => typedError<CreatedWorkspaceDto, IpcError>(__TAURI_INVOKE("setup_create_workspace", { input })),
+	setupCreateWorkspace: (input: CreateWorkspaceInput_Deserialize) => typedError<CreatedWorkspaceDto, IpcError_Serialize>(__TAURI_INVOKE("setup_create_workspace", { input })),
 	/**  Active staff for the PIN pad. No session required. */
-	authListUsers: () => typedError<SignInUser[], IpcError>(__TAURI_INVOKE("auth_list_users")),
+	authListUsers: () => typedError<SignInUser[], IpcError_Serialize>(__TAURI_INVOKE("auth_list_users")),
 	/**
 	 *  PIN sign-in with lockout (E05-T02). On success it replaces any current session; a failed
 	 *  attempt leaves the current session untouched.
 	 */
-	authLogin: (userId: UserId, pin: string) => typedError<SessionDto, IpcError>(__TAURI_INVOKE("auth_login", { userId, pin })),
-	authLogout: () => typedError<null, IpcError>(__TAURI_INVOKE("auth_logout")),
+	authLogin: (userId: UserId, pin: string) => typedError<SessionDto, IpcError_Serialize>(__TAURI_INVOKE("auth_login", { userId, pin })),
+	authLogout: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_logout")),
 	/**  Changes the signed-in user's own PIN (required after an owner reset). */
-	authChangePin: (currentPin: string, newPin: string) => typedError<SessionDto, IpcError>(__TAURI_INVOKE("auth_change_pin", { currentPin, newPin })),
-	staffList: () => typedError<StaffDto[], IpcError>(__TAURI_INVOKE("staff_list")),
-	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_create", { input })),
-	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_update", { input })),
-	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
+	authChangePin: (currentPin: string, newPin: string) => typedError<SessionDto, IpcError_Serialize>(__TAURI_INVOKE("auth_change_pin", { currentPin, newPin })),
+	staffList: () => typedError<StaffDto[], IpcError_Serialize>(__TAURI_INVOKE("staff_list")),
+	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_create", { input })),
+	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_update", { input })),
+	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
 	/**  Sets a temporary PIN; the user must change it at next sign-in. */
-	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
-	taxList: () => typedError<TaxCategoryDto[], IpcError>(__TAURI_INVOKE("tax_list")),
-	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_get", { productId })),
-	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_create", { product })),
+	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
+	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
+	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
+	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create", { product })),
 	/**  `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`. */
-	productUpdate: (productId: ProductId, baseVersion: number, product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_update", { productId, baseVersion, product })),
-	productArchive: (productId: ProductId, baseVersion: number) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("product_archive", { productId, baseVersion })),
+	productUpdate: (productId: ProductId, baseVersion: number, product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_update", { productId, baseVersion, product })),
+	productArchive: (productId: ProductId, baseVersion: number) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_archive", { productId, baseVersion })),
 	/**  Barcode first, then SKU (BAR-004). `null` when nothing matches. */
-	catalogLookupCode: (code: string) => typedError<CatalogHitDto_Serialize | null, IpcError>(__TAURI_INVOKE("catalog_lookup_code", { code })),
-	catalogSearch: (query: string, limit: number) => typedError<CatalogHitDto_Serialize[], IpcError>(__TAURI_INVOKE("catalog_search", { query, limit })),
+	catalogLookupCode: (code: string) => typedError<CatalogHitDto_Serialize | null, IpcError_Serialize>(__TAURI_INVOKE("catalog_lookup_code", { code })),
+	catalogSearch: (query: string, limit: number) => typedError<CatalogHitDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("catalog_search", { query, limit })),
 	/**
 	 *  Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI
 	 *  per delivery: a repeated delivery is reported as `duplicate` and changes nothing.
 	 */
-	scanSubmit: (scanEventId: ScanEventId, raw: string, source: ScanSourceDto) => typedError<ScanOutcomeDto_Serialize, IpcError>(__TAURI_INVOKE("scan_submit", { scanEventId, raw, source })),
+	scanSubmit: (scanEventId: ScanEventId, raw: string, source: ScanSourceDto) => typedError<ScanOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scan_submit", { scanEventId, raw, source })),
 	/**  The open cart, priced (also after a restart: POS-011). */
-	cartCurrent: () => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_current")),
+	cartCurrent: () => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_current")),
 	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
-	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
+	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
 	/**  Zero is refused: use `cart_remove_line`. */
-	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
-	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_remove_line", { lineId })),
+	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
+	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_remove_line", { lineId })),
 	/**  `discount: null` removes it. */
-	cartSetLineDiscount: (lineId: CartLineId, discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_set_line_discount", { lineId, discount })),
-	cartSetOrderDiscount: (discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_set_order_discount", { discount })),
-	cartOverridePrice: (lineId: CartLineId, unitPriceMinor: string) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_override_price", { lineId, unitPriceMinor })),
+	cartSetLineDiscount: (lineId: CartLineId, discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_line_discount", { lineId, discount })),
+	cartSetOrderDiscount: (discount: DiscountDto_Deserialize | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_order_discount", { discount })),
+	cartOverridePrice: (lineId: CartLineId, unitPriceMinor: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_override_price", { lineId, unitPriceMinor })),
 	/**  POS-003: `revision` must be the one the cashier saw when confirming. */
-	cartClear: (revision: number) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_clear", { revision })),
+	cartClear: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_clear", { revision })),
 	/**  Abandons the cart with a reason and returns the next (empty) one. */
-	cartVoid: (revision: number, reason: string) => typedError<CartViewDto_Serialize, IpcError>(__TAURI_INVOKE("cart_void", { revision, reason })),
+	cartVoid: (revision: number, reason: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason })),
 	/**  Creates the demo workspace and product if missing. */
-	devDemoSetup: () => typedError<DemoProduct, IpcError>(__TAURI_INVOKE("dev_demo_setup")),
+	devDemoSetup: () => typedError<DemoProduct, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_setup")),
 	/**  Current demo cart. */
-	devDemoCart: () => typedError<DemoCart, IpcError>(__TAURI_INVOKE("dev_demo_cart")),
+	devDemoCart: () => typedError<DemoCart, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_cart")),
 	/**
 	 *  Adds the scanned product to the cart. `scan_event_id` is accepted for the E07-T02
 	 *  contract; duplicate-delivery handling arrives with that task.
 	 */
-	devDemoScan: (raw: string, scanEventId: string) => typedError<DemoCart, IpcError>(__TAURI_INVOKE("dev_demo_scan", { raw, scanEventId })),
+	devDemoScan: (raw: string, scanEventId: string) => typedError<DemoCart, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_scan", { raw, scanEventId })),
 	/**  Completes a cash sale atomically, then prints to the virtual printer. */
-	devDemoCompleteSale: (cashReceivedMinor: string) => typedError<DemoSaleResult, IpcError>(__TAURI_INVOKE("dev_demo_complete_sale", { cashReceivedMinor })),
+	devDemoCompleteSale: (cashReceivedMinor: string) => typedError<DemoSaleResult, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_complete_sale", { cashReceivedMinor })),
 };
 
 /* Types */
 /**  `cart_add_variant`'s `via`: scans go through `scan_submit` instead. */
 export type AddViaDto = "search" | "quickSelect";
 
-export type AppInfo = {
+export type AppInfo = AppInfo_Serialize | AppInfo_Deserialize;
+
+export type AppInfo_Deserialize = {
 	version: string,
 	debugBuild: boolean,
-	database: DatabaseStatus,
+	database: DatabaseStatus_Deserialize,
+};
+
+export type AppInfo_Serialize = {
+	version: string,
+	debugBuild: boolean,
+	database: DatabaseStatus_Serialize,
 };
 
 export type BarcodeDto = {
@@ -310,7 +318,11 @@ export type CreatedWorkspaceDto = {
 	registerCode: string,
 };
 
-export type DatabaseStatus = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError };
+export type DatabaseStatus = DatabaseStatus_Serialize | DatabaseStatus_Deserialize;
+
+export type DatabaseStatus_Deserialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Deserialize };
+
+export type DatabaseStatus_Serialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Serialize };
 
 export type DemoCart = {
 	lines: DemoCartLine[],
@@ -354,16 +366,57 @@ export type DiscountDto_Serialize = { kind: "percent"; ratePpm: number; reason: 
  */
 export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "CONFLICT_VERSION" | "INTERNAL";
 
+/**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
+export type ErrorDetails = ErrorDetails_Serialize | ErrorDetails_Deserialize;
+
+/**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
+export type ErrorDetails_Deserialize = {
+	/**  `AUTH_PIN_INVALID`: wrong PINs left before a temporary lock. */
+	remainingAttempts?: number | null,
+	/**  `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string. */
+	retryAtMs?: string | null,
+};
+
+/**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
+export type ErrorDetails_Serialize = {
+	/**  `AUTH_PIN_INVALID`: wrong PINs left before a temporary lock. */
+	remainingAttempts: number | null,
+	/**  `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string. */
+	retryAtMs: string | null,
+};
+
 /**
  *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
  *  `message` is for logs; the UI maps `code` to actionable copy.
  */
-export type IpcError = {
+export type IpcError = IpcError_Serialize | IpcError_Deserialize;
+
+/**
+ *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
+ *  `message` is for logs; the UI maps `code` to actionable copy.
+ */
+export type IpcError_Deserialize = {
 	code: ErrorCode,
 	message: string,
 	retryable: boolean,
 	/**  Matches the log line written when the error was produced. */
 	correlationId: string,
+	/**  Structured facts the UI needs for some codes (07-contracts §2). */
+	details?: ErrorDetails_Deserialize | null,
+};
+
+/**
+ *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
+ *  `message` is for logs; the UI maps `code` to actionable copy.
+ */
+export type IpcError_Serialize = {
+	code: ErrorCode,
+	message: string,
+	retryable: boolean,
+	/**  Matches the log line written when the error was produced. */
+	correlationId: string,
+	/**  Structured facts the UI needs for some codes (07-contracts §2). */
+	details: ErrorDetails_Serialize | null,
 };
 
 export type MoneyAddResult = {

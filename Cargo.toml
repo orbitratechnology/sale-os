@@ -63,6 +63,13 @@ unsafe_code = "forbid"
 dbg_macro = "deny"
 todo = "deny"
 
+# PIN hashing (ADR-013: Argon2id, 64 MiB, t=3) is far too slow unoptimized: setup and each
+# sign-in would take seconds in debug builds and tests. Optimise just these crates.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

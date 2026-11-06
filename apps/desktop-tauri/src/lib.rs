@@ -12,7 +12,7 @@ mod services;
 
 pub use command_names::COMMANDS;
 pub use demo::DEMO_BARCODE;
-pub use error::IpcError;
+pub use error::{ErrorDetails, IpcError};
 pub use services::AppServices;
 
 use pos_observability::LogConfig;

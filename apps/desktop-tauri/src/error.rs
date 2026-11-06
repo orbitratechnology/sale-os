@@ -11,6 +11,18 @@ pub struct IpcError {
     pub retryable: bool,
     /// Matches the log line written when the error was produced.
     pub correlation_id: String,
+    /// Structured facts the UI needs for some codes (07-contracts §2).
+    pub details: Option<ErrorDetails>,
+}
+
+/// Typed `details` (07-contracts §2). Only the fields relevant to the code are set.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorDetails {
+    /// `AUTH_PIN_INVALID`: wrong PINs left before a temporary lock.
+    pub remaining_attempts: Option<u32>,
+    /// `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string.
+    pub retry_at_ms: Option<String>,
 }
 
 impl IpcError {
@@ -22,6 +34,24 @@ impl IpcError {
     /// For failures without a catalogued code: always `INTERNAL`.
     pub fn internal(e: impl std::fmt::Display) -> Self {
         Self::new(ErrorCode::Internal, e.to_string())
+    }
+
+    /// Maps an application error, filling `details` where the contract defines them.
+    pub fn from_app(e: &pos_application::context::AppError) -> Self {
+        use pos_application::context::AppError;
+        let mut out = Self::from_error(e);
+        out.details = match e {
+            AppError::PinInvalid { remaining_attempts } => Some(ErrorDetails {
+                remaining_attempts: Some(*remaining_attempts),
+                ..ErrorDetails::default()
+            }),
+            AppError::LockedOut { retry_at_ms } => Some(ErrorDetails {
+                retry_at_ms: Some(retry_at_ms.to_string()),
+                ..ErrorDetails::default()
+            }),
+            _ => None,
+        };
+        out
     }
 
     /// A catalogued code raised by the shell itself.
@@ -41,6 +71,7 @@ impl IpcError {
             retryable: code.retryable(),
             message,
             correlation_id,
+            details: None,
         }
     }
 }
@@ -78,6 +109,7 @@ mod tests {
         assert_eq!(v["retryable"], true);
         assert_eq!(v["message"], "busy");
         assert_eq!(v["correlationId"].as_str().unwrap().len(), 36);
+        assert_eq!(v["details"], serde_json::Value::Null);
     }
 
     #[test]
@@ -85,5 +117,25 @@ mod tests {
         let e = IpcError::internal("boom");
         assert_eq!(e.code, ErrorCode::Internal);
         assert!(!e.retryable);
+    }
+}
+
+#[cfg(test)]
+mod details_tests {
+    use super::*;
+    use pos_application::context::AppError;
+
+    #[test]
+    fn sign_in_errors_carry_structured_details() {
+        let e = IpcError::from_app(&AppError::PinInvalid {
+            remaining_attempts: 2,
+        });
+        assert_eq!(e.code, ErrorCode::AuthPinInvalid);
+        assert_eq!(e.details.unwrap().remaining_attempts, Some(2));
+        let e = IpcError::from_app(&AppError::LockedOut {
+            retry_at_ms: 1_767_225_630_000,
+        });
+        let v = serde_json::to_value(&e).unwrap();
+        assert_eq!(v["details"]["retryAtMs"], "1767225630000");
     }
 }

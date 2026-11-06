@@ -17,7 +17,7 @@ use pos_domain::staff::Pin;
 use tauri::State;
 
 pub(crate) fn err(e: AppError) -> IpcError {
-    IpcError::from_error(&e)
+    IpcError::from_app(&e)
 }
 
 fn pin(s: &str) -> Result<Pin, IpcError> {
