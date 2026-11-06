@@ -46,6 +46,8 @@ export const commands = {
 	/**  Sets a temporary PIN; the user must change it at next sign-in. */
 	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
 	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
+	/**  The product list (E06-T06a): one page, by name, with summary columns. */
+	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
 	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
 	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create", { product })),
 	/**  `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`. */
@@ -431,6 +433,15 @@ export type ErrorDetails_Deserialize = {
 	retryAtMs?: string | null,
 	/**  `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`). */
 	scope?: ApprovalScope_Deserialize | null,
+	/**
+	 *  Validation and duplicate errors: the input at fault, for an inline message
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 */
+	field?: string | null,
+	/**  The offending value when there is one (the SKU or barcode). */
+	value?: string | null,
+	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
+	ownerProductId?: ProductId | null,
 };
 
 /**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
@@ -441,6 +452,15 @@ export type ErrorDetails_Serialize = {
 	retryAtMs: string | null,
 	/**  `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`). */
 	scope: ApprovalScope_Serialize | null,
+	/**
+	 *  Validation and duplicate errors: the input at fault, for an inline message
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 */
+	field: string | null,
+	/**  The offending value when there is one (the SKU or barcode). */
+	value: string | null,
+	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
+	ownerProductId: ProductId | null,
 };
 
 /**
@@ -529,6 +549,24 @@ export type ProductDto_Serialize = {
 	variants: VariantDto_Serialize[],
 };
 
+export type ProductFilterDto = ProductFilterDto_Serialize | ProductFilterDto_Deserialize;
+
+export type ProductFilterDto_Deserialize = {
+	/**  Name, SKU or barcode; empty for all. */
+	query: string,
+	status: ProductStatusDto,
+	trackStock?: boolean | null,
+	categoryId?: CategoryId | null,
+};
+
+export type ProductFilterDto_Serialize = {
+	/**  Name, SKU or barcode; empty for all. */
+	query: string,
+	status: ProductStatusDto,
+	trackStock: boolean | null,
+	categoryId: CategoryId | null,
+};
+
 export type ProductId = string;
 
 export type ProductInputDto = ProductInputDto_Serialize | ProductInputDto_Deserialize;
@@ -556,6 +594,52 @@ export type ProductInputDto_Serialize = {
 	/**  The first variant becomes the default. */
 	variants: VariantInputDto_Serialize[],
 };
+
+export type ProductPageDto = ProductPageDto_Serialize | ProductPageDto_Deserialize;
+
+export type ProductPageDto_Deserialize = {
+	rows: ProductRowDto_Deserialize[],
+	/**  Rows matching the filter, across all pages. */
+	total: number,
+};
+
+export type ProductPageDto_Serialize = {
+	rows: ProductRowDto_Serialize[],
+	/**  Rows matching the filter, across all pages. */
+	total: number,
+};
+
+export type ProductRowDto = ProductRowDto_Serialize | ProductRowDto_Deserialize;
+
+export type ProductRowDto_Deserialize = {
+	productId: ProductId,
+	name: string,
+	archived: boolean,
+	version: number,
+	variantCount: number,
+	sku?: string | null,
+	priceMinMinor: string,
+	priceMaxMinor: string,
+	barcodeCount: number,
+	trackStock: boolean,
+	quickSelect: boolean,
+};
+
+export type ProductRowDto_Serialize = {
+	productId: ProductId,
+	name: string,
+	archived: boolean,
+	version: number,
+	variantCount: number,
+	sku: string | null,
+	priceMinMinor: string,
+	priceMaxMinor: string,
+	barcodeCount: number,
+	trackStock: boolean,
+	quickSelect: boolean,
+};
+
+export type ProductStatusDto = "active" | "archived" | "all";
 
 export type ProductType = 
 /**  Physical goods with tracked stock. */
@@ -742,6 +826,8 @@ export type WorkspaceDto = {
 	registerName: string,
 	registerCode: string,
 	currencyCode: string,
+	/**  Minor-unit digits of the currency, for parsing typed prices. */
+	currencyExponent: number,
 	/**  `"sandbox"` until the owner goes live (PRD §7.1). */
 	mode: string,
 };

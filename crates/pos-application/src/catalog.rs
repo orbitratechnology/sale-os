@@ -2,7 +2,7 @@
 
 use crate::audit::{self, AuditEntry};
 use crate::context::{AppError, CommandContext};
-use crate::queries::{CatalogHit, CatalogQueries, TaxCategorySummary};
+use crate::queries::{CatalogHit, CatalogQueries, ProductFilter, ProductPage, TaxCategorySummary};
 use crate::{LocalStore, OutboxDraft, WriteSet};
 use pos_domain::catalog::{CatalogError, Product, ProductInput};
 use pos_domain::{Permission, ProductId};
@@ -15,6 +15,8 @@ pub struct CatalogService {
 
 /// Most search results returned at once.
 pub const MAX_SEARCH_RESULTS: u32 = 100;
+/// Most product list rows returned at once.
+pub const MAX_PAGE: u32 = 500;
 
 impl CatalogService {
     pub async fn get(&self, ctx: &CommandContext, id: ProductId) -> Result<Product, AppError> {
@@ -42,6 +44,21 @@ impl CatalogService {
         Ok(self
             .catalog
             .search(query, limit.clamp(1, MAX_SEARCH_RESULTS))
+            .await?)
+    }
+
+    /// The product list (E06-T06a). At most [`MAX_PAGE`] rows per call.
+    pub async fn list(
+        &self,
+        ctx: &CommandContext,
+        filter: &ProductFilter,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ProductPage, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self
+            .catalog
+            .list_products(filter, offset, limit.clamp(1, MAX_PAGE))
             .await?)
     }
 

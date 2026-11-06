@@ -3,8 +3,8 @@
 
 use crate::app_commands::err;
 use crate::dto::{
-    AddViaDto, CartViewDto, CatalogHitDto, DiscountDto, ProductDto, ProductInputDto, ScanOutcomeDto,
-    ScanSourceDto, TaxCategoryDto, money_in, qty_in,
+    AddViaDto, CartViewDto, CatalogHitDto, DiscountDto, ProductDto, ProductFilterDto, ProductInputDto,
+    ProductPageDto, ScanOutcomeDto, ScanSourceDto, TaxCategoryDto, money_in, qty_in,
 };
 use crate::{AppServices, IpcError};
 use pos_application::scan::{ScanOutcome, ScanSource};
@@ -18,6 +18,25 @@ pub async fn tax_list(services: State<'_, AppServices>) -> Result<Vec<TaxCategor
     let ctx = services.context().await?;
     let cats = services.app()?.catalog.tax_categories(&ctx).await.map_err(err)?;
     Ok(cats.into_iter().map(Into::into).collect())
+}
+
+/// The product list (E06-T06a): one page, by name, with summary columns.
+#[tauri::command]
+#[specta::specta]
+pub async fn product_list(
+    services: State<'_, AppServices>,
+    filter: ProductFilterDto,
+    offset: u32,
+    limit: u32,
+) -> Result<ProductPageDto, IpcError> {
+    let ctx = services.context().await?;
+    let page = services
+        .app()?
+        .catalog
+        .list(&ctx, &filter.into(), offset, limit)
+        .await
+        .map_err(err)?;
+    ProductPageDto::from_page(page)
 }
 
 #[tauri::command]

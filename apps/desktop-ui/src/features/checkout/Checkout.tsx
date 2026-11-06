@@ -38,7 +38,22 @@ function inTextField(): boolean {
  * Checkout (E09-T03..T06). Everything happens on this screen: scan, search, change
  * quantities and discounts inline, clear or void. Totals come from Rust; the UI formats.
  */
-export function Checkout({ workspace, session, onSignedOut }: { workspace: Workspace; session: Session; onSignedOut: () => void }) {
+export function Checkout({
+  workspace,
+  session,
+  onSignedOut,
+  canEditCatalog,
+  onProducts,
+  onCreateProduct,
+}: {
+  workspace: Workspace;
+  session: Session;
+  onSignedOut: () => void;
+  canEditCatalog: boolean;
+  onProducts: () => void;
+  /** E07-T04: open the editor with an unknown barcode pre-filled. */
+  onCreateProduct: (barcode: string) => void;
+}) {
   const c = useCart(onSignedOut);
   const [editing, setEditing] = useState<Editing>(null);
   const [modal, setModal] = useState<Modal>(null);
@@ -124,6 +139,10 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
           e.preventDefault();
           if (sel) setEditing({ lineId: sel, field: "discount" });
           return;
+        case "F6":
+          e.preventDefault();
+          onProducts();
+          return;
         case "F9":
           e.preventDefault();
           c.setNotice({ kind: "info", text: "Taking payment arrives in the next release (Stage 2)." });
@@ -158,7 +177,7 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [c, modal, lock]);
+  }, [c, modal, lock, onProducts]);
 
   const submitCode = (e: FormEvent) => {
     e.preventDefault();
@@ -256,6 +275,9 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
           <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("void")}>
             Void sale
           </button>
+          <button type="button" className="secondary" onClick={onProducts}>
+            Products <kbd>F6</kbd>
+          </button>
           <button type="button" className="secondary" onClick={() => void lock()}>
             Lock <kbd>F12</kbd>
           </button>
@@ -263,7 +285,7 @@ export function Checkout({ workspace, session, onSignedOut }: { workspace: Works
             Pay <kbd>F9</kbd>
           </button>
         </div>
-        <Notice c={c} onSearch={(text) => search.current?.focus(text)} />
+        <Notice c={c} onSearch={(text) => search.current?.focus(text)} onCreate={canEditCatalog ? onCreateProduct : null} />
       </aside>
 
       <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} />
@@ -369,7 +391,16 @@ function TaxRow({ name, amount, included }: { name: string; amount: string; incl
   );
 }
 
-function Notice({ c, onSearch }: { c: ReturnType<typeof useCart>; onSearch: (text: string) => void }) {
+function Notice({
+  c,
+  onSearch,
+  onCreate,
+}: {
+  c: ReturnType<typeof useCart>;
+  onSearch: (text: string) => void;
+  /** Only for roles that may create products from a scan (BarcodeCreateFromScan). */
+  onCreate: ((barcode: string) => void) | null;
+}) {
   const n = c.notice;
   if (!n) return <div className="notice-slot" aria-live="assertive" />;
   return (
@@ -390,6 +421,13 @@ function Notice({ c, onSearch }: { c: ReturnType<typeof useCart>; onSearch: (tex
             >
               Search for it
             </button>
+            {onCreate ? (
+              <button type="button" className="secondary" onClick={() => onCreate(n.code)}>
+                Create product
+              </button>
+            ) : (
+              <p className="small">A manager can add it as a new product.</p>
+            )}
           </>
         )}
         {n.kind === "error" && (

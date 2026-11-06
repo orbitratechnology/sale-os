@@ -144,8 +144,8 @@ impl SetupQueries for SqliteStore {
     }
 
     async fn workspace_summary(&self) -> Result<Option<WorkspaceSummary>, QueryError> {
-        let row: Option<(String, String, String, String, String)> = sqlx::query_as(
-            "SELECT b.name, r.name, r.code, b.currency_code, d.mode
+        let row: Option<(String, String, String, String, i64, String)> = sqlx::query_as(
+            "SELECT b.name, r.name, r.code, b.currency_code, b.currency_exponent, d.mode
              FROM device_identity d
              JOIN registers r ON r.register_id = d.register_id
              JOIN businesses b ON b.business_id = d.business_id
@@ -154,18 +154,22 @@ impl SetupQueries for SqliteStore {
         .fetch_optional(self.db().readers())
         .await
         .map_err(q)?;
-        Ok(row.map(
-            |(business_name, register_name, register_code, currency_code, mode)| WorkspaceSummary {
-                business_name,
-                register_name,
-                register_code,
-                currency_code,
-                mode: if mode == "live" {
-                    RegisterMode::Live
-                } else {
-                    RegisterMode::Sandbox
-                },
+        row.map(
+            |(business_name, register_name, register_code, currency_code, exponent, mode)| {
+                Ok(WorkspaceSummary {
+                    business_name,
+                    register_name,
+                    register_code,
+                    currency_code,
+                    currency_exponent: u8::try_from(exponent).map_err(q)?,
+                    mode: if mode == "live" {
+                        RegisterMode::Live
+                    } else {
+                        RegisterMode::Sandbox
+                    },
+                })
             },
-        ))
+        )
+        .transpose()
     }
 }

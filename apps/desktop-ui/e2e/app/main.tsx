@@ -14,6 +14,8 @@ declare global {
 
 const preset = (new URLSearchParams(location.search).get("preset") ?? "fresh") as Preset;
 window.__fake = initialState(preset);
+const big = new URLSearchParams(location.search).get("big");
+if (big) window.__fake.bigCatalog = parseInt(big, 10);
 window.__ipc = [];
 mockIPC((cmd, args) => {
   const a = (args ?? {}) as Record<string, unknown>;

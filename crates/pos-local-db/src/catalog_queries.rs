@@ -1,7 +1,10 @@
 //! Catalogue reads (E06-T04): full aggregates, owner checks, code lookup and FTS search.
 
 use crate::SqliteStore;
-use pos_application::queries::{CatalogHit, CatalogQueries, MatchedBy, QueryError, TaxCategorySummary};
+use pos_application::queries::{
+    CatalogHit, CatalogQueries, MatchedBy, ProductFilter, ProductPage, ProductRow, ProductStatusFilter,
+    QueryError, TaxCategorySummary,
+};
 use pos_domain::catalog::{
     Barcode, BarcodeQualifier, Product, ProductType, Symbology, Unit, Variant, normalize_barcode,
 };
@@ -251,6 +254,124 @@ impl CatalogQueries for SqliteStore {
             }
         }
         Ok(out)
+    }
+
+    async fn list_products(
+        &self,
+        filter: &ProductFilter,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ProductPage, QueryError> {
+        // Shared WHERE clause; every value is bound, never spliced in.
+        fn filtered<'a>(
+            b: &mut sqlx::QueryBuilder<'a, sqlx::Sqlite>,
+            f: &'a ProductFilter,
+            fts: Option<String>,
+        ) {
+            b.push(" WHERE 1 = 1");
+            match f.status {
+                ProductStatusFilter::Active => b.push(" AND p.status = 'active'"),
+                ProductStatusFilter::Archived => b.push(" AND p.status = 'archived'"),
+                ProductStatusFilter::All => b,
+            };
+            if let Some(c) = f.category_id {
+                b.push(" AND p.category_id = ").push_bind(c.to_string());
+            }
+            if let Some(t) = f.track_stock {
+                b.push(" AND EXISTS (SELECT 1 FROM product_variants tv WHERE tv.product_id = p.product_id AND tv.status = 'active' AND tv.track_stock = ")
+                    .push_bind(t)
+                    .push(")");
+            }
+            if let Some(q) = fts {
+                b.push(
+                    " AND p.product_id IN (SELECT sv.product_id FROM product_search s
+                       JOIN product_variants sv ON sv.variant_id = s.variant_id WHERE product_search MATCH ",
+                )
+                .push_bind(q)
+                .push(")");
+            }
+        }
+        let fts = if filter.query.trim().is_empty() {
+            None
+        } else {
+            match fts_query(&filter.query) {
+                Some(q) => Some(q),
+                // Only punctuation: nothing can match.
+                None => {
+                    return Ok(ProductPage {
+                        rows: Vec::new(),
+                        total: 0,
+                    });
+                }
+            }
+        };
+
+        let mut count = sqlx::QueryBuilder::new("SELECT count(*) FROM products p");
+        filtered(&mut count, filter, fts.clone());
+        let total: i64 = count
+            .build_query_scalar()
+            .fetch_one(self.db().readers())
+            .await
+            .map_err(q)?;
+
+        let mut b = sqlx::QueryBuilder::new(
+            "SELECT p.product_id, p.name, p.status = 'archived', p.version, p.quick_select,
+               (SELECT count(*) FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active'),
+               (SELECT v.sku FROM product_variants v WHERE v.product_id = p.product_id AND v.is_default = 1),
+               (SELECT min(v.price_minor) FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active'),
+               (SELECT max(v.price_minor) FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active'),
+               (SELECT count(*) FROM product_barcodes bc JOIN product_variants v ON v.variant_id = bc.variant_id
+                 WHERE v.product_id = p.product_id AND v.status = 'active' AND bc.status = 'active'),
+               EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1)
+             FROM products p",
+        );
+        filtered(&mut b, filter, fts);
+        b.push(" ORDER BY p.name COLLATE NOCASE, p.product_id LIMIT ")
+            .push_bind(i64::from(limit))
+            .push(" OFFSET ")
+            .push_bind(i64::from(offset));
+        type Row = (
+            String,
+            String,
+            bool,
+            i64,
+            bool,
+            i64,
+            Option<String>,
+            Option<i64>,
+            Option<i64>,
+            i64,
+            bool,
+        );
+        let rows: Vec<Row> = b
+            .build_query_as()
+            .fetch_all(self.db().readers())
+            .await
+            .map_err(q)?;
+        let rows = rows
+            .into_iter()
+            .map(
+                |(id, name, archived, version, quick, variants, sku, min, max, barcodes, track)| {
+                    Ok(ProductRow {
+                        product_id: id.parse().map_err(q)?,
+                        name,
+                        archived,
+                        version: u64::try_from(version).map_err(q)?,
+                        variant_count: u32::try_from(variants).map_err(q)?,
+                        sku,
+                        price_min: Money::from_minor(min.unwrap_or(0)),
+                        price_max: Money::from_minor(max.unwrap_or(0)),
+                        barcode_count: u32::try_from(barcodes).map_err(q)?,
+                        track_stock: track,
+                        quick_select: quick,
+                    })
+                },
+            )
+            .collect::<Result<_, QueryError>>()?;
+        Ok(ProductPage {
+            rows,
+            total: u32::try_from(total).map_err(q)?,
+        })
     }
 }
 

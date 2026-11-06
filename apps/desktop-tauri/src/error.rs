@@ -26,6 +26,40 @@ pub struct ErrorDetails {
     pub retry_at_ms: Option<String>,
     /// `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`).
     pub scope: Option<pos_domain::ApprovalScope>,
+    /// Validation and duplicate errors: the input at fault, for an inline message
+    /// (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+    pub field: Option<String>,
+    /// The offending value when there is one (the SKU or barcode).
+    pub value: Option<String>,
+    /// `CATALOG_DUPLICATE_*`: the product that already uses the value.
+    pub owner_product_id: Option<pos_domain::ProductId>,
+}
+
+/// Which product-editor input a catalogue error is about.
+fn catalog_details(e: &pos_domain::catalog::CatalogError) -> Option<ErrorDetails> {
+    use pos_domain::catalog::CatalogError as C;
+    let at = |field: &str, value: Option<&str>, owner: Option<pos_domain::ProductId>| ErrorDetails {
+        field: Some(field.into()),
+        value: value.map(Into::into),
+        owner_product_id: owner,
+        ..ErrorDetails::default()
+    };
+    Some(match e {
+        C::NameRequired | C::NameTooLong => at("name", None, None),
+        C::NoVariants | C::UnknownVariant(_) => at("variants", None, None),
+        C::NegativePrice => at("price", None, None),
+        C::FractionNotAllowed(..) => at("scanQty", None, None),
+        C::NotPositive(what) if what.contains("threshold") => at("lowStockThreshold", None, None),
+        C::NotPositive(_) => at("scanQty", None, None),
+        C::DuplicateSku(sku) => at("sku", Some(sku), None),
+        C::SkuTaken { sku, owner } => at("sku", Some(sku), Some(*owner)),
+        C::SkuTooLong => at("sku", None, None),
+        C::DuplicateBarcode(v) => at("barcode", Some(v), None),
+        C::BarcodeTaken { value, owner } => at("barcode", Some(value), Some(*owner)),
+        C::Barcode(_) => at("barcode", None, None),
+        C::DuplicateOptions => at("options", None, None),
+        C::Archived | C::NotFound => return None,
+    })
 }
 
 impl IpcError {
@@ -56,6 +90,7 @@ impl IpcError {
                 scope: Some(scope.clone()),
                 ..ErrorDetails::default()
             })),
+            AppError::Catalog(c) => catalog_details(c).map(Box::new),
             _ => None,
         };
         out
@@ -139,6 +174,18 @@ mod details_tests {
         });
         assert_eq!(e.code, ErrorCode::AuthPinInvalid);
         assert_eq!(e.details.unwrap().remaining_attempts, Some(2));
+        let owner = pos_domain::ProductId::generate(&pos_domain::UuidV7Generator);
+        let e = IpcError::from_app(&AppError::Catalog(
+            pos_domain::catalog::CatalogError::BarcodeTaken {
+                value: "5449000000996".into(),
+                owner,
+            },
+        ));
+        let d = e.details.unwrap();
+        assert_eq!(
+            (d.field.as_deref(), d.value.as_deref(), d.owner_product_id),
+            (Some("barcode"), Some("5449000000996"), Some(owner))
+        );
         let e = IpcError::from_app(&AppError::LockedOut {
             retry_at_ms: 1_767_225_630_000,
         });

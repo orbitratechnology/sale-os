@@ -6,7 +6,9 @@
 
 use crate::IpcError;
 use pos_application::cart::CartView;
-use pos_application::queries::{CatalogHit, MatchedBy, TaxCategorySummary};
+use pos_application::queries::{
+    CatalogHit, MatchedBy, ProductFilter, ProductPage, ProductStatusFilter, TaxCategorySummary,
+};
 use pos_application::records::StaffRecord;
 use pos_domain::cart::AddVia;
 use pos_domain::catalog::{
@@ -78,6 +80,8 @@ pub struct WorkspaceDto {
     pub register_name: String,
     pub register_code: String,
     pub currency_code: String,
+    /// Minor-unit digits of the currency, for parsing typed prices.
+    pub currency_exponent: u8,
     /// `"sandbox"` until the owner goes live (PRD §7.1).
     pub mode: String,
 }
@@ -442,6 +446,89 @@ impl From<CatalogHit> for CatalogHitDto {
             }
             .into(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ProductStatusDto {
+    #[default]
+    Active,
+    Archived,
+    All,
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductFilterDto {
+    /// Name, SKU or barcode; empty for all.
+    pub query: String,
+    pub status: ProductStatusDto,
+    pub track_stock: Option<bool>,
+    pub category_id: Option<CategoryId>,
+}
+
+impl From<ProductFilterDto> for ProductFilter {
+    fn from(f: ProductFilterDto) -> Self {
+        Self {
+            query: f.query,
+            status: match f.status {
+                ProductStatusDto::Active => ProductStatusFilter::Active,
+                ProductStatusDto::Archived => ProductStatusFilter::Archived,
+                ProductStatusDto::All => ProductStatusFilter::All,
+            },
+            track_stock: f.track_stock,
+            category_id: f.category_id,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductRowDto {
+    pub product_id: ProductId,
+    pub name: String,
+    pub archived: bool,
+    pub version: u32,
+    pub variant_count: u32,
+    pub sku: Option<String>,
+    pub price_min_minor: String,
+    pub price_max_minor: String,
+    pub barcode_count: u32,
+    pub track_stock: bool,
+    pub quick_select: bool,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPageDto {
+    pub rows: Vec<ProductRowDto>,
+    /// Rows matching the filter, across all pages.
+    pub total: u32,
+}
+
+impl ProductPageDto {
+    pub fn from_page(p: ProductPage) -> Result<Self, IpcError> {
+        let rows = p
+            .rows
+            .into_iter()
+            .map(|r| {
+                Ok(ProductRowDto {
+                    product_id: r.product_id,
+                    name: r.name,
+                    archived: r.archived,
+                    version: version_out(r.version)?,
+                    variant_count: r.variant_count,
+                    sku: r.sku,
+                    price_min_minor: money(r.price_min),
+                    price_max_minor: money(r.price_max),
+                    barcode_count: r.barcode_count,
+                    track_stock: r.track_stock,
+                    quick_select: r.quick_select,
+                })
+            })
+            .collect::<Result<_, IpcError>>()?;
+        Ok(Self { rows, total: p.total })
     }
 }
 

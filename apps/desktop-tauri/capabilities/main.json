@@ -22,6 +22,7 @@
     "allow-staff-deactivate",
     "allow-staff-reset-pin",
     "allow-tax-list",
+    "allow-product-list",
     "allow-product-get",
     "allow-product-create",
     "allow-product-update",

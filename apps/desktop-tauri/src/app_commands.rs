@@ -48,6 +48,7 @@ pub async fn app_bootstrap_state(services: State<'_, AppServices>) -> Result<Boo
             register_name: w.register_name,
             register_code: w.register_code,
             currency_code: w.currency_code,
+            currency_exponent: w.currency_exponent,
             mode: w.mode.as_str().into(),
         }),
         session: session.as_ref().map(session_dto),

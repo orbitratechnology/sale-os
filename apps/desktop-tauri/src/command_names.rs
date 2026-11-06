@@ -17,6 +17,7 @@ pub const COMMANDS: &[&str] = &[
     "staff_deactivate",
     "staff_reset_pin",
     "tax_list",
+    "product_list",
     "product_get",
     "product_create",
     "product_update",

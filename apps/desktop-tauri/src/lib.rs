@@ -40,6 +40,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         app_commands::staff_deactivate,
         app_commands::staff_reset_pin,
         sale_commands::tax_list,
+        sale_commands::product_list,
         sale_commands::product_get,
         sale_commands::product_create,
         sale_commands::product_update,

@@ -97,6 +97,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"userId": UNKNOWN_ID, "baseVersion": 1, "pin": "5555"}),
         ),
         ("tax_list", Perm(CatalogView), json!({})),
+        (
+            "product_list",
+            Perm(CatalogView),
+            json!({"filter": {"query": "", "status": "active", "trackStock": null, "categoryId": null}, "offset": 0, "limit": 10}),
+        ),
         ("product_get", Perm(CatalogView), json!({"productId": UNKNOWN_ID})),
         ("product_create", Perm(CatalogEdit), product),
         ("product_update", Perm(CatalogEdit), update),

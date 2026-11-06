@@ -5,8 +5,8 @@
  * well-formed DTOs. Pricing here is deliberately simple: totals are Rust's job and are
  * tested there (pricing goldens, cart integration tests, the IPC harness).
  */
-import type { CartLine, CartView, CatalogHit, IpcError, Session, SignInUser } from "../../src/ipc";
-import type { Permission } from "../../src/ipc/bindings";
+import type { CartLine, CartView, CatalogHit, IpcError, Session, SignInUser, Workspace } from "../../src/ipc";
+import type { Permission, ProductDto_Serialize as ProductDto, ProductInputDto_Deserialize as ProductInput } from "../../src/ipc/bindings";
 
 export interface FakeProduct {
   variantId: string;
@@ -35,6 +35,10 @@ export interface FakeState {
   lockedUntil: number | null;
   /** Issued approval tokens: id → scope (single use). */
   tokens: Map<string, { permission: Permission; entityId: string; maxPpm: number | null }>;
+  /** The catalogue as the editor sees it. */
+  catalog: Map<string, ProductDto>;
+  /** When set, product_list answers with this many generated rows (virtualization tests). */
+  bigCatalog: number | null;
 }
 
 export type Preset = "fresh" | "signIn" | "checkout";
@@ -50,7 +54,51 @@ export function products(): FakeProduct[] {
   ];
 }
 
+function dtoFor(p: FakeProduct): ProductDto {
+  return {
+    productId: p.productId,
+    name: p.name,
+    description: null,
+    categoryId: null,
+    productType: "stock",
+    unit: "ea",
+    taxCategoryId: TAX,
+    quickSelect: false,
+    archived: false,
+    version: 1,
+    variants: [
+      {
+        variantId: p.variantId,
+        isDefault: true,
+        sku: p.sku,
+        options: {},
+        priceMinor: p.priceMinor.toString(),
+        costMinor: null,
+        trackStock: true,
+        lowStockThresholdMilli: null,
+        scanQtyMilli: "1000",
+        barcodes: Object.entries(p.barcodes).map(([raw, n]) => ({
+          value: raw,
+          raw,
+          symbology: "ean13",
+          qualifier: n > 1 ? "pack" : "primary",
+          packQtyMilli: String(n * 1000),
+        })),
+        archived: false,
+      },
+    ],
+  };
+}
+
+const TAX = "0190a5b0-0000-7000-8000-00000000ta01";
+
 export function initialState(preset: Preset): FakeState {
+  const s = initialStateInner(preset);
+  for (const p of s.products) s.catalog.set(p.productId, dtoFor(p));
+  return s;
+}
+
+function initialStateInner(preset: Preset): FakeState {
   const owner: StaffUser = { userId: id(), displayName: "Olu", role: "owner", pin: "1234", failed: 0 };
   const cashier: StaffUser = { userId: id(), displayName: "Cal", role: "cashier", pin: "3333", failed: 0 };
   const manager: StaffUser = { userId: id(), displayName: "Mia", role: "manager", pin: "2222", failed: 0 };
@@ -66,6 +114,8 @@ export function initialState(preset: Preset): FakeState {
     seenScans: new Set(),
     lockedUntil: null,
     tokens: new Map(),
+    catalog: new Map(),
+    bigCatalog: null,
   };
 }
 
@@ -159,7 +209,8 @@ function add(s: FakeState, p: FakeProduct, qtyMilli: bigint): string {
   return lineId;
 }
 
-const workspace = { businessName: "Corner Shop", registerName: "Till 1", registerCode: "R01", currencyCode: "GBP", mode: "sandbox" };
+// Typed, so a new field in the contract fails the typecheck here instead of at run time.
+const workspace: Workspace = { businessName: "Corner Shop", registerName: "Till 1", registerCode: "R01", currencyCode: "GBP", currencyExponent: 2, mode: "sandbox" };
 
 /** Handles one command. Throws an IpcError-shaped object for refusals, as Tauri does. */
 export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): unknown {
@@ -205,6 +256,81 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       s.session = null;
       return null;
+    case "tax_list":
+      needSession(s);
+      return [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rates: [{ name: "VAT 20%", ratePpm: 200000 }] }];
+    case "product_list": {
+      needSession(s);
+      const f = a.filter as { query: string; status: string; trackStock: boolean | null };
+      const offset = Number(a.offset);
+      const limit = Number(a.limit);
+      if (s.bigCatalog !== null) {
+        const total = s.bigCatalog;
+        const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => {
+          const n = offset + i;
+          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false };
+        });
+        return { rows, total };
+      }
+      const q = f.query.trim().toLowerCase();
+      const all = [...s.catalog.values()]
+        .filter((p) => (f.status === "all" ? true : f.status === "archived" ? p.archived : !p.archived))
+        .filter((p) => f.trackStock === null || p.variants.some((v) => v.trackStock) === f.trackStock)
+        .filter((p) => !q || p.name.toLowerCase().includes(q) || p.variants.some((v) => v.sku?.toLowerCase().startsWith(q) || v.barcodes.some((b) => b.raw.includes(q))))
+        .sort((x, y) => x.name.localeCompare(y.name));
+      const rows = all.slice(offset, offset + limit).map((p) => {
+        const prices = p.variants.map((v) => BigInt(v.priceMinor));
+        const min = prices.reduce((m, x) => (x < m ? x : m));
+        const max = prices.reduce((m, x) => (x > m ? x : m));
+        return {
+          productId: p.productId, name: p.name, archived: p.archived, version: p.version, variantCount: p.variants.length,
+          sku: p.variants[0]?.sku ?? null, priceMinMinor: min.toString(), priceMaxMinor: max.toString(),
+          barcodeCount: p.variants.reduce((n, v) => n + v.barcodes.length, 0), trackStock: p.variants.some((v) => v.trackStock), quickSelect: p.quickSelect,
+        };
+      });
+      return { rows, total: all.length };
+    }
+    case "product_get":
+      needSession(s);
+      return s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND");
+    case "product_create":
+    case "product_update": {
+      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
+      const input = a.product as ProductInput;
+      const existing = cmd === "product_update" ? (s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND")) : null;
+      if (existing && existing.version !== a.baseVersion) fail("CONFLICT_VERSION");
+      if (!input.name.trim()) fail("VALIDATION_FAILED", { field: "name" });
+      const productId = existing?.productId ?? id();
+      for (const v of input.variants)
+        for (const b of v.barcodes ?? []) {
+          const owner = [...s.catalog.values()].find((p) => p.productId !== productId && !p.archived && p.variants.some((x) => x.barcodes.some((y) => y.raw === b.raw)));
+          if (owner) fail("CATALOG_DUPLICATE_BARCODE", { field: "barcode", value: b.raw, ownerProductId: owner.productId });
+        }
+      const dto: ProductDto = {
+        productId, name: input.name, description: input.description ?? null, categoryId: null, productType: input.productType, unit: input.unit,
+        taxCategoryId: input.taxCategoryId, quickSelect: input.quickSelect, archived: false, version: (existing?.version ?? 0) + 1,
+        variants: input.variants.map((v, i) => ({
+          variantId: v.variantId ?? id(), isDefault: i === 0, sku: v.sku ?? null, options: v.options, priceMinor: v.priceMinor, costMinor: null,
+          trackStock: v.trackStock, lowStockThresholdMilli: v.lowStockThresholdMilli ?? null, scanQtyMilli: v.scanQtyMilli ?? "1000",
+          barcodes: (v.barcodes ?? []).map((b) => ({ value: b.raw, raw: b.raw, symbology: "code128", qualifier: b.qualifier, packQtyMilli: b.packQtyMilli ?? "1000" })),
+          archived: false,
+        })),
+      };
+      s.catalog.set(productId, dto);
+      // Make it scannable at the till.
+      s.products = s.products.filter((p) => p.productId !== productId);
+      for (const v of dto.variants) {
+        s.products.push({ variantId: v.variantId, productId, name: dto.name, sku: v.sku ?? v.variantId, priceMinor: BigInt(v.priceMinor), barcodes: Object.fromEntries(v.barcodes.map((b) => [b.raw, parseInt(b.packQtyMilli, 10) / 1000])) });
+      }
+      return dto;
+    }
+    case "product_archive": {
+      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
+      const p = s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND");
+      p.archived = true;
+      p.version += 1;
+      return p;
+    }
     case "cart_current":
       needSession(s);
       return view(s);

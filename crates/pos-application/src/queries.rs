@@ -39,6 +39,8 @@ pub struct WorkspaceSummary {
     pub register_name: String,
     pub register_code: String,
     pub currency_code: String,
+    /// Minor-unit digits of the currency (ISO 4217), for parsing typed prices.
+    pub currency_exponent: u8,
     pub mode: crate::records::RegisterMode,
 }
 
@@ -91,6 +93,56 @@ pub trait CatalogQueries: Send + Sync {
     async fn search(&self, query: &str, limit: u32) -> Result<Vec<CatalogHit>, QueryError>;
     /// Active tax categories, default first, then by name.
     async fn tax_categories(&self) -> Result<Vec<TaxCategorySummary>, QueryError>;
+    /// One page of the product list (E06-T06a), by name.
+    async fn list_products(
+        &self,
+        filter: &ProductFilter,
+        offset: u32,
+        limit: u32,
+    ) -> Result<ProductPage, QueryError>;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProductStatusFilter {
+    #[default]
+    Active,
+    Archived,
+    All,
+}
+
+/// Product list filters. Empty `query` matches everything.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProductFilter {
+    /// Name, SKU or barcode (the search index).
+    pub query: String,
+    pub status: ProductStatusFilter,
+    /// `Some(true)`: only products with a stock-tracked variant.
+    pub track_stock: Option<bool>,
+    pub category_id: Option<pos_domain::CategoryId>,
+}
+
+/// A product list row: one per product, summarising its active variants.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductRow {
+    pub product_id: pos_domain::ProductId,
+    pub name: String,
+    pub archived: bool,
+    pub version: u64,
+    pub variant_count: u32,
+    /// The default variant's SKU.
+    pub sku: Option<String>,
+    pub price_min: pos_domain::Money,
+    pub price_max: pos_domain::Money,
+    pub barcode_count: u32,
+    pub track_stock: bool,
+    pub quick_select: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductPage {
+    pub rows: Vec<ProductRow>,
+    /// Rows matching the filter, across all pages.
+    pub total: u32,
 }
 
 /// A cart line as stored: the variant is re-read from the catalogue on load, so a recovered
