@@ -2,7 +2,7 @@
 //! 58 mm paper, 48 for 80 mm. The preview shows exactly these lines, and the ESC/POS
 //! encoder prints them, so what the cashier sees is what prints.
 
-use crate::document::{CopyKind, DocumentKind, ReceiptDocument, amount};
+use crate::document::{CopyKind, DocumentKind, ReceiptDocument, ZSection, amount, tender_label};
 
 pub const COLUMNS_58MM: usize = 32;
 pub const COLUMNS_80MM: usize = 48;
@@ -71,6 +71,25 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
     let refund = doc.kind == DocumentKind::Return;
     if refund {
         centered(&mut out, "*** REFUND ***");
+    }
+    if let Some(z) = &doc.z {
+        centered(&mut out, "*** Z SUMMARY ***");
+        if doc.copy == CopyKind::Reprint {
+            centered(&mut out, "*** REPRINT ***");
+        }
+        if doc.sandbox {
+            centered(&mut out, "*** SANDBOX - PRACTICE ***");
+        }
+        rule(&mut out);
+        render_z(&mut out, doc, z, width);
+        rule(&mut out);
+        centered(&mut out, &doc.barcode);
+        for l in &mut out {
+            if l.style == Style::Centered {
+                l.text = center(&l.text, width);
+            }
+        }
+        return out;
     }
     if doc.copy == CopyKind::Reprint {
         centered(&mut out, "*** REPRINT ***");
@@ -212,6 +231,93 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
         }
     }
     out
+}
+
+/// The body of a Z summary: the session, takings, payments, refunds and the drawer count.
+fn render_z(out: &mut Vec<TextLine>, doc: &ReceiptDocument, z: &ZSection, width: usize) {
+    let m = |v: pos_domain::Money| amount(v, doc.currency_exponent);
+    let neg = |v: pos_domain::Money| {
+        if v.minor() == 0 {
+            m(v)
+        } else {
+            format!("-{}", m(v))
+        }
+    };
+    let mut pair = |left: &str, right: &str, style: Style| {
+        out.push(TextLine {
+            text: columns(left, right, width),
+            style,
+        })
+    };
+    let t = &z.totals;
+    pair(
+        &format!("Session {}", doc.meta.receipt_number),
+        &doc.meta.register_code,
+        Style::Normal,
+    );
+    pair(&format!("Opened {}", z.opened_local), "", Style::Normal);
+    pair(&format!("  by {}", z.opened_by), "", Style::Normal);
+    pair(&format!("Closed {}", doc.meta.local_time), "", Style::Normal);
+    pair(&format!("  by {}", doc.meta.cashier_name), "", Style::Normal);
+    pair(&"-".repeat(width), "", Style::Normal);
+    pair(
+        &format!("Sales ({})", t.sales_count),
+        &m(t.sales_total),
+        Style::Normal,
+    );
+    pair("  incl. tax", &m(t.tax_total), Style::Normal);
+    if t.discount_total.minor() != 0 {
+        pair("  Discounts given", &neg(t.discount_total), Style::Normal);
+    }
+    if t.rounding_total.minor() != 0 {
+        pair("  Cash rounding", &m(t.rounding_total), Style::Normal);
+    }
+    pair(
+        &format!("Returns ({})", t.returns_count),
+        &neg(t.refunds_total),
+        Style::Normal,
+    );
+    pair("Payments taken", "", Style::Normal);
+    if t.tenders.is_empty() {
+        pair("  None", "", Style::Normal);
+    }
+    for k in &t.tenders {
+        pair(
+            &format!("  {} ({})", tender_label(k.kind), k.count),
+            &m(k.amount),
+            Style::Normal,
+        );
+    }
+    if !t.refunds.is_empty() {
+        pair("Refunds paid", "", Style::Normal);
+        for k in &t.refunds {
+            pair(
+                &format!("  {} ({})", tender_label(k.kind), k.count),
+                &neg(k.amount),
+                Style::Normal,
+            );
+        }
+    }
+    pair(&"-".repeat(width), "", Style::Normal);
+    let cash_in = t.cash_in().unwrap_or_default();
+    let cash_out = t.cash_out().unwrap_or_default();
+    pair("Opening float", &m(z.opening_float), Style::Normal);
+    pair("+ Cash from sales", &m(cash_in), Style::Normal);
+    pair("- Cash refunds", &neg(cash_out), Style::Normal);
+    pair("EXPECTED CASH", &m(z.expected), Style::Bold);
+    pair("COUNTED CASH", &m(z.counted), Style::Bold);
+    let v = z.variance.minor();
+    let (label, value) = match v.signum() {
+        0 => ("VARIANCE", m(z.variance)),
+        1 => ("VARIANCE (OVER)", format!("+{}", m(z.variance))),
+        _ => ("VARIANCE (SHORT)", m(z.variance)),
+    };
+    pair(label, &value, Style::Bold);
+    if let Some(n) = &z.note {
+        for l in wrap(&format!("Note: {n}"), width) {
+            pair(&l, "", Style::Normal);
+        }
+    }
 }
 
 /// Left text and right-aligned amount on one line; the left side is cut to fit.

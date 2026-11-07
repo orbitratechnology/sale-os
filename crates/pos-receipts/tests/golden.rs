@@ -401,3 +401,77 @@ fn sums_on_the_receipt_match_the_sale() {
         );
     }
 }
+
+/// E15-T02: a Z summary. Float 100.00; 12 sales, cash net 80.00 + card 43.45; two returns
+/// refunded 2.50 cash and 4.00 to a card; counted 177.00 against 177.50 expected.
+fn z_doc() -> ReceiptDocument {
+    use pos_domain::cash::{ClosedSession, SessionTotals, TenderTotal};
+    let g = ids();
+    let tt = |kind, count, minor| TenderTotal {
+        kind,
+        count,
+        amount: Money::from_minor(minor),
+    };
+    let totals = SessionTotals {
+        sales_count: 12,
+        sales_total: Money::from_minor(12_345),
+        tax_total: Money::from_minor(2_057),
+        discount_total: Money::from_minor(300),
+        rounding_total: Money::from_minor(2),
+        tenders: vec![
+            tt(TenderKind::CardExternal, 4, 4_345),
+            tt(TenderKind::Cash, 9, 8_000),
+        ],
+        returns_count: 2,
+        refunds_total: Money::from_minor(650),
+        refunds: vec![tt(TenderKind::CardExternal, 1, 400), tt(TenderKind::Cash, 1, 250)],
+    };
+    let float = Money::from_minor(10_000);
+    let expected = totals.expected_cash(float).unwrap();
+    assert_eq!(expected.minor(), 17_750);
+    let counted = Money::from_minor(17_700);
+    let closed = ClosedSession {
+        id: pos_domain::CashSessionId::generate(&g),
+        closed_by: UserId::generate(&g),
+        closed_at: Timestamp::from_millis(1_767_288_600_000),
+        opening_float: float,
+        counted,
+        expected,
+        variance: pos_domain::cash::variance(counted, expected).unwrap(),
+        totals,
+        note: Some("50p coin found under the drawer after the count".into()),
+    };
+    let mut ctx = context();
+    ctx.cashier_name = "Mia".into();
+    pos_receipts::z_summary(
+        &closed,
+        &ctx,
+        &pos_receipts::ZContext {
+            session_number: "R01-Z-0007".into(),
+            opened_local: "2026-01-01 08:58".into(),
+            opened_by: "Olu".into(),
+            closed_local: "2026-01-01 17:30".into(),
+            currency_exponent: 2,
+            sandbox: false,
+        },
+    )
+}
+
+#[test]
+fn golden_z_summary() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let doc = z_doc();
+    check(
+        dir.join("z_summary.json"),
+        &serde_json::to_string_pretty(&doc).unwrap(),
+    );
+    for cols in [COLUMNS_58MM, COLUMNS_80MM] {
+        let lines = render(&doc, cols);
+        assert!(lines.iter().all(|l| l.text.chars().count() <= cols));
+        check(dir.join(format!("z_summary.{cols}.txt")), &to_plain_text(&lines));
+        check_bytes(dir.join(format!("z_summary.{cols}.bin")), &to_escpos(&lines));
+    }
+    // Stored and read back, it renders the same.
+    let back: ReceiptDocument = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+    assert_eq!(render(&back, COLUMNS_80MM), render(&doc, COLUMNS_80MM));
+}

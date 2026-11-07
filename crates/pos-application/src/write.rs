@@ -115,9 +115,14 @@ pub enum WriteOp {
     },
     /// A completed sale (E09-T08): header, lines, tenders and their first status events. Its
     /// receipt number comes from `receipt_slot`, allocated earlier in the same set.
+    ///
+    /// The sale joins the register's open cash session, looked up inside the transaction (so
+    /// a close cannot slip in between). With `require_cash_session` and no open session it
+    /// fails with `CashSessionRequired`.
     InsertSale {
         sale: pos_domain::sale::SaleSnapshot,
         receipt_slot: NumberSlot,
+        require_cash_session: bool,
     },
     /// Stock movements (E11-T01), with the balance projection updated in the same
     /// transaction. Part of the fact named by `aggregate` (e.g. the sale).
@@ -140,9 +145,24 @@ pub enum WriteOp {
     /// `number_slot` (the Return counter) and is reported like a receipt number, so the
     /// event and the return receipt can carry it. RET-004 is checked again inside the
     /// transaction: two returns of the last unit cannot both succeed.
+    /// Like a sale, it joins the open cash session (cash refunds leave that drawer).
     InsertReturn {
         ret: pos_domain::returns::ReturnSnapshot,
         number_slot: NumberSlot,
+        require_cash_session: bool,
+    },
+    /// Opens the register's cash session (E15-T02). Fails with `CashSessionAlreadyOpen` if
+    /// one is open. The store gives it the next `{register}-Z-{seq:04}` number, reported in
+    /// `receipt_numbers` under `number_slot`.
+    OpenCashSession {
+        session: pos_domain::cash::OpenedSession,
+        number_slot: NumberSlot,
+    },
+    /// Closes the session, once. The store recomputes the totals from the sales and returns
+    /// in it inside the transaction; if they differ from `closed.totals` (a sale landed in
+    /// between) it fails with `CashSessionChanged` and nothing is written.
+    CloseCashSession {
+        closed: pos_domain::cash::ClosedSession,
     },
     /// Creates or updates a print job and appends its state change to `print_job_events`
     /// (E13-T06). Local only.
@@ -237,6 +257,12 @@ impl WriteOp {
             WriteOp::InsertReturn { ret, .. } => SyncKind::Fact {
                 aggregate: return_aggregate(ret.id),
             },
+            WriteOp::OpenCashSession { session, .. } => SyncKind::Fact {
+                aggregate: cash_session_aggregate(session.id),
+            },
+            WriteOp::CloseCashSession { closed } => SyncKind::Fact {
+                aggregate: cash_session_aggregate(closed.id),
+            },
             WriteOp::AppendMovements { aggregate, .. } => SyncKind::Fact {
                 aggregate: aggregate.clone(),
             },
@@ -251,6 +277,14 @@ impl WriteOp {
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
+    }
+}
+
+/// Aggregate identity of a cash session.
+pub fn cash_session_aggregate(id: pos_domain::CashSessionId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "cash_session",
+        aggregate_id: id.to_string(),
     }
 }
 
@@ -543,8 +577,29 @@ impl WriteSetBuilder {
         });
         self
     }
-    pub fn insert_sale(mut self, sale: pos_domain::sale::SaleSnapshot, receipt_slot: NumberSlot) -> Self {
-        self.ops.push(WriteOp::InsertSale { sale, receipt_slot });
+    pub fn insert_sale(
+        mut self,
+        sale: pos_domain::sale::SaleSnapshot,
+        receipt_slot: NumberSlot,
+        require_cash_session: bool,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertSale {
+            sale,
+            receipt_slot,
+            require_cash_session,
+        });
+        self
+    }
+    pub fn open_cash_session(
+        mut self,
+        session: pos_domain::cash::OpenedSession,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops.push(WriteOp::OpenCashSession { session, number_slot });
+        self
+    }
+    pub fn close_cash_session(mut self, closed: pos_domain::cash::ClosedSession) -> Self {
+        self.ops.push(WriteOp::CloseCashSession { closed });
         self
     }
     pub fn append_movements(
@@ -583,8 +638,13 @@ impl WriteSetBuilder {
         mut self,
         ret: pos_domain::returns::ReturnSnapshot,
         number_slot: NumberSlot,
+        require_cash_session: bool,
     ) -> Self {
-        self.ops.push(WriteOp::InsertReturn { ret, number_slot });
+        self.ops.push(WriteOp::InsertReturn {
+            ret,
+            number_slot,
+            require_cash_session,
+        });
         self
     }
     pub fn close_cart(
@@ -724,6 +784,8 @@ impl WriteSetBuilder {
             WriteOp::AllocateNumber { .. }
             | WriteOp::InsertSale { .. }
             | WriteOp::InsertReturn { .. }
+            | WriteOp::OpenCashSession { .. }
+            | WriteOp::CloseCashSession { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
@@ -784,6 +846,15 @@ pub enum WriteError {
         line: pos_domain::SaleLineId,
         available_milli: i64,
     },
+    #[error("no cash session is open on this register")]
+    CashSessionRequired,
+    #[error("a cash session is already open on this register")]
+    CashSessionAlreadyOpen,
+    #[error("the cash session is not open on this register")]
+    CashSessionNotOpen,
+    /// A sale or return joined the session after its totals were read; read them again.
+    #[error("the cash session changed while it was being closed")]
+    CashSessionChanged,
 }
 
 impl HasErrorCode for WriteError {
@@ -798,6 +869,11 @@ impl HasErrorCode for WriteError {
             // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.
             WriteError::ScanAlreadySeen => ErrorCode::ScanInvalid,
             WriteError::ReturnQtyExceeds { .. } => ErrorCode::ReturnQtyExceeds,
+            WriteError::CashSessionRequired | WriteError::CashSessionNotOpen => {
+                ErrorCode::CashSessionRequired
+            }
+            WriteError::CashSessionAlreadyOpen => ErrorCode::CashSessionAlreadyOpen,
+            WriteError::CashSessionChanged => ErrorCode::ConflictVersion,
         }
     }
 }

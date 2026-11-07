@@ -207,6 +207,29 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"filter": {"from": null, "to": null, "receipt": null, "cashierUserId": null, "tender": null}, "after": null, "limit": null}),
         ),
         ("sales_get", Perm(SalesView), json!({"saleId": UNKNOWN_ID})),
+        ("cash_session_current", Perm(CashSessionOpen), json!({})),
+        // A negative float is refused after the permission check: nothing is opened.
+        (
+            "cash_session_open",
+            Perm(CashSessionOpen),
+            json!({"floatMinor": "-1"}),
+        ),
+        // No session is open, so a permitted close fails with CASH_SESSION_REQUIRED.
+        (
+            "cash_session_close",
+            Perm(CashSessionClose),
+            json!({"countedMinor": "0", "note": null}),
+        ),
+        (
+            "cash_session_z_get",
+            Perm(CashSessionViewVariance),
+            json!({"sessionId": null, "widthMm": null}),
+        ),
+        (
+            "cash_session_z_print",
+            Perm(CashSessionViewVariance),
+            json!({"sessionId": null}),
+        ),
     ]
 }
 
@@ -693,4 +716,89 @@ fn a_cash_sale_over_ipc() {
     )
     .unwrap_err();
     assert_eq!(bad["code"], "VALIDATION_FAILED");
+}
+
+#[test]
+fn a_cash_session_over_ipc() {
+    // E15-T02 through the shell: open with a float, sell for cash, close with a count,
+    // then read and print the Z summary.
+    let (_dir, app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let state = invoke(&w, "cash_session_current", json!({})).unwrap();
+    // A new till starts in sandbox: practice sales need no drawer.
+    assert_eq!(
+        (state["session"].clone(), state["required"].clone()),
+        (Value::Null, json!(false))
+    );
+    let bad = invoke(&w, "cash_session_open", json!({"floatMinor": "-1"})).unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    let opened = invoke(&w, "cash_session_open", json!({"floatMinor": "5000"})).unwrap();
+    assert_eq!(opened["session"]["number"], "R01-Z-0001");
+    assert_eq!(opened["expectedMinor"], "5000");
+    let again = invoke(&w, "cash_session_open", json!({"floatMinor": "5000"})).unwrap_err();
+    assert_eq!(again["code"], "CASH_SESSION_ALREADY_OPEN");
+
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["variants"][0]["sku"] = json!("COLA");
+    invoke(&w, "product_create", product).unwrap();
+    let cart = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-00000000000b", "raw": "COLA", "source": "manual"}),
+    )
+    .unwrap()["cart"]
+        .clone();
+    invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "500", "reference": null}]}),
+    )
+    .unwrap();
+    let now = invoke(&w, "cash_session_current", json!({})).unwrap();
+    assert_eq!(now["expectedMinor"], "5100"); // 50.00 + the 1.00 sale
+    assert_eq!(now["totals"]["tenders"][0]["kind"], "cash");
+
+    let closed = invoke(
+        &w,
+        "cash_session_close",
+        json!({"countedMinor": "5090", "note": "short a coin"}),
+    )
+    .unwrap();
+    assert_eq!(
+        (closed["expectedMinor"].as_str(), closed["varianceMinor"].as_str()),
+        (Some("5100"), Some("-10"))
+    );
+    assert_eq!(closed["session"]["open"], false);
+    let z = invoke(
+        &w,
+        "cash_session_z_get",
+        json!({"sessionId": null, "widthMm": 58}),
+    )
+    .unwrap();
+    assert_eq!(z["receiptNumber"], "R01-Z-0001");
+    let printed = invoke(&w, "cash_session_z_print", json!({"sessionId": null})).unwrap();
+    assert_eq!(printed["status"], "completed");
+    let services = app.state::<AppServices>();
+    assert!(services.data_dir.join("virtual-printer/R01-Z-0001.bin").exists());
+    let gone = invoke(
+        &w,
+        "cash_session_close",
+        json!({"countedMinor": "0", "note": null}),
+    )
+    .unwrap_err();
+    assert_eq!(gone["code"], "CASH_SESSION_REQUIRED");
 }

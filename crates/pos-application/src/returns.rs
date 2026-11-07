@@ -122,8 +122,13 @@ impl ReturnService {
             .returnable_sale(input.sale_id)
             .await?
             .ok_or_else(not_found)?;
-        let plan = plan_return(&sale, self.mode().await?, &input.lines)?;
+        let mode = self.mode().await?;
+        let plan = plan_return(&sale, mode, &input.lines)?;
         let refunds = settle_refunds(plan.total, &input.refunds)?;
+        // Cash paid out in live mode comes from the open drawer session.
+        let require_session = mode == SaleMode::Live
+            && refunds.iter().any(|r| r.kind.is_cash())
+            && self.setup.cash_session_required().await?;
         let ids = ctx.ids.as_ref();
         let timezone = self.pricing.pricing_settings().await?.timezone;
         let business_date = pos_domain::time::business_date(
@@ -197,7 +202,7 @@ impl ReturnService {
         }
         let set = WriteSet::builder(ctx.write_context())
             .allocate_number(Counter::Return, RETURN_NUMBER)
-            .insert_return(ret.clone(), RETURN_NUMBER)
+            .insert_return(ret.clone(), RETURN_NUMBER, require_session)
             .append_movements(movements, aggregate)
             .insert_receipt(
                 pos_domain::ReceiptId::generate(ids),

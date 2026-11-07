@@ -46,4 +46,9 @@ pub const COMMANDS: &[&str] = &[
     "return_receipt_print",
     "sales_list",
     "sales_get",
+    "cash_session_current",
+    "cash_session_open",
+    "cash_session_close",
+    "cash_session_z_get",
+    "cash_session_z_print",
 ];

@@ -1251,3 +1251,132 @@ impl SaleDetailDto {
         }
     }
 }
+
+// ---------- cash sessions (E15-T02) ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CashSessionDto {
+    pub cash_session_id: pos_domain::CashSessionId,
+    /// `R01-Z-0001`.
+    pub number: String,
+    pub open: bool,
+    pub opened_by_name: String,
+    pub opened_local: String,
+    pub opening_float_minor: String,
+    pub business_date: String,
+    pub closed_by_name: Option<String>,
+    pub closed_local: Option<String>,
+    pub currency_exponent: u8,
+}
+
+impl CashSessionDto {
+    pub fn from_record(r: &pos_application::records::CashSessionRecord) -> Self {
+        Self {
+            cash_session_id: r.id,
+            number: r.number.clone(),
+            open: r.open,
+            opened_by_name: r.opened_by_name.clone(),
+            opened_local: r.opened_local.clone(),
+            opening_float_minor: money(r.opening_float),
+            business_date: r.business_date.clone(),
+            closed_by_name: r.closed_by_name.clone(),
+            closed_local: r.closed_local.clone(),
+            currency_exponent: r.currency_exponent,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TenderTotalDto {
+    pub kind: TenderKind,
+    pub count: u32,
+    pub amount_minor: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTotalsDto {
+    pub sales_count: u32,
+    pub sales_total_minor: String,
+    pub tax_total_minor: String,
+    pub discount_total_minor: String,
+    pub rounding_total_minor: String,
+    /// Amounts applied to sales by tender kind (cash net of change).
+    pub tenders: Vec<TenderTotalDto>,
+    pub returns_count: u32,
+    pub refunds_total_minor: String,
+    pub refunds: Vec<TenderTotalDto>,
+}
+
+impl SessionTotalsDto {
+    pub fn from_totals(t: &pos_domain::cash::SessionTotals) -> Self {
+        let list = |v: &[pos_domain::cash::TenderTotal]| {
+            v.iter()
+                .map(|t| TenderTotalDto {
+                    kind: t.kind,
+                    count: t.count,
+                    amount_minor: money(t.amount),
+                })
+                .collect()
+        };
+        Self {
+            sales_count: t.sales_count,
+            sales_total_minor: money(t.sales_total),
+            tax_total_minor: money(t.tax_total),
+            discount_total_minor: money(t.discount_total),
+            rounding_total_minor: money(t.rounding_total),
+            tenders: list(&t.tenders),
+            returns_count: t.returns_count,
+            refunds_total_minor: money(t.refunds_total),
+            refunds: list(&t.refunds),
+        }
+    }
+}
+
+/// The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+/// not see the variance (a cashier's count is blind).
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CashStateDto {
+    pub session: Option<CashSessionDto>,
+    /// Sales need an open session right now (live mode with the setting on).
+    pub required: bool,
+    pub totals: Option<SessionTotalsDto>,
+    pub expected_minor: Option<String>,
+}
+
+impl CashStateDto {
+    pub fn from_state(s: &pos_application::cash::CashState) -> Self {
+        Self {
+            session: s.session.as_ref().map(CashSessionDto::from_record),
+            required: s.required,
+            totals: s.totals.as_ref().map(SessionTotalsDto::from_totals),
+            expected_minor: s.expected.map(money),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ClosedCashDto {
+    pub session: CashSessionDto,
+    pub counted_minor: String,
+    /// `null` for a blind count.
+    pub expected_minor: Option<String>,
+    pub variance_minor: Option<String>,
+    pub totals: Option<SessionTotalsDto>,
+}
+
+impl ClosedCashDto {
+    pub fn from_closed(c: &pos_application::cash::ClosedCash) -> Self {
+        Self {
+            session: CashSessionDto::from_record(&c.session),
+            counted_minor: money(c.counted),
+            expected_minor: c.expected.map(money),
+            variance_minor: c.variance.map(money),
+            totals: c.totals.as_ref().map(SessionTotalsDto::from_totals),
+        }
+    }
+}

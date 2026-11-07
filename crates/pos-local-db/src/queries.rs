@@ -102,6 +102,20 @@ impl StaffQueries for SqliteStore {
 
 #[async_trait::async_trait]
 impl SetupQueries for SqliteStore {
+    async fn cash_session_required(&self) -> Result<bool, QueryError> {
+        let v: Option<String> = sqlx::query_scalar(
+            "SELECT value_json FROM business_settings WHERE key = 'cash.require_session_for_sale' LIMIT 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        match v {
+            None => Ok(true),
+            Some(v) => serde_json::from_str::<bool>(&v)
+                .map_err(|_| QueryError(format!("cash.require_session_for_sale is not true/false: {v}"))),
+        }
+    }
+
     async fn device_identity(&self) -> Result<Option<DeviceIdentity>, QueryError> {
         let row: Option<(String, Option<String>, Option<String>, String)> = sqlx::query_as(
             "SELECT installation_id, business_id, register_id, mode FROM device_identity WHERE id = 1",

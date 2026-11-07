@@ -669,10 +669,21 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
             }
-            WriteOp::InsertSale { sale, receipt_slot } => {
+            WriteOp::InsertSale {
+                sale,
+                receipt_slot,
+                require_cash_session,
+            } => {
                 let seq = *applied.numbers.get(receipt_slot).ok_or_else(|| {
                     WriteError::Io("receipt number must be allocated before the sale".into())
                 })?;
+                st.step()?;
+                let session = crate::cash::open_session(&mut tx, &ctx.register_id.to_string())
+                    .await
+                    .map_err(map_sqlx)?;
+                if session.is_none() && *require_cash_session {
+                    return Err(WriteError::CashSessionRequired);
+                }
                 st.step()?;
                 let (code, prefix): (String, String) =
                     sqlx::query_as("SELECT code, receipt_prefix FROM registers WHERE register_id = ?")
@@ -688,13 +699,14 @@ async fn apply_in_transaction(
                        line_discount_total_minor, order_discount_total_minor, tax_total_minor, rounding_minor, total_minor,
                        tendered_total_minor, change_minor, order_discount_json, tax_breakdown_json, cashier_user_id,
                        approver_user_id, occurred_at, business_date, timezone, created_at)
-                     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(sale.id.to_string())
                 .bind(ctx.business_id.to_string())
                 .bind(ctx.location_id.to_string())
                 .bind(ctx.register_id.to_string())
                 .bind(sale.cart_id.to_string())
+                .bind(&session)
                 .bind(as_i64(seq)?)
                 .bind(&receipt)
                 .bind(sale.mode.as_str())
@@ -847,10 +859,103 @@ async fn apply_in_transaction(
                     .map_err(map_sqlx)?;
                 }
             }
-            WriteOp::InsertReturn { ret, number_slot } => {
+            WriteOp::OpenCashSession { session, number_slot } => {
+                st.step()?;
+                let (code, next): (String, i64) = sqlx::query_as(
+                    "SELECT r.code, coalesce((SELECT max(session_seq) FROM cash_sessions c WHERE c.register_id = r.register_id), 0) + 1
+                     FROM registers r WHERE r.register_id = ?",
+                )
+                .bind(ctx.register_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                let number = format!("{code}-Z-{next:04}");
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO cash_sessions (cash_session_id, business_id, register_id, session_seq, session_number,
+                       opened_by, opened_at, opening_float_minor, business_date, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
+                )
+                .bind(session.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(next)
+                .bind(&number)
+                .bind(session.opened_by.to_string())
+                .bind(session.opened_at.as_millis())
+                .bind(session.opening_float.minor())
+                .bind(session.business_date.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| match map_sqlx(e) {
+                    WriteError::UniqueViolation { constraint } if constraint.contains("register_id") => {
+                        WriteError::CashSessionAlreadyOpen
+                    }
+                    other => other,
+                })?;
+                applied.receipt_numbers.insert(*number_slot, number);
+            }
+            WriteOp::CloseCashSession { closed } => {
+                st.step()?;
+                let id = closed.id.to_string();
+                let float: Option<i64> = sqlx::query_scalar(
+                    "SELECT opening_float_minor FROM cash_sessions
+                     WHERE cash_session_id = ? AND register_id = ? AND status = 'open'",
+                )
+                .bind(&id)
+                .bind(ctx.register_id.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                let Some(float) = float else {
+                    return Err(WriteError::CashSessionNotOpen);
+                };
+                st.step()?;
+                let totals = crate::cash::session_totals(&mut tx, &id)
+                    .await
+                    .map_err(map_sqlx)?;
+                let expected = totals
+                    .expected_cash(pos_domain::Money::from_minor(float))
+                    .map_err(|e| WriteError::Io(e.to_string()))?;
+                if totals != closed.totals
+                    || expected != closed.expected
+                    || float != closed.opening_float.minor()
+                {
+                    return Err(WriteError::CashSessionChanged);
+                }
+                st.step()?;
+                sqlx::query(
+                    "UPDATE cash_sessions SET status = 'closed', closed_by = ?, closed_at = ?, expected_cash_minor = ?,
+                       counted_cash_minor = ?, variance_minor = ?, totals_json = ?, note = ?
+                     WHERE cash_session_id = ?",
+                )
+                .bind(closed.closed_by.to_string())
+                .bind(closed.closed_at.as_millis())
+                .bind(closed.expected.minor())
+                .bind(closed.counted.minor())
+                .bind(closed.variance.minor())
+                .bind(json(&closed.totals)?)
+                .bind(&closed.note)
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::InsertReturn {
+                ret,
+                number_slot,
+                require_cash_session,
+            } => {
                 let seq = *applied.numbers.get(number_slot).ok_or_else(|| {
                     WriteError::Io("the return number must be allocated before the return".into())
                 })?;
+                st.step()?;
+                let session = crate::cash::open_session(&mut tx, &ctx.register_id.to_string())
+                    .await
+                    .map_err(map_sqlx)?;
+                if session.is_none() && *require_cash_session {
+                    return Err(WriteError::CashSessionRequired);
+                }
                 // RET-004 inside BEGIN IMMEDIATE: nothing else can return these lines meanwhile.
                 // A sale line split across dispositions is checked for its parts together.
                 let mut wanted: Vec<(pos_domain::SaleLineId, i64)> = Vec::new();
@@ -891,8 +996,8 @@ async fn apply_in_transaction(
                 sqlx::query(
                     "INSERT INTO returns (return_id, business_id, location_id, register_id, original_sale_id, return_seq,
                        return_number, reason_code, note, subtotal_minor, tax_minor, total_minor, actor_user_id,
-                       approver_user_id, occurred_at, business_date, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       approver_user_id, occurred_at, business_date, created_at, cash_session_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(ret.id.to_string())
                 .bind(ctx.business_id.to_string())
@@ -911,6 +1016,7 @@ async fn apply_in_transaction(
                 .bind(ret.occurred_at.as_millis())
                 .bind(ret.business_date.to_string())
                 .bind(ctx.occurred_at.as_millis())
+                .bind(&session)
                 .execute(&mut *tx)
                 .await
                 .map_err(map_sqlx)?;

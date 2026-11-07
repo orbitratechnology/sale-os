@@ -704,29 +704,22 @@ CREATE INDEX ix_returns_original_sale ON returns(original_sale_id);
 
 ## 0010_cash_sessions.sql (DER-001)
 
-```sql
-CREATE TABLE cash_sessions (
-  cash_session_id      TEXT PRIMARY KEY,
-  business_id          TEXT NOT NULL,
-  register_id          TEXT NOT NULL REFERENCES registers(register_id),
-  opened_by            TEXT NOT NULL,
-  opened_at            INTEGER NOT NULL,
-  opening_float_minor  INTEGER NOT NULL CHECK (opening_float_minor >= 0),
-  closed_by            TEXT,
-  closed_at            INTEGER,
-  expected_cash_minor  INTEGER,       -- float + cash sales − cash refunds (computed at close)
-  counted_cash_minor   INTEGER,
-  variance_minor       INTEGER,
-  business_date        TEXT NOT NULL, -- date the session opened
-  status               TEXT NOT NULL CHECK (status IN ('open','closed')),
-  note                 TEXT
-) STRICT;
-CREATE UNIQUE INDEX ux_one_open_session ON cash_sessions(register_id) WHERE status = 'open';
-```
+As shipped (see the migration for the full text): `cash_sessions` with `session_seq` and
+`session_number` (`R01-Z-0001`, printed on the Z summary), the opening fields, and the close
+fields (`closed_by`, `closed_at`, `expected_cash_minor`, `counted_cash_minor`,
+`variance_minor`, `totals_json`, `note`) that a `CHECK` requires together once closed. One
+open session per register (`ux_one_open_session`). Triggers: a closed session is final, the
+opening fields never change, and nothing is deleted. `returns` gains `cash_session_id`;
+sales already had it. Both are set inside the sale's or return's own transaction from the
+register's open session.
+
+Expected cash = opening float + cash applied to sales (handed over less change) − cash
+refunds. The closing transaction recomputes the session totals and refuses to close
+(`CashSessionChanged`) if they differ from the ones the operator was shown.
 
 A cash session is a fact in two parts: `cash_session.opened` and `cash_session.closed` are
-separate outbox events. Closing a session updates `closed_*` once. A trigger forbids any
-update after `status = 'closed'`.
+separate outbox events. The Z summary is stored as a receipt (`source_type = 'cash_session'`)
+in the closing transaction.
 
 ---
 

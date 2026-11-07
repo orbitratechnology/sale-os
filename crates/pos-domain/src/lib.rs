@@ -8,6 +8,7 @@
 
 pub mod access;
 pub mod cart;
+pub mod cash;
 pub mod catalog;
 pub mod error;
 pub mod geo;

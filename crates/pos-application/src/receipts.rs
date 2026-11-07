@@ -12,6 +12,7 @@ pub struct ReceiptService {
 }
 
 /// A receipt ready to show: the document and its lines for the chosen width.
+#[derive(Debug)]
 pub struct RenderedReceipt {
     pub document: ReceiptDocument,
     pub columns: usize,
@@ -58,7 +59,7 @@ impl ReceiptService {
         self.rendered(ctx, &json, width_mm).await
     }
 
-    async fn rendered(
+    pub(crate) async fn rendered(
         &self,
         ctx: &CommandContext,
         json: &str,

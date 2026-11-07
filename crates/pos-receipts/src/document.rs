@@ -19,13 +19,14 @@ pub enum CopyKind {
     Reprint,
 }
 
-/// A sale receipt, or a refund receipt for a return.
+/// A sale receipt, a refund receipt for a return, or a cash session's Z summary.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentKind {
     #[default]
     Sale,
     Return,
+    CashSession,
 }
 
 impl DocumentKind {
@@ -57,6 +58,89 @@ pub struct ReceiptDocument {
     pub footer: Vec<String>,
     /// Printed as a Code128 barcode where the printer can.
     pub barcode: String,
+    /// The Z summary of a closed cash session (kind `cash_session` only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<ZSection>,
+}
+
+/// What a Z summary adds: the session, its takings and the drawer count (E15-T02).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZSection {
+    pub opened_local: String,
+    pub opened_by: String,
+    pub opening_float: Money,
+    pub totals: pos_domain::cash::SessionTotals,
+    pub expected: Money,
+    pub counted: Money,
+    pub variance: Money,
+    pub note: Option<String>,
+}
+
+/// Who opened and closed a session, in words, for its Z summary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ZContext {
+    pub session_number: String,
+    pub opened_local: String,
+    pub opened_by: String,
+    pub closed_local: String,
+    pub currency_exponent: u8,
+    pub sandbox: bool,
+}
+
+/// The Z summary of a closed session. `ctx.cashier_name` is who closed it.
+pub fn z_summary(
+    closed: &pos_domain::cash::ClosedSession,
+    ctx: &ReceiptContext,
+    z: &ZContext,
+) -> ReceiptDocument {
+    ReceiptDocument {
+        version: CONTENT_VERSION,
+        kind: DocumentKind::CashSession,
+        original_receipt: None,
+        copy: CopyKind::Original,
+        sandbox: z.sandbox,
+        header: Header {
+            business_name: ctx.business_name.clone(),
+            address_lines: ctx.address_lines.clone(),
+            phone: ctx.phone.clone(),
+            tax_registration_no: ctx.tax_registration_no.clone(),
+            lines: Vec::new(),
+        },
+        meta: Meta {
+            receipt_number: z.session_number.clone(),
+            local_time: z.closed_local.clone(),
+            register_name: ctx.register_name.clone(),
+            register_code: ctx.register_code.clone(),
+            cashier_name: ctx.cashier_name.clone(),
+        },
+        currency_exponent: z.currency_exponent,
+        lines: Vec::new(),
+        totals: Totals {
+            subtotal: Money::ZERO,
+            line_discounts: Money::ZERO,
+            order_discount: Money::ZERO,
+            order_discount_label: None,
+            tax: Vec::new(),
+            prices_include_tax: true,
+            rounding: Money::ZERO,
+            total: Money::ZERO,
+        },
+        tenders: Vec::new(),
+        change: Money::ZERO,
+        footer: Vec::new(),
+        barcode: z.session_number.clone(),
+        z: Some(ZSection {
+            opened_local: z.opened_local.clone(),
+            opened_by: z.opened_by.clone(),
+            opening_float: closed.opening_float,
+            totals: closed.totals.clone(),
+            expected: closed.expected,
+            counted: closed.counted,
+            variance: closed.variance,
+            note: closed.note.clone(),
+        }),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,6 +306,7 @@ pub fn sale_receipt(
         change: sale.change,
         footer: ctx.footer_lines.clone(),
         barcode: receipt_number.into(),
+        z: None,
     }
 }
 
@@ -297,6 +382,7 @@ pub fn return_receipt(
         change: Money::ZERO,
         footer: ctx.footer_lines.clone(),
         barcode: return_number.into(),
+        z: None,
     }
 }
 
@@ -310,7 +396,7 @@ impl ReceiptDocument {
     }
 }
 
-fn tender_label(k: TenderKind) -> &'static str {
+pub(crate) fn tender_label(k: TenderKind) -> &'static str {
     match k {
         TenderKind::Cash => "Cash",
         TenderKind::CardExternal => "Card (external)",

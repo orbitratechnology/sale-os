@@ -79,7 +79,8 @@ impl PrintService {
         self.print_receipt(ctx, receipt).await
     }
 
-    async fn print_receipt(
+    /// Prints a stored receipt (the caller has checked who may print it).
+    pub async fn print_receipt(
         &self,
         ctx: &CommandContext,
         receipt: ReceiptId,

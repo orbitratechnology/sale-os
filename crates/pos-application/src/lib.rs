@@ -6,6 +6,7 @@ pub mod approval;
 pub mod audit;
 pub mod auth;
 pub mod cart;
+pub mod cash;
 pub mod catalog;
 pub mod checkout;
 pub mod context;

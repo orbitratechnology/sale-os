@@ -6,5 +6,6 @@ pub mod escpos;
 pub mod text;
 
 pub use document::{
-    CONTENT_VERSION, CopyKind, DocumentKind, ReceiptContext, ReceiptDocument, return_receipt, sale_receipt,
+    CONTENT_VERSION, CopyKind, DocumentKind, ReceiptContext, ReceiptDocument, ZContext, ZSection,
+    return_receipt, sale_receipt, z_summary,
 };

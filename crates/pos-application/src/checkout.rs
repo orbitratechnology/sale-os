@@ -140,6 +140,8 @@ impl CheckoutService {
             register_id: ctx.register.register_id,
             stock_movements: &movements,
         };
+        // DER-001: a live sale needs an open drawer session (checked again in the transaction).
+        let require_session = mode == SaleMode::Live && self.setup.cash_session_required().await?;
         let event = OutboxDraft::new(ids, "sale.completed", 1, aggregate.clone(), None, &payload)?
             .with_receipt_number(RECEIPT);
         let mut completed =
@@ -153,7 +155,7 @@ impl CheckoutService {
         }
         let mut b = WriteSet::builder(ctx.write_context())
             .allocate_number(Counter::Receipt, RECEIPT)
-            .insert_sale(sale.clone(), RECEIPT)
+            .insert_sale(sale.clone(), RECEIPT, require_session)
             .insert_receipt(
                 pos_domain::ReceiptId::generate(ids),
                 ("sale", sale.id.to_string()),

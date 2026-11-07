@@ -131,6 +131,19 @@ export const commands = {
 	salesList: (filter: SalesFilterDto_Deserialize, after: string | null, limit: number | null) => typedError<SalesPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_list", { filter, after, limit })),
 	/**  One completed sale as recorded: lines, discounts, tax, tenders and the returns made since. */
 	salesGet: (saleId: SaleId) => typedError<SaleDetailDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_get", { saleId })),
+	/**  The register's drawer: the open session (if any) and whether sales need one. */
+	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
+	/**  Opens the drawer with a float (minor units). */
+	cashSessionOpen: (floatMinor: string) => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_open", { floatMinor })),
+	/**
+	 *  Closes the drawer with the counted cash. Final. A cashier's count is blind: the reply
+	 *  has no expected cash or variance.
+	 */
+	cashSessionClose: (countedMinor: string, note: string | null) => typedError<ClosedCashDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_close", { countedMinor, note })),
+	/**  A closed session's Z summary as stored (`sessionId: null`: the last one on this till). */
+	cashSessionZGet: (sessionId: CashSessionId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_get", { sessionId, widthMm })),
+	/**  Prints a closed session's Z summary (later copies are reprints). */
+	cashSessionZPrint: (sessionId: CashSessionId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_print", { sessionId })),
 };
 
 /* Types */
@@ -332,6 +345,68 @@ export type CartViewDto_Serialize = {
 	repricedLines: CartLineId[],
 };
 
+export type CashSessionDto = CashSessionDto_Serialize | CashSessionDto_Deserialize;
+
+export type CashSessionDto_Deserialize = {
+	cashSessionId: CashSessionId,
+	/**  `R01-Z-0001`. */
+	number: string,
+	open: boolean,
+	openedByName: string,
+	openedLocal: string,
+	openingFloatMinor: string,
+	businessDate: string,
+	closedByName?: string | null,
+	closedLocal?: string | null,
+	currencyExponent: number,
+};
+
+export type CashSessionDto_Serialize = {
+	cashSessionId: CashSessionId,
+	/**  `R01-Z-0001`. */
+	number: string,
+	open: boolean,
+	openedByName: string,
+	openedLocal: string,
+	openingFloatMinor: string,
+	businessDate: string,
+	closedByName: string | null,
+	closedLocal: string | null,
+	currencyExponent: number,
+};
+
+export type CashSessionId = string;
+
+/**
+ *  The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+ *  not see the variance (a cashier's count is blind).
+ */
+export type CashStateDto = CashStateDto_Serialize | CashStateDto_Deserialize;
+
+/**
+ *  The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+ *  not see the variance (a cashier's count is blind).
+ */
+export type CashStateDto_Deserialize = {
+	session?: CashSessionDto_Deserialize | null,
+	/**  Sales need an open session right now (live mode with the setting on). */
+	required: boolean,
+	totals?: SessionTotalsDto | null,
+	expectedMinor?: string | null,
+};
+
+/**
+ *  The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+ *  not see the variance (a cashier's count is blind).
+ */
+export type CashStateDto_Serialize = {
+	session: CashSessionDto_Serialize | null,
+	/**  Sales need an open session right now (live mode with the setting on). */
+	required: boolean,
+	totals: SessionTotalsDto | null,
+	expectedMinor: string | null,
+};
+
 export type CatalogHitDto = CatalogHitDto_Serialize | CatalogHitDto_Deserialize;
 
 export type CatalogHitDto_Deserialize = {
@@ -365,6 +440,26 @@ export type CatalogHitDto_Serialize = {
 };
 
 export type CategoryId = string;
+
+export type ClosedCashDto = ClosedCashDto_Serialize | ClosedCashDto_Deserialize;
+
+export type ClosedCashDto_Deserialize = {
+	session: CashSessionDto_Deserialize,
+	countedMinor: string,
+	/**  `null` for a blind count. */
+	expectedMinor?: string | null,
+	varianceMinor?: string | null,
+	totals?: SessionTotalsDto | null,
+};
+
+export type ClosedCashDto_Serialize = {
+	session: CashSessionDto_Serialize,
+	countedMinor: string,
+	/**  `null` for a blind count. */
+	expectedMinor: string | null,
+	varianceMinor: string | null,
+	totals: SessionTotalsDto | null,
+};
 
 export type CompletedReturnDto = {
 	returnId: ReturnId,
@@ -1005,6 +1100,19 @@ export type SessionDto = {
 	mustChangePin: boolean,
 };
 
+export type SessionTotalsDto = {
+	salesCount: number,
+	salesTotalMinor: string,
+	taxTotalMinor: string,
+	discountTotalMinor: string,
+	roundingTotalMinor: string,
+	/**  Amounts applied to sales by tender kind (cash net of change). */
+	tenders: TenderTotalDto[],
+	returnsCount: number,
+	refundsTotalMinor: string,
+	refunds: TenderTotalDto[],
+};
+
 /**  For the PIN pad: no PIN state, no versions. */
 export type SignInUser = {
 	userId: UserId,
@@ -1093,6 +1201,12 @@ export type TenderInputDto_Serialize = {
 };
 
 export type TenderKind = "cash" | "card_external" | "bank_transfer_external" | "qr_external" | "other_external";
+
+export type TenderTotalDto = {
+	kind: TenderKind,
+	count: number,
+	amountMinor: string,
+};
 
 export type Unit = "ea" | "kg" | "g" | "l" | "ml" | "m" | "cm" | "box" | "pack";
 

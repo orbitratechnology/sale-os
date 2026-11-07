@@ -31,6 +31,9 @@ pub trait SetupQueries: Send + Sync {
     async fn register_context(&self) -> Result<Option<crate::context::RegisterContext>, QueryError>;
     /// What the shell shows before sign-in (`app_bootstrap_state`), `None` before setup.
     async fn workspace_summary(&self) -> Result<Option<WorkspaceSummary>, QueryError>;
+    /// `cash.require_session_for_sale` (default true). Applies to live mode only: practice
+    /// (sandbox) sales never need a drawer session.
+    async fn cash_session_required(&self) -> Result<bool, QueryError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -302,4 +305,33 @@ pub trait SalesQueries: Send + Sync {
         &self,
         sale: pos_domain::SaleId,
     ) -> Result<Option<crate::records::SaleDetail>, QueryError>;
+}
+
+/// Cash session reads (E15-T02).
+#[async_trait::async_trait]
+pub trait CashQueries: Send + Sync {
+    /// The register's open session, if any.
+    async fn open_cash_session(
+        &self,
+        register: pos_domain::RegisterId,
+    ) -> Result<Option<crate::records::CashSessionRecord>, QueryError>;
+    async fn cash_session(
+        &self,
+        id: pos_domain::CashSessionId,
+    ) -> Result<Option<crate::records::CashSessionRecord>, QueryError>;
+    /// What has been recorded in the session so far (the same reading the close uses).
+    async fn cash_session_totals(
+        &self,
+        id: pos_domain::CashSessionId,
+    ) -> Result<pos_domain::cash::SessionTotals, QueryError>;
+    /// The register's most recently closed session.
+    async fn last_closed_cash_session(
+        &self,
+        register: pos_domain::RegisterId,
+    ) -> Result<Option<pos_domain::CashSessionId>, QueryError>;
+    /// The stored Z summary of a closed session.
+    async fn cash_session_receipt(
+        &self,
+        id: pos_domain::CashSessionId,
+    ) -> Result<Option<(pos_domain::ReceiptId, String)>, QueryError>;
 }

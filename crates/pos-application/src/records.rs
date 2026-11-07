@@ -431,3 +431,27 @@ pub struct SaleReturnRow {
     pub total: pos_domain::Money,
     pub refunds: Vec<pos_domain::settlement::TenderKind>,
 }
+
+// ---------- cash sessions (E15-T02) ----------
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CashSessionRecord {
+    pub id: pos_domain::CashSessionId,
+    /// `R01-Z-0001`.
+    pub number: String,
+    pub open: bool,
+    pub opened_by_name: String,
+    pub opened_at: Timestamp,
+    pub opened_local: String,
+    pub opening_float: pos_domain::Money,
+    pub business_date: String,
+    pub closed_by_name: Option<String>,
+    pub closed_local: Option<String>,
+    pub expected: Option<pos_domain::Money>,
+    pub counted: Option<pos_domain::Money>,
+    pub variance: Option<pos_domain::Money>,
+    /// Recorded at close.
+    pub totals: Option<pos_domain::cash::SessionTotals>,
+    pub note: Option<String>,
+    pub currency_exponent: u8,
+}
