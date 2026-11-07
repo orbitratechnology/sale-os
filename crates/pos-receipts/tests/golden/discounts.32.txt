@@ -1,0 +1,29 @@
+          Corner Shop
+         1 High Street
+         Leeds LS1 1AA
+       Tel 0113 496 0000
+      Tax no. GB123456789
+--------------------------------
+Receipt R01-000003
+2026-11-07 14:03             R01
+Served by Olu
+--------------------------------
+Kettle
+  1 x 20.00                20.00
+  Discount 10%             -2.00
+Mug
+  2 x 7.00 *               14.00
+--------------------------------
+Subtotal                   34.00
+Item discounts             -2.00
+Order discount             -1.00
+TOTAL                      31.00
+  incl. VAT 20%             5.17
+--------------------------------
+Cash                       50.00
+Change                     19.00
+--------------------------------
+           Thank you!
+Returns within 30 days with this
+            receipt.
+           R01-000003

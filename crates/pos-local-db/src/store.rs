@@ -847,6 +847,43 @@ async fn apply_in_transaction(
                     .map_err(map_sqlx)?;
                 }
             }
+            WriteOp::InsertReceipt {
+                receipt_id,
+                source_type,
+                source_id,
+                content_version,
+                document,
+                receipt_slot,
+            } => {
+                let mut doc = document.clone();
+                if let Some(slot) = receipt_slot {
+                    let number = applied.receipt_numbers.get(slot).ok_or_else(|| {
+                        WriteError::Io("a receipt's number must come from a sale in the same set".into())
+                    })?;
+                    let obj = doc
+                        .as_object_mut()
+                        .ok_or_else(|| WriteError::Io("a receipt document must be an object".into()))?;
+                    obj.insert("barcode".into(), number.clone().into());
+                    if let Some(meta) = obj.get_mut("meta").and_then(|m| m.as_object_mut()) {
+                        meta.insert("receiptNumber".into(), number.clone().into());
+                    }
+                }
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO receipts (receipt_id, business_id, source_type, source_id, content_version, document_json, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(receipt_id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(*source_type)
+                .bind(source_id)
+                .bind(i64::from(*content_version))
+                .bind(doc.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
             WriteOp::CloseCart {
                 cart_id,
                 sale_id,

@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Corner Shop",
+    "addressLines": [
+      "1 High Street",
+      "Leeds LS1 1AA"
+    ],
+    "phone": "0113 496 0000",
+    "taxRegistrationNo": "GB123456789",
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "R01-000002",
+    "localTime": "2026-11-07 14:03",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Olu"
+  },
+  "currencyExponent": 2,
+  "lines": [
+    {
+      "name": "T-shirt",
+      "variantLabel": "M / Blue",
+      "quantity": "1",
+      "unitPrice": 600,
+      "gross": 600,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    }
+  ],
+  "totals": {
+    "subtotal": 600,
+    "lineDiscounts": 0,
+    "orderDiscount": 0,
+    "orderDiscountLabel": null,
+    "tax": [
+      {
+        "name": "VAT 20%",
+        "amount": 100
+      }
+    ],
+    "pricesIncludeTax": true,
+    "rounding": 0,
+    "total": 600
+  },
+  "tenders": [
+    {
+      "label": "Card (external)",
+      "amount": 500,
+      "received": null,
+      "external": true,
+      "reference": "AUTH 0042"
+    },
+    {
+      "label": "Cash",
+      "amount": 100,
+      "received": 200,
+      "external": false,
+      "reference": null
+    }
+  ],
+  "change": 100,
+  "footer": [
+    "Thank you!",
+    "Returns within 30 days with this receipt."
+  ],
+  "barcode": "R01-000002"
+}

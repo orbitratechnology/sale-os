@@ -203,3 +203,39 @@ pub trait StockQueries: Send + Sync {
         variants: &[pos_domain::VariantId],
     ) -> Result<std::collections::BTreeMap<pos_domain::VariantId, pos_domain::Quantity>, QueryError>;
 }
+
+/// What a receipt says about the shop, the till and who served (E13-T02).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiptInfo {
+    pub business_name: String,
+    pub address_lines: Vec<String>,
+    pub phone: Option<String>,
+    pub tax_registration_no: Option<String>,
+    /// `receipt.header_lines` / `receipt.footer_lines` settings.
+    pub header_lines: Vec<String>,
+    pub footer_lines: Vec<String>,
+    pub register_name: String,
+    pub register_code: String,
+    pub cashier_name: String,
+    /// `receipt.paper_width_mm`: 58 or 80.
+    pub paper_width_mm: u32,
+}
+
+#[async_trait::async_trait]
+pub trait ReceiptQueries: Send + Sync {
+    async fn receipt_info(
+        &self,
+        register: pos_domain::RegisterId,
+        cashier: pos_domain::UserId,
+    ) -> Result<ReceiptInfo, QueryError>;
+    /// The stored document of a sale's receipt, as JSON text.
+    async fn sale_receipt(
+        &self,
+        sale: pos_domain::SaleId,
+    ) -> Result<Option<(pos_domain::ReceiptId, String)>, QueryError>;
+    /// The most recent sale on this register, for "last receipt".
+    async fn last_sale(
+        &self,
+        register: pos_domain::RegisterId,
+    ) -> Result<Option<pos_domain::SaleId>, QueryError>;
+}

@@ -25,6 +25,7 @@ name = "crash-harness"
 path = "src/bin/crash-harness.rs"
 
 [dev-dependencies]
+pos-receipts.workspace = true
 pos-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

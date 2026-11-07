@@ -118,10 +118,12 @@ keyboard.
 | E11-T01 Movement ledger and balances | **Done for sales** | `0005_inventory.sql`; movements and balances in the same transaction; append-only triggers; balance = sum of movements over 200 sales; services and non-stock items move nothing | Property test over receipts, adjustments and returns (those arrive with E11-T02/T03, E12) |
 | E09-T08 Complete sale | **Done (Linux)** | `0006_sales_tenders.sql`; `CheckoutService::complete_sale` per 02 §4; a fault at every statement leaves nothing and uses no receipt number (AT-04); 200 gapless receipt numbers; snapshot survives a rename and reprice (POS-010); stale revision gives `CART_REVISION_MISMATCH` with nothing written; negative stock allowed and flagged, or blocked by the policy; `sale.completed` v1 is self-contained with the receipt number filled in the same transaction (decision recorded in `checkout.rs`); real app: scan → pay → change shown, rows in the database | The p95 < 150 ms timing for 30 lines on CI; receipt rows and printing (E13). **AT-05 done:** the crash harness now sells through the real services; 300 kills, 0 violations, 1,131 acknowledged sales all present with their pending events after restart (`docs/perf/crash-harness.md`) |
 | E10-T03 Payment panel | **Done (Chromium + real app)** | F9 opens; empty + Enter pays exact; quick notes scaled by currency; split tenders with remove; external rows say "Externally confirmed by operator", never "approved"; complete only when nothing is due; completed view with change, receipt number and "Saved on this device" | — |
+| E13-T02 ReceiptDocument model | **Done for sales** | `ReceiptDocument` v1 built from the sale snapshot only; stored in `receipts` in the sale's own transaction, its number filled in from the same slot; goldens (JSON + 32/48-column text) for a sale, split tender, discounts with an override, two-rate exclusive tax on a weighed item, and a sandbox reprint; the stored receipt is unchanged after a product rename and reprice | Return receipts and Z summaries (with E12, E15); the D-02 `ComplianceProfile` hook |
+| E13-T03 Receipt preview | **Done** | Rust renders the stored document into the printer's lines (32 or 48 columns); the preview shows exactly those on a monospace grid with a 58/80 mm switch; real app shows it after a sale | Playwright visual snapshots per golden (the text goldens cover the content) |
 
 ### Next up
 
-E13 receipts (document model, preview, print queue); E12 returns; E15 cash
+E13-T06 print queue with the virtual printer and uncertain outcomes; E12 returns; E15 cash
 sessions; E06-T05 categories and tax configuration.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use

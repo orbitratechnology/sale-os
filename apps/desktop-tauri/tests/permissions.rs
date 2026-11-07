@@ -162,6 +162,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SaleComplete),
             json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}]}),
         ),
+        (
+            "receipt_get",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "widthMm": 58}),
+        ),
     ]
 }
 
@@ -531,6 +536,22 @@ fn a_cash_sale_over_ipc() {
     let next = invoke(&w, "cart_current", json!({})).unwrap();
     assert_ne!(next["cartId"], cart["cartId"]);
     assert_eq!(next["lines"].as_array().unwrap().len(), 0);
+    // The receipt, as stored, for the last sale.
+    let receipt = invoke(&w, "receipt_get", json!({"saleId": null, "widthMm": 58})).unwrap();
+    assert_eq!(receipt["receiptNumber"], "R01-000001");
+    assert_eq!(receipt["columns"], 32);
+    let text: Vec<&str> = receipt["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["text"].as_str().unwrap())
+        .collect();
+    assert!(
+        text.iter()
+            .any(|l| l.starts_with("Change") && l.ends_with("4.00")),
+        "{text:?}"
+    );
+    assert!(text.iter().all(|l| l.chars().count() <= 32));
     // Paying the old cart again is refused: it is closed.
     assert_eq!(pay("500").unwrap_err()["code"], "CART_REVISION_MISMATCH");
 }

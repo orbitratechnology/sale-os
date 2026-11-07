@@ -3064,6 +3064,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "pos-domain",
+ "pos-receipts",
  "pos-testkit",
  "serde",
  "serde_json",
@@ -3119,6 +3120,7 @@ dependencies = [
  "async-trait",
  "pos-application",
  "pos-domain",
+ "pos-receipts",
  "pos-testkit",
  "serde",
  "serde_json",
@@ -3148,6 +3150,9 @@ name = "pos-receipts"
 version = "0.1.0"
 dependencies = [
  "pos-domain",
+ "pos-testkit",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

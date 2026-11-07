@@ -29,8 +29,8 @@ Migration order and owner tasks:
 | 0004 | `0004_carts.sql` | E09-T01 | 1 |
 | 0005 | `0005_inventory.sql` | E11-T01 | 2 |
 | 0006 | `0006_sales_tenders.sql` | E09-T08 / E10-T01 | 2 |
-| 0007 | `0007_returns.sql` | E12-T01 | 2 |
-| 0008 | `0008_receipts_printing.sql` | E13-T02 / E13-T06 | 2 |
+| 0007 | `0007_receipts_printing.sql` | E13-T02 / E13-T06 | 2 |
+| 0008 | `0008_returns.sql` | E12-T01 | 2 |
 | 0009 | `0009_cash_sessions.sql` | E15-T02 | 2 |
 | 0010 | `0010_import.sql` | E06-T07 | 1 |
 | 0011 | `0011_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
@@ -577,7 +577,7 @@ Invariants checked by `LocalStore::apply` in debug builds, and by property tests
 
 ---
 
-## 0007_returns.sql
+## 0008_returns.sql
 
 ```sql
 CREATE TABLE returns (
@@ -644,7 +644,10 @@ The cloud detects this (`E17-T05`) and raises `return.over_returned` on the repa
 
 ---
 
-## 0008_receipts_printing.sql
+## 0007_receipts_printing.sql
+
+> Numbering: receipts landed before returns (E13 ahead of E12), so receipts are `0007` and
+> returns `0008`. Section order below is unchanged.
 
 ```sql
 CREATE TABLE receipts (

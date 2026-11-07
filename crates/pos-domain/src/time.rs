@@ -80,6 +80,18 @@ pub fn parse_time_zone(name: &str) -> Result<Tz, TimeError> {
 }
 
 /// The business date of an instant in the business time zone.
+/// `YYYY-MM-DD HH:MM` in the business's time zone, for receipts. `None` if `zone` is not
+/// a known IANA name or the timestamp is out of range.
+pub fn local_date_time(at: Timestamp, zone: &str) -> Option<String> {
+    let tz = parse_time_zone(zone).ok()?;
+    Some(
+        at.to_datetime()?
+            .with_timezone(&tz)
+            .format("%Y-%m-%d %H:%M")
+            .to_string(),
+    )
+}
+
 pub fn business_date(at: Timestamp, tz: Tz) -> Result<BusinessDate, TimeError> {
     let utc = at.to_datetime().ok_or(TimeError::OutOfRange(at.as_millis()))?;
     Ok(BusinessDate(utc.with_timezone(&tz).date_naive()))

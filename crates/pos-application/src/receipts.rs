@@ -1,0 +1,63 @@
+//! Reading receipts back (E13-T03): the stored document, rendered for a paper width.
+
+use crate::context::{AppError, CommandContext};
+use crate::queries::ReceiptQueries;
+use pos_domain::{ErrorCode, Permission, SaleId};
+use pos_receipts::ReceiptDocument;
+use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, TextLine, render};
+use std::sync::Arc;
+
+pub struct ReceiptService {
+    pub receipts: Arc<dyn ReceiptQueries>,
+}
+
+/// A receipt ready to show: the document and its lines for the chosen width.
+pub struct RenderedReceipt {
+    pub document: ReceiptDocument,
+    pub columns: usize,
+    pub lines: Vec<TextLine>,
+}
+
+impl ReceiptService {
+    /// A sale's receipt as stored at completion (never rebuilt from the catalogue).
+    /// `width_mm`: 58 or 80; `None` uses the `receipt.paper_width_mm` setting.
+    pub async fn for_sale(
+        &self,
+        ctx: &CommandContext,
+        sale: Option<SaleId>,
+        width_mm: Option<u32>,
+    ) -> Result<RenderedReceipt, AppError> {
+        ctx.authorize(Permission::SalesView)?;
+        let actor = ctx.actor()?;
+        let sale = match sale {
+            Some(s) => s,
+            None => self
+                .receipts
+                .last_sale(ctx.register.register_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Validation("no sale on this till yet".into(), ErrorCode::ValidationFailed)
+                })?,
+        };
+        let (_, json) = self.receipts.sale_receipt(sale).await?.ok_or_else(|| {
+            AppError::Validation("this sale has no receipt".into(), ErrorCode::ValidationFailed)
+        })?;
+        let document: ReceiptDocument =
+            serde_json::from_str(&json).map_err(|e| AppError::Internal(format!("stored receipt: {e}")))?;
+        let width = match width_mm {
+            Some(w) => w,
+            None => {
+                self.receipts
+                    .receipt_info(ctx.register.register_id, actor.user_id)
+                    .await?
+                    .paper_width_mm
+            }
+        };
+        let columns = if width == 58 { COLUMNS_58MM } else { COLUMNS_80MM };
+        Ok(RenderedReceipt {
+            lines: render(&document, columns),
+            document,
+            columns,
+        })
+    }
+}

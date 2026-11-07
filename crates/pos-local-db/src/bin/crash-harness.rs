@@ -175,6 +175,7 @@ fn child(db_dir: &Path, ack_path: &Path) -> Result<(), String> {
             store: a.clone(),
             setup: a.clone(),
             stock: a.clone(),
+            receipts: a.clone(),
         };
 
         // A previous child may have been killed mid-write, leaving an unterminated line.

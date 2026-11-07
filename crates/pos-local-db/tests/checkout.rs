@@ -43,7 +43,8 @@ fn checkout(t: &Till, store: SqliteStore) -> CheckoutService {
         carts: t.carts.clone(),
         store: Arc::new(store),
         setup: Arc::new(q.clone()),
-        stock: Arc::new(q),
+        stock: Arc::new(q.clone()),
+        receipts: Arc::new(q),
     }
 }
 
@@ -178,6 +179,19 @@ async fn a_cash_sale_commits_everything_in_one_transaction() {
     );
     let next = t.carts.current(&t.shop.owner).await.unwrap().cart;
     assert!(next.lines.is_empty());
+    // The receipt was written in the same transaction, with the allocated number.
+    let doc: String = sqlx::query_scalar("SELECT document_json FROM receipts WHERE source_type = 'sale'")
+        .fetch_one(t.shop.store.db().readers())
+        .await
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    assert_eq!(
+        (doc["meta"]["receiptNumber"].as_str(), doc["barcode"].as_str()),
+        (Some("R01-000001"), Some("R01-000001"))
+    );
+    assert_eq!(doc["meta"]["cashierName"], "Olu");
+    assert_eq!(doc["lines"][0]["name"], "Tea");
+    assert_eq!(doc["change"], 400);
     // Sales are immutable.
     let update = sqlx::query("UPDATE sales SET total_minor = 0")
         .execute(t.shop.store.db().writer())
@@ -192,6 +206,7 @@ async fn a_failure_at_any_statement_leaves_nothing_behind() {
     let t = till(common::shop().await);
     basket(&t).await;
     let tables = [
+        "receipts",
         "sales",
         "sale_lines",
         "tenders",
@@ -299,6 +314,16 @@ async fn the_sale_keeps_its_snapshot_when_the_product_changes() {
             .await
             .unwrap();
     assert_eq!((name.as_str(), price), ("Tea", 250));
+    // The stored receipt is unchanged too: receipts are never rebuilt from the catalogue.
+    let receipts = pos_application::receipts::ReceiptService {
+        receipts: Arc::new(t.shop.store.clone()),
+    };
+    let r = receipts.for_sale(&t.shop.owner, None, Some(58)).await.unwrap();
+    assert_eq!(r.document.lines[0].name, "Tea");
+    assert_eq!(r.columns, 32);
+    let text = pos_receipts::text::to_plain_text(&r.lines);
+    assert!(text.contains("Tea") && !text.contains("Green tea"), "{text}");
+    assert!(text.contains("R01-000001"));
 }
 
 #[tokio::test]

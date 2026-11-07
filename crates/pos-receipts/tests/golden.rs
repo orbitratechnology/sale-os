@@ -1,65 +1,304 @@
-//! E13-T01 acceptance: a 3-line receipt encodes to the hand-verified golden bytes.
+//! E13-T02/T03 golden receipts: the JSON document and its 32- and 48-column text for a set
+//! of hand-checked sales. Regenerate with `UPDATE_GOLDEN=1 cargo test -p pos-receipts`, then
+//! review the diff.
 
-use pos_receipts::escpos::{Align, Cut, EscPos, decode};
+use pos_domain::cart::{AddVia, Cart, SellableVariant};
+use pos_domain::catalog::{ProductType, Unit};
+use pos_domain::pricing::{Discount, PricingPolicy, TaxMode, TaxRateSnapshot, price_cart};
+use pos_domain::sale::{SaleHeader, SaleMode, SaleSnapshot};
+use pos_domain::settlement::{TenderInput, TenderKind, settle};
+use pos_domain::{
+    Currency, CurrencyCode, IdGenerator, Money, ProductId, Quantity, RatePpm, TaxRateId, Timestamp, UserId,
+    VariantId,
+};
+use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, render, to_plain_text};
+use pos_receipts::{CopyKind, ReceiptContext, ReceiptDocument, sale_receipt};
+use pos_testkit::SeqIdGenerator;
+use std::path::PathBuf;
 
-const GOLDEN_BIN: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../tests/fixtures/escpos/three_line_receipt.bin"
-);
-const GOLDEN_TXT: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../tests/fixtures/escpos/three_line_receipt.txt"
-);
-
-fn three_line_receipt() -> Vec<u8> {
-    let mut p = EscPos::new();
-    p.align(Align::Center)
-        .bold(true)
-        .line("CORNER SHOP")
-        .bold(false)
-        .align(Align::Left)
-        .line("Cola 330ml        1.20")
-        .bold(true)
-        .line("TOTAL             1.20")
-        .bold(false)
-        .feed(3)
-        .cut(Cut::Partial);
-    p.into_bytes()
+fn ids() -> SeqIdGenerator {
+    SeqIdGenerator::new(1_767_225_600_000)
 }
 
-/// Every byte written out by hand from the Epson ESC/POS command reference.
-const HAND_VERIFIED: &[u8] = &[
-    0x1B, 0x40, // ESC @            initialise
-    0x1B, 0x61, 0x01, // ESC a 1          align centre
-    0x1B, 0x45, 0x01, // ESC E 1          bold on
-    b'C', b'O', b'R', b'N', b'E', b'R', b' ', b'S', b'H', b'O', b'P', 0x0A, // text, LF
-    0x1B, 0x45, 0x00, // ESC E 0          bold off
-    0x1B, 0x61, 0x00, // ESC a 0          align left
-    b'C', b'o', b'l', b'a', b' ', b'3', b'3', b'0', b'm', b'l', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
-    b' ', b'1', b'.', b'2', b'0', 0x0A, 0x1B, 0x45, 0x01, // ESC E 1          bold on
-    b'T', b'O', b'T', b'A', b'L', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
-    b' ', b'1', b'.', b'2', b'0', 0x0A, 0x1B, 0x45, 0x00, // ESC E 0          bold off
-    0x1B, 0x64, 0x03, // ESC d 3          feed 3 lines
-    0x1D, 0x56, 0x42, 0x00, // GS V 66 0        feed to cutter, partial cut
-];
-
-#[test]
-fn encoder_matches_hand_verified_bytes() {
-    assert_eq!(three_line_receipt(), HAND_VERIFIED);
-}
-
-#[test]
-fn golden_files_are_current() {
-    let bytes = three_line_receipt();
-    let text = decode(&bytes);
-    if std::env::var_os("UPDATE_GOLDENS").is_some() {
-        std::fs::write(GOLDEN_BIN, &bytes).unwrap();
-        std::fs::write(GOLDEN_TXT, &text).unwrap();
+fn rate(ids: &dyn IdGenerator, name: &str, ppm: u32) -> TaxRateSnapshot {
+    TaxRateSnapshot {
+        id: TaxRateId::generate(ids),
+        name: name.into(),
+        rate: RatePpm::new(ppm).unwrap(),
     }
-    assert_eq!(
-        std::fs::read(GOLDEN_BIN).unwrap(),
-        bytes,
-        "run with UPDATE_GOLDENS=1 after reviewing the change"
+}
+
+fn item(
+    ids: &dyn IdGenerator,
+    name: &str,
+    label: &str,
+    price: i64,
+    unit: Unit,
+    taxes: Vec<TaxRateSnapshot>,
+) -> SellableVariant {
+    SellableVariant {
+        variant_id: VariantId::generate(ids),
+        product_id: ProductId::generate(ids),
+        name: name.into(),
+        label: label.into(),
+        sku: None,
+        unit,
+        price: Money::from_minor(price),
+        taxes,
+        track_stock: true,
+        product_type: ProductType::Stock,
+        cost: None,
+    }
+}
+
+fn context() -> ReceiptContext {
+    ReceiptContext {
+        business_name: "Corner Shop".into(),
+        address_lines: vec!["1 High Street".into(), "Leeds LS1 1AA".into()],
+        phone: Some("0113 496 0000".into()),
+        tax_registration_no: Some("GB123456789".into()),
+        header_lines: vec![],
+        footer_lines: vec![
+            "Thank you!".into(),
+            "Returns within 30 days with this receipt.".into(),
+        ],
+        register_name: "Till 1".into(),
+        register_code: "R01".into(),
+        cashier_name: "Olu".into(),
+    }
+}
+
+/// 2026-11-07 14:03 in London (GMT).
+fn header(mode: SaleMode, inclusive: bool) -> SaleHeader {
+    SaleHeader {
+        mode,
+        currency: Currency::new(CurrencyCode::new("GBP").unwrap(), 2).unwrap(),
+        prices_include_tax: inclusive,
+        cashier: UserId::generate(&ids()),
+        occurred_at: Timestamp::from_millis(1_794_060_180_000),
+        business_date: "2026-11-07".parse().unwrap(),
+        timezone: "Europe/London".into(),
+    }
+}
+
+fn cash(minor: i64) -> TenderInput {
+    TenderInput {
+        kind: TenderKind::Cash,
+        amount: Money::from_minor(minor),
+        external_reference: None,
+    }
+}
+
+fn sale(cart: &Cart, mode: TaxMode, tenders: &[TenderInput], sale_mode: SaleMode) -> SaleSnapshot {
+    let policy = PricingPolicy::new(mode);
+    let priced = price_cart(&cart.pricing_lines(), cart.order_discount.as_ref(), &policy).unwrap();
+    let settlement = settle(priced.total, tenders, &policy).unwrap();
+    SaleSnapshot::build(
+        cart,
+        &priced,
+        settlement,
+        header(sale_mode, mode == TaxMode::Inclusive),
+        &ids(),
+    )
+    .unwrap()
+}
+
+fn scenarios() -> Vec<(&'static str, ReceiptDocument)> {
+    let g = ids();
+    let vat = rate(&g, "VAT 20%", 200_000);
+    let mut out = Vec::new();
+
+    // 2 × Tea 2.50, VAT included; cash 10.00 → change 5.00.
+    let mut c = Cart::new(&g);
+    c.add(
+        item(&g, "Tea", "", 250, Unit::Ea, vec![vat.clone()]),
+        Quantity::from_whole(2).unwrap(),
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    out.push((
+        "sale",
+        sale_receipt(
+            &sale(&c, TaxMode::Inclusive, &[cash(1000)], SaleMode::Live),
+            &context(),
+            "R01-000001",
+            CopyKind::Original,
+        ),
+    ));
+
+    // Split: card 5.00 recorded by the operator + cash 2.00 on 6.00.
+    let mut c = Cart::new(&g);
+    c.add(
+        item(&g, "T-shirt", "M / Blue", 600, Unit::Ea, vec![vat.clone()]),
+        Quantity::ONE,
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    let card = TenderInput {
+        kind: TenderKind::CardExternal,
+        amount: Money::from_minor(500),
+        external_reference: Some("AUTH 0042".into()),
+    };
+    out.push((
+        "split",
+        sale_receipt(
+            &sale(&c, TaxMode::Inclusive, &[card, cash(200)], SaleMode::Live),
+            &context(),
+            "R01-000002",
+            CopyKind::Original,
+        ),
+    ));
+
+    // A 10% line discount and a 1.00 order discount; a price override.
+    let mut c = Cart::new(&g);
+    c.add(
+        item(&g, "Kettle", "", 2000, Unit::Ea, vec![vat.clone()]),
+        Quantity::ONE,
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    c.add(
+        item(&g, "Mug", "", 800, Unit::Ea, vec![vat.clone()]),
+        Quantity::from_whole(2).unwrap(),
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    let kettle = c.lines[0].id;
+    let mug = c.lines[1].id;
+    c.set_line_discount(kettle, Some(Discount::percent(RatePpm::new(100_000).unwrap())))
+        .unwrap();
+    c.override_price(mug, Money::from_minor(700)).unwrap();
+    c.set_order_discount(Some(Discount::fixed(Money::from_minor(100))))
+        .unwrap();
+    out.push((
+        "discounts",
+        sale_receipt(
+            &sale(&c, TaxMode::Inclusive, &[cash(5000)], SaleMode::Live),
+            &context(),
+            "R01-000003",
+            CopyKind::Original,
+        ),
+    ));
+
+    // Tax added at the till, two rates on one line, a weighed item: 0.333 kg × 12.49/kg.
+    let state = rate(&g, "State 6%", 60_000);
+    let city = rate(&g, "City 2%", 20_000);
+    let mut c = Cart::new(&g);
+    c.add(
+        item(&g, "Cheese", "", 1249, Unit::Kg, vec![state, city]),
+        Quantity::parse_decimal("0.333").unwrap(),
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    c.add(
+        item(&g, "Bread", "", 300, Unit::Ea, vec![]),
+        Quantity::ONE,
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    let s = sale(&c, TaxMode::Exclusive, &[cash(1000)], SaleMode::Live);
+    out.push((
+        "multi_rate",
+        sale_receipt(&s, &context(), "R01-000004", CopyKind::Original),
+    ));
+
+    // A practice sale, printed again.
+    let mut c = Cart::new(&g);
+    c.add(
+        item(
+            &g,
+            "A product with a very long name that has to wrap on narrow paper",
+            "",
+            199,
+            Unit::Ea,
+            vec![vat],
+        ),
+        Quantity::ONE,
+        AddVia::Search,
+        &g,
+    )
+    .unwrap();
+    let doc = sale_receipt(
+        &sale(&c, TaxMode::Inclusive, &[cash(199)], SaleMode::Sandbox),
+        &context(),
+        "R01-000005",
+        CopyKind::Original,
     );
-    assert_eq!(std::fs::read_to_string(GOLDEN_TXT).unwrap(), text);
+    out.push(("sandbox_reprint", doc.as_reprint()));
+    out
+}
+
+fn check(path: PathBuf, actual: &str) {
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(&path, actual).unwrap();
+        return;
+    }
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+        panic!(
+            "missing golden {}: run with UPDATE_GOLDEN=1 and review",
+            path.display()
+        )
+    });
+    assert_eq!(
+        actual,
+        expected,
+        "{} differs (UPDATE_GOLDEN=1 to accept, then review the diff)",
+        path.display()
+    );
+}
+
+#[test]
+fn golden_documents_and_text() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    for (name, doc) in scenarios() {
+        check(
+            dir.join(format!("{name}.json")),
+            &(serde_json::to_string_pretty(&doc).unwrap() + "\n"),
+        );
+        for width in [COLUMNS_58MM, COLUMNS_80MM] {
+            let lines = render(&doc, width);
+            assert!(
+                lines.iter().all(|l| l.text.chars().count() <= width),
+                "{name} overflows {width} columns"
+            );
+            check(dir.join(format!("{name}.{width}.txt")), &to_plain_text(&lines));
+        }
+        // The document round-trips through JSON (it is stored as JSON).
+        let back: ReceiptDocument = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(back, doc);
+    }
+}
+
+#[test]
+fn sums_on_the_receipt_match_the_sale() {
+    for (name, doc) in scenarios() {
+        let tendered: i64 = doc
+            .tenders
+            .iter()
+            .map(|t| t.received.unwrap_or(t.amount).minor())
+            .sum();
+        assert_eq!(tendered - doc.change.minor(), doc.totals.total.minor(), "{name}");
+        let net: i64 = doc
+            .lines
+            .iter()
+            .map(|l| l.gross.minor() - l.discount.minor())
+            .sum::<i64>()
+            - doc.totals.order_discount.minor();
+        let tax: i64 = if doc.totals.prices_include_tax {
+            0
+        } else {
+            doc.totals.tax.iter().map(|t| t.amount.minor()).sum()
+        };
+        assert_eq!(
+            net + tax + doc.totals.rounding.minor(),
+            doc.totals.total.minor(),
+            "{name}"
+        );
+    }
 }

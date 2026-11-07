@@ -35,4 +35,5 @@ pub const COMMANDS: &[&str] = &[
     "cart_clear",
     "cart_void",
     "checkout_complete",
+    "receipt_get",
 ];

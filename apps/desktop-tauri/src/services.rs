@@ -9,6 +9,7 @@ use pos_application::catalog::CatalogService;
 use pos_application::checkout::CheckoutService;
 use pos_application::context::{Actor, ApprovalToken, CommandContext};
 use pos_application::queries::SetupQueries;
+use pos_application::receipts::ReceiptService;
 use pos_application::setup::SetupService;
 use pos_application::staff::StaffService;
 use pos_domain::{ApprovalId, Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
@@ -41,6 +42,7 @@ pub(crate) struct Services {
     pub catalog: CatalogService,
     pub carts: Arc<CartService>,
     pub checkout: CheckoutService,
+    pub receipts: ReceiptService,
     pub queries: SqliteStore,
     /// Issued manager approvals waiting to be used (E05-T04).
     pub approvals: Arc<Approvals>,
@@ -116,8 +118,10 @@ impl AppServices {
                     carts,
                     store: a.clone(),
                     setup: a.clone(),
-                    stock: a,
+                    stock: a.clone(),
+                    receipts: a.clone(),
                 },
+                receipts: ReceiptService { receipts: a },
                 queries: s.clone(),
                 approvals,
             }

@@ -214,6 +214,15 @@ describe("checkout (E09-T03..T06)", () => {
     await done.getByText("R01-000001").waitFor();
     expect(await done.getByTestId("saved").textContent()).toContain("Saved on this device");
     expect((await calls(page, "checkout_complete"))[0]).toMatchObject({ tenders: [{ kind: "cash", amountMinor: "219" }] });
+    // The receipt, as it prints, at both paper widths.
+    await done.getByRole("button", { name: "Show receipt" }).click();
+    const paper = done.getByTestId("receipt-text");
+    await paper.getByText("Receipt R01-000001").waitFor();
+    expect(Math.max(...(await paper.textContent() ?? "").split("\n").map((l) => l.length))).toBe(48);
+    await done.getByRole("button", { name: "58 mm" }).click();
+    await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "receipt_get" && c.args.widthMm === 58));
+    await page.waitForFunction(() => Math.max(...(document.querySelector("[data-testid=receipt-text]")?.textContent ?? "").split("\n").map((l) => l.length)) === 32);
+    await done.getByRole("button", { name: /New sale/ }).focus();
     // Enter starts the next sale with an empty cart.
     await page.keyboard.press("Enter");
     await done.waitFor({ state: "detached" });

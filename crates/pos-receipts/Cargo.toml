@@ -9,6 +9,11 @@ publish.workspace = true
 
 [dependencies]
 pos-domain.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+pos-testkit.workspace = true
 
 [lints]
 workspace = true

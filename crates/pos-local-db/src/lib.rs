@@ -11,6 +11,7 @@ mod error;
 mod migrate;
 mod pragmas;
 mod queries;
+mod receipt_queries;
 mod stock_queries;
 mod store;
 

@@ -14,7 +14,7 @@
 use crate::audit::{self, AuditEntry};
 use crate::cart::{CartService, Loaded};
 use crate::context::{AppError, CommandContext};
-use crate::queries::{SetupQueries, StockQueries};
+use crate::queries::{ReceiptQueries, SetupQueries, StockQueries};
 use crate::records::RegisterMode;
 use crate::write::{Counter, NumberSlot, sale_aggregate};
 use crate::{LocalStore, OutboxDraft, WriteSet};
@@ -33,6 +33,7 @@ pub struct CheckoutService {
     pub store: Arc<dyn LocalStore>,
     pub setup: Arc<dyn SetupQueries>,
     pub stock: Arc<dyn StockQueries>,
+    pub receipts: Arc<dyn ReceiptQueries>,
 }
 
 /// `checkout_complete`'s input: the cart and revision the cashier saw, and the tenders.
@@ -116,6 +117,20 @@ impl CheckoutService {
         let on_hand = self.stock.on_hand(location, &variants).await?;
         let negative = check_negative(self.stock.negative_stock_policy().await?, &on_hand, &movements)?;
 
+        // The receipt is part of the sale's transaction (02 §4 step 8); its number is filled
+        // in by the store from the same slot as the sale's.
+        let info = self
+            .receipts
+            .receipt_info(ctx.register.register_id, actor.user_id)
+            .await?;
+        let document = pos_receipts::sale_receipt(
+            &sale,
+            &receipt_context(&info),
+            pos_receipts::document::PENDING_NUMBER,
+            pos_receipts::CopyKind::Original,
+        );
+        let document = serde_json::to_value(&document).map_err(|e| AppError::Internal(e.to_string()))?;
+
         let aggregate = sale_aggregate(sale.id);
         let payload = SaleCompletedV1 {
             sale: &sale,
@@ -137,6 +152,13 @@ impl CheckoutService {
         let mut b = WriteSet::builder(ctx.write_context())
             .allocate_number(Counter::Receipt, RECEIPT)
             .insert_sale(sale.clone(), RECEIPT)
+            .insert_receipt(
+                pos_domain::ReceiptId::generate(ids),
+                ("sale", sale.id.to_string()),
+                pos_receipts::CONTENT_VERSION,
+                document,
+                Some(RECEIPT),
+            )
             .append_movements(movements.clone(), aggregate)
             .close_cart(cart.id, sale.id, cart.revision)
             .outbox(event)
@@ -160,5 +182,20 @@ impl CheckoutService {
             outbox_sequence,
             negative_stock: negative,
         })
+    }
+}
+
+/// The receipt's view of the shop, till and cashier.
+pub(crate) fn receipt_context(info: &crate::queries::ReceiptInfo) -> pos_receipts::ReceiptContext {
+    pos_receipts::ReceiptContext {
+        business_name: info.business_name.clone(),
+        address_lines: info.address_lines.clone(),
+        phone: info.phone.clone(),
+        tax_registration_no: info.tax_registration_no.clone(),
+        header_lines: info.header_lines.clone(),
+        footer_lines: info.footer_lines.clone(),
+        register_name: info.register_name.clone(),
+        register_code: info.register_code.clone(),
+        cashier_name: info.cashier_name.clone(),
     }
 }

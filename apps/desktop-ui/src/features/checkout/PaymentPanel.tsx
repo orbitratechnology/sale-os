@@ -3,6 +3,7 @@ import { commands, type CartView, type IpcError } from "../../ipc";
 import type { CompletedSaleDto, TenderKind } from "../../ipc/bindings";
 import { scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 
 interface Tender {
@@ -45,6 +46,7 @@ export function PaymentPanel({
   const [error, setError] = useState<IpcError | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<CompletedSaleDto | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
   const cashInput = useRef<HTMLInputElement | null>(null);
   const exp = cart.currencyExponent;
   const money = (minor: bigint | string) => formatMoney(minor.toString(), { exponent: exp });
@@ -131,7 +133,11 @@ export function PaymentPanel({
                 : `${done.negativeStockItems} items went below zero stock and were flagged for a stock check.`}
             </p>
           )}
+          {showReceipt && <ReceiptPreview saleId={done.saleId} />}
           <div className="actions">
+            <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
+              {showReceipt ? "Hide receipt" : "Show receipt"}
+            </button>
             <button type="button" autoFocus onClick={onDone}>
               New sale <kbd>Enter</kbd>
             </button>

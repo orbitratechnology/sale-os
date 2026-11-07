@@ -140,7 +140,7 @@ from a fixed set of hand-calculated sales.
 
 ### E12-T01 · Return planning domain
 - **Size** M · **Deps** E09-T08 · **PRD** RET-003, RET-004, ADR-004
-- **Scope:** Migration `0007_returns.sql`, `plan_return()`, and the `return_preview` command.
+- **Scope:** Migration `0008_returns.sql`, `plan_return()`, and the `return_preview` command.
 - **Acceptance:**
   - [ ] For a line of 3 × 3.33 = 9.99, returning 1 refunds 3.33, a second return of 1 refunds 3.33, and a third refunds 3.33. The total refunded is exactly 9.99. With the cumulative rule, odd totals such as 10.00 over 3 give 3.33, 3.34 and 3.33.
   - [ ] Returning more than the unreturned quantity gives `RETURN_QTY_EXCEEDS { available }` (RET-004).
@@ -217,7 +217,7 @@ from a fixed set of hand-calculated sales.
 ### E13-T06 · Print queue, virtual printer and uncertain outcomes
 - **Size** M · **Deps** E13-T05 · **PRD** RCP-006, RCP-007, §12.4, AT-09
 - **Scope:**
-  - Migration `0008` (`print_jobs`, `print_job_events`).
+  - Migration `0007_receipts_printing.sql` (`receipts`, `print_jobs`, `print_job_events`).
   - `PrintWorker` state machine: queued → submitted → completed / failed / unknown.
   - A timeout moves the job to `unknown`. **There is never an automatic resubmit after `submitted`.**
   - The operator resolves an unknown job with "Printed" or "Not printed — reprint". A reprint creates a **new** job with `copy_kind = reprint` and the REPRINT marker.

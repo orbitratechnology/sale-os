@@ -203,3 +203,11 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
 .external-form { display: grid; gap: 8px; }
 .pay-done { text-align: center; }
 .change-amount { display: block; font-size: 64px; font-weight: 800; color: var(--total); font-variant-numeric: tabular-nums; }
+
+/* Receipt preview (E13-T03): the printer's lines on a monospace grid. */
+.receipt { margin: 0; display: grid; gap: 8px; justify-items: center; }
+.receipt-widths { display: flex; gap: 8px; }
+.receipt-paper { margin: 0; padding: 12px 1ch; background: #fffdf7; color: #111; border: 1px solid var(--border); box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  font: 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, monospace; text-align: left; white-space: pre; max-height: 50vh; overflow: auto; }
+.receipt-bold { font-weight: 800; }
+.dialog.pay-done { width: min(560px, calc(100vw - 32px)); }

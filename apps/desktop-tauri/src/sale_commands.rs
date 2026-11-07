@@ -380,3 +380,22 @@ pub async fn checkout_complete(
         .map_err(err)?;
     Ok(CompletedSaleDto::from_completed(&done))
 }
+
+/// A sale's receipt as stored at completion, rendered for 58 or 80 mm paper (E13-T03).
+/// `saleId: null` is the last sale on this till. `widthMm: null` uses the setting.
+#[tauri::command]
+#[specta::specta]
+pub async fn receipt_get(
+    services: State<'_, AppServices>,
+    sale_id: Option<pos_domain::SaleId>,
+    width_mm: Option<u32>,
+) -> Result<crate::dto::ReceiptDto, IpcError> {
+    let ctx = services.context().await?;
+    let r = services
+        .app()?
+        .receipts
+        .for_sale(&ctx, sale_id, width_mm)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::ReceiptDto::from_rendered(&r))
+}

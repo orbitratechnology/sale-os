@@ -89,6 +89,11 @@ export const commands = {
 	 *  stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
 	 */
 	checkoutComplete: (cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedSaleDto, IpcError_Serialize>(__TAURI_INVOKE("checkout_complete", { cartId, revision, tenders })),
+	/**
+	 *  A sale's receipt as stored at completion, rendered for 58 or 80 mm paper (E13-T03).
+	 *  `saleId: null` is the last sale on this till. `widthMm: null` uses the setting.
+	 */
+	receiptGet: (saleId: SaleId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("receipt_get", { saleId, widthMm })),
 };
 
 /* Types */
@@ -632,6 +637,20 @@ export type ProductType =
 "non_stock" | 
 /**  Services; never stock-tracked. */
 "service";
+
+export type ReceiptDto = {
+	receiptNumber: string,
+	/**  32 (58 mm paper) or 48 (80 mm). */
+	columns: number,
+	/**  Exactly what the printer prints, line by line. */
+	lines: ReceiptLineDto[],
+	sandbox: boolean,
+};
+
+export type ReceiptLineDto = {
+	text: string,
+	bold: boolean,
+};
 
 export type Role = "owner" | "manager" | "cashier";
 

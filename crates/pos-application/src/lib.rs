@@ -10,6 +10,7 @@ pub mod catalog;
 pub mod checkout;
 pub mod context;
 pub mod queries;
+pub mod receipts;
 pub mod records;
 pub mod scan;
 pub mod settings;

@@ -125,6 +125,17 @@ pub enum WriteOp {
         movements: Vec<pos_domain::inventory::StockMovement>,
         aggregate: AggregateRef,
     },
+    /// An immutable receipt document (E13-T02), stored as JSON. With `receipt_slot`, the
+    /// store fills `meta.receiptNumber` and `barcode` from the number a sale in the same set
+    /// was given.
+    InsertReceipt {
+        receipt_id: pos_domain::ReceiptId,
+        source_type: &'static str,
+        source_id: String,
+        content_version: u32,
+        document: serde_json::Value,
+        receipt_slot: Option<NumberSlot>,
+    },
     /// Closes the open cart a sale was made from. Fails with `CartRevisionMismatch` if the
     /// cart changed since `expected_revision`.
     CloseCart {
@@ -214,6 +225,7 @@ impl WriteOp {
             },
             WriteOp::AllocateNumber { .. }
             | WriteOp::CloseCart { .. }
+            | WriteOp::InsertReceipt { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
             | WriteOp::PutCart { .. }
@@ -519,6 +531,24 @@ impl WriteSetBuilder {
         }
         self
     }
+    pub fn insert_receipt(
+        mut self,
+        receipt_id: pos_domain::ReceiptId,
+        source: (&'static str, String),
+        content_version: u32,
+        document: serde_json::Value,
+        receipt_slot: Option<NumberSlot>,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertReceipt {
+            receipt_id,
+            source_type: source.0,
+            source_id: source.1,
+            content_version,
+            document,
+            receipt_slot,
+        });
+        self
+    }
     pub fn close_cart(
         mut self,
         cart_id: pos_domain::CartId,
@@ -655,6 +685,7 @@ impl WriteSetBuilder {
             WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
             | WriteOp::InsertSale { .. }
+            | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }
             | WriteOp::PutLoginThrottle(_)

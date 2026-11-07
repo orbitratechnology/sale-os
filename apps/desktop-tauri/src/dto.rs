@@ -806,3 +806,41 @@ impl CompletedSaleDto {
         }
     }
 }
+
+// ---------- receipts ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiptDto {
+    pub receipt_number: String,
+    /// 32 (58 mm paper) or 48 (80 mm).
+    pub columns: u32,
+    /// Exactly what the printer prints, line by line.
+    pub lines: Vec<ReceiptLineDto>,
+    pub sandbox: bool,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiptLineDto {
+    pub text: String,
+    pub bold: bool,
+}
+
+impl ReceiptDto {
+    pub fn from_rendered(r: &pos_application::receipts::RenderedReceipt) -> Self {
+        Self {
+            receipt_number: r.document.meta.receipt_number.clone(),
+            columns: u32::try_from(r.columns).unwrap_or(48),
+            lines: r
+                .lines
+                .iter()
+                .map(|l| ReceiptLineDto {
+                    text: l.text.clone(),
+                    bold: l.style == pos_receipts::text::Style::Bold,
+                })
+                .collect(),
+            sandbox: r.document.sandbox,
+        }
+    }
+}

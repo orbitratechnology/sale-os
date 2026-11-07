@@ -364,6 +364,14 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0,
       };
     }
+    case "receipt_get": {
+      needSession(s);
+      const number = s.receipts.at(-1) ?? fail("VALIDATION_FAILED");
+      const cols = a.widthMm === 58 ? 32 : 48;
+      const pad = (l: string, r: string) => l + " ".repeat(Math.max(1, cols - l.length - r.length)) + r;
+      const text = ["Corner Shop".padStart(Math.floor((cols + 11) / 2)), "-".repeat(cols), `Receipt ${number}`, pad("TOTAL", "2.19"), pad("Change", "0.00")];
+      return { receiptNumber: number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t.startsWith("TOTAL") })) };
+    }
     case "cart_current":
       needSession(s);
       return view(s);
