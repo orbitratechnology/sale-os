@@ -11,6 +11,7 @@ use pos_application::context::{Actor, ApprovalToken, CommandContext};
 use pos_application::printing::{DEFAULT_PRINT_TIMEOUT, PrintService};
 use pos_application::queries::SetupQueries;
 use pos_application::receipts::ReceiptService;
+use pos_application::returns::ReturnService;
 use pos_application::setup::SetupService;
 use pos_application::staff::StaffService;
 use pos_domain::{ApprovalId, Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
@@ -44,6 +45,7 @@ pub(crate) struct Services {
     pub carts: Arc<CartService>,
     pub checkout: CheckoutService,
     pub receipts: ReceiptService,
+    pub returns: ReturnService,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
     pub prints: PrintService,
@@ -129,6 +131,13 @@ impl AppServices {
                     receipts: a.clone(),
                 },
                 receipts: ReceiptService { receipts: a.clone() },
+                returns: ReturnService {
+                    store: a.clone(),
+                    returns: a.clone(),
+                    setup: a.clone(),
+                    receipts: a.clone(),
+                    pricing: a.clone(),
+                },
                 prints: PrintService {
                     store: a.clone(),
                     prints: a.clone(),

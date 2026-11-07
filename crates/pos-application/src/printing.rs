@@ -18,7 +18,7 @@ use crate::queries::{PrintQueries, ReceiptQueries};
 use crate::records::{PrintJobRecord, PrintStatus};
 use crate::{LocalStore, WriteSet};
 use pos_device_ports::{PrintResult, ReceiptOutputPort};
-use pos_domain::{ErrorCode, Permission, PrintJobId, ReceiptId, SaleId};
+use pos_domain::{ErrorCode, Permission, PrintJobId, ReceiptId, ReturnId, SaleId};
 use pos_receipts::ReceiptDocument;
 use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, render, to_escpos};
 use std::sync::Arc;
@@ -61,6 +61,29 @@ impl PrintService {
             .sale_receipt(sale)
             .await?
             .ok_or_else(|| invalid("this sale has no receipt"))?;
+        self.print_receipt(ctx, receipt).await
+    }
+
+    /// Prints a return's refund receipt, with the same original/reprint rules.
+    pub async fn print_return(
+        &self,
+        ctx: &CommandContext,
+        ret: ReturnId,
+    ) -> Result<PrintJobRecord, AppError> {
+        ctx.authorize(Permission::SalesView)?;
+        let (receipt, _) = self
+            .receipts
+            .return_receipt(ret)
+            .await?
+            .ok_or_else(|| invalid("this return has no receipt"))?;
+        self.print_receipt(ctx, receipt).await
+    }
+
+    async fn print_receipt(
+        &self,
+        ctx: &CommandContext,
+        receipt: ReceiptId,
+    ) -> Result<PrintJobRecord, AppError> {
         let printed_before = self.prints.receipt_jobs(receipt).await?.iter().any(|j| {
             matches!(
                 j.status,

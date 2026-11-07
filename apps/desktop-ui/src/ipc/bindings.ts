@@ -107,6 +107,23 @@ export const commands = {
 	 *  false` prints a new copy marked REPRINT.
 	 */
 	printJobResolve: (jobId: PrintJobId, printed: boolean) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("print_job_resolve", { jobId, printed })),
+	/**
+	 *  Finds a sale by the number on its receipt (typed, or scanned from the receipt's
+	 *  barcode), with what can still be returned per line.
+	 */
+	returnFind: (receiptNumber: string) => typedError<ReturnableSaleDto, IpcError_Serialize>(__TAURI_INVOKE("return_find", { receiptNumber })),
+	/**  What returning `lines` would refund. Nothing is written. */
+	returnPreview: (saleId: SaleId, lines: ReturnLineInputDto[]) => typedError<ReturnPlanDto, IpcError_Serialize>(__TAURI_INVOKE("return_preview", { saleId, lines })),
+	/**
+	 *  Makes the return (E12-T02): one transaction for the return, refunds, stock, refund
+	 *  receipt and audit. A cashier needs a manager's approval for this sale (APPROVAL_REQUIRED
+	 *  carries the scope) unless the shop turned that off.
+	 */
+	returnCreate: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null) => typedError<CompletedReturnDto, IpcError_Serialize>(__TAURI_INVOKE("return_create", { saleId, lines, reason, note, refunds, approvalTokenId })),
+	/**  A return's refund receipt as stored, rendered for 58 or 80 mm paper. */
+	returnReceiptGet: (returnId: ReturnId, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_get", { returnId, widthMm })),
+	/**  Prints a return's refund receipt (later copies are reprints). */
+	returnReceiptPrint: (returnId: ReturnId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_print", { returnId })),
 };
 
 /* Types */
@@ -342,6 +359,16 @@ export type CatalogHitDto_Serialize = {
 
 export type CategoryId = string;
 
+export type CompletedReturnDto = {
+	returnId: ReturnId,
+	returnNumber: string,
+	originalReceiptNumber: string,
+	totalMinor: string,
+	currencyExponent: number,
+	/**  Whether a manager approved it. */
+	approved: boolean,
+};
+
 export type CompletedSaleDto = {
 	saleId: SaleId,
 	receiptNumber: string,
@@ -415,6 +442,15 @@ export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;
 export type DiscountDto_Deserialize = { kind: "percent"; ratePpm: number; reason?: string | null } | { kind: "fixed"; amountMinor: string; reason?: string | null };
 
 export type DiscountDto_Serialize = { kind: "percent"; ratePpm: number; reason: string | null } | { kind: "fixed"; amountMinor: string; reason: string | null };
+
+/**  What happens to the returned goods (INV-009). */
+export type Disposition = 
+/**  Back on the shelf: +sellable. */
+"restock" | 
+/**  Kept but not sellable: +damaged. */
+"damaged" | 
+/**  Nothing comes back into stock (thrown away, or a service). */
+"no_stock_change";
 
 /**
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
@@ -522,6 +558,15 @@ export type NewStaffInput = {
 export type Permission = "sale_complete" | "cart_line_discount" | "cart_order_discount" | "discount_above_threshold" | "price_override" | "cart_clear" | "cart_void" | "external_tender_record" | "sales_view" | "receipt_reprint" | "return_create" | "return_approve" | "catalog_view" | "catalog_edit" | "catalog_import" | "catalog_export" | "barcode_create_from_scan" | "inventory_view" | "inventory_receive" | "inventory_adjust" | "cash_session_open" | "cash_session_close" | "cash_session_view_variance" | "reports_view" | "reports_export" | "audit_view" | "settings_edit" | "staff_manage" | "device_link" | "sync_manage" | "conflict_resolve" | 
 /**  Simulators and dev panels; additionally restricted to debug builds by the shell. */
 "devtools_use";
+
+export type PlannedReturnLineDto = {
+	saleLineId: SaleLineId,
+	name: string,
+	quantityMilli: string,
+	refundMinor: string,
+	/**  What will happen to the goods (a service line is always `no_stock_change`). */
+	disposition: Disposition,
+};
 
 export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;
 
@@ -697,9 +742,54 @@ export type ReceiptLineDto = {
 	bold: boolean,
 };
 
+export type ReturnId = string;
+
+export type ReturnLineInputDto = {
+	saleLineId: SaleLineId,
+	quantityMilli: string,
+	disposition: Disposition,
+};
+
+/**  What a return would refund, before it is made. */
+export type ReturnPlanDto = {
+	subtotalMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	lines: PlannedReturnLineDto[],
+};
+
+export type ReturnReason = "changed_mind" | "defective" | "wrong_item" | "damaged_in_transit" | "other";
+
+export type ReturnableLineDto = {
+	saleLineId: SaleLineId,
+	lineNo: number,
+	name: string,
+	label: string,
+	unit: Unit,
+	/**  Whether returning it can put stock back (false for services). */
+	trackStock: boolean,
+	soldMilli: string,
+	returnedMilli: string,
+	availableMilli: string,
+	/**  What the customer paid for the whole line, after discounts. */
+	totalMinor: string,
+};
+
+/**  A sale found for a return: per line, what was sold and what can still come back. */
+export type ReturnableSaleDto = {
+	saleId: SaleId,
+	receiptNumber: string,
+	/**  `"sandbox"` or `"live"`. */
+	mode: string,
+	currencyExponent: number,
+	lines: ReturnableLineDto[],
+};
+
 export type Role = "owner" | "manager" | "cashier";
 
 export type SaleId = string;
+
+export type SaleLineId = string;
 
 export type ScanEventId = string;
 

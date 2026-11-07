@@ -43,6 +43,11 @@
     "allow-receipt-get",
     "allow-receipt-print",
     "allow-print-job-retry",
-    "allow-print-job-resolve"
+    "allow-print-job-resolve",
+    "allow-return-find",
+    "allow-return-preview",
+    "allow-return-create",
+    "allow-return-receipt-get",
+    "allow-return-receipt-print"
   ]
 }

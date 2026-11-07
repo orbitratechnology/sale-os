@@ -39,4 +39,9 @@ pub const COMMANDS: &[&str] = &[
     "receipt_print",
     "print_job_retry",
     "print_job_resolve",
+    "return_find",
+    "return_preview",
+    "return_create",
+    "return_receipt_get",
+    "return_receipt_print",
 ];

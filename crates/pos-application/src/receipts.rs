@@ -2,7 +2,7 @@
 
 use crate::context::{AppError, CommandContext};
 use crate::queries::ReceiptQueries;
-use pos_domain::{ErrorCode, Permission, SaleId};
+use pos_domain::{ErrorCode, Permission, ReturnId, SaleId};
 use pos_receipts::ReceiptDocument;
 use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, TextLine, render};
 use std::sync::Arc;
@@ -28,7 +28,6 @@ impl ReceiptService {
         width_mm: Option<u32>,
     ) -> Result<RenderedReceipt, AppError> {
         ctx.authorize(Permission::SalesView)?;
-        let actor = ctx.actor()?;
         let sale = match sale {
             Some(s) => s,
             None => self
@@ -42,8 +41,32 @@ impl ReceiptService {
         let (_, json) = self.receipts.sale_receipt(sale).await?.ok_or_else(|| {
             AppError::Validation("this sale has no receipt".into(), ErrorCode::ValidationFailed)
         })?;
+        self.rendered(ctx, &json, width_mm).await
+    }
+
+    /// A return's refund receipt as stored when the return was made.
+    pub async fn for_return(
+        &self,
+        ctx: &CommandContext,
+        ret: ReturnId,
+        width_mm: Option<u32>,
+    ) -> Result<RenderedReceipt, AppError> {
+        ctx.authorize(Permission::SalesView)?;
+        let (_, json) = self.receipts.return_receipt(ret).await?.ok_or_else(|| {
+            AppError::Validation("this return has no receipt".into(), ErrorCode::ValidationFailed)
+        })?;
+        self.rendered(ctx, &json, width_mm).await
+    }
+
+    async fn rendered(
+        &self,
+        ctx: &CommandContext,
+        json: &str,
+        width_mm: Option<u32>,
+    ) -> Result<RenderedReceipt, AppError> {
+        let actor = ctx.actor()?;
         let document: ReceiptDocument =
-            serde_json::from_str(&json).map_err(|e| AppError::Internal(format!("stored receipt: {e}")))?;
+            serde_json::from_str(json).map_err(|e| AppError::Internal(format!("stored receipt: {e}")))?;
         let width = match width_mm {
             Some(w) => w,
             None => {

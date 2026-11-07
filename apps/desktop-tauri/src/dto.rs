@@ -872,3 +872,146 @@ impl PrintJobDto {
         }
     }
 }
+
+// ---------- returns (E12) ----------
+
+/// A sale found for a return: per line, what was sold and what can still come back.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnableSaleDto {
+    pub sale_id: SaleId,
+    pub receipt_number: String,
+    /// `"sandbox"` or `"live"`.
+    pub mode: String,
+    pub currency_exponent: u8,
+    pub lines: Vec<ReturnableLineDto>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnableLineDto {
+    pub sale_line_id: pos_domain::SaleLineId,
+    pub line_no: u32,
+    pub name: String,
+    pub label: String,
+    pub unit: Unit,
+    /// Whether returning it can put stock back (false for services).
+    pub track_stock: bool,
+    pub sold_milli: String,
+    pub returned_milli: String,
+    pub available_milli: String,
+    /// What the customer paid for the whole line, after discounts.
+    pub total_minor: String,
+}
+
+impl ReturnableSaleDto {
+    pub fn from_sale(s: &pos_domain::returns::ReturnableSale) -> Self {
+        Self {
+            sale_id: s.sale_id,
+            receipt_number: s.receipt_number.clone(),
+            mode: s.mode.as_str().into(),
+            currency_exponent: s.currency.exponent,
+            lines: s
+                .lines
+                .iter()
+                .map(|l| ReturnableLineDto {
+                    sale_line_id: l.sale_line_id,
+                    line_no: l.line_no,
+                    name: l.name.clone(),
+                    label: l.variant_label.clone(),
+                    unit: l.unit,
+                    track_stock: l.track_stock,
+                    sold_milli: qty(l.quantity),
+                    returned_milli: qty(l.returned),
+                    available_milli: qty(l.available()),
+                    total_minor: money(l.total),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnLineInputDto {
+    pub sale_line_id: pos_domain::SaleLineId,
+    pub quantity_milli: String,
+    pub disposition: pos_domain::returns::Disposition,
+}
+
+impl ReturnLineInputDto {
+    pub fn into_domain(self) -> Result<pos_domain::returns::ReturnLineRequest, IpcError> {
+        Ok(pos_domain::returns::ReturnLineRequest {
+            sale_line_id: self.sale_line_id,
+            quantity: qty_in("quantityMilli", &self.quantity_milli)?,
+            disposition: self.disposition,
+        })
+    }
+}
+
+/// What a return would refund, before it is made.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnPlanDto {
+    pub subtotal_minor: String,
+    pub tax_minor: String,
+    pub total_minor: String,
+    pub lines: Vec<PlannedReturnLineDto>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PlannedReturnLineDto {
+    pub sale_line_id: pos_domain::SaleLineId,
+    pub name: String,
+    pub quantity_milli: String,
+    pub refund_minor: String,
+    /// What will happen to the goods (a service line is always `no_stock_change`).
+    pub disposition: pos_domain::returns::Disposition,
+}
+
+impl ReturnPlanDto {
+    pub fn from_plan(p: &pos_domain::returns::ReturnPlan) -> Self {
+        Self {
+            subtotal_minor: money(p.subtotal),
+            tax_minor: money(p.tax),
+            total_minor: money(p.total),
+            lines: p
+                .lines
+                .iter()
+                .map(|l| PlannedReturnLineDto {
+                    sale_line_id: l.sale_line_id,
+                    name: l.name.clone(),
+                    quantity_milli: qty(l.quantity),
+                    refund_minor: money(l.refund),
+                    disposition: l.disposition,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletedReturnDto {
+    pub return_id: pos_domain::ReturnId,
+    pub return_number: String,
+    pub original_receipt_number: String,
+    pub total_minor: String,
+    pub currency_exponent: u8,
+    /// Whether a manager approved it.
+    pub approved: bool,
+}
+
+impl CompletedReturnDto {
+    pub fn from_completed(c: &pos_application::returns::CompletedReturn) -> Self {
+        Self {
+            return_id: c.ret.id,
+            return_number: c.return_number.clone(),
+            original_receipt_number: c.ret.original_receipt_number.clone(),
+            total_minor: money(c.ret.total),
+            currency_exponent: c.ret.currency.exponent,
+            approved: c.ret.approver.is_some(),
+        }
+    }
+}

@@ -449,3 +449,123 @@ pub async fn print_job_resolve(
         .map_err(err)?;
     Ok(crate::dto::PrintJobDto::from_record(&job))
 }
+
+// ---------- returns (E12) ----------
+
+/// Finds a sale by the number on its receipt (typed, or scanned from the receipt's
+/// barcode), with what can still be returned per line.
+#[tauri::command]
+#[specta::specta]
+pub async fn return_find(
+    services: State<'_, AppServices>,
+    receipt_number: String,
+) -> Result<crate::dto::ReturnableSaleDto, IpcError> {
+    let ctx = services.context().await?;
+    let sale = services
+        .app()?
+        .returns
+        .find(&ctx, &receipt_number)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::ReturnableSaleDto::from_sale(&sale))
+}
+
+/// What returning `lines` would refund. Nothing is written.
+#[tauri::command]
+#[specta::specta]
+pub async fn return_preview(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    lines: Vec<crate::dto::ReturnLineInputDto>,
+) -> Result<crate::dto::ReturnPlanDto, IpcError> {
+    let ctx = services.context().await?;
+    let lines = lines
+        .into_iter()
+        .map(crate::dto::ReturnLineInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let plan = services
+        .app()?
+        .returns
+        .preview(&ctx, sale_id, &lines)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::ReturnPlanDto::from_plan(&plan))
+}
+
+/// Makes the return (E12-T02): one transaction for the return, refunds, stock, refund
+/// receipt and audit. A cashier needs a manager's approval for this sale (APPROVAL_REQUIRED
+/// carries the scope) unless the shop turned that off.
+#[tauri::command]
+#[specta::specta]
+pub async fn return_create(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    lines: Vec<crate::dto::ReturnLineInputDto>,
+    reason: pos_domain::returns::ReturnReason,
+    note: Option<String>,
+    refunds: Vec<TenderInputDto>,
+    approval_token_id: Option<ApprovalId>,
+) -> Result<crate::dto::CompletedReturnDto, IpcError> {
+    let lines = lines
+        .into_iter()
+        .map(crate::dto::ReturnLineInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let refunds = refunds
+        .into_iter()
+        .map(TenderInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = services
+        .app()?
+        .returns
+        .create(
+            &ctx,
+            pos_application::returns::CreateReturn {
+                sale_id,
+                lines,
+                reason,
+                note,
+                refunds,
+            },
+        )
+        .await
+        .map(|done| crate::dto::CompletedReturnDto::from_completed(&done))
+        .map_err(err);
+    services.settle(token, &res);
+    res
+}
+
+/// A return's refund receipt as stored, rendered for 58 or 80 mm paper.
+#[tauri::command]
+#[specta::specta]
+pub async fn return_receipt_get(
+    services: State<'_, AppServices>,
+    return_id: pos_domain::ReturnId,
+    width_mm: Option<u32>,
+) -> Result<crate::dto::ReceiptDto, IpcError> {
+    let ctx = services.context().await?;
+    let r = services
+        .app()?
+        .receipts
+        .for_return(&ctx, return_id, width_mm)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::ReceiptDto::from_rendered(&r))
+}
+
+/// Prints a return's refund receipt (later copies are reprints).
+#[tauri::command]
+#[specta::specta]
+pub async fn return_receipt_print(
+    services: State<'_, AppServices>,
+    return_id: pos_domain::ReturnId,
+) -> Result<crate::dto::PrintJobDto, IpcError> {
+    let ctx = services.context().await?;
+    let job = services
+        .app()?
+        .prints
+        .print_return(&ctx, return_id)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::PrintJobDto::from_record(&job))
+}

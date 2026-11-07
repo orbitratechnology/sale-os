@@ -174,6 +174,33 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SalesView),
             json!({"jobId": UNKNOWN_ID, "printed": true}),
         ),
+        (
+            "return_find",
+            Perm(SalesView),
+            json!({"receiptNumber": "R01-999999"}),
+        ),
+        (
+            "return_preview",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}]}),
+        ),
+        // A cashier gets APPROVAL_REQUIRED (the matrix's "approval" cell).
+        (
+            "return_create",
+            Perm(ReturnCreate),
+            json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}],
+                   "reason": "changed_mind", "note": null, "refunds": [{"kind": "cash", "amountMinor": "100", "reference": null}], "approvalTokenId": null}),
+        ),
+        (
+            "return_receipt_get",
+            Perm(SalesView),
+            json!({"returnId": UNKNOWN_ID, "widthMm": null}),
+        ),
+        (
+            "return_receipt_print",
+            Perm(SalesView),
+            json!({"returnId": UNKNOWN_ID}),
+        ),
     ]
 }
 
@@ -571,4 +598,53 @@ fn a_cash_sale_over_ipc() {
     assert!(services.data_dir.join("virtual-printer/R01-000001.bin").exists());
     // Paying the old cart again is refused: it is closed.
     assert_eq!(pay("500").unwrap_err()["code"], "CART_REVISION_MISMATCH");
+
+    // E12: the cola comes back. Found by the receipt number, previewed, then made.
+    let sale = invoke(&w, "return_find", json!({"receiptNumber": "R01-000001"})).unwrap();
+    assert_eq!(sale["lines"][0]["availableMilli"], "1000");
+    let lines = json!([{"saleLineId": sale["lines"][0]["saleLineId"], "quantityMilli": "1000", "disposition": "restock"}]);
+    let plan = invoke(
+        &w,
+        "return_preview",
+        json!({"saleId": sale["saleId"], "lines": lines}),
+    )
+    .unwrap();
+    assert_eq!(plan["totalMinor"], "100");
+    let make = |refund: &str| {
+        invoke(
+            &w,
+            "return_create",
+            json!({"saleId": sale["saleId"], "lines": lines, "reason": "defective", "note": null,
+                   "refunds": [{"kind": "cash", "amountMinor": refund, "reference": null}], "approvalTokenId": null}),
+        )
+    };
+    let wrong = make("90").unwrap_err();
+    assert_eq!(wrong["code"], "RETURN_REFUND_MISMATCH");
+    let done = make("100").unwrap();
+    assert_eq!(done["returnNumber"], "R01-R-000001");
+    assert_eq!(done["originalReceiptNumber"], "R01-000001");
+    // Nothing more to return.
+    assert_eq!(make("100").unwrap_err()["code"], "RETURN_QTY_EXCEEDS");
+    let refund = invoke(
+        &w,
+        "return_receipt_get",
+        json!({"returnId": done["returnId"], "widthMm": 58}),
+    )
+    .unwrap();
+    assert_eq!(refund["receiptNumber"], "R01-R-000001");
+    assert!(
+        refund["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["text"].as_str().unwrap().starts_with("REFUND TOTAL"))
+    );
+    let printed = invoke(&w, "return_receipt_print", json!({"returnId": done["returnId"]})).unwrap();
+    assert_eq!(printed["status"], "completed");
+    assert!(
+        services
+            .data_dir
+            .join("virtual-printer/R01-R-000001.bin")
+            .exists()
+    );
 }

@@ -82,6 +82,21 @@ impl ReceiptQueries for SqliteStore {
         row.map(|(id, doc)| Ok((id.parse().map_err(q)?, doc))).transpose()
     }
 
+    async fn return_receipt(
+        &self,
+        ret: pos_domain::ReturnId,
+    ) -> Result<Option<(ReceiptId, String)>, QueryError> {
+        let row: Option<(String, String)> = sqlx::query_as(
+            "SELECT receipt_id, document_json FROM receipts WHERE source_type = 'return' AND source_id = ?
+             ORDER BY content_version DESC LIMIT 1",
+        )
+        .bind(ret.to_string())
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        row.map(|(id, doc)| Ok((id.parse().map_err(q)?, doc))).transpose()
+    }
+
     async fn last_sale(&self, register: RegisterId) -> Result<Option<SaleId>, QueryError> {
         let id: Option<String> = sqlx::query_scalar(
             "SELECT sale_id FROM sales WHERE register_id = ? ORDER BY receipt_seq DESC LIMIT 1",
