@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sales-list"
+description = "Enables the sales_list command without any pre-configured scope."
+commands.allow = ["sales_list"]
+
+[[permission]]
+identifier = "deny-sales-list"
+description = "Denies the sales_list command without any pre-configured scope."
+commands.deny = ["sales_list"]

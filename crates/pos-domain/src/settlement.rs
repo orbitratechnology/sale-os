@@ -37,6 +37,17 @@ impl TenderKind {
     pub const fn is_cash(self) -> bool {
         matches!(self, TenderKind::Cash)
     }
+    pub fn from_code(code: &str) -> Option<Self> {
+        [
+            TenderKind::Cash,
+            TenderKind::CardExternal,
+            TenderKind::BankTransferExternal,
+            TenderKind::QrExternal,
+            TenderKind::OtherExternal,
+        ]
+        .into_iter()
+        .find(|k| k.as_str() == code)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

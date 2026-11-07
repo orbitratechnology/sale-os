@@ -1015,3 +1015,239 @@ impl CompletedReturnDto {
         }
     }
 }
+
+// ---------- sales history (E12-T03) ----------
+
+#[derive(Debug, Default, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesFilterDto {
+    /// Business dates, `YYYY-MM-DD`, inclusive.
+    pub from: Option<String>,
+    pub to: Option<String>,
+    /// A receipt number, or just its digits.
+    pub receipt: Option<String>,
+    pub cashier_user_id: Option<UserId>,
+    pub tender: Option<TenderKind>,
+}
+
+impl SalesFilterDto {
+    pub fn into_filter(self) -> Result<pos_application::queries::SalesFilter, IpcError> {
+        let date =
+            |field: &str, v: Option<String>| -> Result<Option<pos_domain::time::BusinessDate>, IpcError> {
+                match v.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    None => Ok(None),
+                    Some(s) => s.parse().map(Some).map_err(|_| invalid(field, s)),
+                }
+            };
+        Ok(pos_application::queries::SalesFilter {
+            from: date("from", self.from)?,
+            to: date("to", self.to)?,
+            receipt: self.receipt,
+            cashier: self.cashier_user_id,
+            tender: self.tender,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleRowDto {
+    pub sale_id: SaleId,
+    pub receipt_number: String,
+    pub local_time: String,
+    pub business_date: String,
+    pub cashier_name: String,
+    /// `"sandbox"` or `"live"`.
+    pub mode: String,
+    pub currency_exponent: u8,
+    pub total_minor: String,
+    pub item_count_milli: String,
+    pub tenders: Vec<TenderKind>,
+    pub refunded_minor: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesPageDto {
+    pub rows: Vec<SaleRowDto>,
+    /// Pass back as `after` for the next page; `null` on the last page.
+    pub next: Option<String>,
+}
+
+impl SalesPageDto {
+    pub fn from_page(p: &pos_application::records::SalesPage) -> Self {
+        Self {
+            rows: p
+                .rows
+                .iter()
+                .map(|r| SaleRowDto {
+                    sale_id: r.sale_id,
+                    receipt_number: r.receipt_number.clone(),
+                    local_time: r.local_time.clone(),
+                    business_date: r.business_date.clone(),
+                    cashier_name: r.cashier_name.clone(),
+                    mode: r.mode.as_str().into(),
+                    currency_exponent: r.currency_exponent,
+                    total_minor: money(r.total),
+                    item_count_milli: qty(r.item_count),
+                    tenders: r.tenders.clone(),
+                    refunded_minor: money(r.refunded),
+                })
+                .collect(),
+            next: p.next.as_ref().map(|c| c.encode()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleDetailDto {
+    pub sale_id: SaleId,
+    pub receipt_number: String,
+    pub local_time: String,
+    pub business_date: String,
+    pub cashier_name: String,
+    pub approver_name: Option<String>,
+    pub mode: String,
+    pub currency_code: String,
+    pub currency_exponent: u8,
+    pub tax_mode: TaxMode,
+    pub subtotal_minor: String,
+    pub line_discount_total_minor: String,
+    pub order_discount_total_minor: String,
+    pub tax_total_minor: String,
+    pub rounding_minor: String,
+    pub total_minor: String,
+    pub tendered_minor: String,
+    pub change_minor: String,
+    pub tax_breakdown: Vec<TaxLineDto>,
+    pub lines: Vec<SaleDetailLineDto>,
+    pub tenders: Vec<SaleTenderDto>,
+    pub returns: Vec<SaleReturnDto>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleDetailLineDto {
+    pub line_no: u32,
+    pub name: String,
+    pub label: String,
+    pub sku: Option<String>,
+    pub unit: Unit,
+    pub quantity_milli: String,
+    pub unit_price_minor: String,
+    pub price_overridden: bool,
+    pub gross_minor: String,
+    /// The line's discount plus its share of the order discount.
+    pub discount_minor: String,
+    pub tax_minor: String,
+    pub total_minor: String,
+    pub returned_milli: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleTenderDto {
+    pub kind: TenderKind,
+    pub amount_minor: String,
+    pub received_minor: Option<String>,
+    pub change_minor: String,
+    pub status: String,
+    /// `"operator"`: recorded by staff. `"provider"`: confirmed by a payment integration.
+    pub confirmation_source: String,
+    pub reference: Option<String>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleReturnDto {
+    pub return_id: pos_domain::ReturnId,
+    pub return_number: String,
+    pub local_time: String,
+    pub reason: String,
+    pub total_minor: String,
+    pub refunds: Vec<TenderKind>,
+}
+
+impl SaleDetailDto {
+    pub fn from_detail(d: &pos_application::records::SaleDetail) -> Self {
+        Self {
+            sale_id: d.sale_id,
+            receipt_number: d.receipt_number.clone(),
+            local_time: d.local_time.clone(),
+            business_date: d.business_date.clone(),
+            cashier_name: d.cashier_name.clone(),
+            approver_name: d.approver_name.clone(),
+            mode: d.mode.as_str().into(),
+            currency_code: d.currency.code.as_str().into(),
+            currency_exponent: d.currency.exponent,
+            tax_mode: if d.prices_include_tax {
+                TaxMode::Inclusive
+            } else {
+                TaxMode::Exclusive
+            },
+            subtotal_minor: money(d.subtotal),
+            line_discount_total_minor: money(d.line_discounts),
+            order_discount_total_minor: money(d.order_discount),
+            tax_total_minor: money(d.tax_total),
+            rounding_minor: money(d.rounding),
+            total_minor: money(d.total),
+            tendered_minor: money(d.tendered),
+            change_minor: money(d.change),
+            tax_breakdown: d
+                .tax_breakdown
+                .iter()
+                .map(|t| TaxLineDto {
+                    name: t.name.clone(),
+                    rate_ppm: t.rate_ppm,
+                    taxable_minor: money(t.taxable),
+                    tax_minor: money(t.tax),
+                })
+                .collect(),
+            lines: d
+                .lines
+                .iter()
+                .map(|l| SaleDetailLineDto {
+                    line_no: l.line_no,
+                    name: l.name.clone(),
+                    label: l.variant_label.clone(),
+                    sku: l.sku.clone(),
+                    unit: l.unit,
+                    quantity_milli: qty(l.quantity),
+                    unit_price_minor: money(l.unit_price),
+                    price_overridden: l.price_overridden,
+                    gross_minor: money(l.gross),
+                    discount_minor: money(l.discount),
+                    tax_minor: money(l.tax),
+                    total_minor: money(l.total),
+                    returned_milli: qty(l.returned),
+                })
+                .collect(),
+            tenders: d
+                .tenders
+                .iter()
+                .map(|t| SaleTenderDto {
+                    kind: t.kind,
+                    amount_minor: money(t.amount),
+                    received_minor: t.received.map(money),
+                    change_minor: money(t.change),
+                    status: t.status.clone(),
+                    confirmation_source: t.confirmation_source.clone(),
+                    reference: t.reference.clone(),
+                })
+                .collect(),
+            returns: d
+                .returns
+                .iter()
+                .map(|r| SaleReturnDto {
+                    return_id: r.return_id,
+                    return_number: r.return_number.clone(),
+                    local_time: r.local_time.clone(),
+                    reason: r.reason.clone(),
+                    total_minor: money(r.total),
+                    refunds: r.refunds.clone(),
+                })
+                .collect(),
+        }
+    }
+}

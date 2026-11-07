@@ -286,7 +286,7 @@ from a fixed set of hand-calculated sales.
 ### E15-T02 · Cash sessions (DER-001)
 - **Size** M · **Deps** E09-T08, E12-T02 · **PRD** §9.2 `cash_sessions`, Stage 2 exit gate
 - **Scope:**
-  - Migration `0009`.
+  - Migration `0010`.
   - Open with a float. Close with a counted amount. Expected = float + cash tenders − change − cash refunds. Variance.
   - The setting `cash.require_session_for_sale` (default true for live mode).
   - A cashier's close is a blind count: the variance is shown only with `CashSessionViewVariance`.

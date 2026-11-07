@@ -276,3 +276,30 @@ pub trait ReturnQueries: Send + Sync {
     /// `returns.cashier_requires_approval` (default true).
     async fn cashier_returns_need_approval(&self) -> Result<bool, QueryError>;
 }
+
+/// Sales history filters (E12-T03). Dates are business dates, inclusive.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SalesFilter {
+    pub from: Option<pos_domain::time::BusinessDate>,
+    pub to: Option<pos_domain::time::BusinessDate>,
+    /// A full receipt number (any case), or just its digits ("123" finds R01-000123).
+    pub receipt: Option<String>,
+    pub cashier: Option<pos_domain::UserId>,
+    pub tender: Option<pos_domain::settlement::TenderKind>,
+}
+
+/// Reads for sales history and sale detail (E12-T03).
+#[async_trait::async_trait]
+pub trait SalesQueries: Send + Sync {
+    /// Newest first, `limit` rows after `after`.
+    async fn list_sales(
+        &self,
+        filter: &SalesFilter,
+        after: Option<&crate::records::SalesCursor>,
+        limit: u32,
+    ) -> Result<crate::records::SalesPage, QueryError>;
+    async fn sale_detail(
+        &self,
+        sale: pos_domain::SaleId,
+    ) -> Result<Option<crate::records::SaleDetail>, QueryError>;
+}

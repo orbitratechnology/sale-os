@@ -69,6 +69,10 @@ todo = "deny"
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+# SQLite is C: unoptimized it is several times slower, which hides real query costs in
+# dev builds and tests (the sales history page target is measured in a test).
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
 
 [profile.release]
 lto = "thin"

@@ -201,6 +201,12 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SalesView),
             json!({"returnId": UNKNOWN_ID}),
         ),
+        (
+            "sales_list",
+            Perm(SalesView),
+            json!({"filter": {"from": null, "to": null, "receipt": null, "cashierUserId": null, "tender": null}, "after": null, "limit": null}),
+        ),
+        ("sales_get", Perm(SalesView), json!({"saleId": UNKNOWN_ID})),
     ]
 }
 
@@ -211,6 +217,24 @@ fn workspace_input(name: &str, pin: &str) -> Value {
         "locationName": "Main", "registerName": "Till 1", "ownerName": "Olu", "ownerPin": pin,
         "taxRates": [{"name": "VAT 20%", "ratePpm": 200000}]
     })
+}
+
+/// RET-002 (E12-T04): a completed sale is never changed or removed; the only way back is a
+/// return. No command may void, edit or delete a sale, a return or a tender.
+#[test]
+fn nothing_can_void_or_delete_a_completed_sale() {
+    for cmd in COMMANDS {
+        let touches_records = ["sale_", "sales_", "return_", "tender_"]
+            .iter()
+            .any(|p| cmd.starts_with(p));
+        let destructive = ["void", "delete", "update", "edit", "cancel"]
+            .iter()
+            .any(|w| cmd.contains(w));
+        assert!(
+            !(touches_records && destructive),
+            "{cmd} would change a completed record"
+        );
+    }
 }
 
 #[test]
@@ -647,4 +671,26 @@ fn a_cash_sale_over_ipc() {
             .join("virtual-printer/R01-R-000001.bin")
             .exists()
     );
+
+    // E12-T03: the sale in the history, with its return.
+    let page = invoke(
+        &w,
+        "sales_list",
+        json!({"filter": {"from": null, "to": null, "receipt": "1", "cashierUserId": null, "tender": "cash"}, "after": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(page["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(page["rows"][0]["refundedMinor"], "100");
+    assert_eq!(page["next"], Value::Null);
+    let detail = invoke(&w, "sales_get", json!({"saleId": page["rows"][0]["saleId"]})).unwrap();
+    assert_eq!(detail["lines"][0]["returnedMilli"], "1000");
+    assert_eq!(detail["tenders"][0]["confirmationSource"], "operator");
+    assert_eq!(detail["returns"][0]["returnNumber"], "R01-R-000001");
+    let bad = invoke(
+        &w,
+        "sales_list",
+        json!({"filter": {"from": "yesterday", "to": null, "receipt": null, "cashierUserId": null, "tender": null}, "after": null, "limit": null}),
+    )
+    .unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
 }

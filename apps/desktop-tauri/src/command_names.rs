@@ -44,4 +44,6 @@ pub const COMMANDS: &[&str] = &[
     "return_create",
     "return_receipt_get",
     "return_receipt_print",
+    "sales_list",
+    "sales_get",
 ];

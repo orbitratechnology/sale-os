@@ -662,3 +662,121 @@ describe("returns (E12-T04)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 });
+
+describe("sales history (E12-T03)", () => {
+  /** Two sales: a cola for cash 5.00, then crisps + chocolate (1.84) with card 1.00 + cash. */
+  async function twoSales(): Promise<Page> {
+    const page = await checkout();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.getByLabel("Cash received").fill("5");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await scan(page, CRISPS);
+    await scan(page, CHOC);
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 2);
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Payment" });
+    await pay.getByRole("button", { name: "Card (separate terminal)" }).click();
+    await pay.getByLabel(/^Amount/).fill("1.00");
+    await pay.getByLabel(/^Reference/).fill("AUTH 9");
+    await pay.getByRole("button", { name: /^Record/ }).click();
+    await pay.getByLabel("Cash received").fill("1");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F8");
+    await page.getByRole("heading", { name: "Sales" }).waitFor();
+    return page;
+  }
+
+  const receipts = (page: Page) => page.getByTestId("sale-row").locator("button.link").allTextContents();
+
+  it("newest first; filters by payment and receipt number; detail, reprint and return", async () => {
+    const page = await twoSales();
+    await page.getByTestId("sale-row").nth(1).waitFor();
+    expect(await receipts(page)).toEqual(["R01-000002", "R01-000001"]);
+    expect(await page.getByTestId("sale-row").first().textContent()).toContain("Card + Cash");
+
+    await page.getByLabel("Payment").selectOption("card_external");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=sale-row]").length === 1);
+    expect(await receipts(page)).toEqual(["R01-000002"]);
+    await page.getByLabel("Payment").selectOption("");
+    // The receipt field has focus on arrival; digits are enough.
+    await page.getByLabel("Receipt number").fill("1");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=sale-row]").length === 1);
+    expect(await receipts(page)).toEqual(["R01-000001"]);
+    await page.getByLabel("Receipt number").fill("");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=sale-row]").length === 2);
+
+    await page.getByRole("button", { name: "R01-000002" }).click();
+    const detail = page.getByRole("region", { name: "Sale detail" });
+    await detail.waitFor();
+    expect(await detail.getByTestId("sale-total").textContent()).toBe("1.84");
+    const tenders = detail.getByRole("list", { name: "Tenders" });
+    // Who confirmed an external payment is always shown, never as a provider approval.
+    expect(await tenders.textContent()).toContain("Externally confirmed by operator");
+    expect(await tenders.textContent()).toContain("ref AUTH 9");
+    expect(await tenders.textContent()).toContain("change 0.16");
+    await detail.getByText("None.").waitFor();
+    await detail.getByRole("button", { name: "Print receipt" }).click();
+    await detail.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
+    expect(await calls(page, "receipt_print")).toEqual([expect.objectContaining({ saleId: expect.any(String) })]);
+
+    // "Return items" opens the return with this sale already found.
+    await detail.getByRole("button", { name: "Return items" }).click();
+    await page.getByText("Sale R01-000002").waitFor();
+    await page.getByLabel("Quantity to return: Crisps").fill("1");
+    await page.getByRole("button", { name: "Refund 0.85" }).click();
+    await page.getByRole("region", { name: "Return completed" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("F8");
+    await page.getByRole("button", { name: "R01-000002" }).click();
+    const returns = page.getByRole("list", { name: "Returns" });
+    await returns.getByText("R01-R-000001", { exact: false }).waitFor();
+    expect(await returns.textContent()).toContain("refunded 0.85 (Cash)");
+    // Esc: back to the list, then the till.
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Sales list" }).waitFor();
+    expect(await page.getByTestId("sale-row").first().textContent()).toContain("-0.85");
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("pages with 'Show more'; the screen passes axe", async () => {
+    const page = await checkout();
+    await page.evaluate(() => {
+      for (let i = 1; i <= 60; i++) {
+        window.__fake.sales.push({
+          saleId: `0190a5b0-0000-7000-8000-9${String(i).padStart(11, "0")}`,
+          receiptNumber: `R01-${String(i).padStart(6, "0")}`,
+          lines: [{ saleLineId: `l${i}`, name: "Cola 330ml", qtyMilli: 1000n, totalMinor: 120n, returnedMilli: 0n }],
+          localTime: "2026-11-07 08:00",
+          cashierUserId: "x",
+          cashierName: "Olu",
+          tenders: [{ kind: "cash", amountMinor: 120n, reference: null }],
+          totalMinor: 120n,
+          changeMinor: 0n,
+          returns: [],
+        });
+      }
+    });
+    await page.keyboard.press("F8");
+    await page.getByTestId("sale-row").nth(49).waitFor();
+    expect(await page.getByTestId("sale-row").count()).toBe(50);
+    await page.getByRole("button", { name: "Show more" }).click();
+    await page.getByTestId("sale-row").nth(59).waitFor();
+    expect(await page.getByRole("button", { name: "Show more" }).count()).toBe(0);
+    expect((await calls(page, "sales_list")).at(-1)).toMatchObject({ after: "50" });
+
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    const serious = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+    expect(serious).toEqual([]);
+  });
+});

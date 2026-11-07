@@ -124,6 +124,13 @@ export const commands = {
 	returnReceiptGet: (returnId: ReturnId, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_get", { returnId, widthMm })),
 	/**  Prints a return's refund receipt (later copies are reprints). */
 	returnReceiptPrint: (returnId: ReturnId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_print", { returnId })),
+	/**
+	 *  Completed sales on this device, newest first, a page at a time. `after` is the previous
+	 *  page's `next`; `limit` defaults to 50 (at most 200).
+	 */
+	salesList: (filter: SalesFilterDto_Deserialize, after: string | null, limit: number | null) => typedError<SalesPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_list", { filter, after, limit })),
+	/**  One completed sale as recorded: lines, discounts, tax, tenders and the returns made since. */
+	salesGet: (saleId: SaleId) => typedError<SaleDetailDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_get", { saleId })),
 };
 
 /* Types */
@@ -787,9 +794,181 @@ export type ReturnableSaleDto = {
 
 export type Role = "owner" | "manager" | "cashier";
 
+export type SaleDetailDto = SaleDetailDto_Serialize | SaleDetailDto_Deserialize;
+
+export type SaleDetailDto_Deserialize = {
+	saleId: SaleId,
+	receiptNumber: string,
+	localTime: string,
+	businessDate: string,
+	cashierName: string,
+	approverName?: string | null,
+	mode: string,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	roundingMinor: string,
+	totalMinor: string,
+	tenderedMinor: string,
+	changeMinor: string,
+	taxBreakdown: TaxLineDto[],
+	lines: SaleDetailLineDto_Deserialize[],
+	tenders: SaleTenderDto_Deserialize[],
+	returns: SaleReturnDto[],
+};
+
+export type SaleDetailDto_Serialize = {
+	saleId: SaleId,
+	receiptNumber: string,
+	localTime: string,
+	businessDate: string,
+	cashierName: string,
+	approverName: string | null,
+	mode: string,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	roundingMinor: string,
+	totalMinor: string,
+	tenderedMinor: string,
+	changeMinor: string,
+	taxBreakdown: TaxLineDto[],
+	lines: SaleDetailLineDto_Serialize[],
+	tenders: SaleTenderDto_Serialize[],
+	returns: SaleReturnDto[],
+};
+
+export type SaleDetailLineDto = SaleDetailLineDto_Serialize | SaleDetailLineDto_Deserialize;
+
+export type SaleDetailLineDto_Deserialize = {
+	lineNo: number,
+	name: string,
+	label: string,
+	sku?: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	grossMinor: string,
+	/**  The line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	returnedMilli: string,
+};
+
+export type SaleDetailLineDto_Serialize = {
+	lineNo: number,
+	name: string,
+	label: string,
+	sku: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	grossMinor: string,
+	/**  The line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	returnedMilli: string,
+};
+
 export type SaleId = string;
 
 export type SaleLineId = string;
+
+export type SaleReturnDto = {
+	returnId: ReturnId,
+	returnNumber: string,
+	localTime: string,
+	reason: string,
+	totalMinor: string,
+	refunds: TenderKind[],
+};
+
+export type SaleRowDto = {
+	saleId: SaleId,
+	receiptNumber: string,
+	localTime: string,
+	businessDate: string,
+	cashierName: string,
+	/**  `"sandbox"` or `"live"`. */
+	mode: string,
+	currencyExponent: number,
+	totalMinor: string,
+	itemCountMilli: string,
+	tenders: TenderKind[],
+	refundedMinor: string,
+};
+
+export type SaleTenderDto = SaleTenderDto_Serialize | SaleTenderDto_Deserialize;
+
+export type SaleTenderDto_Deserialize = {
+	kind: TenderKind,
+	amountMinor: string,
+	receivedMinor?: string | null,
+	changeMinor: string,
+	status: string,
+	/**  `"operator"`: recorded by staff. `"provider"`: confirmed by a payment integration. */
+	confirmationSource: string,
+	reference?: string | null,
+};
+
+export type SaleTenderDto_Serialize = {
+	kind: TenderKind,
+	amountMinor: string,
+	receivedMinor: string | null,
+	changeMinor: string,
+	status: string,
+	/**  `"operator"`: recorded by staff. `"provider"`: confirmed by a payment integration. */
+	confirmationSource: string,
+	reference: string | null,
+};
+
+export type SalesFilterDto = SalesFilterDto_Serialize | SalesFilterDto_Deserialize;
+
+export type SalesFilterDto_Deserialize = {
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from?: string | null,
+	to?: string | null,
+	/**  A receipt number, or just its digits. */
+	receipt?: string | null,
+	cashierUserId?: UserId | null,
+	tender?: TenderKind | null,
+};
+
+export type SalesFilterDto_Serialize = {
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from: string | null,
+	to: string | null,
+	/**  A receipt number, or just its digits. */
+	receipt: string | null,
+	cashierUserId: UserId | null,
+	tender: TenderKind | null,
+};
+
+export type SalesPageDto = SalesPageDto_Serialize | SalesPageDto_Deserialize;
+
+export type SalesPageDto_Deserialize = {
+	rows: SaleRowDto[],
+	/**  Pass back as `after` for the next page; `null` on the last page. */
+	next?: string | null,
+};
+
+export type SalesPageDto_Serialize = {
+	rows: SaleRowDto[],
+	/**  Pass back as `after` for the next page; `null` on the last page. */
+	next: string | null,
+};
 
 export type ScanEventId = string;
 

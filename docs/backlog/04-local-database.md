@@ -31,9 +31,10 @@ Migration order and owner tasks:
 | 0006 | `0006_sales_tenders.sql` | E09-T08 / E10-T01 | 2 |
 | 0007 | `0007_receipts_printing.sql` | E13-T02 / E13-T06 | 2 |
 | 0008 | `0008_returns.sql` | E12-T01 | 2 |
-| 0009 | `0009_cash_sessions.sql` | E15-T02 | 2 |
-| 0010 | `0010_import.sql` | E06-T07 | 1 |
-| 0011 | `0011_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
+| 0009 | `0009_sales_history.sql` | E12-T03 (history indexes) | 2 |
+| 0010 | `0010_cash_sessions.sql` | E15-T02 | 2 |
+| 0011 | `0011_import.sql` | E06-T07 | 1 |
+| 0012 | `0012_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
 
 > Stage 0 ships a **throwaway** spike schema in a separate `spike/` directory. It is deleted
 > before Stage 1. The real migrations start at 0001 and are never edited after they merge.
@@ -690,7 +691,18 @@ CREATE TABLE print_job_events (
 
 ---
 
-## 0009_cash_sessions.sql (DER-001)
+## 0009_sales_history.sql (E12-T03)
+
+Indexes only. History pages are newest first and keyed on `(business_date, occurred_at,
+sale_id)`, so each page is a range scan of an index whatever the size of the history.
+
+```sql
+CREATE INDEX ix_sales_history ON sales(business_date, occurred_at, sale_id);
+CREATE INDEX ix_sales_cashier_history ON sales(cashier_user_id, business_date, occurred_at, sale_id);
+CREATE INDEX ix_returns_original_sale ON returns(original_sale_id);
+```
+
+## 0010_cash_sessions.sql (DER-001)
 
 ```sql
 CREATE TABLE cash_sessions (
@@ -718,7 +730,7 @@ update after `status = 'closed'`.
 
 ---
 
-## 0010_import.sql (CAT-008)
+## 0011_import.sql (CAT-008)
 
 ```sql
 CREATE TABLE import_jobs (
@@ -750,7 +762,7 @@ CREATE TABLE import_rows (
 
 ---
 
-## 0011_sync.sql (Stage 3)
+## 0012_sync.sql (Stage 3)
 
 ```sql
 CREATE TABLE sync_conflicts (                          -- SYN-010, AT-07

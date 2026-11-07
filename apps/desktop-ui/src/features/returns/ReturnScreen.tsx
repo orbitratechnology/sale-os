@@ -43,8 +43,19 @@ interface Pick {
  * refund (the cumulative rounding rule) and commits everything in one transaction; the
  * amounts here are its preview. A cashier's return asks for a manager's approval.
  */
-export function ReturnScreen({ workspace, session, onBack }: { workspace: Workspace; session: Session; onBack: () => void }) {
-  const [number, setNumber] = useState("");
+export function ReturnScreen({
+  workspace,
+  session,
+  initialReceipt,
+  onBack,
+}: {
+  workspace: Workspace;
+  session: Session;
+  /** From a sale's detail: look this receipt up straight away. */
+  initialReceipt?: string;
+  onBack: () => void;
+}) {
+  const [number, setNumber] = useState(initialReceipt ?? "");
   const [sale, setSale] = useState<ReturnableSaleDto | null>(null);
   const [picks, setPicks] = useState<Record<string, Pick>>({});
   const [reason, setReason] = useState<ReturnReason>("changed_mind");
@@ -92,12 +103,10 @@ export function ReturnScreen({ workspace, session, onBack }: { workspace: Worksp
     return () => window.removeEventListener("keydown", onKey);
   }, [approval, done, sale, reset, onBack]);
 
-  async function find(e: FormEvent) {
-    e.preventDefault();
-    if (!number.trim() || busy) return;
+  const lookUp = useCallback(async (receiptNumber: string) => {
     setBusy(true);
     setError(null);
-    const res = await commands.returnFind(number.trim());
+    const res = await commands.returnFind(receiptNumber);
     setBusy(false);
     if (res.status !== "ok") {
       return setError(res.error.code === "VALIDATION_FAILED" ? "No sale with that receipt number on this till." : res.error);
@@ -108,7 +117,21 @@ export function ReturnScreen({ workspace, session, onBack }: { workspace: Worksp
         res.data.lines.map((l) => [l.saleLineId, { qty: "", disposition: l.trackStock ? "restock" : "no_stock_change" } as Pick]),
       ),
     );
+  }, []);
+
+  function find(e: FormEvent) {
+    e.preventDefault();
+    if (!number.trim() || busy) return;
+    void lookUp(number.trim());
   }
+
+  const started = useRef(false);
+  useEffect(() => {
+    if (initialReceipt && !started.current) {
+      started.current = true;
+      void lookUp(initialReceipt);
+    }
+  }, [initialReceipt, lookUp]);
 
   /** The lines with a quantity, as Rust wants them; null when something typed is not a number. */
   const lines = useMemo((): ReturnLineInputDto[] | null => {
@@ -206,7 +229,7 @@ export function ReturnScreen({ workspace, session, onBack }: { workspace: Worksp
       </header>
 
       {!sale ? (
-        <form className="card return-find" onSubmit={(e) => void find(e)}>
+        <form className="card return-find" onSubmit={find}>
           <label>
             Receipt number
             <input

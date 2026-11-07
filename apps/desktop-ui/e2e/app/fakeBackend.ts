@@ -55,6 +55,13 @@ export interface FakeSale {
   saleId: string;
   receiptNumber: string;
   lines: { saleLineId: string; name: string; qtyMilli: bigint; totalMinor: bigint; returnedMilli: bigint }[];
+  localTime: string;
+  cashierUserId: string;
+  cashierName: string;
+  tenders: { kind: string; amountMinor: bigint; reference: string | null }[];
+  totalMinor: bigint;
+  changeMinor: bigint;
+  returns: { returnId: string; returnNumber: string; totalMinor: bigint; reason: string; refunds: string[] }[];
 }
 
 export type Preset = "fresh" | "signIn" | "checkout";
@@ -375,10 +382,18 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const receiptNumber = `R01-${String(s.receipts.length + 1).padStart(6, "0")}`;
       s.receipts.push(receiptNumber);
       const saleId = id();
+      const me = needSession(s);
       s.sales.push({
         saleId,
         receiptNumber,
         lines: view(s).lines.map((l) => ({ saleLineId: id(), name: l.name, qtyMilli: BigInt(l.quantityMilli), totalMinor: BigInt(l.totalMinor), returnedMilli: 0n })),
+        localTime: `2026-11-07 09:${String(s.sales.length).padStart(2, "0")}`,
+        cashierUserId: me.userId,
+        cashierName: me.displayName,
+        tenders: tenders.map((t) => ({ kind: t.kind, amountMinor: BigInt(t.amountMinor), reference: t.reference })),
+        totalMinor: total,
+        changeMinor: tendered - total,
+        returns: [],
       });
       s.lines = [];
       s.orderDiscountPpm = null;
@@ -430,9 +445,61 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const returnId = id();
       const number = `R01-R-${String(s.returns.size + 1).padStart(6, "0")}`;
       s.returns.set(returnId, { number, totalMinor: total });
+      sale.returns.push({ returnId, returnNumber: number, totalMinor: total, reason: String(a.reason), refunds: refunds.map((r) => r.kind) });
       return {
         returnId, returnNumber: number, originalReceiptNumber: sale.receiptNumber, totalMinor: total.toString(), currencyExponent: 2,
         approved: a.approvalTokenId !== null && a.approvalTokenId !== undefined,
+      };
+    }
+    case "sales_list": {
+      needSession(s);
+      const f = a.filter as { from: string | null; to: string | null; receipt: string | null; cashierUserId: string | null; tender: string | null };
+      if (f.from && !/^\d{4}-\d{2}-\d{2}$/.test(f.from)) fail("VALIDATION_FAILED");
+      const receipt = f.receipt?.trim().toUpperCase() ?? "";
+      const match = (x: FakeSale) =>
+        (!receipt || (/^\d+$/.test(receipt) ? Number(x.receiptNumber.slice(-6)) === Number(receipt) : x.receiptNumber === receipt)) &&
+        (!f.cashierUserId || x.cashierUserId === f.cashierUserId) &&
+        (!f.tender || x.tenders.some((t) => t.kind === f.tender));
+      const all = [...s.sales].reverse().filter(match);
+      const start = a.after ? Number(a.after) : 0;
+      const limit = Number(a.limit ?? 50);
+      const page = all.slice(start, start + limit);
+      return {
+        rows: page.map((x) => ({
+          saleId: x.saleId, receiptNumber: x.receiptNumber, localTime: x.localTime, businessDate: "2026-11-07", cashierName: x.cashierName,
+          mode: "sandbox", currencyExponent: 2, totalMinor: x.totalMinor.toString(),
+          itemCountMilli: x.lines.reduce((t, l) => t + l.qtyMilli, 0n).toString(),
+          tenders: [...new Set(x.tenders.map((t) => t.kind))],
+          refundedMinor: x.returns.reduce((t, r) => t + r.totalMinor, 0n).toString(),
+        })),
+        next: start + limit < all.length ? String(start + limit) : null,
+      };
+    }
+    case "sales_get": {
+      needSession(s);
+      const x = s.sales.find((y) => y.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      const tax = div(x.totalMinor, 6n);
+      return {
+        saleId: x.saleId, receiptNumber: x.receiptNumber, localTime: x.localTime, businessDate: "2026-11-07", cashierName: x.cashierName, approverName: null,
+        mode: "sandbox", currencyCode: "GBP", currencyExponent: 2, taxMode: "inclusive",
+        subtotalMinor: x.totalMinor.toString(), lineDiscountTotalMinor: "0", orderDiscountTotalMinor: "0", taxTotalMinor: tax.toString(), roundingMinor: "0",
+        totalMinor: x.totalMinor.toString(), tenderedMinor: (x.totalMinor + x.changeMinor).toString(), changeMinor: x.changeMinor.toString(),
+        taxBreakdown: [{ name: "VAT 20%", ratePpm: 200000, taxableMinor: (x.totalMinor - tax).toString(), taxMinor: tax.toString() }],
+        lines: x.lines.map((l, i) => ({
+          lineNo: i + 1, name: l.name, label: "", sku: null, unit: "ea", quantityMilli: l.qtyMilli.toString(),
+          unitPriceMinor: div(l.totalMinor * 1000n, l.qtyMilli).toString(), priceOverridden: false, grossMinor: l.totalMinor.toString(),
+          discountMinor: "0", taxMinor: div(l.totalMinor, 6n).toString(), totalMinor: l.totalMinor.toString(), returnedMilli: l.returnedMilli.toString(),
+        })),
+        // As Rust records it: the amount applied to the sale; cash also keeps what was handed over.
+        tenders: x.tenders.map((t, i) => {
+          const change = t.kind === "cash" && i === x.tenders.length - 1 ? x.changeMinor : 0n;
+          return {
+          kind: t.kind, amountMinor: (t.amountMinor - change).toString(), receivedMinor: t.kind === "cash" ? t.amountMinor.toString() : null,
+          changeMinor: change.toString(),
+          status: "confirmed", confirmationSource: "operator", reference: t.reference,
+          };
+        }),
+        returns: x.returns.map((r) => ({ returnId: r.returnId, returnNumber: r.returnNumber, localTime: "2026-11-07 10:00", reason: r.reason, totalMinor: r.totalMinor.toString(), refunds: r.refunds })),
       };
     }
     case "return_receipt_get": {

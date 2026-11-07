@@ -48,6 +48,8 @@
     "allow-return-preview",
     "allow-return-create",
     "allow-return-receipt-get",
-    "allow-return-receipt-print"
+    "allow-return-receipt-print",
+    "allow-sales-list",
+    "allow-sales-get"
   ]
 }

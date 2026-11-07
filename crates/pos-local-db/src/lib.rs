@@ -13,6 +13,7 @@ mod pragmas;
 mod queries;
 mod receipt_queries;
 mod return_queries;
+mod sales_queries;
 mod stock_queries;
 mod store;
 

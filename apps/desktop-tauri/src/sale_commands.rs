@@ -569,3 +569,38 @@ pub async fn return_receipt_print(
         .map_err(err)?;
     Ok(crate::dto::PrintJobDto::from_record(&job))
 }
+
+// ---------- sales history (E12-T03) ----------
+
+/// Completed sales on this device, newest first, a page at a time. `after` is the previous
+/// page's `next`; `limit` defaults to 50 (at most 200).
+#[tauri::command]
+#[specta::specta]
+pub async fn sales_list(
+    services: State<'_, AppServices>,
+    filter: crate::dto::SalesFilterDto,
+    after: Option<String>,
+    limit: Option<u32>,
+) -> Result<crate::dto::SalesPageDto, IpcError> {
+    let ctx = services.context().await?;
+    let filter = filter.into_filter()?;
+    let page = services
+        .app()?
+        .sales
+        .list(&ctx, &filter, after.as_deref(), limit)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::SalesPageDto::from_page(&page))
+}
+
+/// One completed sale as recorded: lines, discounts, tax, tenders and the returns made since.
+#[tauri::command]
+#[specta::specta]
+pub async fn sales_get(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+) -> Result<crate::dto::SaleDetailDto, IpcError> {
+    let ctx = services.context().await?;
+    let d = services.app()?.sales.get(&ctx, sale_id).await.map_err(err)?;
+    Ok(crate::dto::SaleDetailDto::from_detail(&d))
+}

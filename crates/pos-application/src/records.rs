@@ -299,3 +299,135 @@ pub struct PrintJobRecord {
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
+
+// ---------- sales history (E12-T03) ----------
+
+/// One row of the sales list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaleRow {
+    pub sale_id: pos_domain::SaleId,
+    pub receipt_number: String,
+    pub occurred_at: Timestamp,
+    /// "2026-11-07 09:31" in the business time zone at the time of the sale.
+    pub local_time: String,
+    pub business_date: String,
+    pub cashier_name: String,
+    pub mode: pos_domain::sale::SaleMode,
+    pub currency_exponent: u8,
+    pub total: pos_domain::Money,
+    pub item_count: pos_domain::Quantity,
+    /// Tender kinds used, in tender order, without repeats.
+    pub tenders: Vec<pos_domain::settlement::TenderKind>,
+    /// Refunded so far by returns against this sale.
+    pub refunded: pos_domain::Money,
+}
+
+/// Where the next page starts: the last row's sort key (newest first).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SalesCursor {
+    pub business_date: String,
+    pub occurred_at: i64,
+    pub sale_id: pos_domain::SaleId,
+}
+
+impl SalesCursor {
+    /// An opaque token for the UI.
+    pub fn encode(&self) -> String {
+        format!("{}|{}|{}", self.business_date, self.occurred_at, self.sale_id)
+    }
+
+    pub fn decode(s: &str) -> Option<Self> {
+        let mut it = s.splitn(3, '|');
+        let business_date = it.next()?.to_owned();
+        let occurred_at = it.next()?.parse().ok()?;
+        let sale_id = it.next()?.parse().ok()?;
+        business_date.parse::<pos_domain::time::BusinessDate>().ok()?;
+        Some(Self {
+            business_date,
+            occurred_at,
+            sale_id,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SalesPage {
+    pub rows: Vec<SaleRow>,
+    /// `None` when this is the last page.
+    pub next: Option<SalesCursor>,
+}
+
+/// A completed sale as recorded, with what has been returned since.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaleDetail {
+    pub sale_id: pos_domain::SaleId,
+    pub receipt_number: String,
+    pub local_time: String,
+    pub business_date: String,
+    pub cashier_name: String,
+    pub approver_name: Option<String>,
+    pub mode: pos_domain::sale::SaleMode,
+    pub currency: Currency,
+    pub prices_include_tax: bool,
+    pub subtotal: pos_domain::Money,
+    pub line_discounts: pos_domain::Money,
+    pub order_discount: pos_domain::Money,
+    pub tax_total: pos_domain::Money,
+    pub rounding: pos_domain::Money,
+    pub total: pos_domain::Money,
+    pub tendered: pos_domain::Money,
+    pub change: pos_domain::Money,
+    pub tax_breakdown: Vec<SaleTaxRow>,
+    pub lines: Vec<SaleDetailLine>,
+    pub tenders: Vec<SaleTenderRow>,
+    pub returns: Vec<SaleReturnRow>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaleTaxRow {
+    pub name: String,
+    pub rate_ppm: u32,
+    pub taxable: pos_domain::Money,
+    pub tax: pos_domain::Money,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaleDetailLine {
+    pub line_no: u32,
+    pub name: String,
+    pub variant_label: String,
+    pub sku: Option<String>,
+    pub unit: pos_domain::catalog::Unit,
+    pub quantity: pos_domain::Quantity,
+    pub unit_price: pos_domain::Money,
+    pub price_overridden: bool,
+    pub gross: pos_domain::Money,
+    /// The line's own discount plus its share of the order discount.
+    pub discount: pos_domain::Money,
+    pub tax: pos_domain::Money,
+    pub total: pos_domain::Money,
+    pub returned: pos_domain::Quantity,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaleTenderRow {
+    pub kind: pos_domain::settlement::TenderKind,
+    pub amount: pos_domain::Money,
+    pub received: Option<pos_domain::Money>,
+    pub change: pos_domain::Money,
+    /// `confirmed`, `pending`, ...
+    pub status: String,
+    /// `operator` (recorded by the cashier) or `provider` (confirmed by a payment integration).
+    pub confirmation_source: String,
+    pub reference: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SaleReturnRow {
+    pub return_id: pos_domain::ReturnId,
+    pub return_number: String,
+    pub local_time: String,
+    pub reason: String,
+    pub total: pos_domain::Money,
+    pub refunds: Vec<pos_domain::settlement::TenderKind>,
+}

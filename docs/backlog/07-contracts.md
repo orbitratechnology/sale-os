@@ -91,7 +91,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `cart_void` | CartVoid | `{ reason, revision } → ()` | E12-T04 |
 | `cart_recovery_state` / `cart_discard_recovered` | session | `→ { recovered: CartView? }` | E09-T02 |
 | `checkout_complete` | SaleComplete (+ ExternalTenderRecord when needed) | `{ cartId, revision, tenders:[TenderInput] } → CompletedSaleDto` | E09-T08 |
-| `sales_list` / `sales_get` / `sales_find_by_receipt` | SalesView | | E12-T03 |
+| `sales_list` / `sales_get` | SalesView | `{ filter: { from?, to?, receipt?, cashierUserId?, tender? }, after?, limit? } → { rows, next? }`; `{ saleId } → SaleDetailDto`. Finding by receipt number is the `receipt` filter (full number or its digits), and `return_find` for returns, so there is no separate `sales_find_by_receipt` | E12-T03 |
 | `return_preview` | ReturnCreate | `{ saleId, lines } → ReturnPlanDto` | E12-T01 |
 | `return_create` | ReturnCreate (+ approval) | `ReturnRequest → ReturnDto` | E12-T02 |
 | `inventory_overview` / `inventory_history` | InventoryView | | E11-T05 |

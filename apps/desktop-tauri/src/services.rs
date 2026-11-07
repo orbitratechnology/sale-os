@@ -12,6 +12,7 @@ use pos_application::printing::{DEFAULT_PRINT_TIMEOUT, PrintService};
 use pos_application::queries::SetupQueries;
 use pos_application::receipts::ReceiptService;
 use pos_application::returns::ReturnService;
+use pos_application::sales::SalesService;
 use pos_application::setup::SetupService;
 use pos_application::staff::StaffService;
 use pos_domain::{ApprovalId, Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
@@ -46,6 +47,7 @@ pub(crate) struct Services {
     pub checkout: CheckoutService,
     pub receipts: ReceiptService,
     pub returns: ReturnService,
+    pub sales: SalesService,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
     pub prints: PrintService,
@@ -131,6 +133,7 @@ impl AppServices {
                     receipts: a.clone(),
                 },
                 receipts: ReceiptService { receipts: a.clone() },
+                sales: SalesService { sales: a.clone() },
                 returns: ReturnService {
                     store: a.clone(),
                     returns: a.clone(),

@@ -6,6 +6,7 @@ import { Checkout } from "./features/checkout/Checkout";
 import { ProductEditor } from "./features/catalog/ProductEditor";
 import { ProductList } from "./features/catalog/ProductList";
 import { ReturnScreen } from "./features/returns/ReturnScreen";
+import { SalesScreen } from "./features/sales/SalesScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
 
 /**
@@ -58,7 +59,23 @@ export function App() {
   const canEdit = state.session.role !== "cashier";
   switch (screen.kind) {
     case "returns":
-      return <ReturnScreen workspace={workspace} session={state.session} onBack={() => setScreen({ kind: "till" })} />;
+      return (
+        <ReturnScreen
+          key={screen.receipt ?? ""}
+          workspace={workspace}
+          session={state.session}
+          {...(screen.receipt ? { initialReceipt: screen.receipt } : {})}
+          onBack={() => setScreen({ kind: "till" })}
+        />
+      );
+    case "sales":
+      return (
+        <SalesScreen
+          workspace={workspace}
+          onBack={() => setScreen({ kind: "till" })}
+          onReturn={(receipt) => setScreen({ kind: "returns", receipt })}
+        />
+      );
     case "products":
       return (
         <ProductList
@@ -94,6 +111,7 @@ export function App() {
           canEditCatalog={canEdit}
           onProducts={() => setScreen({ kind: "products" })}
           onReturns={() => setScreen({ kind: "returns" })}
+          onSales={() => setScreen({ kind: "sales" })}
           onCreateProduct={(barcode) => setScreen({ kind: "editor", productId: null, barcode, returnTo: "till" })}
         />
       );
@@ -103,5 +121,6 @@ export function App() {
 type Screen =
   | { kind: "till" }
   | { kind: "products" }
-  | { kind: "returns" }
+  | { kind: "returns"; receipt?: string }
+  | { kind: "sales" }
   | { kind: "editor"; productId: string | null; barcode?: string; returnTo: "till" | "products" };
