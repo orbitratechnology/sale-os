@@ -237,6 +237,22 @@ impl ReportService {
             .await?)
     }
 
+    /// E11-T05: the stock overview, the same rows as the stock report, for everyone who can
+    /// see inventory (cashiers included).
+    pub async fn stock_overview(
+        &self,
+        ctx: &CommandContext,
+        low_only: bool,
+    ) -> Result<Vec<StockRow>, AppError> {
+        ctx.authorize(Permission::InventoryView)?;
+        let rows = self.reports.stock_rows().await?;
+        Ok(if low_only {
+            rows.into_iter().filter(|r| r.status != StockStatus::Ok).collect()
+        } else {
+            rows
+        })
+    }
+
     /// Current stock; `low_only` keeps the Low and Negative rows (the low-stock report).
     pub async fn stock(&self, ctx: &CommandContext, low_only: bool) -> Result<Vec<StockRow>, AppError> {
         ctx.authorize(Permission::ReportsView)?;

@@ -205,6 +205,12 @@ pub trait StockQueries: Send + Sync {
         location: pos_domain::LocationId,
         variants: &[pos_domain::VariantId],
     ) -> Result<std::collections::BTreeMap<pos_domain::VariantId, pos_domain::Quantity>, QueryError>;
+    /// The movements of one variant, newest first (E11-T05).
+    async fn stock_history(
+        &self,
+        variant: pos_domain::VariantId,
+        limit: u32,
+    ) -> Result<Vec<crate::records::StockHistoryRow>, QueryError>;
     /// Every balance that differs from the sum of its movements (E11-T06 verify).
     async fn stock_drift(&self) -> Result<Vec<crate::records::StockDrift>, QueryError>;
     /// Damaged on-hand quantity per variant at `location` (what a write-off can take).

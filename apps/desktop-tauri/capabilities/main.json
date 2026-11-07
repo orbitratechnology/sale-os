@@ -54,6 +54,8 @@
     "allow-sales-get",
     "allow-inventory-post-document",
     "allow-stock-verify",
+    "allow-stock-overview",
+    "allow-stock-history",
     "allow-stock-rebuild",
     "allow-reports-sales-summary",
     "allow-reports-tender-mix",

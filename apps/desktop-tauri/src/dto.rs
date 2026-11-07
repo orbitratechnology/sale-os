@@ -1760,3 +1760,38 @@ pub struct ExportResultDto {
     pub file_name: String,
     pub rows: u32,
 }
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockHistoryDto {
+    pub movement_id: pos_domain::MovementId,
+    pub local_time: String,
+    pub movement_type: String,
+    /// `sellable` or `damaged`.
+    pub bucket: String,
+    pub delta_milli: String,
+    /// `sale`, `return` or `inventory_document`.
+    pub source_type: String,
+    pub source_id: String,
+    /// The receipt, return or document number.
+    pub source_number: String,
+    pub actor_name: String,
+}
+
+impl StockHistoryDto {
+    pub fn list(rows: &[pos_application::records::StockHistoryRow]) -> Vec<Self> {
+        rows.iter()
+            .map(|r| Self {
+                movement_id: r.movement_id,
+                local_time: r.local_time.clone(),
+                movement_type: r.movement_type.clone(),
+                bucket: r.bucket.clone(),
+                delta_milli: qty(r.delta),
+                source_type: r.source_type.clone(),
+                source_id: r.source_id.clone(),
+                source_number: r.source_number.clone(),
+                actor_name: r.actor_name.clone(),
+            })
+            .collect()
+    }
+}

@@ -644,3 +644,39 @@ pub async fn stock_rebuild(
     let d = services.app()?.stock.rebuild(&ctx).await.map_err(err)?;
     Ok(crate::dto::StockDriftDto::list(&d))
 }
+
+/// E11-T05: stock on hand for every stock-tracked item (OK / Low / Negative), for anyone who
+/// can see inventory. `lowOnly` keeps low and negative items.
+#[tauri::command]
+#[specta::specta]
+pub async fn stock_overview(
+    services: State<'_, AppServices>,
+    low_only: bool,
+) -> Result<crate::dto::StockReportDto, IpcError> {
+    let ctx = services.context().await?;
+    let rows = services
+        .app()?
+        .reports
+        .stock_overview(&ctx, low_only)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::StockReportDto::from_rows(&rows, ctx.now()))
+}
+
+/// E11-T05: one item's stock movements, newest first, with what caused each.
+#[tauri::command]
+#[specta::specta]
+pub async fn stock_history(
+    services: State<'_, AppServices>,
+    variant_id: VariantId,
+    limit: u32,
+) -> Result<Vec<crate::dto::StockHistoryDto>, IpcError> {
+    let ctx = services.context().await?;
+    let rows = services
+        .app()?
+        .stock
+        .history(&ctx, variant_id, limit)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::StockHistoryDto::list(&rows))
+}

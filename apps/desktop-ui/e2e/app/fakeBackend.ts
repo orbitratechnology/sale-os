@@ -525,9 +525,10 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "reports_sales_summary":
     case "reports_tender_mix":
     case "reports_top_products":
-    case "reports_stock": {
+    case "reports_stock":
+    case "stock_overview": {
       const me = needSession(s);
-      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      if (me.role === "cashier" && cmd !== "stock_overview") fail("PERMISSION_DENIED");
       const range = a.range as { from: string; to: string } | undefined;
       if (range && range.from > range.to) fail("VALIDATION_FAILED");
       const scope = { scope: "device", asOfMs: String(Date.UTC(2026, 10, 7, 9, 30)) };
@@ -579,6 +580,13 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           .map((r) => ({ variantId: id(), name: r.name, label: "", sku: null, unit: "ea", sellableMilli: r.sellable, damagedMilli: "0", lowStockThresholdMilli: r.low, status: r.status, lastMovementMs: null })),
         scope,
       };
+    }
+    case "stock_history": {
+      needSession(s);
+      return [
+        { movementId: id(), localTime: "2026-11-07 10:05", movementType: "sale", bucket: "sellable", deltaMilli: "-2000", sourceType: "sale", sourceId: id(), sourceNumber: "R01-000004", actorName: "Cal" },
+        { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: id(), sourceNumber: "R01-IN-000001", actorName: "Mia" },
+      ];
     }
     case "export_csv": {
       const me = needSession(s);

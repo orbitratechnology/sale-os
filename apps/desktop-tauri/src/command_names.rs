@@ -49,6 +49,8 @@ pub const COMMANDS: &[&str] = &[
     "sales_get",
     "inventory_post_document",
     "stock_verify",
+    "stock_overview",
+    "stock_history",
     "stock_rebuild",
     "reports_sales_summary",
     "reports_tender_mix",

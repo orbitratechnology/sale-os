@@ -74,7 +74,7 @@ export function App() {
     case "reports":
       return <ReportsScreen workspace={workspace} onBack={() => setScreen({ kind: "till" })} />;
     case "stock":
-      return <StockScreen workspace={workspace} onBack={() => setScreen({ kind: "till" })} />;
+      return <StockScreen workspace={workspace} canPost={canEdit} onBack={() => setScreen({ kind: "till" })} />;
     case "drawer":
       return <DrawerScreen workspace={workspace} session={state.session} onBack={() => setScreen({ kind: "till" })} />;
     case "sales":
@@ -123,7 +123,7 @@ export function App() {
           onReturns={() => setScreen({ kind: "returns" })}
           onSales={() => setScreen({ kind: "sales" })}
           onDrawer={() => setScreen({ kind: "drawer" })}
-          onStock={canEdit ? () => setScreen({ kind: "stock" }) : null}
+          onStock={() => setScreen({ kind: "stock" })}
           onReports={canEdit ? () => setScreen({ kind: "reports" }) : null}
           onWentLive={state.session.role === "owner" ? refresh : null}
           onCreateProduct={(barcode) => setScreen({ kind: "editor", productId: null, barcode, returnTo: "till" })}

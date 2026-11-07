@@ -72,6 +72,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::sales_get,
         sale_commands::inventory_post_document,
         sale_commands::stock_verify,
+        sale_commands::stock_overview,
+        sale_commands::stock_history,
         sale_commands::stock_rebuild,
         report_commands::reports_sales_summary,
         report_commands::reports_tender_mix,

@@ -447,6 +447,24 @@ pub struct StockDrift {
     pub from_movements: pos_domain::Quantity,
 }
 
+/// One stock movement as the history shows it (E11-T05).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StockHistoryRow {
+    pub movement_id: pos_domain::MovementId,
+    pub occurred_at: Timestamp,
+    pub local_time: String,
+    /// `sale`, `receipt`, `damage`, `return_restock`...
+    pub movement_type: String,
+    pub bucket: String,
+    pub delta: pos_domain::Quantity,
+    /// `sale`, `return` or `inventory_document`.
+    pub source_type: String,
+    pub source_id: String,
+    /// The receipt, return or document number.
+    pub source_number: String,
+    pub actor_name: String,
+}
+
 // ---------- cash sessions (E15-T02) ----------
 
 #[derive(Clone, Debug, PartialEq, Eq)]

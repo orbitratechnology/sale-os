@@ -955,15 +955,32 @@ describe("stock (E11-T02/T03)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 
-  it("a cashier has no Stock action", async () => {
+  it("a cashier sees stock on hand and its history, but cannot receive or adjust", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Cal/ }).click();
     await page.keyboard.type("3333");
     await page.keyboard.press("Enter");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
-    expect(await page.getByRole("button", { name: /^Stock/ }).count()).toBe(0);
     await page.keyboard.press("F11");
-    expect(await page.getByRole("heading", { name: "Stock" }).count()).toBe(0);
+    const onHand = page.getByRole("region", { name: "Stock on hand" });
+    await onHand.getByText("calculated from recorded movements").waitFor();
+    expect(await page.getByRole("tab", { name: "Receive and adjust" }).count()).toBe(0);
+    expect(await page.getByLabel("Scan or type a code").count()).toBe(0);
+    await onHand.getByTestId("onhand-row").nth(2).waitFor();
+    expect(await onHand.getByTestId("onhand-row").nth(0).textContent()).toContain("Negative");
+    await onHand.getByRole("button", { name: "Cola 330ml" }).click();
+    const history = page.getByRole("region", { name: "History: Cola 330ml" });
+    await history.getByTestId("history-row").nth(1).waitFor();
+    const rows = await history.getByTestId("history-row").allTextContents();
+    expect(rows[0]).toContain("Sale");
+    expect(rows[0]).toContain("-2");
+    expect(rows[0]).toContain("R01-000004");
+    expect(rows[1]).toContain("+24");
+    expect(rows[1]).toContain("Goods received");
+    await onHand.getByLabel("Low and negative only").check();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=onhand-row]").length === 2);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 });
 

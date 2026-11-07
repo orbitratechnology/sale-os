@@ -217,6 +217,12 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
                              "lines": [{"variantId": UNKNOWN_ID, "quantityMilli": "1000", "unitCostMinor": null}]}}),
         ),
         ("stock_verify", Perm(InventoryView), json!({})),
+        ("stock_overview", Perm(InventoryView), json!({"lowOnly": true})),
+        (
+            "stock_history",
+            Perm(InventoryView),
+            json!({"variantId": UNKNOWN_ID, "limit": 10}),
+        ),
         // Owner only (diagnostics).
         ("stock_rebuild", Perm(SettingsEdit), json!({})),
         (

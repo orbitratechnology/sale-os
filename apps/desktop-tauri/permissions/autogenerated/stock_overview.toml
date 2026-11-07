@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stock-overview"
+description = "Enables the stock_overview command without any pre-configured scope."
+commands.allow = ["stock_overview"]
+
+[[permission]]
+identifier = "deny-stock-overview"
+description = "Denies the stock_overview command without any pre-configured scope."
+commands.deny = ["stock_overview"]

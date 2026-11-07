@@ -16,7 +16,7 @@ Every checkout action works from the keyboard. The screen is never left to do an
 | `F8` | Sales | Sales history: filter by date, receipt number, cashier and payment; open a sale for its detail, receipt, reprint and "Return items"; `Esc` steps back |
 | `F9` | Pay | The payment panel: cash (empty + `Enter` pays exact), card and other external tenders, splits |
 | `F10` | Cash drawer | Open with a float, see the session, close with a count (blind for cashiers); managers see expected cash, variance and the Z summary; `Esc` comes back |
-| `F11` | Stock | Managers and owners: receive goods, opening stock, adjustments with a reason, write-offs; scan to add lines (a second scan adds to the line); `Esc` comes back |
+| `F11` | Stock | Everyone: stock on hand (OK / Low / Negative) and each item's history. Managers and owners also receive goods, enter opening stock, adjust with a reason and write off; scan to add lines (a second scan adds to the line); `Esc` comes back |
 | `F12` | Lock | Signs out; the cart is kept for the next sign-in |
 | `Esc` | Back | Closes an editor, search or message, and returns to scanner-ready |
 

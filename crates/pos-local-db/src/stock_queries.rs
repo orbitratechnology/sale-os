@@ -34,6 +34,66 @@ impl StockQueries for SqliteStore {
         self.bucket_on_hand(location, variants, "sellable").await
     }
 
+    async fn stock_history(
+        &self,
+        variant: VariantId,
+        limit: u32,
+    ) -> Result<Vec<pos_application::records::StockHistoryRow>, QueryError> {
+        type Row = (
+            String,
+            i64,
+            String,
+            String,
+            i64,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+        );
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT m.movement_id, m.occurred_at, m.movement_type, m.bucket, m.quantity_delta_milli, m.source_type,
+               m.source_id,
+               CASE m.source_type
+                 WHEN 'sale' THEN (SELECT receipt_number FROM sales WHERE sale_id = m.source_id)
+                 WHEN 'return' THEN (SELECT return_number FROM returns WHERE return_id = m.source_id)
+                 ELSE (SELECT document_no FROM inventory_documents WHERE document_id = m.source_id) END,
+               coalesce(u.display_name, ''), b.timezone
+             FROM stock_movements m
+             JOIN businesses b ON b.business_id = m.business_id
+             LEFT JOIN staff_users u ON u.user_id = m.actor_user_id
+             WHERE m.variant_id = ?
+             ORDER BY m.occurred_at DESC, m.rowid DESC LIMIT ?",
+        )
+        .bind(variant.to_string())
+        .bind(i64::from(limit))
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        rows.into_iter()
+            .map(
+                |(id, at, kind, bucket, delta, source_type, source_id, number, actor, zone)| {
+                    Ok(pos_application::records::StockHistoryRow {
+                        movement_id: id.parse().map_err(q)?,
+                        occurred_at: pos_domain::Timestamp::from_millis(at),
+                        local_time: pos_domain::time::local_date_time(
+                            pos_domain::Timestamp::from_millis(at),
+                            &zone,
+                        )
+                        .unwrap_or_default(),
+                        movement_type: kind,
+                        bucket,
+                        delta: Quantity::from_milli(delta),
+                        source_type,
+                        source_id,
+                        source_number: number.unwrap_or_default(),
+                        actor_name: actor,
+                    })
+                },
+            )
+            .collect()
+    }
+
     async fn stock_drift(&self) -> Result<Vec<pos_application::records::StockDrift>, QueryError> {
         let rows: Vec<(String, String, String, i64, i64)> = sqlx::query_as(
             "WITH m AS (SELECT location_id, variant_id, bucket, sum(quantity_delta_milli) AS q

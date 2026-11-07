@@ -5,6 +5,7 @@ import { formatMilli, scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
+import { StockOverview } from "./StockOverview";
 
 const KINDS: { value: DocumentType; label: string; post: string }[] = [
   { value: "receipt", label: "Receive goods", post: "Post goods received" },
@@ -44,7 +45,71 @@ function signedMilli(input: string, allowSign: boolean): string | null {
  * Posting is one transaction in Rust; a posted document cannot be edited, only corrected by
  * a new one.
  */
-export function StockScreen({ workspace, onBack }: { workspace: Workspace; onBack: () => void }) {
+export function StockScreen({ workspace, canPost, onBack }: { workspace: Workspace; canPost: boolean; onBack: () => void }) {
+  // Managers and owners land on posting (receiving is the common job); cashiers only see stock.
+  const [view, setView] = useState<"post" | "onHand">(canPost ? "post" : "onHand");
+  if (view === "onHand" || !canPost) {
+    return (
+      <main className="sales">
+        <StockHeader canPost={canPost} view="onHand" onView={setView} onBack={onBack} />
+        <StockOverview />
+      </main>
+    );
+  }
+  return <PostDocument workspace={workspace} onBack={onBack} onView={setView} />;
+}
+
+function StockHeader({
+  canPost,
+  view,
+  onView,
+  onBack,
+}: {
+  canPost: boolean;
+  view: "post" | "onHand";
+  onView: (v: "post" | "onHand") => void;
+  onBack: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+  return (
+    <>
+      <header className="returns-header">
+        <h1>Stock</h1>
+        <button type="button" className="secondary" onClick={onBack}>
+          Back to till <kbd>Esc</kbd>
+        </button>
+      </header>
+      {canPost && (
+        <div className="receipt-widths" role="tablist" aria-label="Stock">
+          <button type="button" role="tab" aria-selected={view === "post"} className={view === "post" ? "" : "secondary"} onClick={() => onView("post")}>
+            Receive and adjust
+          </button>
+          <button type="button" role="tab" aria-selected={view === "onHand"} className={view === "onHand" ? "" : "secondary"} onClick={() => onView("onHand")}>
+            On hand
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PostDocument({
+  workspace,
+  onBack,
+  onView,
+}: {
+  workspace: Workspace;
+  onBack: () => void;
+  onView: (v: "post" | "onHand") => void;
+}) {
   const [kind, setKind] = useState<DocumentType>("receipt");
   const [reason, setReason] = useState<AdjustReason>("damage");
   const [lines, setLines] = useState<Line[]>([]);
@@ -61,16 +126,6 @@ export function StockScreen({ workspace, onBack }: { workspace: Workspace; onBac
   const postLabel = KINDS.find((k) => k.value === kind)?.post ?? "Post";
 
   useEffect(() => codeInput.current?.focus(), []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      e.preventDefault();
-      onBack();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onBack]);
 
   const add = useCallback(async (raw: string) => {
     const text = raw.trim();
@@ -143,12 +198,7 @@ export function StockScreen({ workspace, onBack }: { workspace: Workspace; onBac
 
   return (
     <main className="sales">
-      <header className="returns-header">
-        <h1>Stock</h1>
-        <button type="button" className="secondary" onClick={onBack}>
-          Back to till <kbd>Esc</kbd>
-        </button>
-      </header>
+      <StockHeader canPost view="post" onView={onView} onBack={onBack} />
       <section className="card return-form" aria-label="Stock document">
         <div className="receipt-widths" role="radiogroup" aria-label="What are you doing?">
           {KINDS.map((k) => (

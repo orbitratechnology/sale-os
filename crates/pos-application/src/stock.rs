@@ -51,6 +51,17 @@ pub fn permission_for(doc_type: DocumentType) -> Permission {
 }
 
 impl StockService {
+    /// E11-T05: one item's movements, newest first (at most `limit`, up to 500).
+    pub async fn history(
+        &self,
+        ctx: &CommandContext,
+        variant: VariantId,
+        limit: u32,
+    ) -> Result<Vec<crate::records::StockHistoryRow>, AppError> {
+        ctx.authorize(Permission::InventoryView)?;
+        Ok(self.stock.stock_history(variant, limit.clamp(1, 500)).await?)
+    }
+
     /// E11-T06 verify: balances that differ from their movements. Empty is healthy.
     pub async fn verify(&self, ctx: &CommandContext) -> Result<Vec<StockDrift>, AppError> {
         ctx.authorize(Permission::InventoryView)?;

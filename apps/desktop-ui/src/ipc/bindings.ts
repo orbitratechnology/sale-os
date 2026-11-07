@@ -145,6 +145,13 @@ export const commands = {
 	/**  E11-T06: stock balances that differ from the sum of their movements (empty is healthy). */
 	stockVerify: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
 	/**
+	 *  E11-T05: stock on hand for every stock-tracked item (OK / Low / Negative), for anyone who
+	 *  can see inventory. `lowOnly` keeps low and negative items.
+	 */
+	stockOverview: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("stock_overview", { lowOnly })),
+	/**  E11-T05: one item's stock movements, newest first, with what caused each. */
+	stockHistory: (variantId: VariantId, limit: number) => typedError<StockHistoryDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_history", { variantId, limit })),
+	/**
 	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
 	 *  transaction, audited. Returns what was wrong before.
 	 */
@@ -764,6 +771,8 @@ export type MoneyAddResult = {
 	formatted: string,
 };
 
+export type MovementId = string;
+
 export type NewStaffInput = {
 	displayName: string,
 	role: Role,
@@ -1304,6 +1313,21 @@ export type StockDriftDto = {
 	bucket: string,
 	recordedMilli: string,
 	fromMovementsMilli: string,
+};
+
+export type StockHistoryDto = {
+	movementId: MovementId,
+	localTime: string,
+	movementType: string,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	deltaMilli: string,
+	/**  `sale`, `return` or `inventory_document`. */
+	sourceType: string,
+	sourceId: string,
+	/**  The receipt, return or document number. */
+	sourceNumber: string,
+	actorName: string,
 };
 
 export type StockReportDto = StockReportDto_Serialize | StockReportDto_Deserialize;

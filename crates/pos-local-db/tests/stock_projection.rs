@@ -360,3 +360,87 @@ async fn the_startup_check_is_bounded_and_reports_drift() {
         StartupStockCheck::Deferred
     );
 }
+
+#[tokio::test]
+async fn the_history_names_every_source_newest_first() {
+    let t = till().await;
+    let owner = &t.shop.owner;
+    let tea = t.items[0].1;
+    t.stock
+        .post(owner, doc(DocumentType::Receipt, None, tea, 10_000))
+        .await
+        .unwrap();
+    t.shop.clock.advance_ms(60_000);
+    let receipt = t.sell("TEA", 2).await;
+    t.shop.clock.advance_ms(60_000);
+    assert!(t.return_one(&receipt, true).await);
+    t.shop.clock.advance_ms(60_000);
+    t.stock
+        .post(
+            owner,
+            doc(DocumentType::Adjustment, Some(AdjustReason::Damage), tea, 1_000),
+        )
+        .await
+        .unwrap();
+
+    let rows: Vec<(String, String, i64, String, String)> = t
+        .stock
+        .history(owner, tea, 50)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| {
+            (
+                r.movement_type,
+                r.bucket,
+                r.delta.milli(),
+                r.source_number,
+                r.actor_name,
+            )
+        })
+        .collect();
+    let olu = "Olu".to_owned();
+    assert_eq!(
+        rows,
+        [
+            (
+                "damage".into(),
+                "damaged".into(),
+                1_000,
+                "R01-IN-000002".into(),
+                olu.clone()
+            ),
+            (
+                "damage".into(),
+                "sellable".into(),
+                -1_000,
+                "R01-IN-000002".into(),
+                olu.clone()
+            ),
+            (
+                "return_damaged".into(),
+                "damaged".into(),
+                1_000,
+                "R01-R-000001".into(),
+                olu.clone()
+            ),
+            (
+                "sale".into(),
+                "sellable".into(),
+                -2_000,
+                receipt.clone(),
+                olu.clone()
+            ),
+            (
+                "receipt".into(),
+                "sellable".into(),
+                10_000,
+                "R01-IN-000001".into(),
+                olu
+            ),
+        ]
+    );
+    // Cashiers can see inventory; the limit applies.
+    let cashier = t.shop.as_role(Role::Cashier);
+    assert_eq!(t.stock.history(&cashier, tea, 2).await.unwrap().len(), 2);
+}
