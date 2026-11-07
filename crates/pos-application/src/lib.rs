@@ -7,6 +7,7 @@ pub mod audit;
 pub mod auth;
 pub mod cart;
 pub mod catalog;
+pub mod checkout;
 pub mod context;
 pub mod queries;
 pub mod records;

@@ -190,3 +190,16 @@ pub trait CartQueries: Send + Sync {
     ) -> Result<Option<pos_domain::cart::SellableVariant>, QueryError>;
     async fn pricing_settings(&self) -> Result<PricingSettings, QueryError>;
 }
+
+/// Stock reads for selling (E11-T04).
+#[async_trait::async_trait]
+pub trait StockQueries: Send + Sync {
+    /// `inventory.allow_negative`: true (the default) sells anyway and flags it.
+    async fn negative_stock_policy(&self) -> Result<pos_domain::inventory::NegativeStockPolicy, QueryError>;
+    /// Sellable on-hand quantity per variant at `location` (missing = never moved = 0).
+    async fn on_hand(
+        &self,
+        location: pos_domain::LocationId,
+        variants: &[pos_domain::VariantId],
+    ) -> Result<std::collections::BTreeMap<pos_domain::VariantId, pos_domain::Quantity>, QueryError>;
+}

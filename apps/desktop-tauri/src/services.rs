@@ -6,6 +6,7 @@ use pos_application::approval::Approvals;
 use pos_application::auth::{Argon2PinHasher, AuthService, PinHasher};
 use pos_application::cart::CartService;
 use pos_application::catalog::CatalogService;
+use pos_application::checkout::CheckoutService;
 use pos_application::context::{Actor, ApprovalToken, CommandContext};
 use pos_application::queries::SetupQueries;
 use pos_application::setup::SetupService;
@@ -38,7 +39,8 @@ pub(crate) struct Services {
     pub auth: AuthService,
     pub staff: StaffService,
     pub catalog: CatalogService,
-    pub carts: CartService,
+    pub carts: Arc<CartService>,
+    pub checkout: CheckoutService,
     pub queries: SqliteStore,
     /// Issued manager approvals waiting to be used (E05-T04).
     pub approvals: Arc<Approvals>,
@@ -85,6 +87,7 @@ impl AppServices {
         let app = store.as_ref().map(|s| {
             let a = Arc::new(s.clone());
             let approvals = Arc::new(Approvals::default());
+            let carts = Arc::new(CartService::new(a.clone(), a.clone(), a.clone()));
             Services {
                 setup: SetupService {
                     store: a.clone(),
@@ -108,7 +111,13 @@ impl AppServices {
                     store: a.clone(),
                     catalog: a.clone(),
                 },
-                carts: CartService::new(a.clone(), a.clone(), a),
+                carts: carts.clone(),
+                checkout: CheckoutService {
+                    carts,
+                    store: a.clone(),
+                    setup: a.clone(),
+                    stock: a,
+                },
                 queries: s.clone(),
                 approvals,
             }

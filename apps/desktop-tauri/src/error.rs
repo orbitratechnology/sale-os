@@ -33,6 +33,8 @@ pub struct ErrorDetails {
     pub value: Option<String>,
     /// `CATALOG_DUPLICATE_*`: the product that already uses the value.
     pub owner_product_id: Option<pos_domain::ProductId>,
+    /// `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string.
+    pub remaining_minor: Option<String>,
 }
 
 /// Which product-editor input a catalogue error is about.
@@ -91,6 +93,12 @@ impl IpcError {
                 ..ErrorDetails::default()
             })),
             AppError::Catalog(c) => catalog_details(c).map(Box::new),
+            AppError::Settlement(pos_domain::settlement::SettlementError::Insufficient { remaining }) => {
+                Some(Box::new(ErrorDetails {
+                    remaining_minor: Some(remaining.minor().to_string()),
+                    ..ErrorDetails::default()
+                }))
+            }
             _ => None,
         };
         out

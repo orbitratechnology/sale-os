@@ -39,6 +39,8 @@ export interface FakeState {
   catalog: Map<string, ProductDto>;
   /** When set, product_list answers with this many generated rows (virtualization tests). */
   bigCatalog: number | null;
+  /** Completed sales: receipt numbers in order. */
+  receipts: string[];
 }
 
 export type Preset = "fresh" | "signIn" | "checkout";
@@ -116,6 +118,7 @@ function initialStateInner(preset: Preset): FakeState {
     tokens: new Map(),
     catalog: new Map(),
     bigCatalog: null,
+    receipts: [],
   };
 }
 
@@ -330,6 +333,36 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       p.archived = true;
       p.version += 1;
       return p;
+    }
+    case "checkout_complete": {
+      needSession(s);
+      if (a.cartId !== s.cartId || a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
+      if (s.lines.length === 0) fail("CART_EMPTY");
+      // The same rules as pos_domain::settlement::settle.
+      const total = BigInt(view(s).totalMinor);
+      let remaining = total;
+      let tendered = 0n;
+      const tenders = a.tenders as { kind: string; amountMinor: string; reference: string | null }[];
+      for (const [i, t] of tenders.entries()) {
+        const amount = BigInt(t.amountMinor);
+        if (amount <= 0n || remaining === 0n) fail("VALIDATION_FAILED");
+        if (t.kind !== "cash" && amount > remaining) fail("TENDER_OVERPAY_NON_CASH");
+        if (t.kind === "cash" && amount > remaining && i < tenders.length - 1) fail("TENDER_CHANGE_FROM_NON_CASH");
+        if (t.reference && /\d{13,19}/.test(t.reference.replace(/[ -]/g, ""))) fail("VALIDATION_FAILED");
+        remaining -= amount < remaining ? amount : remaining;
+        tendered += amount;
+      }
+      if (remaining > 0n) fail("TENDER_INSUFFICIENT", { remainingMinor: remaining.toString() });
+      const receiptNumber = `R01-${String(s.receipts.length + 1).padStart(6, "0")}`;
+      s.receipts.push(receiptNumber);
+      s.lines = [];
+      s.orderDiscountPpm = null;
+      s.cartId = id();
+      s.revision = 0;
+      return {
+        saleId: id(), receiptNumber, totalMinor: total.toString(), tenderedMinor: tendered.toString(),
+        changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0,
+      };
     }
     case "cart_current":
       needSession(s);

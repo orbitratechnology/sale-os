@@ -7,11 +7,13 @@ import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
 import { Dialog } from "./Dialog";
+import { PaymentPanel } from "./PaymentPanel";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
 import { useCart } from "./useCart";
 
 type Modal =
+  | "pay"
   | "clear"
   | "void"
   | "orderDiscount"
@@ -145,7 +147,7 @@ export function Checkout({
           return;
         case "F9":
           e.preventDefault();
-          c.setNotice({ kind: "info", text: "Taking payment arrives in the next release (Stage 2)." });
+          if (c.cart?.lines.length) setModal("pay");
           return;
         case "F12":
           e.preventDefault();
@@ -281,7 +283,7 @@ export function Checkout({
           <button type="button" className="secondary" onClick={() => void lock()}>
             Lock <kbd>F12</kbd>
           </button>
-          <button type="button" className="pay" disabled title="Payment arrives in Stage 2">
+          <button type="button" className="pay" disabled={!hasLines} onClick={() => setModal("pay")}>
             Pay <kbd>F9</kbd>
           </button>
         </div>
@@ -290,6 +292,16 @@ export function Checkout({
 
       <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} />
 
+      {modal === "pay" && cart && (
+        <PaymentPanel
+          cart={cart}
+          onClose={() => setModal(null)}
+          onDone={() => {
+            setModal(null);
+            void c.refresh();
+          }}
+        />
+      )}
       {modal === "clear" && (
         <Dialog
           title="Clear the cart?"

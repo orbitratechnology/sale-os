@@ -39,6 +39,7 @@
     "allow-cart-override-price",
     "allow-cart-clear",
     "allow-cart-void",
+    "allow-checkout-complete",
     "allow-dev-demo-setup",
     "allow-dev-demo-cart",
     "allow-dev-demo-scan",

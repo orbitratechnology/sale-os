@@ -85,16 +85,29 @@ impl CartQueries for SqliteStore {
         date: BusinessDate,
     ) -> Result<Option<SellableVariant>, QueryError> {
         let r = self.db().readers();
-        type Row = (String, String, String, Option<String>, String, i64, bool, String);
+        type Row = (
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            i64,
+            bool,
+            String,
+            String,
+            Option<i64>,
+        );
         let row: Option<Row> = sqlx::query_as(
-            "SELECT p.product_id, p.name, v.label, v.sku, p.unit_code, v.price_minor, v.track_stock, p.tax_category_id
+            "SELECT p.product_id, p.name, v.label, v.sku, p.unit_code, v.price_minor, v.track_stock, p.tax_category_id,
+               p.product_type, v.cost_minor
              FROM product_variants v JOIN products p USING (product_id) WHERE v.variant_id = ?",
         )
         .bind(variant.to_string())
         .fetch_optional(r)
         .await
         .map_err(q)?;
-        let Some((product, name, label, sku, unit, price, track, tax_category)) = row else {
+        let Some((product, name, label, sku, unit, price, track, tax_category, product_type, cost)) = row
+        else {
             return Ok(None);
         };
         let rates: Vec<(String, String, i64, Option<String>, Option<String>)> = sqlx::query_as(
@@ -128,6 +141,9 @@ impl CartQueries for SqliteStore {
             price: Money::from_minor(price),
             taxes: resolve_rates(&rates, date),
             track_stock: track,
+            product_type: pos_domain::catalog::ProductType::from_code(&product_type)
+                .ok_or_else(|| QueryError(format!("unknown product type {product_type:?}")))?,
+            cost: cost.map(Money::from_minor),
         }))
     }
 

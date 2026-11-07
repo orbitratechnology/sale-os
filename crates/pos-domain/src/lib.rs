@@ -12,13 +12,16 @@ pub mod catalog;
 pub mod error;
 pub mod geo;
 pub mod ids;
+pub mod inventory;
 pub mod money;
 pub mod numbering;
 pub mod pricing;
 pub mod quantity;
 pub mod rate;
 pub mod rounding;
+pub mod sale;
 pub mod secret;
+pub mod settlement;
 pub mod staff;
 pub mod time;
 

@@ -24,6 +24,10 @@ pub struct SellableVariant {
     pub price: Money,
     pub taxes: Vec<TaxRateSnapshot>,
     pub track_stock: bool,
+    /// Copied onto the sale line (POS-010).
+    pub product_type: crate::catalog::ProductType,
+    /// Cost at the time of sale, for margin reports later (REP-007).
+    pub cost: Option<Money>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,6 +311,8 @@ mod tests {
             price: Money::from_minor(price),
             taxes: vec![],
             track_stock: true,
+            product_type: crate::catalog::ProductType::Stock,
+            cost: None,
         }
     }
 

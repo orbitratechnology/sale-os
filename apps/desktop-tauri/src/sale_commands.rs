@@ -6,6 +6,7 @@ use crate::dto::{
     AddViaDto, CartViewDto, CatalogHitDto, DiscountDto, ProductDto, ProductFilterDto, ProductInputDto,
     ProductPageDto, ScanOutcomeDto, ScanSourceDto, TaxCategoryDto, money_in, qty_in,
 };
+use crate::dto::{CompletedSaleDto, TenderInputDto};
 use crate::{AppServices, IpcError};
 use pos_application::scan::{ScanOutcome, ScanSource};
 use pos_domain::cart::{AddVia, CartChange};
@@ -347,4 +348,35 @@ pub async fn cart_void(
     };
     services.settle(token, &res);
     res
+}
+
+/// Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
+/// stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
+#[tauri::command]
+#[specta::specta]
+pub async fn checkout_complete(
+    services: State<'_, AppServices>,
+    cart_id: pos_domain::CartId,
+    revision: u32,
+    tenders: Vec<TenderInputDto>,
+) -> Result<CompletedSaleDto, IpcError> {
+    let ctx = services.context().await?;
+    let tenders = tenders
+        .into_iter()
+        .map(TenderInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let done = services
+        .app()?
+        .checkout
+        .complete_sale(
+            &ctx,
+            pos_application::checkout::CompleteSale {
+                cart_id,
+                revision: u64::from(revision),
+                tenders,
+            },
+        )
+        .await
+        .map_err(err)?;
+    Ok(CompletedSaleDto::from_completed(&done))
 }

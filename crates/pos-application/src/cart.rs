@@ -77,7 +77,11 @@ impl CartService {
         self.lock.lock().await
     }
 
-    fn today(&self, ctx: &CommandContext, settings: &PricingSettings) -> Result<BusinessDate, AppError> {
+    pub(crate) fn today(
+        &self,
+        ctx: &CommandContext,
+        settings: &PricingSettings,
+    ) -> Result<BusinessDate, AppError> {
         let tz = parse_time_zone(&settings.timezone).map_err(|e| AppError::Internal(e.to_string()))?;
         business_date(ctx.now(), tz).map_err(|e| AppError::Internal(e.to_string()))
     }
@@ -128,7 +132,7 @@ impl CartService {
         })
     }
 
-    async fn view(
+    pub(crate) async fn view(
         &self,
         ctx: &CommandContext,
         cart: Cart,

@@ -57,6 +57,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::cart_override_price,
         sale_commands::cart_clear,
         sale_commands::cart_void,
+        sale_commands::checkout_complete,
         demo::dev_demo_setup,
         demo::dev_demo_cart,
         demo::dev_demo_scan,

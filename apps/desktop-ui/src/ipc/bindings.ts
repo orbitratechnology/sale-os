@@ -84,6 +84,11 @@ export const commands = {
 	 *  approval when the cart has lines.
 	 */
 	cartVoid: (revision: number, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason, approvalTokenId })),
+	/**
+	 *  Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
+	 *  stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
+	 */
+	checkoutComplete: (cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedSaleDto, IpcError_Serialize>(__TAURI_INVOKE("checkout_complete", { cartId, revision, tenders })),
 	/**  Creates the demo workspace and product if missing. */
 	devDemoSetup: () => typedError<DemoProduct, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_setup")),
 	/**  Current demo cart. */
@@ -330,6 +335,22 @@ export type CatalogHitDto_Serialize = {
 
 export type CategoryId = string;
 
+export type CompletedSaleDto = {
+	saleId: SaleId,
+	receiptNumber: string,
+	totalMinor: string,
+	tenderedMinor: string,
+	changeMinor: string,
+	roundingMinor: string,
+	currencyExponent: number,
+	/**  `"sandbox"` or `"live"`. */
+	mode: string,
+	/**  The sale is in the outbox, waiting for the cloud link (Stage 3). */
+	syncPending: boolean,
+	/**  Items this sale took below zero stock (allowed and flagged). */
+	negativeStockItems: number,
+};
+
 export type CreateWorkspaceInput = CreateWorkspaceInput_Serialize | CreateWorkspaceInput_Deserialize;
 
 export type CreateWorkspaceInput_Deserialize = {
@@ -442,6 +463,8 @@ export type ErrorDetails_Deserialize = {
 	value?: string | null,
 	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
 	ownerProductId?: ProductId | null,
+	/**  `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string. */
+	remainingMinor?: string | null,
 };
 
 /**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
@@ -461,6 +484,8 @@ export type ErrorDetails_Serialize = {
 	value: string | null,
 	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
 	ownerProductId: ProductId | null,
+	/**  `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string. */
+	remainingMinor: string | null,
 };
 
 /**
@@ -651,6 +676,8 @@ export type ProductType =
 
 export type Role = "owner" | "manager" | "cashier";
 
+export type SaleId = string;
+
 export type ScanEventId = string;
 
 export type ScanOutcomeDto = ScanOutcomeDto_Serialize | ScanOutcomeDto_Deserialize;
@@ -754,6 +781,26 @@ export type TaxRateInput = {
 	/**  Parts per million: 200000 = 20%. */
 	ratePpm: number,
 };
+
+export type TenderInputDto = TenderInputDto_Serialize | TenderInputDto_Deserialize;
+
+export type TenderInputDto_Deserialize = {
+	kind: TenderKind,
+	/**  Cash: what the customer handed over. Other tenders: the amount charged. */
+	amountMinor: string,
+	/**  External tenders: the terminal's approval code or a transfer reference. Never a card number. */
+	reference?: string | null,
+};
+
+export type TenderInputDto_Serialize = {
+	kind: TenderKind,
+	/**  Cash: what the customer handed over. Other tenders: the amount charged. */
+	amountMinor: string,
+	/**  External tenders: the terminal's approval code or a transfer reference. Never a card number. */
+	reference: string | null,
+};
+
+export type TenderKind = "cash" | "card_external" | "bank_transfer_external" | "qr_external" | "other_external";
 
 export type Unit = "ea" | "kg" | "g" | "l" | "ml" | "m" | "cm" | "box" | "pack";
 

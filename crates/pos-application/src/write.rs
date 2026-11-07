@@ -114,6 +114,25 @@ pub enum WriteOp {
         opened_by: UserId,
         expected_revision: Option<u64>,
     },
+    /// A completed sale (E09-T08): header, lines, tenders and their first status events. Its
+    /// receipt number comes from `receipt_slot`, allocated earlier in the same set.
+    InsertSale {
+        sale: pos_domain::sale::SaleSnapshot,
+        receipt_slot: NumberSlot,
+    },
+    /// Stock movements (E11-T01), with the balance projection updated in the same
+    /// transaction. Part of the fact named by `aggregate` (e.g. the sale).
+    AppendMovements {
+        movements: Vec<pos_domain::inventory::StockMovement>,
+        aggregate: AggregateRef,
+    },
+    /// Closes the open cart a sale was made from. Fails with `CartRevisionMismatch` if the
+    /// cart changed since `expected_revision`.
+    CloseCart {
+        cart_id: pos_domain::CartId,
+        sale_id: pos_domain::SaleId,
+        expected_revision: u64,
+    },
     /// Marks a scan delivery as processed (E07-T02, BAR-007). Fails with `ScanAlreadySeen`
     /// if it was. The store keeps the last 500 per register.
     RecordScanEvent {
@@ -208,7 +227,14 @@ impl WriteOp {
                 record,
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::InsertSale { sale, .. } => SyncKind::Fact {
+                aggregate: sale_aggregate(sale.id),
+            },
+            WriteOp::AppendMovements { aggregate, .. } => SyncKind::Fact {
+                aggregate: aggregate.clone(),
+            },
             WriteOp::AllocateNumber { .. }
+            | WriteOp::CloseCart { .. }
             | WriteOp::SpikeCartAdd(_)
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
@@ -217,6 +243,14 @@ impl WriteOp {
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
+    }
+}
+
+/// Aggregate identity of a sale.
+pub fn sale_aggregate(id: pos_domain::SaleId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "sale",
+        aggregate_id: id.to_string(),
     }
 }
 
@@ -238,9 +272,19 @@ pub struct OutboxDraft {
     /// Master data only (ADR-011): the version the edit was based on; 0 for a create.
     pub base_version: Option<u64>,
     pub payload: serde_json::Value,
+    /// Set when the payload needs a receipt number allocated in the same transaction:
+    /// the store writes `receiptSeq` and `receiptNumber` into the payload from this slot.
+    pub receipt_slot: Option<NumberSlot>,
 }
 
 impl OutboxDraft {
+    /// Asks the store to fill in the receipt number allocated for `slot` (E09-T08: the
+    /// number only exists inside the transaction, and the event must carry it).
+    pub fn with_receipt_number(mut self, slot: NumberSlot) -> Self {
+        self.receipt_slot = Some(slot);
+        self
+    }
+
     pub fn new(
         ids: &dyn IdGenerator,
         event_type: &'static str,
@@ -257,6 +301,7 @@ impl OutboxDraft {
             aggregate,
             base_version,
             payload,
+            receipt_slot: None,
         })
     }
 
@@ -482,6 +527,33 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn insert_sale(mut self, sale: pos_domain::sale::SaleSnapshot, receipt_slot: NumberSlot) -> Self {
+        self.ops.push(WriteOp::InsertSale { sale, receipt_slot });
+        self
+    }
+    pub fn append_movements(
+        mut self,
+        movements: Vec<pos_domain::inventory::StockMovement>,
+        aggregate: AggregateRef,
+    ) -> Self {
+        if !movements.is_empty() {
+            self.ops.push(WriteOp::AppendMovements { movements, aggregate });
+        }
+        self
+    }
+    pub fn close_cart(
+        mut self,
+        cart_id: pos_domain::CartId,
+        sale_id: pos_domain::SaleId,
+        expected_revision: u64,
+    ) -> Self {
+        self.ops.push(WriteOp::CloseCart {
+            cart_id,
+            sale_id,
+            expected_revision,
+        });
+        self
+    }
     pub fn record_scan(mut self, scan_event_id: pos_domain::ScanEventId) -> Self {
         self.ops.push(WriteOp::RecordScanEvent { scan_event_id });
         self
@@ -619,6 +691,9 @@ impl WriteSetBuilder {
             WriteOp::PutTaxCategory { record, .. } => record.business_id,
             WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
+            | WriteOp::InsertSale { .. }
+            | WriteOp::AppendMovements { .. }
+            | WriteOp::CloseCart { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::PutCart { .. }
             | WriteOp::RecordScanEvent { .. }
@@ -643,6 +718,8 @@ impl WriteSetBuilder {
 pub struct AppliedWriteSet {
     /// Register-local numbers allocated for each requested slot.
     pub numbers: BTreeMap<NumberSlot, u64>,
+    /// Formatted receipt numbers (`{prefix}{register}-{seq:06}`) for slots a sale used.
+    pub receipt_numbers: BTreeMap<NumberSlot, String>,
     /// `(event_id, local_sequence)` for every outbox event, in insertion order.
     pub outbox: Vec<(EventId, u64)>,
 }

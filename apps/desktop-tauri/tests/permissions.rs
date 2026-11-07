@@ -159,6 +159,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"revision": 0, "reason": "harness", "approvalTokenId": null}),
         ),
         ("cart_clear", Perm(CartClear), json!({"revision": 0})),
+        (
+            "checkout_complete",
+            Perm(SaleComplete),
+            json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}]}),
+        ),
         ("dev_demo_setup", Spike, Value::Null),
         ("dev_demo_cart", Spike, Value::Null),
         ("dev_demo_scan", Spike, Value::Null),
@@ -479,4 +484,60 @@ fn an_approval_round_trip_over_ipc() {
     // Used up.
     let again = void(id, json!(0)).unwrap_err();
     assert_eq!(again["code"], "APPROVAL_INVALID");
+}
+
+#[test]
+fn a_cash_sale_over_ipc() {
+    // E09-T08 through the shell: short tender reports what is still due; enough cash
+    // completes with a receipt number, change, and a fresh cart.
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["variants"][0]["sku"] = json!("COLA");
+    invoke(&w, "product_create", product).unwrap();
+    let cart = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-00000000000a", "raw": "COLA", "source": "manual"}),
+    )
+    .unwrap()["cart"]
+        .clone();
+    let pay = |minor: &str| {
+        invoke(
+            &w,
+            "checkout_complete",
+            json!({
+                "cartId": cart["cartId"], "revision": cart["revision"],
+                "tenders": [{"kind": "cash", "amountMinor": minor, "reference": null}]
+            }),
+        )
+    };
+    let short = pay("40").unwrap_err();
+    assert_eq!(short["code"], "TENDER_INSUFFICIENT");
+    assert_eq!(short["details"]["remainingMinor"], "60");
+    let done = pay("500").unwrap();
+    assert_eq!(done["receiptNumber"], "R01-000001");
+    assert_eq!(
+        (done["totalMinor"].as_str(), done["changeMinor"].as_str()),
+        (Some("100"), Some("400"))
+    );
+    assert_eq!(done["syncPending"], true);
+    let next = invoke(&w, "cart_current", json!({})).unwrap();
+    assert_ne!(next["cartId"], cart["cartId"]);
+    assert_eq!(next["lines"].as_array().unwrap().len(), 0);
+    // Paying the old cart again is refused: it is closed.
+    assert_eq!(pay("500").unwrap_err()["code"], "CART_REVISION_MISMATCH");
 }

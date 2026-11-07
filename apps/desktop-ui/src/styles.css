@@ -188,3 +188,18 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
 .chip.bad { border-color: var(--danger); color: var(--danger); }
 .chip button { padding: 0 6px; background: transparent; color: inherit; }
 .field-error.inline { display: block; margin: 2px 0 0; font-size: 0.85rem; }
+
+/* Payment (E10-T03) */
+.dialog.pay { width: min(640px, calc(100vw - 32px)); gap: 12px; }
+.pay-head { display: flex; gap: 32px; align-items: end; }
+.pay-total, .pay-remaining { display: block; font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--total); }
+.pay-head .small { margin: 0; }
+.tender-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tender-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; border-bottom: 1px solid var(--border); padding: 4px 0; }
+.cash-form { display: grid; gap: 8px; }
+.cash-form input { font-size: 1.4rem; text-align: right; }
+.quick-cash, .methods { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-cash button, .methods button { min-height: 44px; }
+.external-form { display: grid; gap: 8px; }
+.pay-done { text-align: center; }
+.change-amount { display: block; font-size: 64px; font-weight: 800; color: var(--total); font-variant-numeric: tabular-nums; }

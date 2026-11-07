@@ -204,9 +204,20 @@ describe("checkout (E09-T03..T06)", () => {
     // 1.20 + 0.99, as Rust (here: the fake) reported it.
     expect(await page.getByTestId("total").textContent()).toBe("2.19");
 
-    // F9 (pay) is acknowledged but payment is not built yet: nothing is sent.
+    // F9 opens payment; Enter on the empty cash field pays the exact amount and completes.
     await page.keyboard.press("F9");
-    await page.getByRole("alert").filter({ hasText: "Taking payment arrives" }).waitFor();
+    await page.getByRole("dialog", { name: "Payment" }).waitFor();
+    await page.keyboard.press("Enter");
+    const done = page.getByRole("dialog", { name: "Sale completed" });
+    await done.waitFor();
+    expect(await done.getByTestId("change").textContent()).toBe("0.00");
+    await done.getByText("R01-000001").waitFor();
+    expect(await done.getByTestId("saved").textContent()).toContain("Saved on this device");
+    expect((await calls(page, "checkout_complete"))[0]).toMatchObject({ tenders: [{ kind: "cash", amountMinor: "219" }] });
+    // Enter starts the next sale with an empty cart.
+    await page.keyboard.press("Enter");
+    await done.waitFor({ state: "detached" });
+    expect(await lines(page)).toEqual([]);
   });
 
   it("highlights a changed line for at most 150 ms, without animation", async () => {
@@ -433,5 +444,62 @@ describe("approvals and discount limits (E05-T04/T06, E08-T02)", () => {
     await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "cart_set_line_discount"));
     expect(await page.getByRole("dialog").count()).toBe(0);
     expect((await calls(page, "cart_set_line_discount"))[0]).toMatchObject({ discount: { reason: null } });
+  });
+});
+
+describe("payment (E10-T03, E09-T08)", () => {
+  async function payable(): Promise<Page> {
+    const page = await checkout();
+    await scan(page, COLA); // 1.20
+    await scan(page, CHOC); // 0.99
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 2);
+    await page.getByRole("button", { name: /^Pay/ }).click();
+    await page.getByRole("dialog", { name: "Payment" }).waitFor();
+    return page;
+  }
+
+  it("split: card recorded by the operator, then cash with change; tenders can be removed", async () => {
+    const page = await payable();
+    const pay = page.getByRole("dialog", { name: "Payment" });
+    await pay.getByRole("button", { name: "Card (separate terminal)" }).click();
+    await pay.getByLabel(/^Amount/).fill("1.00");
+    await pay.getByLabel(/^Reference/).fill("AUTH 0042");
+    await pay.getByRole("button", { name: /^Record/ }).click();
+    const tenders = pay.getByRole("list", { name: "Tenders" });
+    await tenders.getByText("Externally confirmed by operator").waitFor();
+    expect(await pay.getByTestId("remaining").textContent()).toBe("1.19");
+    // Never presented as a provider approval (PAY-003).
+    expect(await pay.textContent()).not.toMatch(/approved|authori[sz]ed/i);
+    // Remove and re-add, then cash 5.00 covers the rest with change.
+    await tenders.getByRole("button", { name: /^Remove/ }).click();
+    expect(await pay.getByTestId("remaining").textContent()).toBe("2.19");
+    await pay.getByRole("button", { name: "Card (separate terminal)" }).click();
+    await pay.getByLabel(/^Amount/).fill("1.00");
+    await pay.getByRole("button", { name: /^Record/ }).click();
+    await pay.getByLabel("Cash received").fill("5");
+    await page.keyboard.press("Enter");
+    const done = page.getByRole("dialog", { name: "Sale completed" });
+    await done.waitFor();
+    expect(await done.getByTestId("change").textContent()).toBe("3.81");
+    expect((await calls(page, "checkout_complete"))[0]).toMatchObject({
+      tenders: [
+        { kind: "card_external", amountMinor: "100", reference: null },
+        { kind: "cash", amountMinor: "500" },
+      ],
+    });
+  });
+
+  it("a refusal keeps the cart and the panel: a card number typed as the reference", async () => {
+    const page = await payable();
+    const pay = page.getByRole("dialog", { name: "Payment" });
+    await pay.getByRole("button", { name: "Card (separate terminal)" }).click();
+    await pay.getByLabel(/^Reference/).fill("4111 1111 1111 1111");
+    await pay.getByRole("button", { name: /^Record/ }).click();
+    await pay.getByRole("button", { name: "Complete sale" }).click();
+    await pay.getByRole("alert").filter({ hasText: "not valid" }).waitFor();
+    expect(await page.getByRole("dialog", { name: "Sale completed" }).count()).toBe(0);
+    await page.keyboard.press("Escape");
+    await pay.waitFor({ state: "detached" });
+    expect(await lines(page)).toHaveLength(2);
   });
 });

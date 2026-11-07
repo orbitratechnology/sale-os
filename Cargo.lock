@@ -3120,6 +3120,7 @@ dependencies = [
  "pos-application",
  "pos-domain",
  "pos-testkit",
+ "serde",
  "serde_json",
  "sqlx",
  "tempfile",

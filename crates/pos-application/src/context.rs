@@ -134,6 +134,12 @@ pub enum AppError {
     #[error(transparent)]
     Catalog(#[from] pos_domain::catalog::CatalogError),
     #[error(transparent)]
+    Settlement(#[from] pos_domain::settlement::SettlementError),
+    #[error(transparent)]
+    Inventory(#[from] pos_domain::inventory::InventoryError),
+    #[error(transparent)]
+    Sale(#[from] pos_domain::sale::SaleError),
+    #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
     WriteSet(#[from] WriteSetError),
@@ -158,6 +164,9 @@ impl HasErrorCode for AppError {
             AppError::Staff(e) => e.error_code(),
             AppError::Setup(e) => e.error_code(),
             AppError::Catalog(e) => e.error_code(),
+            AppError::Settlement(e) => e.error_code(),
+            AppError::Inventory(e) => e.error_code(),
+            AppError::Sale(e) => e.error_code(),
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,

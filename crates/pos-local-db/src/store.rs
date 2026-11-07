@@ -669,6 +669,208 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
             }
+            WriteOp::InsertSale { sale, receipt_slot } => {
+                let seq = *applied.numbers.get(receipt_slot).ok_or_else(|| {
+                    WriteError::Io("receipt number must be allocated before the sale".into())
+                })?;
+                st.step()?;
+                let (code, prefix): (String, String) =
+                    sqlx::query_as("SELECT code, receipt_prefix FROM registers WHERE register_id = ?")
+                        .bind(ctx.register_id.to_string())
+                        .fetch_one(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                let receipt = pos_domain::receipt_number(&prefix, &code, seq);
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO sales (sale_id, business_id, location_id, register_id, cart_id, cash_session_id, receipt_seq,
+                       receipt_number, status, mode, currency_code, currency_exponent, prices_include_tax, subtotal_minor,
+                       line_discount_total_minor, order_discount_total_minor, tax_total_minor, rounding_minor, total_minor,
+                       tendered_total_minor, change_minor, order_discount_json, tax_breakdown_json, cashier_user_id,
+                       approver_user_id, occurred_at, business_date, timezone, created_at)
+                     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(sale.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.location_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(sale.cart_id.to_string())
+                .bind(as_i64(seq)?)
+                .bind(&receipt)
+                .bind(sale.mode.as_str())
+                .bind(sale.currency.code.to_string())
+                .bind(i64::from(sale.currency.exponent))
+                .bind(sale.prices_include_tax)
+                .bind(sale.subtotal.minor())
+                .bind(sale.line_discount_total.minor())
+                .bind(sale.order_discount_total.minor())
+                .bind(sale.tax_total.minor())
+                .bind(sale.rounding.minor())
+                .bind(sale.total.minor())
+                .bind(sale.tendered_total.minor())
+                .bind(sale.change.minor())
+                .bind(sale.order_discount.as_ref().map(json).transpose()?)
+                .bind(json(&sale.tax_breakdown)?)
+                .bind(sale.cashier.to_string())
+                .bind(sale.approver.map(|a| a.to_string()))
+                .bind(sale.occurred_at.as_millis())
+                .bind(sale.business_date.to_string())
+                .bind(&sale.timezone)
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                for l in &sale.lines {
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO sale_lines (sale_line_id, sale_id, business_id, line_no, product_id, variant_id,
+                           name_snapshot, variant_label_snapshot, sku_snapshot, barcode_snapshot, unit_code, product_type,
+                           quantity_milli, unit_price_minor, price_overridden, gross_minor, line_discount_minor,
+                           order_discount_alloc_minor, tax_minor, total_minor, discount_json, tax_lines_json, unit_cost_minor)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(l.id.to_string())
+                    .bind(sale.id.to_string())
+                    .bind(ctx.business_id.to_string())
+                    .bind(i64::from(l.line_no))
+                    .bind(l.product_id.to_string())
+                    .bind(l.variant_id.to_string())
+                    .bind(&l.name)
+                    .bind(&l.variant_label)
+                    .bind(&l.sku)
+                    .bind(l.unit.code())
+                    .bind(l.product_type.as_str())
+                    .bind(l.quantity.milli())
+                    .bind(l.unit_price.minor())
+                    .bind(l.price_overridden)
+                    .bind(l.gross.minor())
+                    .bind(l.line_discount.minor())
+                    .bind(l.order_discount_alloc.minor())
+                    .bind(l.tax.minor())
+                    .bind(l.total.minor())
+                    .bind(l.discount.as_ref().map(json).transpose()?)
+                    .bind(json(&l.tax_lines)?)
+                    .bind(l.unit_cost.map(|c| c.minor()))
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+                for t in &sale.tenders {
+                    let x = &t.tender;
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO tenders (tender_id, sale_id, business_id, seq, tender_type, amount_minor, received_minor,
+                           change_minor, status, confirmation_source, provider_code, external_reference, recorded_by, occurred_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                    )
+                    .bind(t.id.to_string())
+                    .bind(sale.id.to_string())
+                    .bind(ctx.business_id.to_string())
+                    .bind(i64::from(t.seq))
+                    .bind(x.kind.as_str())
+                    .bind(x.amount.minor())
+                    .bind(x.received.map(|m| m.minor()))
+                    .bind(x.change.minor())
+                    .bind(x.status.as_str())
+                    .bind(x.confirmation.as_str())
+                    .bind(&x.external_reference)
+                    .bind(sale.cashier.to_string())
+                    .bind(sale.occurred_at.as_millis())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO tender_status_events (tender_event_id, tender_id, from_status, to_status, source,
+                           actor_user_id, occurred_at) VALUES (?, ?, NULL, ?, ?, ?, ?)",
+                    )
+                    .bind(format!("{}-0", t.id))
+                    .bind(t.id.to_string())
+                    .bind(x.status.as_str())
+                    .bind(x.confirmation.as_str())
+                    .bind(sale.cashier.to_string())
+                    .bind(sale.occurred_at.as_millis())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+                applied.receipt_numbers.insert(*receipt_slot, receipt);
+            }
+            WriteOp::AppendMovements { movements, .. } => {
+                for m in movements {
+                    let (source_type, source_id, source_line) = m.source.columns();
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO stock_movements (movement_id, business_id, location_id, variant_id, bucket, movement_type,
+                           quantity_delta_milli, unit_cost_minor, source_type, source_id, source_line_id, register_id,
+                           actor_user_id, occurred_at, business_date, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(m.id.to_string())
+                    .bind(ctx.business_id.to_string())
+                    .bind(m.location_id.to_string())
+                    .bind(m.variant_id.to_string())
+                    .bind(m.bucket.as_str())
+                    .bind(m.movement_type.as_str())
+                    .bind(m.delta.milli())
+                    .bind(m.unit_cost.map(|c| c.minor()))
+                    .bind(source_type)
+                    .bind(source_id)
+                    .bind(source_line)
+                    .bind(ctx.register_id.to_string())
+                    .bind(m.actor.to_string())
+                    .bind(m.occurred_at.as_millis())
+                    .bind(m.business_date.to_string())
+                    .bind(ctx.occurred_at.as_millis())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                    // The projection moves in the same transaction (INV-004).
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO stock_balances (business_id, location_id, variant_id, bucket, on_hand_milli,
+                           last_movement_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                         ON CONFLICT (location_id, variant_id, bucket) DO UPDATE SET
+                           on_hand_milli = on_hand_milli + ?5,
+                           last_movement_at = max(last_movement_at, ?6), updated_at = ?7",
+                    )
+                    .bind(ctx.business_id.to_string())
+                    .bind(m.location_id.to_string())
+                    .bind(m.variant_id.to_string())
+                    .bind(m.bucket.as_str())
+                    .bind(m.delta.milli())
+                    .bind(m.occurred_at.as_millis())
+                    .bind(ctx.occurred_at.as_millis())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+            }
+            WriteOp::CloseCart {
+                cart_id,
+                sale_id,
+                expected_revision,
+            } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'completed', sale_id = ?1, closed_at = ?2, updated_at = ?2, revision = revision + 1
+                     WHERE cart_id = ?3 AND register_id = ?4 AND revision = ?5 AND status = 'open'",
+                )
+                .bind(sale_id.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(as_i64(*expected_revision)?)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch {
+                        expected: Some(*expected_revision),
+                    });
+                }
+            }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;
                 sqlx::query(
@@ -831,7 +1033,7 @@ async fn apply_in_transaction(
         .bind(&e.aggregate.aggregate_id)
         .bind(e.base_version.map(as_i64).transpose()?)
         .bind(ctx.occurred_at.as_millis())
-        .bind(e.payload.to_string())
+        .bind(payload_with_numbers(e, &applied)?.to_string())
         .execute(&mut *tx)
         .await
         .map_err(map_sqlx)?;
@@ -940,6 +1142,36 @@ async fn check_outbox_invariant(
         )));
     }
     Ok(())
+}
+
+/// The event payload with the receipt number filled in, when the draft asked for it.
+fn payload_with_numbers(
+    e: &pos_application::OutboxDraft,
+    applied: &AppliedWriteSet,
+) -> Result<serde_json::Value, WriteError> {
+    let Some(slot) = e.receipt_slot else {
+        return Ok(e.payload.clone());
+    };
+    let missing = || {
+        WriteError::Io(format!(
+            "event {} needs receipt slot {slot:?}, which no sale used",
+            e.event_type
+        ))
+    };
+    let seq = *applied.numbers.get(&slot).ok_or_else(missing)?;
+    let number = applied.receipt_numbers.get(&slot).ok_or_else(missing)?;
+    let mut p = e.payload.clone();
+    let obj = p
+        .as_object_mut()
+        .ok_or_else(|| WriteError::Io("a payload with a receipt number must be an object".into()))?;
+    obj.insert("receiptSeq".into(), seq.into());
+    obj.insert("receiptNumber".into(), number.clone().into());
+    Ok(p)
+}
+
+/// A value stored as JSON text.
+fn json<T: serde::Serialize + ?Sized>(v: &T) -> Result<String, WriteError> {
+    serde_json::to_string(v).map_err(|e| WriteError::Io(e.to_string()))
 }
 
 fn as_i64(v: u64) -> Result<i64, WriteError> {

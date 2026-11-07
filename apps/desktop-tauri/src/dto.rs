@@ -6,6 +6,7 @@
 
 use crate::IpcError;
 use pos_application::cart::CartView;
+use pos_application::checkout::CompletedSale;
 use pos_application::queries::{
     CatalogHit, MatchedBy, ProductFilter, ProductPage, ProductStatusFilter, TaxCategorySummary,
 };
@@ -16,9 +17,10 @@ use pos_domain::catalog::{
     VariantInput,
 };
 use pos_domain::pricing::{Discount, DiscountValue, TaxLine, TaxMode};
+use pos_domain::settlement::{TenderInput, TenderKind};
 use pos_domain::{
-    CartId, CartLineId, CategoryId, ErrorCode, Money, ProductId, Quantity, RatePpm, Role, TaxCategoryId,
-    UserId, VariantId,
+    CartId, CartLineId, CategoryId, ErrorCode, Money, ProductId, Quantity, RatePpm, Role, SaleId,
+    TaxCategoryId, UserId, VariantId,
 };
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -746,4 +748,61 @@ pub enum ScanOutcomeDto {
     Duplicate { cart: CartViewDto },
     /// Nothing matches. The cart is unchanged (BAR-006).
     NotFound { code: String },
+}
+
+// ---------- checkout ----------
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TenderInputDto {
+    pub kind: TenderKind,
+    /// Cash: what the customer handed over. Other tenders: the amount charged.
+    pub amount_minor: String,
+    /// External tenders: the terminal's approval code or a transfer reference. Never a card number.
+    pub reference: Option<String>,
+}
+
+impl TenderInputDto {
+    pub fn into_domain(self) -> Result<TenderInput, IpcError> {
+        Ok(TenderInput {
+            kind: self.kind,
+            amount: money_in("amountMinor", &self.amount_minor)?,
+            external_reference: self.reference,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletedSaleDto {
+    pub sale_id: SaleId,
+    pub receipt_number: String,
+    pub total_minor: String,
+    pub tendered_minor: String,
+    pub change_minor: String,
+    pub rounding_minor: String,
+    pub currency_exponent: u8,
+    /// `"sandbox"` or `"live"`.
+    pub mode: String,
+    /// The sale is in the outbox, waiting for the cloud link (Stage 3).
+    pub sync_pending: bool,
+    /// Items this sale took below zero stock (allowed and flagged).
+    pub negative_stock_items: u32,
+}
+
+impl CompletedSaleDto {
+    pub fn from_completed(c: &CompletedSale) -> Self {
+        Self {
+            sale_id: c.sale.id,
+            receipt_number: c.receipt_number.clone(),
+            total_minor: money(c.sale.total),
+            tendered_minor: money(c.sale.tendered_total),
+            change_minor: money(c.sale.change),
+            rounding_minor: money(c.sale.rounding),
+            currency_exponent: c.sale.currency.exponent,
+            mode: c.sale.mode.as_str().into(),
+            sync_pending: c.outbox_sequence > 0,
+            negative_stock_items: u32::try_from(c.negative_stock.len()).unwrap_or(u32::MAX),
+        }
+    }
 }
