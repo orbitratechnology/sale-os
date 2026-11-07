@@ -104,7 +104,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `receipt_export_pdf` | SalesView | `{ receiptId, saveTo } → ()` | E13-T04 |
 | `receipt_print` / `receipt_reprint` | SalesView / ReceiptReprint | `{ receiptId } → PrintJobDto` | E13-T06 |
 | `print_jobs_active` / `print_job_resolve_unknown` | session | `{ jobId, outcome:'printed'\|'not_printed' } → ()` | E13-T06 |
-| `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range, scope:'device'\|'cloud' } → … + { scope, asOf }` | E14 |
+| `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range: { from, to } }` (+ `by`, `limit` for top products; `lowOnly` for stock) → … + `scope: { scope: 'device', asOfMs }`. The `scope: 'cloud'` argument arrives with Stage 3. Definitions: docs/reporting-definitions.md | E14 |
 | `export_csv` | ReportsExport / CatalogExport | `{ dataset, range?, saveTo } → { rows }` | E14-T04 |
 | `audit_list` | AuditView | | E15-T01 |
 | `sync_status` | session | `→ SyncStatusDto { linkState, pending, rejected, conflicts, lastPushOkAt, lastPullOkAt, lastError?, clockSkewWarning }` | E17-T09 |

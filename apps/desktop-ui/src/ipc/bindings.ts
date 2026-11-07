@@ -144,6 +144,14 @@ export const commands = {
 	 *  transaction, audited. Returns what was wrong before.
 	 */
 	stockRebuild: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
+	/**  Sales, discounts, tax, refunds and net sales per business day and for the range. */
+	reportsSalesSummary: (range: DateRangeDto) => typedError<SalesSummaryDto, IpcError_Serialize>(__TAURI_INVOKE("reports_sales_summary", { range })),
+	/**  Payments taken and refunded per tender type, split by who confirmed them. */
+	reportsTenderMix: (range: DateRangeDto) => typedError<TenderMixDto, IpcError_Serialize>(__TAURI_INVOKE("reports_tender_mix", { range })),
+	/**  The best sellers in the range, returns netted off. */
+	reportsTopProducts: (range: DateRangeDto, by: TopByDto, limit: number) => typedError<TopProductsDto, IpcError_Serialize>(__TAURI_INVOKE("reports_top_products", { range, by, limit })),
+	/**  Current stock from the recorded movements; `lowOnly` keeps low and negative items. */
+	reportsStock: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_stock", { lowOnly })),
 	/**  The register's drawer: the open session (if any) and whether sales need one. */
 	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
 	/**  Opens the drawer with a float (minor units). */
@@ -566,6 +574,17 @@ export type DatabaseStatus_Deserialize = { state: "ready"; path: string; schemaV
 
 export type DatabaseStatus_Serialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Serialize };
 
+/**  Business dates, `YYYY-MM-DD`, inclusive. */
+export type DateRangeDto = {
+	from: string,
+	to: string,
+};
+
+export type DayFiguresDto = {
+	date: string,
+	figures: SalesFiguresDto,
+};
+
 export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;
 
 export type DiscountDto_Deserialize = { kind: "percent"; ratePpm: number; reason?: string | null } | { kind: "fixed"; amountMinor: string; reason?: string | null };
@@ -928,6 +947,13 @@ export type ReceiptLineDto = {
 	bold: boolean,
 };
 
+/**  Where the numbers come from (PRD §15): `"device"` until the cloud link (Stage 3). */
+export type ReportScopeDto = {
+	scope: string,
+	/**  Milliseconds since the epoch, as a string. */
+	asOfMs: string,
+};
+
 export type ReturnId = string;
 
 export type ReturnLineInputDto = {
@@ -1113,6 +1139,22 @@ export type SaleTenderDto_Serialize = {
 	reference: string | null,
 };
 
+export type SalesFiguresDto = {
+	salesCount: number,
+	grossMinor: string,
+	lineDiscountsMinor: string,
+	orderDiscountsMinor: string,
+	discountsMinor: string,
+	taxMinor: string,
+	roundingMinor: string,
+	salesTotalMinor: string,
+	returnsCount: number,
+	refundsMinor: string,
+	refundedTaxMinor: string,
+	netInclTaxMinor: string,
+	netExclTaxMinor: string,
+};
+
 export type SalesFilterDto = SalesFilterDto_Serialize | SalesFilterDto_Deserialize;
 
 export type SalesFilterDto_Deserialize = {
@@ -1147,6 +1189,15 @@ export type SalesPageDto_Serialize = {
 	rows: SaleRowDto[],
 	/**  Pass back as `after` for the next page; `null` on the last page. */
 	next: string | null,
+};
+
+export type SalesSummaryDto = {
+	days: DayFiguresDto[],
+	total: SalesFiguresDto,
+	/**  Gross is tax-inclusive when true. */
+	pricesIncludeTax: boolean,
+	currencyExponent: number,
+	scope: ReportScopeDto,
 };
 
 export type ScanEventId = string;
@@ -1236,6 +1287,48 @@ export type StockDriftDto = {
 	fromMovementsMilli: string,
 };
 
+export type StockReportDto = StockReportDto_Serialize | StockReportDto_Deserialize;
+
+export type StockReportDto_Deserialize = {
+	rows: StockRowDto_Deserialize[],
+	scope: ReportScopeDto,
+};
+
+export type StockReportDto_Serialize = {
+	rows: StockRowDto_Serialize[],
+	scope: ReportScopeDto,
+};
+
+export type StockRowDto = StockRowDto_Serialize | StockRowDto_Deserialize;
+
+export type StockRowDto_Deserialize = {
+	variantId: VariantId,
+	name: string,
+	label: string,
+	sku?: string | null,
+	unit: Unit,
+	sellableMilli: string,
+	damagedMilli: string,
+	lowStockThresholdMilli?: string | null,
+	/**  `"ok"`, `"low"` or `"negative"`. */
+	status: string,
+	lastMovementMs?: string | null,
+};
+
+export type StockRowDto_Serialize = {
+	variantId: VariantId,
+	name: string,
+	label: string,
+	sku: string | null,
+	unit: Unit,
+	sellableMilli: string,
+	damagedMilli: string,
+	lowStockThresholdMilli: string | null,
+	/**  `"ok"`, `"low"` or `"negative"`. */
+	status: string,
+	lastMovementMs: string | null,
+};
+
 export type Symbology = "ean13" | "ean8" | "upc_a" | "upc_e" | "code128" | "code39" | "itf14" | "qr" | "data_matrix" | 
 /**  The shop's own numbering, or a numeric code that failed its GTIN check digit. */
 "internal" | "unknown";
@@ -1293,10 +1386,41 @@ export type TenderInputDto_Serialize = {
 
 export type TenderKind = "cash" | "card_external" | "bank_transfer_external" | "qr_external" | "other_external";
 
+export type TenderMixDto = {
+	rows: TenderMixRowDto[],
+	scope: ReportScopeDto,
+};
+
+export type TenderMixRowDto = {
+	kind: TenderKind,
+	/**  `"operator"` (recorded by staff) or `"provider"` (confirmed by a payment integration). */
+	confirmationSource: string,
+	count: number,
+	takenMinor: string,
+	refundCount: number,
+	refundedMinor: string,
+	netMinor: string,
+};
+
 export type TenderTotalDto = {
 	kind: TenderKind,
 	count: number,
 	amountMinor: string,
+};
+
+export type TopByDto = "quantity" | "value";
+
+export type TopProductDto = {
+	variantId: VariantId,
+	name: string,
+	label: string,
+	quantityMilli: string,
+	valueMinor: string,
+};
+
+export type TopProductsDto = {
+	rows: TopProductDto[],
+	scope: ReportScopeDto,
 };
 
 export type Unit = "ea" | "kg" | "g" | "l" | "ml" | "m" | "cm" | "box" | "pack";

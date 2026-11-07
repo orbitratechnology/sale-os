@@ -7,6 +7,7 @@ mod command_names;
 mod commands;
 mod dto;
 mod error;
+mod report_commands;
 mod sale_commands;
 mod services;
 
@@ -71,6 +72,10 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::inventory_post_document,
         sale_commands::stock_verify,
         sale_commands::stock_rebuild,
+        report_commands::reports_sales_summary,
+        report_commands::reports_tender_mix,
+        report_commands::reports_top_products,
+        report_commands::reports_stock,
         cash_commands::cash_session_current,
         cash_commands::cash_session_open,
         cash_commands::cash_session_close,

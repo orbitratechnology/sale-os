@@ -217,6 +217,22 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ("stock_verify", Perm(InventoryView), json!({})),
         // Owner only (diagnostics).
         ("stock_rebuild", Perm(SettingsEdit), json!({})),
+        (
+            "reports_sales_summary",
+            Perm(ReportsView),
+            json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}}),
+        ),
+        (
+            "reports_tender_mix",
+            Perm(ReportsView),
+            json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}}),
+        ),
+        (
+            "reports_top_products",
+            Perm(ReportsView),
+            json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}, "by": "value", "limit": 10}),
+        ),
+        ("reports_stock", Perm(ReportsView), json!({"lowOnly": false})),
         ("cash_session_current", Perm(CashSessionOpen), json!({})),
         // A negative float is refused after the permission check: nothing is opened.
         (

@@ -14,6 +14,7 @@ mod migrate;
 mod pragmas;
 mod queries;
 mod receipt_queries;
+mod report_queries;
 mod return_queries;
 mod sales_queries;
 mod stock_queries;

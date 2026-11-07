@@ -1475,3 +1475,248 @@ impl StockDriftDto {
             .collect()
     }
 }
+
+// ---------- reports (E14) ----------
+
+/// Business dates, `YYYY-MM-DD`, inclusive.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DateRangeDto {
+    pub from: String,
+    pub to: String,
+}
+
+impl DateRangeDto {
+    pub fn parse(
+        &self,
+    ) -> Result<(pos_domain::time::BusinessDate, pos_domain::time::BusinessDate), IpcError> {
+        Ok((
+            self.from
+                .trim()
+                .parse()
+                .map_err(|_| invalid("from", &self.from))?,
+            self.to.trim().parse().map_err(|_| invalid("to", &self.to))?,
+        ))
+    }
+}
+
+/// Where the numbers come from (PRD §15): `"device"` until the cloud link (Stage 3).
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportScopeDto {
+    pub scope: String,
+    /// Milliseconds since the epoch, as a string.
+    pub as_of_ms: String,
+}
+
+impl ReportScopeDto {
+    pub fn device(now: pos_domain::Timestamp) -> Self {
+        Self {
+            scope: "device".into(),
+            as_of_ms: now.as_millis().to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesFiguresDto {
+    pub sales_count: u32,
+    pub gross_minor: String,
+    pub line_discounts_minor: String,
+    pub order_discounts_minor: String,
+    pub discounts_minor: String,
+    pub tax_minor: String,
+    pub rounding_minor: String,
+    pub sales_total_minor: String,
+    pub returns_count: u32,
+    pub refunds_minor: String,
+    pub refunded_tax_minor: String,
+    pub net_incl_tax_minor: String,
+    pub net_excl_tax_minor: String,
+}
+
+impl SalesFiguresDto {
+    fn from_figures(f: &pos_application::reports::SalesFigures) -> Self {
+        Self {
+            sales_count: f.sales_count,
+            gross_minor: money(f.gross),
+            line_discounts_minor: money(f.line_discounts),
+            order_discounts_minor: money(f.order_discounts),
+            discounts_minor: money(f.discounts()),
+            tax_minor: money(f.tax),
+            rounding_minor: money(f.rounding),
+            sales_total_minor: money(f.sales_total),
+            returns_count: f.returns_count,
+            refunds_minor: money(f.refunds),
+            refunded_tax_minor: money(f.refunded_tax),
+            net_incl_tax_minor: money(f.net_incl_tax()),
+            net_excl_tax_minor: money(f.net_excl_tax()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DayFiguresDto {
+    pub date: String,
+    pub figures: SalesFiguresDto,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesSummaryDto {
+    pub days: Vec<DayFiguresDto>,
+    pub total: SalesFiguresDto,
+    /// Gross is tax-inclusive when true.
+    pub prices_include_tax: bool,
+    pub currency_exponent: u8,
+    pub scope: ReportScopeDto,
+}
+
+impl SalesSummaryDto {
+    pub fn from_summary(s: &pos_application::reports::SalesSummary, now: pos_domain::Timestamp) -> Self {
+        Self {
+            days: s
+                .days
+                .iter()
+                .map(|d| DayFiguresDto {
+                    date: d.date.to_string(),
+                    figures: SalesFiguresDto::from_figures(&d.figures),
+                })
+                .collect(),
+            total: SalesFiguresDto::from_figures(&s.total),
+            prices_include_tax: s.prices_include_tax,
+            currency_exponent: s.currency_exponent,
+            scope: ReportScopeDto::device(now),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TenderMixRowDto {
+    pub kind: TenderKind,
+    /// `"operator"` (recorded by staff) or `"provider"` (confirmed by a payment integration).
+    pub confirmation_source: String,
+    pub count: u32,
+    pub taken_minor: String,
+    pub refund_count: u32,
+    pub refunded_minor: String,
+    pub net_minor: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TenderMixDto {
+    pub rows: Vec<TenderMixRowDto>,
+    pub scope: ReportScopeDto,
+}
+
+impl TenderMixDto {
+    pub fn from_rows(rows: &[pos_application::reports::TenderMixRow], now: pos_domain::Timestamp) -> Self {
+        Self {
+            rows: rows
+                .iter()
+                .map(|r| TenderMixRowDto {
+                    kind: r.kind,
+                    confirmation_source: r.confirmation_source.clone(),
+                    count: r.count,
+                    taken_minor: money(r.taken),
+                    refund_count: r.refund_count,
+                    refunded_minor: money(r.refunded),
+                    net_minor: money(r.net()),
+                })
+                .collect(),
+            scope: ReportScopeDto::device(now),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum TopByDto {
+    Quantity,
+    Value,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TopProductDto {
+    pub variant_id: VariantId,
+    pub name: String,
+    pub label: String,
+    pub quantity_milli: String,
+    pub value_minor: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TopProductsDto {
+    pub rows: Vec<TopProductDto>,
+    pub scope: ReportScopeDto,
+}
+
+impl TopProductsDto {
+    pub fn from_rows(rows: &[pos_application::reports::TopProductRow], now: pos_domain::Timestamp) -> Self {
+        Self {
+            rows: rows
+                .iter()
+                .map(|r| TopProductDto {
+                    variant_id: r.variant_id,
+                    name: r.name.clone(),
+                    label: r.label.clone(),
+                    quantity_milli: qty(r.quantity),
+                    value_minor: money(r.value),
+                })
+                .collect(),
+            scope: ReportScopeDto::device(now),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockRowDto {
+    pub variant_id: VariantId,
+    pub name: String,
+    pub label: String,
+    pub sku: Option<String>,
+    pub unit: Unit,
+    pub sellable_milli: String,
+    pub damaged_milli: String,
+    pub low_stock_threshold_milli: Option<String>,
+    /// `"ok"`, `"low"` or `"negative"`.
+    pub status: String,
+    pub last_movement_ms: Option<String>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockReportDto {
+    pub rows: Vec<StockRowDto>,
+    pub scope: ReportScopeDto,
+}
+
+impl StockReportDto {
+    pub fn from_rows(rows: &[pos_application::reports::StockRow], now: pos_domain::Timestamp) -> Self {
+        Self {
+            rows: rows
+                .iter()
+                .map(|r| StockRowDto {
+                    variant_id: r.variant_id,
+                    name: r.name.clone(),
+                    label: r.label.clone(),
+                    sku: r.sku.clone(),
+                    unit: r.unit,
+                    sellable_milli: qty(r.sellable),
+                    damaged_milli: qty(r.damaged),
+                    low_stock_threshold_milli: r.low_stock_threshold.map(qty),
+                    status: r.status.as_str().into(),
+                    last_movement_ms: r.last_movement_at.map(|t| t.as_millis().to_string()),
+                })
+                .collect(),
+            scope: ReportScopeDto::device(now),
+        }
+    }
+}

@@ -460,6 +460,86 @@ async fn the_stage_2_end_of_day_reconciles() {
         assert!(z_text.contains(expected), "{expected} missing from\n{z_text}");
     }
 
+    // E14: the daily report for the day (docs/reporting-definitions.md), to the minor unit.
+    let reports = pos_application::reports::ReportService {
+        reports: Arc::new(s.clone()),
+    };
+    let today: pos_domain::time::BusinessDate = "2026-01-01".parse().unwrap();
+    let summary = reports.sales_summary(day.owner(), today, today).await.unwrap();
+    assert_eq!(summary.days.len(), 1);
+    let f = &summary.total;
+    assert_eq!((f.sales_count, f.returns_count), (12, 2));
+    assert_eq!(f.gross.minor(), 3090); // sales total + discounts (prices include tax)
+    assert_eq!(
+        (
+            f.line_discounts.minor(),
+            f.order_discounts.minor(),
+            f.discounts().minor()
+        ),
+        (12, 62, 74)
+    );
+    assert_eq!(
+        (f.tax.minor(), f.rounding.minor(), f.sales_total.minor()),
+        (504, 0, 3016)
+    );
+    assert_eq!((f.refunds.minor(), f.refunded_tax.minor()), (370, 42 + 20));
+    assert_eq!(f.net_incl_tax().minor(), 3016 - 370); // 26.46
+    assert_eq!(f.net_excl_tax().minor(), 2646 - (504 - 62)); // 22.04
+    let mix: Vec<(&str, &str, u32, i64, u32, i64, i64)> = reports
+        .tender_mix(day.owner(), today, today)
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r.kind.as_str(),
+                if r.confirmation_source == "operator" {
+                    "operator"
+                } else {
+                    "provider"
+                },
+                r.count,
+                r.taken.minor(),
+                r.refund_count,
+                r.refunded.minor(),
+                r.net().minor(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        mix,
+        [
+            ("bank_transfer_external", "operator", 1, 250, 0, 0, 250),
+            ("card_external", "operator", 3, 780, 1, 120, 660),
+            ("cash", "operator", 9, 1986, 1, 250, 1736),
+        ]
+    );
+    let top = |by| {
+        let r = &reports;
+        let o = day.owner();
+        async move {
+            r.top_products(o, today, today, by, 10)
+                .await
+                .unwrap()
+                .iter()
+                .map(|p| (p.name.clone(), p.quantity.milli(), p.value.minor()))
+                .collect::<Vec<_>>()
+        }
+    };
+    use pos_application::reports::TopBy;
+    // Returns are netted: 10 Cola sold, 1 back; 6 Bread sold, 1 back.
+    assert_eq!(
+        top(TopBy::Quantity).await,
+        [
+            ("Cola".to_owned(), 9_000, 1176 - 120),
+            ("Bread".to_owned(), 5_000, 1450 - 250),
+            ("Flour".to_owned(), 1_750, 315),
+            ("Gum".to_owned(), 1_000, 75),
+        ]
+    );
+    let by_value: Vec<String> = top(TopBy::Value).await.into_iter().map(|r| r.0).collect();
+    assert_eq!(by_value, ["Bread", "Cola", "Flour", "Gum"]);
+
     // Stock balances: opening − sold + received ± adjustment ± returns.
     assert_eq!(day.on_hand("Cola", "sellable").await, 50_000 - 10_000 + 24_000);
     assert_eq!(day.on_hand("Cola", "damaged").await, 1_000);

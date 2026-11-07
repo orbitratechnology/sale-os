@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reports-top-products"
+description = "Enables the reports_top_products command without any pre-configured scope."
+commands.allow = ["reports_top_products"]
+
+[[permission]]
+identifier = "deny-reports-top-products"
+description = "Denies the reports_top_products command without any pre-configured scope."
+commands.deny = ["reports_top_products"]
