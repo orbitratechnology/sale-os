@@ -6,6 +6,7 @@
 use crate::audit::{self, AuditEntry};
 use crate::context::{AppError, CommandContext};
 use crate::queries::{CartQueries, StockQueries};
+use crate::records::StockDrift;
 use crate::write::{Counter, NumberSlot, inventory_document_aggregate};
 use crate::{LocalStore, OutboxDraft, WriteSet};
 use pos_domain::stock_docs::{DocumentDraft, DocumentSnapshot, DocumentType, StockItem, plan_document};
@@ -50,6 +51,36 @@ pub fn permission_for(doc_type: DocumentType) -> Permission {
 }
 
 impl StockService {
+    /// E11-T06 verify: balances that differ from their movements. Empty is healthy.
+    pub async fn verify(&self, ctx: &CommandContext) -> Result<Vec<StockDrift>, AppError> {
+        ctx.authorize(Permission::InventoryView)?;
+        Ok(self.stock.stock_drift().await?)
+    }
+
+    /// E11-T06 rebuild (owner, from diagnostics): recomputes every balance from the
+    /// movements in one transaction, audited with what was wrong before. Returns that drift.
+    pub async fn rebuild(&self, ctx: &CommandContext) -> Result<Vec<StockDrift>, AppError> {
+        ctx.authorize(Permission::SettingsEdit)?;
+        let drift = self.stock.stock_drift().await?;
+        let ids = ctx.ids.as_ref();
+        let entry = AuditEntry::new(ids, audit::INVENTORY_PROJECTION_REBUILT, "stock_balances", "all")
+            .with_metadata(serde_json::json!({
+                "driftBefore": drift.len(),
+                "rows": drift.iter().take(50).map(|d| serde_json::json!({
+                    "variantId": d.variant_id,
+                    "bucket": d.bucket,
+                    "recordedMilli": d.recorded.milli().to_string(),
+                    "fromMovementsMilli": d.from_movements.milli().to_string(),
+                })).collect::<Vec<_>>(),
+            }));
+        let set = WriteSet::builder(ctx.write_context())
+            .rebuild_stock_balances()
+            .audit(entry)
+            .build()?;
+        self.store.apply(set).await?;
+        Ok(drift)
+    }
+
     pub async fn post(&self, ctx: &CommandContext, draft: DocumentDraft) -> Result<PostedDocument, AppError> {
         ctx.authorize(permission_for(draft.doc_type))?;
         let actor = ctx.actor()?.clone();

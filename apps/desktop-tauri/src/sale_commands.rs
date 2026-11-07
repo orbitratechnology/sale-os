@@ -621,3 +621,26 @@ pub async fn inventory_post_document(
     let posted = services.app()?.stock.post(&ctx, draft).await.map_err(err)?;
     Ok(crate::dto::PostedDocumentDto::from_posted(&posted))
 }
+
+/// E11-T06: stock balances that differ from the sum of their movements (empty is healthy).
+#[tauri::command]
+#[specta::specta]
+pub async fn stock_verify(
+    services: State<'_, AppServices>,
+) -> Result<Vec<crate::dto::StockDriftDto>, IpcError> {
+    let ctx = services.context().await?;
+    let d = services.app()?.stock.verify(&ctx).await.map_err(err)?;
+    Ok(crate::dto::StockDriftDto::list(&d))
+}
+
+/// E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
+/// transaction, audited. Returns what was wrong before.
+#[tauri::command]
+#[specta::specta]
+pub async fn stock_rebuild(
+    services: State<'_, AppServices>,
+) -> Result<Vec<crate::dto::StockDriftDto>, IpcError> {
+    let ctx = services.context().await?;
+    let d = services.app()?.stock.rebuild(&ctx).await.map_err(err)?;
+    Ok(crate::dto::StockDriftDto::list(&d))
+}

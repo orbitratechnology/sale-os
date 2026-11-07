@@ -158,6 +158,9 @@ pub enum WriteOp {
         doc: pos_domain::stock_docs::DocumentSnapshot,
         number_slot: NumberSlot,
     },
+    /// Recomputes every stock balance from the movements (E11-T06, INV-004). Local only:
+    /// balances are a projection; the movements are the record.
+    RebuildStockBalances,
     /// Opens the register's cash session (E15-T02). Fails with `CashSessionAlreadyOpen` if
     /// one is open. The store gives it the next `{register}-Z-{seq:04}` number, reported in
     /// `receipt_numbers` under `number_slot`.
@@ -277,6 +280,7 @@ impl WriteOp {
                 aggregate: aggregate.clone(),
             },
             WriteOp::AllocateNumber { .. }
+            | WriteOp::RebuildStockBalances
             | WriteOp::PutPrintJob { .. }
             | WriteOp::CloseCart { .. }
             | WriteOp::InsertReceipt { .. }
@@ -627,6 +631,10 @@ impl WriteSetBuilder {
             .push(WriteOp::InsertInventoryDocument { doc, number_slot });
         self
     }
+    pub fn rebuild_stock_balances(mut self) -> Self {
+        self.ops.push(WriteOp::RebuildStockBalances);
+        self
+    }
     pub fn open_cash_session(
         mut self,
         session: pos_domain::cash::OpenedSession,
@@ -824,6 +832,7 @@ impl WriteSetBuilder {
             | WriteOp::OpenCashSession { .. }
             | WriteOp::CloseCashSession { .. }
             | WriteOp::InsertInventoryDocument { .. }
+            | WriteOp::RebuildStockBalances
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }

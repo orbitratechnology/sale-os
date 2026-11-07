@@ -896,6 +896,23 @@ async fn apply_in_transaction(
                 .map_err(map_sqlx)?;
                 applied.receipt_numbers.insert(*number_slot, number);
             }
+            WriteOp::RebuildStockBalances => {
+                st.step()?;
+                sqlx::query("DELETE FROM stock_balances")
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO stock_balances (business_id, location_id, variant_id, bucket, on_hand_milli, last_movement_at, updated_at)
+                     SELECT business_id, location_id, variant_id, bucket, sum(quantity_delta_milli), max(occurred_at), ?
+                     FROM stock_movements GROUP BY business_id, location_id, variant_id, bucket",
+                )
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
             WriteOp::OpenCashSession { session, number_slot } => {
                 st.step()?;
                 let (code, next): (String, i64) = sqlx::query_as(

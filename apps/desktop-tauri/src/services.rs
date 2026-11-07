@@ -96,6 +96,28 @@ impl AppServices {
             }
         };
         let store = db.as_ref().ok().map(|db| SqliteStore::new(db.clone()));
+        if let Some(s) = &store {
+            // E11-T06: check the stock projection without delaying start-up (2 s at most).
+            let s = s.clone();
+            tokio::spawn(async move {
+                match s.startup_stock_check(std::time::Duration::from_secs(2)).await {
+                    Ok(pos_local_db::StartupStockCheck::Healthy) => tracing::info!("stock balances verified"),
+                    Ok(pos_local_db::StartupStockCheck::Drift(n)) => {
+                        tracing::warn!(
+                            balances = n,
+                            "stock balances differ from their movements; rebuild from diagnostics"
+                        )
+                    }
+                    Ok(pos_local_db::StartupStockCheck::IntegrityProblem(m)) => {
+                        tracing::error!(problem = %m, "database quick_check failed; stock not verified")
+                    }
+                    Ok(pos_local_db::StartupStockCheck::Deferred) => {
+                        tracing::info!("stock verify took longer than 2 s; run it from diagnostics")
+                    }
+                    Err(e) => tracing::warn!(error = %e, "stock verify failed"),
+                }
+            });
+        }
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let ids: Arc<dyn IdGenerator> = Arc::new(UuidV7Generator);
         let app = store.as_ref().map(|s| {

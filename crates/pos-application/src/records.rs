@@ -432,6 +432,21 @@ pub struct SaleReturnRow {
     pub refunds: Vec<pos_domain::settlement::TenderKind>,
 }
 
+// ---------- stock projection (E11-T06) ----------
+
+/// A balance that does not equal the sum of its movements (INV-004).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StockDrift {
+    pub location_id: pos_domain::LocationId,
+    pub variant_id: pos_domain::VariantId,
+    /// `sellable` or `damaged`.
+    pub bucket: String,
+    /// What `stock_balances` says (0 when the row is missing).
+    pub recorded: pos_domain::Quantity,
+    /// The sum of the movements (0 when there are none).
+    pub from_movements: pos_domain::Quantity,
+}
+
 // ---------- cash sessions (E15-T02) ----------
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -137,6 +137,13 @@ export const commands = {
 	 *  `InventoryAdjust`. Posted documents cannot be edited: post a correcting one.
 	 */
 	inventoryPostDocument: (draft: DocumentDraftDto_Deserialize) => typedError<PostedDocumentDto, IpcError_Serialize>(__TAURI_INVOKE("inventory_post_document", { draft })),
+	/**  E11-T06: stock balances that differ from the sum of their movements (empty is healthy). */
+	stockVerify: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
+	/**
+	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
+	 *  transaction, audited. Returns what was wrong before.
+	 */
+	stockRebuild: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
 	/**  The register's drawer: the open session (if any) and whether sales need one. */
 	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
 	/**  Opens the drawer with a float (minor units). */
@@ -1220,6 +1227,13 @@ export type StaffUpdateInput_Serialize = {
 	baseVersion: number,
 	displayName: string | null,
 	role: Role | null,
+};
+
+export type StockDriftDto = {
+	variantId: VariantId,
+	bucket: string,
+	recordedMilli: string,
+	fromMovementsMilli: string,
 };
 
 export type Symbology = "ean13" | "ean8" | "upc_a" | "upc_e" | "code128" | "code39" | "itf14" | "qr" | "data_matrix" | 

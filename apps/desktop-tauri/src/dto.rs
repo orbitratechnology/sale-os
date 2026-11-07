@@ -1451,3 +1451,27 @@ impl PostedDocumentDto {
         }
     }
 }
+
+// ---------- stock projection (E11-T06) ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockDriftDto {
+    pub variant_id: VariantId,
+    pub bucket: String,
+    pub recorded_milli: String,
+    pub from_movements_milli: String,
+}
+
+impl StockDriftDto {
+    pub fn list(d: &[pos_application::records::StockDrift]) -> Vec<Self> {
+        d.iter()
+            .map(|d| Self {
+                variant_id: d.variant_id,
+                bucket: d.bucket.clone(),
+                recorded_milli: qty(d.recorded),
+                from_movements_milli: qty(d.from_movements),
+            })
+            .collect()
+    }
+}

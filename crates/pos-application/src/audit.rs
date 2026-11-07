@@ -60,6 +60,7 @@ actions! {
     INVENTORY_ADJUSTMENT_POSTED = "inventory.adjustment_posted",
     INVENTORY_WRITE_OFF_POSTED = "inventory.write_off_posted",
     INVENTORY_NEGATIVE_FLAGGED = "inventory.negative_flagged",
+    INVENTORY_PROJECTION_REBUILT = "inventory.projection_rebuilt",
     RECEIPT_REPRINTED = "receipt.reprinted",
     RECEIPT_EXPORTED_PDF = "receipt.exported_pdf",
     PRINT_UNKNOWN_RESOLVED = "print.unknown_resolved",

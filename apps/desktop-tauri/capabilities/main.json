@@ -52,6 +52,8 @@
     "allow-sales-list",
     "allow-sales-get",
     "allow-inventory-post-document",
+    "allow-stock-verify",
+    "allow-stock-rebuild",
     "allow-cash-session-current",
     "allow-cash-session-open",
     "allow-cash-session-close",

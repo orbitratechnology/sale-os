@@ -97,6 +97,9 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `inventory_overview` / `inventory_history` | InventoryView | | E11-T05 |
 | `inventory_post_document` | InventoryReceive (opening/receipt) / InventoryAdjust (adjustment/write_off) | `InventoryDocumentDraft → DocumentDto` | E11-T02/T03 |
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
+| `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
+| `stock_verify` | InventoryView | `→ [{ variantId, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
+| `stock_rebuild` | SettingsEdit (owner) | `→` the drift that was repaired; audited `inventory.projection_rebuilt` | E11-T06 |
 | `receipt_get_document` | SalesView | `{ source, id } → ReceiptDocument` | E13-T03 |
 | `receipt_export_pdf` | SalesView | `{ receiptId, saveTo } → ()` | E13-T04 |
 | `receipt_print` / `receipt_reprint` | SalesView / ReceiptReprint | `{ receiptId } → PrintJobDto` | E13-T06 |
@@ -296,7 +299,7 @@ catalog.product_created, catalog.product_updated, catalog.product_archived, cata
 cart.cleared, cart.voided, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
 sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded,
-inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged,
+inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
 cash_session.opened, cash_session.closed,
 report.exported, data.exported, backup.created, backup.restored,

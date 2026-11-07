@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stock-rebuild"
+description = "Enables the stock_rebuild command without any pre-configured scope."
+commands.allow = ["stock_rebuild"]
+
+[[permission]]
+identifier = "deny-stock-rebuild"
+description = "Denies the stock_rebuild command without any pre-configured scope."
+commands.deny = ["stock_rebuild"]

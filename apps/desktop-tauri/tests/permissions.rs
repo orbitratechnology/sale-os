@@ -214,6 +214,9 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"draft": {"docType": "receipt", "reason": null, "supplierName": null, "reference": null, "note": null,
                              "lines": [{"variantId": UNKNOWN_ID, "quantityMilli": "1000", "unitCostMinor": null}]}}),
         ),
+        ("stock_verify", Perm(InventoryView), json!({})),
+        // Owner only (diagnostics).
+        ("stock_rebuild", Perm(SettingsEdit), json!({})),
         ("cash_session_current", Perm(CashSessionOpen), json!({})),
         // A negative float is refused after the permission check: nothing is opened.
         (
