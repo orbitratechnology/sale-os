@@ -173,6 +173,18 @@ impl CheckoutService {
                     .with_metadata(serde_json::json!({ "saleId": sale.id, "resultingMilli": flag.resulting.milli().to_string() })),
             );
         }
+        // PAY-003: an external payment is recorded by staff, never confirmed by the till.
+        for t in sale.tenders.iter().filter(|t| !t.tender.kind.is_cash()) {
+            b = b.audit(
+                AuditEntry::new(ids, audit::TENDER_RECORDED_EXTERNAL, "sale", sale.id).with_metadata(
+                    serde_json::json!({
+                        "tender": t.tender.kind.as_str(),
+                        "amountMinor": t.tender.amount.minor().to_string(),
+                        "hasReference": t.tender.external_reference.is_some(),
+                    }),
+                ),
+            );
+        }
         let applied = self.store.apply(b.build()?).await?;
         let receipt_number = applied
             .receipt_numbers

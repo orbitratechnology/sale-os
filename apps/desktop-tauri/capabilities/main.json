@@ -62,6 +62,7 @@
     "allow-reports-top-products",
     "allow-reports-stock",
     "allow-export-csv",
+    "allow-audit-list",
     "allow-cash-session-current",
     "allow-cash-session-open",
     "allow-cash-session-close",

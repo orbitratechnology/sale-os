@@ -200,7 +200,19 @@ impl ReturnService {
         if let Some(a) = approver {
             entry = entry.with_approver(a);
         }
-        let set = WriteSet::builder(ctx.write_context())
+        let refunds: Vec<AuditEntry> = ret
+            .refunds
+            .iter()
+            .map(|r| {
+                AuditEntry::new(ids, audit::REFUND_RECORDED, "return", ret.id).with_metadata(
+                    serde_json::json!({
+                        "tender": r.tender.kind.as_str(),
+                        "amountMinor": r.tender.amount.minor().to_string(),
+                    }),
+                )
+            })
+            .collect();
+        let mut set = WriteSet::builder(ctx.write_context())
             .allocate_number(Counter::Return, RETURN_NUMBER)
             .insert_return(ret.clone(), RETURN_NUMBER, require_session)
             .append_movements(movements, aggregate)
@@ -212,9 +224,11 @@ impl ReturnService {
                 Some(RETURN_NUMBER),
             )
             .outbox(event)
-            .audit(entry)
-            .build()?;
-        let applied = self.store.apply(set).await?;
+            .audit(entry);
+        for r in refunds {
+            set = set.audit(r);
+        }
+        let applied = self.store.apply(set.build()?).await?;
         let return_number = applied
             .receipt_numbers
             .get(&RETURN_NUMBER)

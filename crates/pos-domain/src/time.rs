@@ -97,6 +97,25 @@ pub fn business_date(at: Timestamp, tz: Tz) -> Result<BusinessDate, TimeError> {
     Ok(BusinessDate(utc.with_timezone(&tz).date_naive()))
 }
 
+/// The first instant of `date` in `tz` (local midnight, or the first valid time after a DST
+/// gap), for turning business-day ranges into time ranges.
+pub fn day_start(date: BusinessDate, tz: Tz) -> Result<Timestamp, TimeError> {
+    use chrono::TimeZone;
+    let midnight = date
+        .0
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| TimeError::InvalidDate(date.to_string()))?;
+    let mut local = midnight;
+    // A DST gap can swallow midnight: step forward by minutes until it exists.
+    for _ in 0..=180 {
+        if let Some(t) = tz.from_local_datetime(&local).earliest() {
+            return Ok(Timestamp::from_datetime(t.with_timezone(&chrono::Utc)));
+        }
+        local += chrono::Duration::minutes(1);
+    }
+    Err(TimeError::InvalidDate(date.to_string()))
+}
+
 /// Source of "now". Inject a fake in tests (`pos-testkit`).
 pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
@@ -205,6 +224,26 @@ mod tests {
                 .unwrap()
                 .to_string(),
             "2026-01-01"
+        );
+    }
+}
+
+#[cfg(test)]
+mod day_start_tests {
+    use super::*;
+
+    #[test]
+    fn local_midnight_in_utc() {
+        let d: BusinessDate = "2026-01-02".parse().unwrap();
+        // Kolkata is UTC+5:30: midnight there is 18:30 the day before in UTC.
+        let t = day_start(d, parse_time_zone("Asia/Kolkata").unwrap()).unwrap();
+        assert_eq!(t.as_millis(), 1_767_292_200_000); // 2026-01-01T18:30Z
+        // São Paulo skipped midnight in 2018's DST change (Nov 4): 01:00 is the first instant.
+        let gap: BusinessDate = "2018-11-04".parse().unwrap();
+        let t = day_start(gap, parse_time_zone("America/Sao_Paulo").unwrap()).unwrap();
+        assert_eq!(
+            local_date_time(t, "America/Sao_Paulo").unwrap(),
+            "2018-11-04 01:00"
         );
     }
 }

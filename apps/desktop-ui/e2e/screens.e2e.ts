@@ -1098,6 +1098,46 @@ describe("reports (E14-T03)", () => {
     expect(sent[1]?.range).toBeNull();
   });
 
+  it("the owner reads the audit log, filters it and opens what an entry is about", async () => {
+    const page = await checkout();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Reports" }).click();
+    await page.getByRole("button", { name: "Audit log" }).click();
+    await page.getByRole("heading", { name: "Audit log" }).waitFor();
+    const entries = page.getByRole("region", { name: "Audit entries" });
+    await entries.getByTestId("audit-row").nth(2).waitFor();
+    expect(await entries.getByTestId("audit-row").first().textContent()).toContain("Sale");
+    await page.getByLabel("What").selectOption("auth.");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=audit-row]").length === 1);
+    expect(await entries.getByTestId("audit-row").first().textContent()).toContain("Signed in");
+    expect((await calls(page, "audit_list")).at(-1)).toMatchObject({ filter: { action: "auth." } });
+    await page.getByLabel("What").selectOption("");
+    // A sale opens its detail; Esc comes back to the log.
+    await entries.getByRole("button", { name: "R01-000001" }).click();
+    await page.getByRole("region", { name: "Sale detail" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("heading", { name: "Audit log" }).waitFor();
+    // A product opens the editor.
+    await page.getByRole("region", { name: "Audit entries" }).getByRole("button", { name: "Cola 330ml" }).click();
+    await page.getByLabel(/^Name/).first().waitFor();
+  });
+
+  it("a manager has Reports but no Audit log", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByRole("button", { name: "Reports" }).click();
+    await page.getByRole("heading", { name: "Reports" }).waitFor();
+    expect(await page.getByRole("button", { name: "Audit log" }).count()).toBe(0);
+  });
+
   it("a cashier has no Reports action", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Cal/ }).click();

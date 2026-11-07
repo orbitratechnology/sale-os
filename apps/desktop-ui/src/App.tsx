@@ -10,6 +10,7 @@ import { SalesScreen } from "./features/sales/SalesScreen";
 import { DrawerScreen } from "./features/cash/DrawerScreen";
 import { StockScreen } from "./features/stock/StockScreen";
 import { ReportsScreen } from "./features/reports/ReportsScreen";
+import { AuditScreen } from "./features/audit/AuditScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
 
 /**
@@ -72,7 +73,21 @@ export function App() {
         />
       );
     case "reports":
-      return <ReportsScreen workspace={workspace} onBack={() => setScreen({ kind: "till" })} />;
+      return (
+        <ReportsScreen
+          workspace={workspace}
+          onBack={() => setScreen({ kind: "till" })}
+          onAudit={state.session.role === "owner" ? () => setScreen({ kind: "audit" }) : null}
+        />
+      );
+    case "audit":
+      return (
+        <AuditScreen
+          onBack={() => setScreen({ kind: "reports" })}
+          onOpenProduct={(productId) => setScreen({ kind: "editor", productId, returnTo: "audit" })}
+          onReturn={(receipt) => setScreen({ kind: "returns", receipt })}
+        />
+      );
     case "stock":
       return <StockScreen workspace={workspace} canPost={canEdit} onBack={() => setScreen({ kind: "till" })} />;
     case "drawer":
@@ -140,4 +155,5 @@ type Screen =
   | { kind: "drawer" }
   | { kind: "stock" }
   | { kind: "reports" }
-  | { kind: "editor"; productId: string | null; barcode?: string; returnTo: "till" | "products" };
+  | { kind: "audit" }
+  | { kind: "editor"; productId: string | null; barcode?: string; returnTo: "till" | "products" | "audit" };

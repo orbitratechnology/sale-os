@@ -243,6 +243,12 @@ impl SetupService {
             .put_register(register_rec, None)
             .put_staff(owner, None)
             .audit(created)
+            .audit(AuditEntry::new(
+                ids,
+                audit::LOCATION_UPSERTED,
+                "location",
+                register.location_id,
+            ))
             .audit(AuditEntry::new(ids, audit::STAFF_CREATED, "staff_user", owner_id));
         for r in rates {
             b = b

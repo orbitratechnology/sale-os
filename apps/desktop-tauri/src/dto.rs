@@ -1805,3 +1805,80 @@ impl StockHistoryDto {
             .collect()
     }
 }
+
+// ---------- audit viewer (E15-T01) ----------
+
+#[derive(Debug, Default, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditFilterDto {
+    /// An exact action (`sale.completed`) or a group ending in `.` (`cart.`).
+    pub action: Option<String>,
+    pub user_id: Option<UserId>,
+    /// Business dates, `YYYY-MM-DD`, inclusive.
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+impl AuditFilterDto {
+    pub fn into_filter(self) -> Result<pos_application::audit_log::AuditFilter, IpcError> {
+        let date =
+            |field: &str, v: Option<String>| -> Result<Option<pos_domain::time::BusinessDate>, IpcError> {
+                match v.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    None => Ok(None),
+                    Some(s) => s.parse().map(Some).map_err(|_| invalid(field, s)),
+                }
+            };
+        Ok(pos_application::audit_log::AuditFilter {
+            action: self.action,
+            user: self.user_id,
+            from: date("from", self.from)?,
+            to: date("to", self.to)?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditRowDto {
+    pub audit_id: String,
+    pub local_time: String,
+    pub action: String,
+    pub actor_name: Option<String>,
+    pub approver_name: Option<String>,
+    pub entity_type: String,
+    pub entity_id: String,
+    /// A receipt, return, document or session number, a staff or product name.
+    pub entity_label: Option<String>,
+    /// The details as recorded (JSON).
+    pub metadata: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditPageDto {
+    pub rows: Vec<AuditRowDto>,
+    pub next: Option<String>,
+}
+
+impl AuditPageDto {
+    pub fn from_page(p: pos_application::audit_log::AuditPage) -> Self {
+        Self {
+            rows: p
+                .rows
+                .into_iter()
+                .map(|r| AuditRowDto {
+                    audit_id: r.audit_id,
+                    local_time: r.local_time,
+                    action: r.action,
+                    actor_name: r.actor_name,
+                    approver_name: r.approver_name,
+                    entity_type: r.entity_type,
+                    entity_id: r.entity_id,
+                    entity_label: r.entity_label,
+                    metadata: r.metadata,
+                })
+                .collect(),
+            next: p.next,
+        }
+    }
+}

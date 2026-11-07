@@ -5,6 +5,7 @@
 //! - One writer connection (all business writes are serialised) plus a small pool of
 //!   read-only connections for search and reports.
 
+mod audit_queries;
 mod cart_queries;
 mod cash;
 mod cash_queries;

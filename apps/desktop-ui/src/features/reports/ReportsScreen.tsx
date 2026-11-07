@@ -49,7 +49,7 @@ function presets(): { label: string; from: string; to: string }[] {
  * docs/reporting-definitions.md. Every report says where its numbers come from: in Stage 2
  * that is always this device only.
  */
-export function ReportsScreen({ workspace, onBack }: { workspace: Workspace; onBack: () => void }) {
+export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Workspace; onBack: () => void; onAudit: (() => void) | null }) {
   const [tab, setTab] = useState<Tab>("sales");
   const [range, setRange] = useState(() => presets()[0] ?? { from: iso(new Date()), to: iso(new Date()) });
   const [topBy, setTopBy] = useState<"quantity" | "value">("value");
@@ -112,9 +112,16 @@ export function ReportsScreen({ workspace, onBack }: { workspace: Workspace; onB
     <main className="sales">
       <header className="returns-header">
         <h1>Reports</h1>
-        <button type="button" className="secondary" onClick={onBack}>
-          Back to till <kbd>Esc</kbd>
-        </button>
+        <span>
+          {onAudit && (
+            <button type="button" className="secondary" onClick={onAudit}>
+              Audit log
+            </button>
+          )}{" "}
+          <button type="button" className="secondary" onClick={onBack}>
+            Back to till <kbd>Esc</kbd>
+          </button>
+        </span>
       </header>
       <div className="receipt-widths" role="tablist" aria-label="Report">
         {TABS.map((t) => (

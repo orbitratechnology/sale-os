@@ -143,3 +143,99 @@ mod tests {
         }
     }
 }
+
+/// Catalogued actions that no command emits yet, each with the task that will (E15-T01).
+/// The completeness test fails if an action is neither emitted nor listed here, or if one
+/// listed here has started being emitted (keep the list honest).
+pub const PLANNED: &[(&str, &str)] = &[
+    ("business.updated", "E04-T03 settings: business profile"),
+    ("register.updated", "E04-T03 settings: register"),
+    ("catalog.import_committed", "E06-T07 CSV import"),
+    ("cart.recovered", "E09-T02 cart recovery"),
+    ("cart.recovery_discarded", "E09-T02 cart recovery"),
+    ("tender.status_changed", "E10-T04 payment provider integration"),
+    ("receipt.exported_pdf", "E13-T04 receipt PDF"),
+    ("data.exported", "E19-T07 diagnostics / full data export"),
+    ("backup.created", "E18 backup"),
+    ("backup.restored", "E18 restore"),
+    ("sync.linked", "E16 cloud link (Stage 3)"),
+    ("sync.device_revoked", "E16 device management (Stage 3)"),
+    ("sync.conflict_resolved", "E17 conflicts (Stage 3)"),
+    ("sync.event_rejected", "E17 sync push (Stage 3)"),
+];
+
+#[cfg(test)]
+mod completeness {
+    use super::*;
+    use std::path::Path;
+
+    /// `NAME = "value"` pairs from the `actions!` block above.
+    fn catalogue() -> Vec<(String, String)> {
+        let src = include_str!("audit.rs");
+        let start = src.find("actions! {").expect("catalogue");
+        let end = start + src[start..].find("\n}").expect("end of catalogue");
+        src[start..end]
+            .lines()
+            .filter_map(|l| {
+                let (name, value) = l.trim().trim_end_matches(',').split_once(" = ")?;
+                Some((name.to_owned(), value.trim_matches('"').to_owned()))
+            })
+            .collect()
+    }
+
+    fn sources(dir: &Path, out: &mut String) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                sources(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") && !p.ends_with("audit.rs") {
+                out.push_str(&std::fs::read_to_string(&p).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn every_catalogued_action_is_emitted_or_planned() {
+        let cat = catalogue();
+        assert_eq!(cat.len(), ALL.len(), "parsed the whole catalogue");
+        let mut code = String::new();
+        sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut code);
+        for (name, value) in &cat {
+            let emitted =
+                code.contains(&format!("audit::{name}")) || code.contains(&format!("audit::{{{name}"));
+            let planned = PLANNED.iter().any(|(a, _)| a == value);
+            assert!(
+                emitted || planned,
+                "{value} ({name}) is never emitted and has no planned task"
+            );
+            assert!(
+                !(emitted && planned),
+                "{value} is emitted now: remove it from PLANNED"
+            );
+        }
+        for (a, _) in PLANNED {
+            assert!(
+                cat.iter().any(|(_, v)| v == a),
+                "PLANNED names {a}, which is not catalogued"
+            );
+        }
+        // The catalogue in 07-contracts §5 lists exactly these actions.
+        let doc = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/backlog/07-contracts.md"),
+        )
+        .unwrap();
+        let start = doc.find("## 5. Audit actions").expect("§5");
+        let block = &doc[start..];
+        let block = &block[block.find("```text").unwrap() + 7..];
+        let block = &block[..block.find("```").unwrap()];
+        let mut documented: Vec<&str> = block
+            .split([',', '\n'])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        documented.sort_unstable();
+        let mut ours: Vec<&str> = cat.iter().map(|(_, v)| v.as_str()).collect();
+        ours.sort_unstable();
+        assert_eq!(documented, ours, "07-contracts §5 and the code disagree");
+    }
+}

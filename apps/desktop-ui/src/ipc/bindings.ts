@@ -169,6 +169,8 @@ export const commands = {
 	 *  audits it (`report.exported`). Dated datasets need `range`.
 	 */
 	exportCsv: (dataset: ExportDatasetDto, range: DateRangeDto | null) => typedError<ExportResultDto, IpcError_Serialize>(__TAURI_INVOKE("export_csv", { dataset, range })),
+	/**  E15-T01 (owner): the audit log, newest first, filtered by action, user and dates. */
+	auditList: (filter: AuditFilterDto_Deserialize, before: string | null, limit: number | null) => typedError<AuditPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("audit_list", { filter, before, limit })),
 	/**  The register's drawer: the open session (if any) and whether sales need one. */
 	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
 	/**  Opens the drawer with a float (minor units). */
@@ -251,6 +253,68 @@ export type ApprovalTokenDto = {
 	approvalTokenId: ApprovalId,
 	/**  Epoch ms as a decimal string. */
 	expiresAtMs: string,
+};
+
+export type AuditFilterDto = AuditFilterDto_Serialize | AuditFilterDto_Deserialize;
+
+export type AuditFilterDto_Deserialize = {
+	/**  An exact action (`sale.completed`) or a group ending in `.` (`cart.`). */
+	action?: string | null,
+	userId?: UserId | null,
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from?: string | null,
+	to?: string | null,
+};
+
+export type AuditFilterDto_Serialize = {
+	/**  An exact action (`sale.completed`) or a group ending in `.` (`cart.`). */
+	action: string | null,
+	userId: UserId | null,
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from: string | null,
+	to: string | null,
+};
+
+export type AuditPageDto = AuditPageDto_Serialize | AuditPageDto_Deserialize;
+
+export type AuditPageDto_Deserialize = {
+	rows: AuditRowDto_Deserialize[],
+	next?: string | null,
+};
+
+export type AuditPageDto_Serialize = {
+	rows: AuditRowDto_Serialize[],
+	next: string | null,
+};
+
+export type AuditRowDto = AuditRowDto_Serialize | AuditRowDto_Deserialize;
+
+export type AuditRowDto_Deserialize = {
+	auditId: string,
+	localTime: string,
+	action: string,
+	actorName?: string | null,
+	approverName?: string | null,
+	entityType: string,
+	entityId: string,
+	/**  A receipt, return, document or session number, a staff or product name. */
+	entityLabel?: string | null,
+	/**  The details as recorded (JSON). */
+	metadata: string,
+};
+
+export type AuditRowDto_Serialize = {
+	auditId: string,
+	localTime: string,
+	action: string,
+	actorName: string | null,
+	approverName: string | null,
+	entityType: string,
+	entityId: string,
+	/**  A receipt, return, document or session number, a staff or product name. */
+	entityLabel: string | null,
+	/**  The details as recorded (JSON). */
+	metadata: string,
 };
 
 export type BarcodeDto = {

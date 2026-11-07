@@ -99,6 +99,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
 | `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
 | `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
+| `audit_list` | AuditView (owner) | `{ filter: { action? (exact, or a group ending in `.`), userId? (actor or approver), from?, to? (business dates) }, before?, limit? } → { rows: [{ localTime, action, actorName, approverName, entityType, entityId, entityLabel, metadata }], next }` | E15-T01 |
 | `stock_verify` | InventoryView | `→ [{ variantId, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
 | `stock_rebuild` | SettingsEdit (owner) | `→` the drift that was repaired; audited `inventory.projection_rebuilt` | E11-T06 |
 | `receipt_get_document` | SalesView | `{ source, id } → ReceiptDocument` | E13-T03 |
@@ -295,7 +296,7 @@ Server-side validation for facts (they are `rejected` if any check fails):
 ```text
 auth.login, auth.login_failed, auth.locked_out, auth.logout, auth.session_locked, auth.approval_granted,
 staff.created, staff.updated, staff.deactivated, staff.pin_reset,
-settings.updated, business.updated, register.updated, mode.changed,
+settings.updated, business.created, business.updated, location.upserted, register.updated, mode.changed,
 catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed,
 cart.cleared, cart.voided, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
 sale.completed, tender.recorded_external, tender.status_changed,

@@ -4,6 +4,7 @@
 
 pub mod approval;
 pub mod audit;
+pub mod audit_log;
 pub mod auth;
 pub mod cart;
 pub mod cash;

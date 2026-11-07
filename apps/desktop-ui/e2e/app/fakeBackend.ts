@@ -598,6 +598,35 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: id(), sourceNumber: "R01-IN-000001", actorName: "Mia" },
       ];
     }
+    case "audit_list": {
+      const me = needSession(s);
+      if (me.role !== "owner") fail("PERMISSION_DENIED");
+      const f = a.filter as { action: string | null; userId: string | null; from: string | null; to: string | null };
+      if (f.from && f.to && f.from > f.to) fail("VALIDATION_FAILED");
+      const firstProduct = [...s.catalog.values()][0];
+      const rows = [
+        ...[...s.sales].reverse().map((x) => ({
+          auditId: id(), localTime: x.localTime, action: "sale.completed", actorName: x.cashierName, approverName: null,
+          entityType: "sale", entityId: x.saleId, entityLabel: x.receiptNumber, metadata: JSON.stringify({ totalMinor: x.totalMinor.toString(), lines: x.lines.length }),
+          userId: x.cashierUserId,
+        })),
+        {
+          auditId: id(), localTime: "2026-11-07 08:00", action: "catalog.product_created", actorName: "Olu", approverName: null,
+          entityType: "product", entityId: firstProduct?.productId ?? id(), entityLabel: firstProduct?.name ?? "?", metadata: "{}", userId: s.users[0]?.userId,
+        },
+        {
+          auditId: id(), localTime: "2026-11-07 07:55", action: "auth.login", actorName: "Olu", approverName: null,
+          entityType: "staff_user", entityId: id(), entityLabel: "Olu", metadata: "{}", userId: s.users[0]?.userId,
+        },
+      ].filter((r) => !f.action || (f.action.endsWith(".") ? r.action.startsWith(f.action) : r.action === f.action))
+        .filter((r) => !f.userId || r.userId === f.userId)
+        .map((r) => {
+          const { userId, ...shown } = r;
+          void userId; // used for filtering only
+          return shown;
+        });
+      return { rows, next: null };
+    }
     case "export_csv": {
       const me = needSession(s);
       if (me.role === "cashier") fail("PERMISSION_DENIED");

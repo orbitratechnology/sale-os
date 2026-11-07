@@ -132,3 +132,23 @@ fn write_new_file(dir: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::R
     std::fs::rename(&tmp, &target)?;
     Ok(target)
 }
+
+/// E15-T01 (owner): the audit log, newest first, filtered by action, user and dates.
+#[tauri::command]
+#[specta::specta]
+pub async fn audit_list(
+    services: State<'_, AppServices>,
+    filter: crate::dto::AuditFilterDto,
+    before: Option<String>,
+    limit: Option<u32>,
+) -> Result<crate::dto::AuditPageDto, IpcError> {
+    let ctx = services.context().await?;
+    let filter = filter.into_filter()?;
+    let page = services
+        .app()?
+        .audit
+        .list(&ctx, &filter, before.as_deref(), limit)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::AuditPageDto::from_page(page))
+}

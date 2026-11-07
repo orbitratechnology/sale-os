@@ -3,6 +3,7 @@
 
 use crate::IpcError;
 use pos_application::approval::Approvals;
+use pos_application::audit_log::AuditService;
 use pos_application::auth::{Argon2PinHasher, AuthService, PinHasher};
 use pos_application::cart::CartService;
 use pos_application::cash::CashService;
@@ -58,6 +59,7 @@ pub(crate) struct Services {
     pub stock: StockService,
     pub reports: ReportService,
     pub exports: ExportService,
+    pub audit: AuditService,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
     pub prints: PrintService,
@@ -175,6 +177,10 @@ impl AppServices {
                 receipts: ReceiptService { receipts: a.clone() },
                 sales: SalesService { sales: a.clone() },
                 reports: ReportService { reports: a.clone() },
+                audit: AuditService {
+                    audit: a.clone(),
+                    pricing: a.clone(),
+                },
                 exports: ExportService {
                     store: a.clone(),
                     exports: a.clone(),
