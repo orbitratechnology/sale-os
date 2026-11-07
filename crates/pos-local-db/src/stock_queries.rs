@@ -31,13 +31,32 @@ impl StockQueries for SqliteStore {
         location: LocationId,
         variants: &[VariantId],
     ) -> Result<BTreeMap<VariantId, Quantity>, QueryError> {
+        self.bucket_on_hand(location, variants, "sellable").await
+    }
+
+    async fn damaged_on_hand(
+        &self,
+        location: LocationId,
+        variants: &[VariantId],
+    ) -> Result<BTreeMap<VariantId, Quantity>, QueryError> {
+        self.bucket_on_hand(location, variants, "damaged").await
+    }
+}
+
+impl SqliteStore {
+    async fn bucket_on_hand(
+        &self,
+        location: LocationId,
+        variants: &[VariantId],
+        bucket: &'static str,
+    ) -> Result<BTreeMap<VariantId, Quantity>, QueryError> {
         let mut out = BTreeMap::new();
         if variants.is_empty() {
             return Ok(out);
         }
-        let mut b = sqlx::QueryBuilder::new(
-            "SELECT variant_id, on_hand_milli FROM stock_balances WHERE bucket = 'sellable' AND location_id = ",
-        );
+        let mut b =
+            sqlx::QueryBuilder::new("SELECT variant_id, on_hand_milli FROM stock_balances WHERE bucket = ");
+        b.push_bind(bucket).push(" AND location_id = ");
         b.push_bind(location.to_string()).push(" AND variant_id IN (");
         let mut list = b.separated(", ");
         for v in variants {

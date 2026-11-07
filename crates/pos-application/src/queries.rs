@@ -205,6 +205,12 @@ pub trait StockQueries: Send + Sync {
         location: pos_domain::LocationId,
         variants: &[pos_domain::VariantId],
     ) -> Result<std::collections::BTreeMap<pos_domain::VariantId, pos_domain::Quantity>, QueryError>;
+    /// Damaged on-hand quantity per variant at `location` (what a write-off can take).
+    async fn damaged_on_hand(
+        &self,
+        location: pos_domain::LocationId,
+        variants: &[pos_domain::VariantId],
+    ) -> Result<std::collections::BTreeMap<pos_domain::VariantId, pos_domain::Quantity>, QueryError>;
 }
 
 /// What a receipt says about the shop, the till and who served (E13-T02).

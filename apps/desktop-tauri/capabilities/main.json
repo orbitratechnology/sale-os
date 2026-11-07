@@ -51,6 +51,7 @@
     "allow-return-receipt-print",
     "allow-sales-list",
     "allow-sales-get",
+    "allow-inventory-post-document",
     "allow-cash-session-current",
     "allow-cash-session-open",
     "allow-cash-session-close",

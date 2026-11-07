@@ -859,6 +859,43 @@ async fn apply_in_transaction(
                     .map_err(map_sqlx)?;
                 }
             }
+            WriteOp::InsertInventoryDocument { doc, number_slot } => {
+                let seq = *applied.numbers.get(number_slot).ok_or_else(|| {
+                    WriteError::Io("the document number must be allocated before the document".into())
+                })?;
+                st.step()?;
+                let code: String = sqlx::query_scalar("SELECT code FROM registers WHERE register_id = ?")
+                    .bind(ctx.register_id.to_string())
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                let number = format!("{code}-IN-{seq:06}");
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO inventory_documents (document_id, business_id, location_id, register_id, document_no,
+                       doc_type, reason_code, supplier_name, reference, note, actor_user_id, occurred_at, business_date,
+                       created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(doc.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.location_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(&number)
+                .bind(doc.plan.doc_type.as_str())
+                .bind(doc.plan.reason.map(|r| r.as_str()))
+                .bind(&doc.plan.supplier_name)
+                .bind(&doc.plan.reference)
+                .bind(&doc.plan.note)
+                .bind(doc.actor.to_string())
+                .bind(doc.occurred_at.as_millis())
+                .bind(doc.business_date.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                applied.receipt_numbers.insert(*number_slot, number);
+            }
             WriteOp::OpenCashSession { session, number_slot } => {
                 st.step()?;
                 let (code, next): (String, i64) = sqlx::query_as(
@@ -1350,8 +1387,9 @@ fn payload_with_numbers(
     let obj = p
         .as_object_mut()
         .ok_or_else(|| WriteError::Io("a payload with a receipt number must be an object".into()))?;
-    obj.insert("receiptSeq".into(), seq.into());
-    obj.insert("receiptNumber".into(), number.clone().into());
+    let (seq_key, number_key) = e.number_keys;
+    obj.insert(seq_key.into(), seq.into());
+    obj.insert(number_key.into(), number.clone().into());
     Ok(p)
 }
 

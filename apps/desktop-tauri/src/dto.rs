@@ -1380,3 +1380,74 @@ impl ClosedCashDto {
         }
     }
 }
+
+// ---------- inventory documents (E11-T02/T03) ----------
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentLineInputDto {
+    pub variant_id: VariantId,
+    /// Milli-units. Signed only for a count correction or "other" adjustment.
+    pub quantity_milli: String,
+    pub unit_cost_minor: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentDraftDto {
+    pub doc_type: pos_domain::stock_docs::DocumentType,
+    pub reason: Option<pos_domain::stock_docs::AdjustReason>,
+    pub supplier_name: Option<String>,
+    pub reference: Option<String>,
+    pub note: Option<String>,
+    pub lines: Vec<DocumentLineInputDto>,
+}
+
+impl DocumentDraftDto {
+    pub fn into_domain(self) -> Result<pos_domain::stock_docs::DocumentDraft, IpcError> {
+        Ok(pos_domain::stock_docs::DocumentDraft {
+            doc_type: self.doc_type,
+            reason: self.reason,
+            supplier_name: self.supplier_name,
+            reference: self.reference,
+            note: self.note,
+            lines: self
+                .lines
+                .into_iter()
+                .map(|l| {
+                    Ok(pos_domain::stock_docs::DocumentLine {
+                        variant_id: l.variant_id,
+                        quantity: qty_in("quantityMilli", &l.quantity_milli)?,
+                        unit_cost: l
+                            .unit_cost_minor
+                            .as_deref()
+                            .map(|c| money_in("unitCostMinor", c))
+                            .transpose()?,
+                    })
+                })
+                .collect::<Result<_, IpcError>>()?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PostedDocumentDto {
+    pub document_id: pos_domain::InventoryDocumentId,
+    /// `R01-IN-000001`.
+    pub document_no: String,
+    pub doc_type: pos_domain::stock_docs::DocumentType,
+    /// Stock movements written (a damage adjustment writes two per line).
+    pub movement_count: u32,
+}
+
+impl PostedDocumentDto {
+    pub fn from_posted(p: &pos_application::stock::PostedDocument) -> Self {
+        Self {
+            document_id: p.doc.id,
+            document_no: p.document_no.clone(),
+            doc_type: p.doc.plan.doc_type,
+            movement_count: u32::try_from(p.doc.plan.movements.len()).unwrap_or(u32::MAX),
+        }
+    }
+}

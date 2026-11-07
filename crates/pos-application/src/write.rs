@@ -151,6 +151,13 @@ pub enum WriteOp {
         number_slot: NumberSlot,
         require_cash_session: bool,
     },
+    /// A posted inventory document's header (E11-T02/T03); its movements go in an
+    /// `AppendMovements` op in the same set. Its `{register}-IN-{seq:06}` number comes from
+    /// `number_slot` (the InventoryDocument counter) and is reported like a receipt number.
+    InsertInventoryDocument {
+        doc: pos_domain::stock_docs::DocumentSnapshot,
+        number_slot: NumberSlot,
+    },
     /// Opens the register's cash session (E15-T02). Fails with `CashSessionAlreadyOpen` if
     /// one is open. The store gives it the next `{register}-Z-{seq:04}` number, reported in
     /// `receipt_numbers` under `number_slot`.
@@ -257,6 +264,9 @@ impl WriteOp {
             WriteOp::InsertReturn { ret, .. } => SyncKind::Fact {
                 aggregate: return_aggregate(ret.id),
             },
+            WriteOp::InsertInventoryDocument { doc, .. } => SyncKind::Fact {
+                aggregate: inventory_document_aggregate(doc.id),
+            },
             WriteOp::OpenCashSession { session, .. } => SyncKind::Fact {
                 aggregate: cash_session_aggregate(session.id),
             },
@@ -277,6 +287,14 @@ impl WriteOp {
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
+    }
+}
+
+/// Aggregate identity of an inventory document.
+pub fn inventory_document_aggregate(id: pos_domain::InventoryDocumentId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "inventory_document",
+        aggregate_id: id.to_string(),
     }
 }
 
@@ -322,9 +340,11 @@ pub struct OutboxDraft {
     /// Master data only (ADR-011): the version the edit was based on; 0 for a create.
     pub base_version: Option<u64>,
     pub payload: serde_json::Value,
-    /// Set when the payload needs a receipt number allocated in the same transaction:
-    /// the store writes `receiptSeq` and `receiptNumber` into the payload from this slot.
+    /// Set when the payload needs a number allocated in the same transaction: the store
+    /// writes the sequence and the number into the payload from this slot, under
+    /// `number_keys` (`receiptSeq` / `receiptNumber` unless said otherwise).
     pub receipt_slot: Option<NumberSlot>,
+    pub number_keys: (&'static str, &'static str),
 }
 
 impl OutboxDraft {
@@ -332,6 +352,13 @@ impl OutboxDraft {
     /// number only exists inside the transaction, and the event must carry it).
     pub fn with_receipt_number(mut self, slot: NumberSlot) -> Self {
         self.receipt_slot = Some(slot);
+        self
+    }
+
+    /// Like [`Self::with_receipt_number`], under other keys (e.g. `documentSeq`/`documentNo`).
+    pub fn with_number(mut self, slot: NumberSlot, seq_key: &'static str, number_key: &'static str) -> Self {
+        self.receipt_slot = Some(slot);
+        self.number_keys = (seq_key, number_key);
         self
     }
 
@@ -352,6 +379,7 @@ impl OutboxDraft {
             base_version,
             payload,
             receipt_slot: None,
+            number_keys: ("receiptSeq", "receiptNumber"),
         })
     }
 
@@ -590,6 +618,15 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn insert_inventory_document(
+        mut self,
+        doc: pos_domain::stock_docs::DocumentSnapshot,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops
+            .push(WriteOp::InsertInventoryDocument { doc, number_slot });
+        self
+    }
     pub fn open_cash_session(
         mut self,
         session: pos_domain::cash::OpenedSession,
@@ -786,6 +823,7 @@ impl WriteSetBuilder {
             | WriteOp::InsertReturn { .. }
             | WriteOp::OpenCashSession { .. }
             | WriteOp::CloseCashSession { .. }
+            | WriteOp::InsertInventoryDocument { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }

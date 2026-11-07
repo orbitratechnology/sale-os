@@ -25,6 +25,7 @@ pub mod sale;
 pub mod secret;
 pub mod settlement;
 pub mod staff;
+pub mod stock_docs;
 pub mod time;
 
 pub use access::{ApprovalScope, Permission, Role, approvable, role_has};

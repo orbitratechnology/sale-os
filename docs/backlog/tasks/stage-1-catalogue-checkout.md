@@ -206,7 +206,7 @@ hardware. It is measured by:
 ### E06-T07 · CSV import backend
 - **Size** M · **Deps** E06-T02, E06-T03 · **PRD** CAT-008, §16.3
 - **Scope:**
-  - Migration `0011_import.sql`.
+  - Migration `0012_import.sql`.
   - Parse with the `csv` crate: UTF-8 (with or without BOM) and Windows-1252 auto-detect; delimiter `,`, `;` or tab auto-detected; files up to 50k rows.
   - The mapping includes variant grouping by a "parent SKU" or "product name" column.
   - Validation per row; duplicate detection within the file and against the existing catalogue; an `onDuplicate` policy of `skip`, `update` or `error`.

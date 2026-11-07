@@ -131,6 +131,12 @@ export const commands = {
 	salesList: (filter: SalesFilterDto_Deserialize, after: string | null, limit: number | null) => typedError<SalesPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_list", { filter, after, limit })),
 	/**  One completed sale as recorded: lines, discounts, tax, tenders and the returns made since. */
 	salesGet: (saleId: SaleId) => typedError<SaleDetailDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_get", { saleId })),
+	/**
+	 *  Posts an opening-stock, goods-received, adjustment or write-off document in one
+	 *  transaction. Receiving needs `InventoryReceive`; adjusting and writing off need
+	 *  `InventoryAdjust`. Posted documents cannot be edited: post a correcting one.
+	 */
+	inventoryPostDocument: (draft: DocumentDraftDto_Deserialize) => typedError<PostedDocumentDto, IpcError_Serialize>(__TAURI_INVOKE("inventory_post_document", { draft })),
 	/**  The register's drawer: the open session (if any) and whether sales need one. */
 	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
 	/**  Opens the drawer with a float (minor units). */
@@ -149,6 +155,20 @@ export const commands = {
 /* Types */
 /**  `cart_add_variant`'s `via`: scans go through `scan_submit` instead. */
 export type AddViaDto = "search" | "quickSelect";
+
+export type AdjustReason = 
+/**  Sellable → damaged (kept, not sellable). */
+"damage" | 
+/**  − sellable. */
+"loss" | 
+/**  − sellable. */
+"theft" | 
+/**  ± sellable: the count differs from the record. */
+"count_correction" | 
+/**  − sellable. */
+"expired" | 
+/**  ± sellable; a note is required. */
+"other";
 
 export type AppInfo = AppInfo_Serialize | AppInfo_Deserialize;
 
@@ -554,6 +574,52 @@ export type Disposition =
 /**  Nothing comes back into stock (thrown away, or a service). */
 "no_stock_change";
 
+export type DocumentDraftDto = DocumentDraftDto_Serialize | DocumentDraftDto_Deserialize;
+
+export type DocumentDraftDto_Deserialize = {
+	docType: DocumentType,
+	reason?: AdjustReason | null,
+	supplierName?: string | null,
+	reference?: string | null,
+	note?: string | null,
+	lines: DocumentLineInputDto_Deserialize[],
+};
+
+export type DocumentDraftDto_Serialize = {
+	docType: DocumentType,
+	reason: AdjustReason | null,
+	supplierName: string | null,
+	reference: string | null,
+	note: string | null,
+	lines: DocumentLineInputDto_Serialize[],
+};
+
+export type DocumentLineInputDto = DocumentLineInputDto_Serialize | DocumentLineInputDto_Deserialize;
+
+export type DocumentLineInputDto_Deserialize = {
+	variantId: VariantId,
+	/**  Milli-units. Signed only for a count correction or "other" adjustment. */
+	quantityMilli: string,
+	unitCostMinor?: string | null,
+};
+
+export type DocumentLineInputDto_Serialize = {
+	variantId: VariantId,
+	/**  Milli-units. Signed only for a count correction or "other" adjustment. */
+	quantityMilli: string,
+	unitCostMinor: string | null,
+};
+
+export type DocumentType = 
+/**  First stock count when starting to use the till: + sellable. */
+"opening" | 
+/**  Goods received from a supplier: + sellable. */
+"receipt" | 
+/**  A correction with a reason; see [`AdjustReason`] for which way stock moves. */
+"adjustment" | 
+/**  Damaged stock thrown away: − damaged. */
+"write_off";
+
 /**
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
  *  The UI maps codes to actionable copy; `message` strings are for logs only.
@@ -604,6 +670,8 @@ export type ErrorDetails_Serialize = {
 	/**  `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string. */
 	remainingMinor: string | null,
 };
+
+export type InventoryDocumentId = string;
 
 /**
  *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
@@ -668,6 +736,15 @@ export type PlannedReturnLineDto = {
 	refundMinor: string,
 	/**  What will happen to the goods (a service line is always `no_stock_change`). */
 	disposition: Disposition,
+};
+
+export type PostedDocumentDto = {
+	documentId: InventoryDocumentId,
+	/**  `R01-IN-000001`. */
+	documentNo: string,
+	docType: DocumentType,
+	/**  Stock movements written (a damage adjustment writes two per line). */
+	movementCount: number,
 };
 
 export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;

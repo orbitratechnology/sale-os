@@ -207,6 +207,13 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"filter": {"from": null, "to": null, "receipt": null, "cashierUserId": null, "tender": null}, "after": null, "limit": null}),
         ),
         ("sales_get", Perm(SalesView), json!({"saleId": UNKNOWN_ID})),
+        // An adjustment would need InventoryAdjust instead; the matrix gives both to the same roles.
+        (
+            "inventory_post_document",
+            Perm(InventoryReceive),
+            json!({"draft": {"docType": "receipt", "reason": null, "supplierName": null, "reference": null, "note": null,
+                             "lines": [{"variantId": UNKNOWN_ID, "quantityMilli": "1000", "unitCostMinor": null}]}}),
+        ),
         ("cash_session_current", Perm(CashSessionOpen), json!({})),
         // A negative float is refused after the permission check: nothing is opened.
         (

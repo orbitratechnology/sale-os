@@ -33,8 +33,9 @@ Migration order and owner tasks:
 | 0008 | `0008_returns.sql` | E12-T01 | 2 |
 | 0009 | `0009_sales_history.sql` | E12-T03 (history indexes) | 2 |
 | 0010 | `0010_cash_sessions.sql` | E15-T02 | 2 |
-| 0011 | `0011_import.sql` | E06-T07 | 1 |
-| 0012 | `0012_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
+| 0011 | `0011_inventory_documents_final.sql` | E11-T03 (immutability triggers) | 2 |
+| 0012 | `0012_import.sql` | E06-T07 | 1 |
+| 0013 | `0013_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
 
 > Stage 0 ships a **throwaway** spike schema in a separate `spike/` directory. It is deleted
 > before Stage 1. The real migrations start at 0001 and are never edited after they merge.
@@ -723,7 +724,12 @@ in the closing transaction.
 
 ---
 
-## 0011_import.sql (CAT-008)
+## 0011_inventory_documents_final.sql (E11-T03)
+
+Triggers only: `inventory_documents` rows are never updated or deleted (the movements were
+already append-only). A wrong document is corrected by posting a new one.
+
+## 0012_import.sql (CAT-008)
 
 ```sql
 CREATE TABLE import_jobs (
@@ -755,7 +761,7 @@ CREATE TABLE import_rows (
 
 ---
 
-## 0012_sync.sql (Stage 3)
+## 0013_sync.sql (Stage 3)
 
 ```sql
 CREATE TABLE sync_conflicts (                          -- SYN-010, AT-07

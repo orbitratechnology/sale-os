@@ -604,3 +604,20 @@ pub async fn sales_get(
     let d = services.app()?.sales.get(&ctx, sale_id).await.map_err(err)?;
     Ok(crate::dto::SaleDetailDto::from_detail(&d))
 }
+
+// ---------- inventory documents (E11-T02/T03) ----------
+
+/// Posts an opening-stock, goods-received, adjustment or write-off document in one
+/// transaction. Receiving needs `InventoryReceive`; adjusting and writing off need
+/// `InventoryAdjust`. Posted documents cannot be edited: post a correcting one.
+#[tauri::command]
+#[specta::specta]
+pub async fn inventory_post_document(
+    services: State<'_, AppServices>,
+    draft: crate::dto::DocumentDraftDto,
+) -> Result<crate::dto::PostedDocumentDto, IpcError> {
+    let ctx = services.context().await?;
+    let draft = draft.into_domain()?;
+    let posted = services.app()?.stock.post(&ctx, draft).await.map_err(err)?;
+    Ok(crate::dto::PostedDocumentDto::from_posted(&posted))
+}

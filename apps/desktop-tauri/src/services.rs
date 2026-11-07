@@ -16,6 +16,7 @@ use pos_application::returns::ReturnService;
 use pos_application::sales::SalesService;
 use pos_application::setup::SetupService;
 use pos_application::staff::StaffService;
+use pos_application::stock::StockService;
 use pos_domain::{ApprovalId, Clock, ErrorCode, IdGenerator, SystemClock, UuidV7Generator};
 use pos_local_db::{DbOptions, LocalDb, SqliteStore};
 use pos_observability::LogGuard;
@@ -50,6 +51,7 @@ pub(crate) struct Services {
     pub returns: ReturnService,
     pub sales: SalesService,
     pub cash: CashService,
+    pub stock: StockService,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
     pub prints: PrintService,
@@ -136,6 +138,11 @@ impl AppServices {
                 },
                 receipts: ReceiptService { receipts: a.clone() },
                 sales: SalesService { sales: a.clone() },
+                stock: StockService {
+                    store: a.clone(),
+                    carts: a.clone(),
+                    stock: a.clone(),
+                },
                 cash: CashService {
                     store: a.clone(),
                     cash: a.clone(),

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-inventory-post-document"
+description = "Enables the inventory_post_document command without any pre-configured scope."
+commands.allow = ["inventory_post_document"]
+
+[[permission]]
+identifier = "deny-inventory-post-document"
+description = "Denies the inventory_post_document command without any pre-configured scope."
+commands.deny = ["inventory_post_document"]
