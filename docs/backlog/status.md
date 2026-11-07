@@ -41,19 +41,12 @@ checked. Anything that could not be checked yet is listed under **Open**, with t
 | E07-T01 Keyboard wedge | **Done (Chromium)** | 27 unit tests and 6 Playwright tests in Chromium, 12 consecutive runs green. **This found a truncation bug** (a 41 ms delivery stall split a scan), fixed with stall tolerance (ADR-022). | WebView2 measurement deferred with Windows |
 | E00-T06 Stage 0 vertical slice | **Done (Linux)** | Set up, scan through the wedge hook, atomic cash sale (sale, line, tender, movement, audit, outbox, receipt number), then the virtual-printer capture. Tested at store level, including faults at all 11 statements and the movement insert specifically, and over IPC on the mock runtime. Clicked through in the real app under Xvfb. | Runs from the Windows artefact: deferred. The sale event is outbox #5, not #1 as the task text said, because ADR-009 sends workspace and product events first. |
 
-### Spike to delete later
+### Stage 0 spike: removed (2026-11-07)
 
-The Stage 0 slice uses throwaway pieces, all marked `STAGE 0 SPIKE`, so the real catalogue,
-cart and sale tasks can replace them without a migration:
-
-- `spike_*` tables, created at runtime rather than by a migration;
-- `pos_application::spike`;
-- the `WriteOp::Spike*` variants;
-- the `pos_local_db::spike` module;
-- the `dev_demo_*` commands;
-- `Stage0Demo.tsx`.
-
-Delete them in E09-T08 at the latest.
+The throwaway Stage 0 pieces (`spike_*` tables, `pos_application::spike`, the `WriteOp::Spike*`
+variants, `pos_local_db::spike`, the `dev_demo_*` commands and `Stage0Demo.tsx`) are gone. The
+real checkout (E09-T08) replaces them, and its tests cover what the slice tests did: a fault at
+every statement leaves nothing behind, and a sale completes over IPC.
 
 ## Stage 1, backend first (2026-11-05)
 
@@ -117,10 +110,20 @@ keyboard.
 **Real app:** set up, created a product with a barcode in the editor, scanned it twice at the till
 (Rust + WebKitGTK under Xvfb): one line, quantity 2, total 5.00 with 0.83 VAT included.
 
+## Stage 2 started (2026-11-07): completing a sale
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E10-T01 Tender domain and settlement | **Done** | Cash 20.00 on 13.45 gives 6.55; card 10.00 + cash 5.00 gives 1.55 from cash; card 15.00 on 13.45 gives `TENDER_OVERPAY_NON_CASH`; cash 10.00 gives `TENDER_INSUFFICIENT` with `details.remainingMinor` 345; `4111111111111111` as a reference gives `VALIDATION_FAILED` and is never echoed or stored; external tenders are always confirmed by the operator (a provider confirmation cannot be constructed); cash rounding only when all-cash | The cash-rounding setting itself (E04-T03) |
+| E11-T01 Movement ledger and balances | **Done for sales** | `0005_inventory.sql`; movements and balances in the same transaction; append-only triggers; balance = sum of movements over 200 sales; services and non-stock items move nothing | Property test over receipts, adjustments and returns (those arrive with E11-T02/T03, E12) |
+| E09-T08 Complete sale | **Done (Linux)** | `0006_sales_tenders.sql`; `CheckoutService::complete_sale` per 02 §4; a fault at every statement leaves nothing and uses no receipt number (AT-04); 200 gapless receipt numbers; snapshot survives a rename and reprice (POS-010); stale revision gives `CART_REVISION_MISMATCH` with nothing written; negative stock allowed and flagged, or blocked by the policy; `sale.completed` v1 is self-contained with the receipt number filled in the same transaction (decision recorded in `checkout.rs`); real app: scan → pay → change shown, rows in the database | AT-05 kill-after-return with a restart; the p95 < 150 ms timing for 30 lines on CI; receipt rows and printing (E13) |
+| E10-T03 Payment panel | **Done (Chromium + real app)** | F9 opens; empty + Enter pays exact; quick notes scaled by currency; split tenders with remove; external rows say "Externally confirmed by operator", never "approved"; complete only when nothing is due; completed view with change, receipt number and "Saved on this device" | — |
+
 ### Next up
 
-E06-T05 categories and tax configuration; then E10 payment and E09-T08 checkout (completing a
-sale), which also retires the Stage 0 spike.
+AT-05 in the crash harness (kill right after `checkout_complete` returns, restart, sale and
+outbox present); E13 receipts (document model, preview, print queue); E12 returns; E15 cash
+sessions; E06-T05 categories and tax configuration.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
 `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
