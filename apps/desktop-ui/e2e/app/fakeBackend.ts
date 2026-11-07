@@ -519,6 +519,64 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         returns: x.returns.map((r) => ({ returnId: r.returnId, returnNumber: r.returnNumber, localTime: "2026-11-07 10:00", reason: r.reason, totalMinor: r.totalMinor.toString(), refunds: r.refunds })),
       };
     }
+    case "reports_sales_summary":
+    case "reports_tender_mix":
+    case "reports_top_products":
+    case "reports_stock": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const range = a.range as { from: string; to: string } | undefined;
+      if (range && range.from > range.to) fail("VALIDATION_FAILED");
+      const scope = { scope: "device", asOfMs: String(Date.UTC(2026, 10, 7, 9, 30)) };
+      // Every fake sale is on the range's last day.
+      const sum = (f: (x: FakeSale) => bigint) => s.sales.reduce((t, x) => t + f(x), 0n);
+      if (cmd === "reports_sales_summary") {
+        const total = sum((x) => x.totalMinor);
+        const refunds = sum((x) => x.returns.reduce((t, r) => t + r.totalMinor, 0n));
+        const tax = div(total, 6n);
+        const rtax = div(refunds, 6n);
+        const fig = {
+          salesCount: s.sales.length, grossMinor: total.toString(), lineDiscountsMinor: "0", orderDiscountsMinor: "0", discountsMinor: "0",
+          taxMinor: tax.toString(), roundingMinor: "0", salesTotalMinor: total.toString(),
+          returnsCount: s.sales.reduce((n, x) => n + x.returns.length, 0), refundsMinor: refunds.toString(), refundedTaxMinor: rtax.toString(),
+          netInclTaxMinor: (total - refunds).toString(), netExclTaxMinor: (total - refunds - (tax - rtax)).toString(),
+        };
+        return { days: s.sales.length ? [{ date: range?.to, figures: fig }] : [], total: fig, pricesIncludeTax: true, currencyExponent: 2, scope };
+      }
+      if (cmd === "reports_tender_mix") {
+        const kinds = [...new Set(s.sales.flatMap((x) => x.tenders.map((t) => t.kind)))].sort();
+        return {
+          rows: kinds.map((k) => {
+            const ts = s.sales.flatMap((x) => x.tenders.filter((t) => t.kind === k));
+            const taken = s.sales.reduce((n, x) => n + x.tenders.filter((t) => t.kind === k).reduce((m, t) => m + t.amountMinor, 0n) - (k === "cash" ? x.changeMinor : 0n), 0n);
+            return { kind: k, confirmationSource: "operator", count: ts.length, takenMinor: taken.toString(), refundCount: 0, refundedMinor: "0", netMinor: taken.toString() };
+          }),
+          scope,
+        };
+      }
+      if (cmd === "reports_top_products") {
+        const by = new Map<string, { qty: bigint; value: bigint }>();
+        for (const l of s.sales.flatMap((x) => x.lines)) {
+          const e = by.get(l.name) ?? { qty: 0n, value: 0n };
+          e.qty += l.qtyMilli - l.returnedMilli;
+          e.value += l.totalMinor;
+          by.set(l.name, e);
+        }
+        const rows = [...by.entries()].sort((x, y) => (a.by === "quantity" ? Number(y[1].qty - x[1].qty) : Number(y[1].value - x[1].value)));
+        return { rows: rows.map(([name, e]) => ({ variantId: id(), name, label: "", quantityMilli: e.qty.toString(), valueMinor: e.value.toString() })), scope };
+      }
+      const stock = [
+        { name: "Chocolate bar", sellable: "-2000", status: "negative", low: null },
+        { name: "Cola 330ml", sellable: "40000", status: "ok", low: "12000" },
+        { name: "Crisps", sellable: "3000", status: "low", low: "5000" },
+      ];
+      return {
+        rows: stock
+          .filter((r) => !a.lowOnly || r.status !== "ok")
+          .map((r) => ({ variantId: id(), name: r.name, label: "", sku: null, unit: "ea", sellableMilli: r.sellable, damagedMilli: "0", lowStockThresholdMilli: r.low, status: r.status, lastMovementMs: null })),
+        scope,
+      };
+    }
     case "inventory_post_document": {
       const me = needSession(s);
       if (me.role === "cashier") fail("PERMISSION_DENIED");

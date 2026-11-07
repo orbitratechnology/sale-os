@@ -55,6 +55,7 @@ export function Checkout({
   onSales,
   onDrawer,
   onStock,
+  onReports,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -67,6 +68,8 @@ export function Checkout({
   onDrawer: () => void;
   /** Receive and adjust stock; `null` for roles that cannot (UI only: Rust checks). */
   onStock: (() => void) | null;
+  /** Reports; `null` for roles without ReportsView (UI only: Rust checks). */
+  onReports: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
@@ -331,6 +334,11 @@ export function Checkout({
           {onStock && (
             <button type="button" className="secondary" onClick={onStock}>
               Stock <kbd>F11</kbd>
+            </button>
+          )}
+          {onReports && (
+            <button type="button" className="secondary" onClick={onReports}>
+              Reports
             </button>
           )}
           <button type="button" className="secondary" onClick={() => void lock()}>

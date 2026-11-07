@@ -9,6 +9,7 @@ import { ReturnScreen } from "./features/returns/ReturnScreen";
 import { SalesScreen } from "./features/sales/SalesScreen";
 import { DrawerScreen } from "./features/cash/DrawerScreen";
 import { StockScreen } from "./features/stock/StockScreen";
+import { ReportsScreen } from "./features/reports/ReportsScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
 
 /**
@@ -70,6 +71,8 @@ export function App() {
           onBack={() => setScreen({ kind: "till" })}
         />
       );
+    case "reports":
+      return <ReportsScreen workspace={workspace} onBack={() => setScreen({ kind: "till" })} />;
     case "stock":
       return <StockScreen workspace={workspace} onBack={() => setScreen({ kind: "till" })} />;
     case "drawer":
@@ -120,6 +123,7 @@ export function App() {
           onSales={() => setScreen({ kind: "sales" })}
           onDrawer={() => setScreen({ kind: "drawer" })}
           onStock={canEdit ? () => setScreen({ kind: "stock" }) : null}
+          onReports={canEdit ? () => setScreen({ kind: "reports" }) : null}
           onCreateProduct={(barcode) => setScreen({ kind: "editor", productId: null, barcode, returnTo: "till" })}
         />
       );
@@ -133,4 +137,5 @@ type Screen =
   | { kind: "sales" }
   | { kind: "drawer" }
   | { kind: "stock" }
+  | { kind: "reports" }
   | { kind: "editor"; productId: string | null; barcode?: string; returnTo: "till" | "products" };

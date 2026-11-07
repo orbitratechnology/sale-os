@@ -966,3 +966,92 @@ describe("stock (E11-T02/T03)", () => {
     expect(await page.getByRole("heading", { name: "Stock" }).count()).toBe(0);
   });
 });
+
+describe("reports (E14-T03)", () => {
+  it("daily sales, payments, top products and stock, each marked 'This device only'", async () => {
+    const page = await checkout();
+    // Cola 1.20 for cash 5.00; Crisps 0.85 + Chocolate 0.99 = 1.84 by card 1.00 + cash.
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.getByLabel("Cash received").fill("5");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await scan(page, CRISPS);
+    await scan(page, CHOC);
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 2);
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Payment" });
+    await pay.getByRole("button", { name: "Card (separate terminal)" }).click();
+    await pay.getByLabel(/^Amount/).fill("1.00");
+    await pay.getByRole("button", { name: /^Record/ }).click();
+    await pay.getByLabel("Cash received").fill("1");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Reports" }).click();
+    await page.getByRole("heading", { name: "Reports" }).waitFor();
+    await page.getByTestId("scope-badge").filter({ hasText: "This device only" }).waitFor();
+    const sales = page.getByRole("region", { name: "Daily sales" });
+    expect(await sales.getByTestId("sales-total").textContent()).toBe("3.04");
+    expect(await sales.getByTestId("net-incl").textContent()).toBe("3.04");
+    expect(await sales.getByTestId("day-row").count()).toBe(1);
+    const range = (await calls(page, "reports_sales_summary"))[0]?.range as { from: string; to: string };
+    expect(range.from).toBe(range.to); // "Today" by default
+    await page.getByRole("button", { name: "Last 7 days" }).click();
+    // The last request is for a 7-day range ending today.
+    await page.waitForFunction(() => {
+      const r = window.__ipc.filter((c) => c.cmd === "reports_sales_summary").at(-1)?.args.range as { from: string; to: string } | undefined;
+      return r !== undefined && r.from < r.to;
+    });
+    const week = (await calls(page, "reports_sales_summary")).at(-1)?.range as { from: string; to: string };
+    expect(week.to).toBe(range.to);
+
+    await page.getByRole("tab", { name: "Payments" }).click();
+    const mix = page.getByRole("region", { name: "Payments" });
+    await mix.getByTestId("mix-row").nth(1).waitFor();
+    const rows = await mix.getByTestId("mix-row").allTextContents();
+    expect(rows[0]).toContain("Card");
+    expect(rows[0]).toContain("Recorded by staff");
+    expect(rows[1]).toContain("Cash");
+    expect(rows[1]).toContain("2.04"); // 1.20 + 0.84 kept
+    await page.getByTestId("scope-badge").filter({ hasText: "This device only" }).waitFor();
+
+    await page.getByRole("tab", { name: "Top products" }).click();
+    const top = page.getByRole("region", { name: "Top products" });
+    await top.getByTestId("top-row").nth(2).waitFor();
+    expect(await top.getByTestId("top-row").first().textContent()).toContain("Cola 330ml");
+
+    await page.getByRole("tab", { name: "Stock" }).click();
+    const stock = page.getByRole("region", { name: "Stock" });
+    await stock.getByText("calculated from recorded movements").waitFor();
+    await stock.getByTestId("stock-row").nth(2).waitFor();
+    await stock.getByLabel("Low and negative only").check();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=stock-row]").length === 2);
+    expect(await stock.getByTestId("stock-row").allTextContents()).toEqual([
+      expect.stringContaining("Negative"),
+      expect.stringContaining("Low"),
+    ]);
+
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    const serious = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+    expect(serious).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("a cashier has no Reports action", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await page.getByRole("button", { name: "Reports" }).count()).toBe(0);
+  });
+});

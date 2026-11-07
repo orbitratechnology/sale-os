@@ -244,3 +244,12 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 .stock-code { max-width: 480px; }
 .stock-code input { font-family: var(--mono, monospace); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Reports (E14-T03) */
+.scope-badge { margin: 0; justify-self: start; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 0.85rem; color: var(--muted); }
+.report-totals { max-width: 480px; }
+.stock-status { font-weight: 600; }
+.stock-status.low { color: var(--sandbox); }
+.stock-status.negative { color: var(--danger); }
+.sales-filters > [role="group"] { grid-column: 1 / -1; }
+.report-totals + .sales-table { margin-top: 16px; }
