@@ -13,6 +13,7 @@ pub mod printing;
 pub mod queries;
 pub mod receipts;
 pub mod records;
+pub mod returns;
 pub mod scan;
 pub mod settings;
 pub mod setup;

@@ -231,7 +231,89 @@ fn scenarios() -> Vec<(&'static str, ReceiptDocument)> {
         CopyKind::Original,
     );
     out.push(("sandbox_reprint", doc.as_reprint()));
+
+    // A return of 1 of 3 teas (3 × 3.33) with the cumulative rule, refunded in cash.
+    let tea = item(&g, "Tea", "", 333, Unit::Ea, vec![rate(&g, "VAT 20%", 200_000)]);
+    let mut c = Cart::new(&g);
+    c.add(tea, Quantity::from_whole(3).unwrap(), AddVia::Search, &g)
+        .unwrap();
+    let sold = sale(&c, TaxMode::Inclusive, &[cash(999)], SaleMode::Live);
+    out.push(("return", return_doc(&sold, &g)));
     out
+}
+
+fn return_doc(sold: &SaleSnapshot, g: &dyn IdGenerator) -> ReceiptDocument {
+    use pos_domain::returns::{
+        Disposition, RefundSnapshot, ReturnLineRequest, ReturnLineSnapshot, ReturnReason, ReturnSnapshot,
+        ReturnableLine, ReturnableSale, plan_return, settle_refunds,
+    };
+    let l = &sold.lines[0];
+    let returnable = ReturnableSale {
+        sale_id: sold.id,
+        receipt_number: "R01-000001".into(),
+        mode: SaleMode::Live,
+        currency: sold.currency,
+        lines: vec![ReturnableLine {
+            sale_line_id: l.id,
+            line_no: 1,
+            product_id: l.product_id,
+            variant_id: l.variant_id,
+            name: l.name.clone(),
+            variant_label: l.variant_label.clone(),
+            unit: l.unit,
+            track_stock: true,
+            quantity: l.quantity,
+            total: l.total,
+            tax: l.tax,
+            unit_cost: None,
+            returned: Quantity::ZERO,
+        }],
+    };
+    let plan = plan_return(
+        &returnable,
+        SaleMode::Live,
+        &[ReturnLineRequest {
+            sale_line_id: l.id,
+            quantity: Quantity::ONE,
+            disposition: Disposition::Restock,
+        }],
+    )
+    .unwrap();
+    let refunds = settle_refunds(plan.total, &[cash(plan.total.minor())]).unwrap();
+    let ret = ReturnSnapshot {
+        id: pos_domain::ReturnId::generate(g),
+        original_sale: sold.id,
+        original_receipt_number: "R01-000001".into(),
+        reason: ReturnReason::ChangedMind,
+        note: None,
+        currency: sold.currency,
+        subtotal: plan.subtotal,
+        tax: plan.tax,
+        total: plan.total,
+        lines: plan
+            .lines
+            .into_iter()
+            .map(|line| ReturnLineSnapshot {
+                id: pos_domain::ReturnLineId::generate(g),
+                line,
+            })
+            .collect(),
+        refunds: refunds
+            .into_iter()
+            .enumerate()
+            .map(|(i, tender)| RefundSnapshot {
+                id: pos_domain::RefundId::generate(g),
+                seq: i as u32 + 1,
+                tender,
+            })
+            .collect(),
+        actor: UserId::generate(g),
+        approver: None,
+        occurred_at: sold.occurred_at,
+        business_date: sold.business_date,
+        timezone: sold.timezone.clone(),
+    };
+    pos_receipts::return_receipt(&ret, &context(), "R01-R-000001", false)
 }
 
 fn check(path: PathBuf, actual: &str) {

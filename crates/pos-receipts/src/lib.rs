@@ -5,4 +5,6 @@ pub mod document;
 pub mod escpos;
 pub mod text;
 
-pub use document::{CONTENT_VERSION, CopyKind, ReceiptContext, ReceiptDocument, sale_receipt};
+pub use document::{
+    CONTENT_VERSION, CopyKind, DocumentKind, ReceiptContext, ReceiptDocument, return_receipt, sale_receipt,
+};

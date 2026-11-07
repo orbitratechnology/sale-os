@@ -18,6 +18,7 @@ pub mod numbering;
 pub mod pricing;
 pub mod quantity;
 pub mod rate;
+pub mod returns;
 pub mod rounding;
 pub mod sale;
 pub mod secret;

@@ -257,3 +257,17 @@ pub trait PrintQueries: Send + Sync {
     /// A receipt's stored document (JSON text).
     async fn receipt_document(&self, receipt: pos_domain::ReceiptId) -> Result<Option<String>, QueryError>;
 }
+
+/// Reads for returns (E12).
+#[async_trait::async_trait]
+pub trait ReturnQueries: Send + Sync {
+    /// A sale with, per line, what was sold and what has already been returned.
+    async fn returnable_sale(
+        &self,
+        sale: pos_domain::SaleId,
+    ) -> Result<Option<pos_domain::returns::ReturnableSale>, QueryError>;
+    /// A sale by its receipt number (typed or scanned from the receipt's barcode).
+    async fn sale_by_receipt(&self, receipt_number: &str) -> Result<Option<pos_domain::SaleId>, QueryError>;
+    /// `returns.cashier_requires_approval` (default true).
+    async fn cashier_returns_need_approval(&self) -> Result<bool, QueryError>;
+}

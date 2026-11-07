@@ -19,10 +19,31 @@ pub enum CopyKind {
     Reprint,
 }
 
+/// A sale receipt, or a refund receipt for a return.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentKind {
+    #[default]
+    Sale,
+    Return,
+}
+
+impl DocumentKind {
+    fn is_sale(&self) -> bool {
+        *self == DocumentKind::Sale
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceiptDocument {
     pub version: u32,
+    /// Omitted for sales, so sale documents are unchanged.
+    #[serde(default, skip_serializing_if = "DocumentKind::is_sale")]
+    pub kind: DocumentKind,
+    /// For a return: the receipt of the original sale (RET-003).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_receipt: Option<String>,
     pub copy: CopyKind,
     /// Practice sale: printed with a SANDBOX marker.
     pub sandbox: bool,
@@ -159,6 +180,8 @@ pub fn sale_receipt(
         .collect();
     ReceiptDocument {
         version: CONTENT_VERSION,
+        kind: DocumentKind::Sale,
+        original_receipt: None,
         copy,
         sandbox: sale.mode == pos_domain::sale::SaleMode::Sandbox,
         header: Header {
@@ -199,6 +222,81 @@ pub fn sale_receipt(
         change: sale.change,
         footer: ctx.footer_lines.clone(),
         barcode: receipt_number.into(),
+    }
+}
+
+/// The refund receipt for a return (E13-T02), from the return snapshot only.
+pub fn return_receipt(
+    ret: &pos_domain::returns::ReturnSnapshot,
+    ctx: &ReceiptContext,
+    return_number: &str,
+    sandbox: bool,
+) -> ReceiptDocument {
+    let lines = ret
+        .lines
+        .iter()
+        .map(|l| Line {
+            name: l.line.name.clone(),
+            variant_label: l.line.variant_label.clone(),
+            quantity: quantity(l.line.quantity, l.line.unit),
+            unit_price: l.line.refund,
+            gross: l.line.refund,
+            discount_label: None,
+            discount: Money::ZERO,
+            price_overridden: false,
+        })
+        .collect();
+    ReceiptDocument {
+        version: CONTENT_VERSION,
+        kind: DocumentKind::Return,
+        original_receipt: Some(ret.original_receipt_number.clone()),
+        copy: CopyKind::Original,
+        sandbox,
+        header: Header {
+            business_name: ctx.business_name.clone(),
+            address_lines: ctx.address_lines.clone(),
+            phone: ctx.phone.clone(),
+            tax_registration_no: ctx.tax_registration_no.clone(),
+            lines: ctx.header_lines.clone(),
+        },
+        meta: Meta {
+            receipt_number: return_number.into(),
+            local_time: pos_domain::time::local_date_time(ret.occurred_at, &ret.timezone).unwrap_or_default(),
+            register_name: ctx.register_name.clone(),
+            register_code: ctx.register_code.clone(),
+            cashier_name: ctx.cashier_name.clone(),
+        },
+        currency_exponent: ret.currency.exponent,
+        lines,
+        totals: Totals {
+            // Like a sale with tax included: the lines add up to the subtotal; the tax
+            // refunded is shown as included.
+            subtotal: ret.total,
+            line_discounts: Money::ZERO,
+            order_discount: Money::ZERO,
+            order_discount_label: None,
+            tax: vec![TaxRow {
+                name: "Tax refunded".into(),
+                amount: ret.tax,
+            }],
+            prices_include_tax: true,
+            rounding: Money::ZERO,
+            total: ret.total,
+        },
+        tenders: ret
+            .refunds
+            .iter()
+            .map(|r| TenderRow {
+                label: tender_label(r.tender.kind).into(),
+                amount: r.tender.amount,
+                received: None,
+                external: !r.tender.kind.is_cash(),
+                reference: r.tender.external_reference.clone(),
+            })
+            .collect(),
+        change: Money::ZERO,
+        footer: ctx.footer_lines.clone(),
+        barcode: return_number.into(),
     }
 }
 

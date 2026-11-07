@@ -64,6 +64,10 @@ pub enum MovementSource {
         sale_id: crate::SaleId,
         line_id: crate::SaleLineId,
     },
+    Return {
+        return_id: crate::ReturnId,
+        line_id: crate::ReturnLineId,
+    },
     InventoryDocument {
         document_id: crate::InventoryDocumentId,
     },
@@ -75,6 +79,9 @@ impl MovementSource {
         match self {
             MovementSource::Sale { sale_id, line_id } => {
                 ("sale", sale_id.to_string(), Some(line_id.to_string()))
+            }
+            MovementSource::Return { return_id, line_id } => {
+                ("return", return_id.to_string(), Some(line_id.to_string()))
             }
             MovementSource::InventoryDocument { document_id } => {
                 ("inventory_document", document_id.to_string(), None)

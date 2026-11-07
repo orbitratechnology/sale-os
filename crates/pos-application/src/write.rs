@@ -136,6 +136,14 @@ pub enum WriteOp {
         document: serde_json::Value,
         receipt_slot: Option<NumberSlot>,
     },
+    /// A completed return (E12-T02): header, lines and refunds. Its number comes from
+    /// `number_slot` (the Return counter) and is reported like a receipt number, so the
+    /// event and the return receipt can carry it. RET-004 is checked again inside the
+    /// transaction: two returns of the last unit cannot both succeed.
+    InsertReturn {
+        ret: pos_domain::returns::ReturnSnapshot,
+        number_slot: NumberSlot,
+    },
     /// Creates or updates a print job and appends its state change to `print_job_events`
     /// (E13-T06). Local only.
     PutPrintJob {
@@ -226,6 +234,9 @@ impl WriteOp {
             WriteOp::InsertSale { sale, .. } => SyncKind::Fact {
                 aggregate: sale_aggregate(sale.id),
             },
+            WriteOp::InsertReturn { ret, .. } => SyncKind::Fact {
+                aggregate: return_aggregate(ret.id),
+            },
             WriteOp::AppendMovements { aggregate, .. } => SyncKind::Fact {
                 aggregate: aggregate.clone(),
             },
@@ -240,6 +251,14 @@ impl WriteOp {
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
+    }
+}
+
+/// Aggregate identity of a return.
+pub fn return_aggregate(id: pos_domain::ReturnId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "return",
+        aggregate_id: id.to_string(),
     }
 }
 
@@ -560,6 +579,14 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::PutPrintJob { job, detail });
         self
     }
+    pub fn insert_return(
+        mut self,
+        ret: pos_domain::returns::ReturnSnapshot,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertReturn { ret, number_slot });
+        self
+    }
     pub fn close_cart(
         mut self,
         cart_id: pos_domain::CartId,
@@ -696,6 +723,7 @@ impl WriteSetBuilder {
             WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
             | WriteOp::InsertSale { .. }
+            | WriteOp::InsertReturn { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
@@ -750,6 +778,12 @@ pub enum WriteError {
     CartRevisionMismatch { expected: Option<u64> },
     #[error("scan event already processed")]
     ScanAlreadySeen,
+    /// RET-004, checked inside the transaction.
+    #[error("only {available_milli} milli-units of that line can still be returned")]
+    ReturnQtyExceeds {
+        line: pos_domain::SaleLineId,
+        available_milli: i64,
+    },
 }
 
 impl HasErrorCode for WriteError {
@@ -763,6 +797,7 @@ impl HasErrorCode for WriteError {
             WriteError::CartRevisionMismatch { .. } => ErrorCode::CartRevisionMismatch,
             // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.
             WriteError::ScanAlreadySeen => ErrorCode::ScanInvalid,
+            WriteError::ReturnQtyExceeds { .. } => ErrorCode::ReturnQtyExceeds,
         }
     }
 }

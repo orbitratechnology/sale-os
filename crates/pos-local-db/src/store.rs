@@ -847,6 +847,114 @@ async fn apply_in_transaction(
                     .map_err(map_sqlx)?;
                 }
             }
+            WriteOp::InsertReturn { ret, number_slot } => {
+                let seq = *applied.numbers.get(number_slot).ok_or_else(|| {
+                    WriteError::Io("the return number must be allocated before the return".into())
+                })?;
+                // RET-004 inside BEGIN IMMEDIATE: nothing else can return these lines meanwhile.
+                // A sale line split across dispositions is checked for its parts together.
+                let mut wanted: Vec<(pos_domain::SaleLineId, i64)> = Vec::new();
+                for l in &ret.lines {
+                    match wanted.iter_mut().find(|(id, _)| *id == l.line.sale_line_id) {
+                        Some((_, q)) => *q += l.line.quantity.milli(),
+                        None => wanted.push((l.line.sale_line_id, l.line.quantity.milli())),
+                    }
+                }
+                for (line, quantity) in wanted {
+                    st.step()?;
+                    let available: Option<i64> = sqlx::query_scalar(
+                        "SELECT sl.quantity_milli - coalesce((SELECT sum(rl.quantity_milli) FROM return_lines rl
+                           WHERE rl.original_sale_line_id = sl.sale_line_id), 0)
+                         FROM sale_lines sl WHERE sl.sale_line_id = ? AND sl.sale_id = ?",
+                    )
+                    .bind(line.to_string())
+                    .bind(ret.original_sale.to_string())
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                    let available = available.unwrap_or(0);
+                    if quantity > available {
+                        return Err(WriteError::ReturnQtyExceeds {
+                            line,
+                            available_milli: available,
+                        });
+                    }
+                }
+                st.step()?;
+                let code: String = sqlx::query_scalar("SELECT code FROM registers WHERE register_id = ?")
+                    .bind(ctx.register_id.to_string())
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                let number = format!("{code}-R-{seq:06}");
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO returns (return_id, business_id, location_id, register_id, original_sale_id, return_seq,
+                       return_number, reason_code, note, subtotal_minor, tax_minor, total_minor, actor_user_id,
+                       approver_user_id, occurred_at, business_date, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(ret.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.location_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(ret.original_sale.to_string())
+                .bind(as_i64(seq)?)
+                .bind(&number)
+                .bind(ret.reason.as_str())
+                .bind(&ret.note)
+                .bind(ret.subtotal.minor())
+                .bind(ret.tax.minor())
+                .bind(ret.total.minor())
+                .bind(ret.actor.to_string())
+                .bind(ret.approver.map(|a| a.to_string()))
+                .bind(ret.occurred_at.as_millis())
+                .bind(ret.business_date.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                for l in &ret.lines {
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO return_lines (return_line_id, return_id, original_sale_line_id, quantity_milli,
+                           refund_minor, tax_minor, disposition) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(l.id.to_string())
+                    .bind(ret.id.to_string())
+                    .bind(l.line.sale_line_id.to_string())
+                    .bind(l.line.quantity.milli())
+                    .bind(l.line.refund.minor())
+                    .bind(l.line.tax.minor())
+                    .bind(l.line.disposition.as_str())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+                for r in &ret.refunds {
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO refunds (refund_id, return_id, business_id, seq, tender_type, amount_minor, status,
+                           confirmation_source, external_reference, recorded_by, occurred_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    )
+                    .bind(r.id.to_string())
+                    .bind(ret.id.to_string())
+                    .bind(ctx.business_id.to_string())
+                    .bind(i64::from(r.seq))
+                    .bind(r.tender.kind.as_str())
+                    .bind(r.tender.amount.minor())
+                    .bind(r.tender.status.as_str())
+                    .bind(r.tender.confirmation.as_str())
+                    .bind(&r.tender.external_reference)
+                    .bind(ret.actor.to_string())
+                    .bind(ret.occurred_at.as_millis())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+                applied.receipt_numbers.insert(*number_slot, number);
+            }
             WriteOp::PutPrintJob { job, detail } => {
                 st.step()?;
                 sqlx::query(

@@ -2,7 +2,7 @@
 //! 58 mm paper, 48 for 80 mm. The preview shows exactly these lines, and the ESC/POS
 //! encoder prints them, so what the cashier sees is what prints.
 
-use crate::document::{CopyKind, ReceiptDocument, amount};
+use crate::document::{CopyKind, DocumentKind, ReceiptDocument, amount};
 
 pub const COLUMNS_58MM: usize = 32;
 pub const COLUMNS_80MM: usize = 48;
@@ -68,6 +68,10 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
     for l in &doc.header.lines {
         centered(&mut out, l);
     }
+    let refund = doc.kind == DocumentKind::Return;
+    if refund {
+        centered(&mut out, "*** REFUND ***");
+    }
     if doc.copy == CopyKind::Reprint {
         centered(&mut out, "*** REPRINT ***");
     }
@@ -75,12 +79,16 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
         centered(&mut out, "*** SANDBOX - PRACTICE SALE ***");
     }
     rule(&mut out);
+    let title = if refund { "Return" } else { "Receipt" };
     pair(
         &mut out,
-        &format!("Receipt {}", doc.meta.receipt_number),
+        &format!("{title} {}", doc.meta.receipt_number),
         "",
         Style::Normal,
     );
+    if let Some(o) = &doc.original_receipt {
+        pair(&mut out, &format!("Original receipt {o}"), "", Style::Normal);
+    }
     pair(
         &mut out,
         &doc.meta.local_time,
@@ -97,6 +105,15 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
             format!("{} {}", l.name, l.variant_label)
         };
         plain(&mut out, &name);
+        if refund {
+            pair(
+                &mut out,
+                &format!("  {} returned", l.quantity),
+                &format!("-{}", m(l.gross)),
+                Style::Normal,
+            );
+            continue;
+        }
         let each = format!(
             "  {} x {}{}",
             l.quantity,
@@ -143,7 +160,12 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
     if doc.totals.rounding.minor() != 0 {
         pair(&mut out, "Rounding", &m(doc.totals.rounding), Style::Normal);
     }
-    pair(&mut out, "TOTAL", &m(doc.totals.total), Style::Bold);
+    pair(
+        &mut out,
+        if refund { "REFUND TOTAL" } else { "TOTAL" },
+        &m(doc.totals.total),
+        Style::Bold,
+    );
     if doc.totals.prices_include_tax {
         for t in &doc.totals.tax {
             pair(
@@ -156,9 +178,14 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
     }
     rule(&mut out);
     for t in &doc.tenders {
+        let label = if refund {
+            format!("Refunded: {}", t.label)
+        } else {
+            t.label.clone()
+        };
         pair(
             &mut out,
-            &t.label,
+            &label,
             &m(t.received.unwrap_or(t.amount)),
             Style::Normal,
         );

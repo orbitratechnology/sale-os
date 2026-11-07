@@ -233,7 +233,7 @@ pub fn settle(
     })
 }
 
-fn clean_reference(r: Option<&str>) -> Result<Option<String>, SettlementError> {
+pub(crate) fn clean_reference(r: Option<&str>) -> Result<Option<String>, SettlementError> {
     let Some(r) = r.map(str::trim).filter(|r| !r.is_empty()) else {
         return Ok(None);
     };

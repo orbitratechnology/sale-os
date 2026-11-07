@@ -140,6 +140,8 @@ pub enum AppError {
     #[error(transparent)]
     Sale(#[from] pos_domain::sale::SaleError),
     #[error(transparent)]
+    Return(#[from] pos_domain::returns::ReturnError),
+    #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
     WriteSet(#[from] WriteSetError),
@@ -167,6 +169,7 @@ impl HasErrorCode for AppError {
             AppError::Settlement(e) => e.error_code(),
             AppError::Inventory(e) => e.error_code(),
             AppError::Sale(e) => e.error_code(),
+            AppError::Return(e) => e.error_code(),
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,
