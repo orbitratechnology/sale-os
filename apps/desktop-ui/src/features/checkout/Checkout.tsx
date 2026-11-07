@@ -27,6 +27,7 @@ export const KEYS = {
   quantity: "F3",
   discount: "F4",
   remove: "Delete",
+  returns: "F7",
   pay: "F9",
   lock: "F12",
 } as const;
@@ -46,6 +47,7 @@ export function Checkout({
   onSignedOut,
   canEditCatalog,
   onProducts,
+  onReturns,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -53,6 +55,7 @@ export function Checkout({
   onSignedOut: () => void;
   canEditCatalog: boolean;
   onProducts: () => void;
+  onReturns: () => void;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
@@ -145,6 +148,10 @@ export function Checkout({
           e.preventDefault();
           onProducts();
           return;
+        case "F7":
+          e.preventDefault();
+          onReturns();
+          return;
         case "F9":
           e.preventDefault();
           if (c.cart?.lines.length) setModal("pay");
@@ -179,7 +186,7 @@ export function Checkout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [c, modal, lock, onProducts]);
+  }, [c, modal, lock, onProducts, onReturns]);
 
   const submitCode = (e: FormEvent) => {
     e.preventDefault();
@@ -279,6 +286,9 @@ export function Checkout({
           </button>
           <button type="button" className="secondary" onClick={onProducts}>
             Products <kbd>F6</kbd>
+          </button>
+          <button type="button" className="secondary" onClick={onReturns}>
+            Returns <kbd>F7</kbd>
           </button>
           <button type="button" className="secondary" onClick={() => void lock()}>
             Lock <kbd>F12</kbd>

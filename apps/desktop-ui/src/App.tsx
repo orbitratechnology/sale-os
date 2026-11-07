@@ -5,6 +5,7 @@ import { SignIn } from "./features/auth/SignIn";
 import { Checkout } from "./features/checkout/Checkout";
 import { ProductEditor } from "./features/catalog/ProductEditor";
 import { ProductList } from "./features/catalog/ProductList";
+import { ReturnScreen } from "./features/returns/ReturnScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
 
 /**
@@ -56,6 +57,8 @@ export function App() {
   // UI hiding only: Rust refuses edits by roles without CatalogEdit regardless.
   const canEdit = state.session.role !== "cashier";
   switch (screen.kind) {
+    case "returns":
+      return <ReturnScreen workspace={workspace} session={state.session} onBack={() => setScreen({ kind: "till" })} />;
     case "products":
       return (
         <ProductList
@@ -90,6 +93,7 @@ export function App() {
           onSignedOut={signedOut}
           canEditCatalog={canEdit}
           onProducts={() => setScreen({ kind: "products" })}
+          onReturns={() => setScreen({ kind: "returns" })}
           onCreateProduct={(barcode) => setScreen({ kind: "editor", productId: null, barcode, returnTo: "till" })}
         />
       );
@@ -99,4 +103,5 @@ export function App() {
 type Screen =
   | { kind: "till" }
   | { kind: "products" }
+  | { kind: "returns" }
   | { kind: "editor"; productId: string | null; barcode?: string; returnTo: "till" | "products" };

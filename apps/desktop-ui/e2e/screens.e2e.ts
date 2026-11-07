@@ -547,3 +547,118 @@ describe("printing (E13-T06)", () => {
     expect(await calls(page, "print_job_retry")).toHaveLength(1);
   });
 });
+
+describe("returns (E12-T04)", () => {
+  /** Three colas sold for cash by whoever is signed in; back on the till afterwards. */
+  async function sellThreeColas(page: Page) {
+    for (let i = 0; i < 3; i++) await scan(page, COLA);
+    await page.waitForFunction(() => document.querySelector("[data-testid=cart-line] [data-testid=qty]")?.textContent === "3");
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor({ state: "detached" });
+  }
+
+  async function findSale(page: Page, number: string) {
+    await page.keyboard.press("F7");
+    await page.getByRole("heading", { name: "Returns" }).waitFor();
+    // Focus is in the receipt number field: a receipt-barcode scan types there and ends with Enter.
+    await page.keyboard.type(number, { delay: 5 });
+    await page.keyboard.press("Enter");
+  }
+
+  it("a cashier's return: quantities, refund preview, manager approval, refund receipt", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await sellThreeColas(page);
+
+    await findSale(page, "r01-999999");
+    await page.getByRole("alert").filter({ hasText: "No sale with that receipt number" }).waitFor();
+    await page.getByLabel("Receipt number").fill("");
+    await page.keyboard.type("R01-000001");
+    await page.keyboard.press("Enter");
+    await page.getByText("Sale R01-000001").waitFor();
+
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("2");
+    await page.getByTestId("refund-total").filter({ hasText: "2.40" }).waitFor();
+    await page.getByLabel("Reason").selectOption("defective");
+    await page.getByRole("button", { name: "Refund 2.40" }).click();
+
+    // A cashier: Rust (the fake) answers APPROVAL_REQUIRED for this sale.
+    const approval = page.getByRole("dialog", { name: "Manager approval" });
+    await approval.getByText("a return").waitFor();
+    await approval.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+
+    const done = page.getByRole("region", { name: "Return completed" });
+    await done.waitFor();
+    expect(await done.getByTestId("refund").textContent()).toBe("2.40");
+    await done.getByText("R01-R-000001", { exact: true }).waitFor();
+    await done.getByText("approved by a manager", { exact: false }).waitFor();
+    expect(await done.getByTestId("receipt-text").textContent()).toContain("REFUND TOTAL");
+    await done.getByRole("button", { name: "Print receipt" }).click();
+    await done.getByTestId("print-status").filter({ hasText: /^Printed\.$/ }).waitFor();
+
+    const sent = await calls(page, "return_create");
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({
+      lines: [{ quantityMilli: "2000", disposition: "restock" }],
+      reason: "defective",
+      refunds: [{ kind: "cash", amountMinor: "240", reference: null }],
+      approvalTokenId: null,
+    });
+    expect(typeof sent[1]?.approvalTokenId).toBe("string");
+    const [request] = await calls(page, "auth_request_approval");
+    expect(request?.scope).toMatchObject({ permission: "return_create" });
+    expect(await calls(page, "return_receipt_print")).toHaveLength(1);
+
+    // Only one cola is left to return: asking for two is refused before anything is written.
+    await done.getByRole("button", { name: "Another return" }).click();
+    await page.keyboard.type("R01-000001");
+    await page.keyboard.press("Enter");
+    const row = page.getByRole("row", { name: /Cola 330ml/ });
+    expect(await row.getByRole("cell").nth(1).textContent()).toBe("2");
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("2");
+    await page.getByRole("alert").filter({ hasText: "more than is left to return" }).waitFor();
+    expect(await page.getByRole("button", { name: /^Refund/ }).isDisabled()).toBe(true);
+    // Esc steps back: the sale, then the till.
+    await page.keyboard.press("Escape");
+    await page.getByLabel("Receipt number").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("an owner refunds to a card with no approval; the screen passes axe", async () => {
+    const page = await checkout();
+    await sellThreeColas(page);
+    await findSale(page, "R01-000001");
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("1");
+    await page.getByLabel("Refund by").selectOption("card_external");
+    await page.getByLabel(/^Reference/).fill("AUTH 77");
+    await page.getByTestId("refund-total").filter({ hasText: "1.20" }).waitFor();
+
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    const serious = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+    expect(serious).toEqual([]);
+
+    await page.getByRole("button", { name: "Refund 1.20" }).click();
+    await page.getByRole("region", { name: "Return completed" }).waitFor();
+    expect(await page.getByRole("dialog", { name: "Manager approval" }).count()).toBe(0);
+    expect((await calls(page, "return_create"))[0]).toMatchObject({
+      refunds: [{ kind: "card_external", amountMinor: "120", reference: "AUTH 77" }],
+      approvalTokenId: null,
+    });
+    // Enter goes back to the till.
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+});

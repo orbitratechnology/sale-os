@@ -212,3 +212,16 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
 .receipt-bold { font-weight: 800; }
 .dialog.pay-done { width: min(560px, calc(100vw - 32px)); }
 .print-controls { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
+
+/* Returns (E12-T04) */
+.returns { max-width: 960px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+.returns-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.return-find { display: grid; gap: 12px; max-width: 480px; }
+.return-find input { font-size: 1.2rem; font-family: var(--mono, monospace); }
+.return-form { display: grid; gap: 16px; }
+.return-lines { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.return-lines th, .return-lines td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.return-lines tr.muted { opacity: 0.55; }
+.return-lines .qty-input { width: 8ch; }
+.return-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.return-done { text-align: center; display: grid; gap: 8px; justify-items: center; }

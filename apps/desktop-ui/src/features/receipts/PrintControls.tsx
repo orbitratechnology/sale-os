@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { PrintJobDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import type { ReceiptSource } from "./ReceiptPreview";
 
 const FAILURE: Record<string, string> = {
   paper_out: "The printer is out of paper. Load paper, then try again.",
@@ -15,7 +16,7 @@ const FAILURE: Record<string, string> = {
  * safely. A job with no answer may have printed: the cashier says whether it did, and
  * "not printed" prints a copy marked REPRINT. Nothing here can affect the sale.
  */
-export function PrintControls({ saleId, autoPrint }: { saleId: string; autoPrint: boolean }) {
+export function PrintControls({ source, autoPrint }: { source: ReceiptSource; autoPrint: boolean }) {
   const [job, setJob] = useState<PrintJobDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<IpcError | null>(null);
@@ -30,13 +31,16 @@ export function PrintControls({ saleId, autoPrint }: { saleId: string; autoPrint
     else setError(res.error);
   }
 
+  const print = () => (source.kind === "sale" ? commands.receiptPrint(source.id) : commands.returnReceiptPrint(source.id));
+
   useEffect(() => {
     // Auto-print once, after the sale has been committed (RCP-006).
     if (autoPrint && !started.current) {
       started.current = true;
-      void run(() => commands.receiptPrint(saleId));
+      void run(print);
     }
-  }, [autoPrint, saleId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
+  }, [autoPrint]);
 
   const status = (() => {
     if (busy) return <span>Printing…</span>;
@@ -69,7 +73,7 @@ export function PrintControls({ saleId, autoPrint }: { saleId: string; autoPrint
 
   return (
     <div className="print-controls" aria-live="polite">
-      <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => commands.receiptPrint(saleId))}>
+      <button type="button" className="secondary" disabled={busy} onClick={() => void run(print)}>
         {job ? "Print another copy" : "Print receipt"}
       </button>
       <span className="small" data-testid="print-status">

@@ -16,6 +16,8 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   SCAN_INVALID: "That code could not be read. Scan it again.",
   CART_REVISION_MISMATCH: "The cart changed. Check it and try again.",
   PRICING_DISCOUNT_EXCEEDS: "The discount is larger than the amount.",
+  RETURN_QTY_EXCEEDS: "That is more than is left to return on this sale (some may already have been returned). Check the quantities.",
+  RETURN_REFUND_MISMATCH: "The refund must add up to exactly the amount being returned.",
   STORE_BUSY: "The till is busy. Try again.",
   STORE_IO: "Sale OS cannot read or write its database. Check disk space and that the data folder is on this computer.",
   STORE_CORRUPT: "The local database looks damaged. Do not delete it; contact support to restore from a backup.",

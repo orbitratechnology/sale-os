@@ -134,8 +134,8 @@ export function PaymentPanel({
                 : `${done.negativeStockItems} items went below zero stock and were flagged for a stock check.`}
             </p>
           )}
-          <PrintControls saleId={done.saleId} autoPrint={done.autoPrint} />
-          {showReceipt && <ReceiptPreview saleId={done.saleId} />}
+          <PrintControls source={{ kind: "sale", id: done.saleId }} autoPrint={done.autoPrint} />
+          {showReceipt && <ReceiptPreview source={{ kind: "sale", id: done.saleId }} />}
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
               {showReceipt ? "Hide receipt" : "Show receipt"}

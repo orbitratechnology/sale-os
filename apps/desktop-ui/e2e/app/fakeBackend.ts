@@ -41,10 +41,20 @@ export interface FakeState {
   bigCatalog: number | null;
   /** Completed sales: receipt numbers in order. */
   receipts: string[];
+  /** Completed sales with their lines, for returns. */
+  sales: FakeSale[];
+  /** Completed returns: id → number. */
+  returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
   printScript: string[];
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
   printed: number;
+}
+
+export interface FakeSale {
+  saleId: string;
+  receiptNumber: string;
+  lines: { saleLineId: string; name: string; qtyMilli: bigint; totalMinor: bigint; returnedMilli: bigint }[];
 }
 
 export type Preset = "fresh" | "signIn" | "checkout";
@@ -123,6 +133,8 @@ function initialStateInner(preset: Preset): FakeState {
     catalog: new Map(),
     bigCatalog: null,
     receipts: [],
+    sales: [],
+    returns: new Map(),
     printScript: [],
     printJobs: new Map(),
     printed: 0,
@@ -192,14 +204,14 @@ function hit(p: FakeProduct): CatalogHit {
 }
 
 /** The approval rule Rust applies (authorize_with_approval): cashiers need a covering token. */
-function approve(s: FakeState, permission: Permission, maxPpm: number | null, token: unknown) {
+function approve(s: FakeState, permission: Permission, maxPpm: number | null, token: unknown, entityId: string = s.cartId) {
   if (needSession(s).role !== "cashier") return;
-  const needed = { permission, entityId: s.cartId, maxPpm };
+  const needed = { permission, entityId, maxPpm };
   if (token === null || token === undefined) fail("APPROVAL_REQUIRED", { remainingAttempts: null, retryAtMs: null, scope: needed });
   const granted = s.tokens.get(String(token));
   s.tokens.delete(String(token));
   const covers =
-    granted?.permission === permission && granted.entityId === s.cartId && (maxPpm === null || (granted.maxPpm ?? -1) >= maxPpm);
+    granted?.permission === permission && granted.entityId === entityId && (maxPpm === null || (granted.maxPpm ?? -1) >= maxPpm);
   if (!covers) fail("APPROVAL_INVALID");
 }
 
@@ -362,22 +374,84 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       if (remaining > 0n) fail("TENDER_INSUFFICIENT", { remainingMinor: remaining.toString() });
       const receiptNumber = `R01-${String(s.receipts.length + 1).padStart(6, "0")}`;
       s.receipts.push(receiptNumber);
+      const saleId = id();
+      s.sales.push({
+        saleId,
+        receiptNumber,
+        lines: view(s).lines.map((l) => ({ saleLineId: id(), name: l.name, qtyMilli: BigInt(l.quantityMilli), totalMinor: BigInt(l.totalMinor), returnedMilli: 0n })),
+      });
       s.lines = [];
       s.orderDiscountPpm = null;
       s.cartId = id();
       s.revision = 0;
       return {
-        saleId: id(), receiptNumber, totalMinor: total.toString(), tenderedMinor: tendered.toString(),
+        saleId, receiptNumber, totalMinor: total.toString(), tenderedMinor: tendered.toString(),
         changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0, autoPrint: false,
       };
     }
+    case "return_find": {
+      needSession(s);
+      const sale = s.sales.find((x) => x.receiptNumber.toLowerCase() === String(a.receiptNumber).trim().toLowerCase()) ?? fail("VALIDATION_FAILED");
+      return {
+        saleId: sale.saleId, receiptNumber: sale.receiptNumber, mode: "sandbox", currencyExponent: 2,
+        lines: sale.lines.map((l, i) => ({
+          saleLineId: l.saleLineId, lineNo: i + 1, name: l.name, label: "", unit: "ea", trackStock: true,
+          soldMilli: l.qtyMilli.toString(), returnedMilli: l.returnedMilli.toString(), availableMilli: (l.qtyMilli - l.returnedMilli).toString(), totalMinor: l.totalMinor.toString(),
+        })),
+      };
+    }
+    case "return_preview":
+    case "return_create": {
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      if (cmd === "return_create") approve(s, "return_create", null, a.approvalTokenId, sale.saleId);
+      // The same rules as pos_domain::returns::plan_return: cumulative rounded shares.
+      const asked = a.lines as { saleLineId: string; quantityMilli: string; disposition: string }[];
+      const planned = asked.map((r) => {
+        const l = sale.lines.find((x) => x.saleLineId === r.saleLineId) ?? fail("VALIDATION_FAILED");
+        const qty = BigInt(r.quantityMilli);
+        if (qty > l.qtyMilli - l.returnedMilli) fail("RETURN_QTY_EXCEEDS");
+        const share = (n: bigint) => div(l.totalMinor * n, l.qtyMilli);
+        return { l, qty, refund: share(l.returnedMilli + qty) - share(l.returnedMilli), disposition: r.disposition };
+      });
+      if (planned.length === 0) fail("VALIDATION_FAILED");
+      const total = planned.reduce((t, p) => t + p.refund, 0n);
+      const tax = div(total, 6n);
+      if (cmd === "return_preview") {
+        return {
+          subtotalMinor: (total - tax).toString(), taxMinor: tax.toString(), totalMinor: total.toString(),
+          lines: planned.map((p) => ({ saleLineId: p.l.saleLineId, name: p.l.name, quantityMilli: p.qty.toString(), refundMinor: p.refund.toString(), disposition: p.disposition })),
+        };
+      }
+      const refunds = a.refunds as { kind: string; amountMinor: string; reference: string | null }[];
+      if (refunds.some((r) => r.reference && /\d{13,19}/.test(r.reference.replace(/[ -]/g, "")))) fail("VALIDATION_FAILED");
+      if (refunds.reduce((t, r) => t + BigInt(r.amountMinor), 0n) !== total) fail("RETURN_REFUND_MISMATCH");
+      for (const p of planned) p.l.returnedMilli += p.qty;
+      const returnId = id();
+      const number = `R01-R-${String(s.returns.size + 1).padStart(6, "0")}`;
+      s.returns.set(returnId, { number, totalMinor: total });
+      return {
+        returnId, returnNumber: number, originalReceiptNumber: sale.receiptNumber, totalMinor: total.toString(), currencyExponent: 2,
+        approved: a.approvalTokenId !== null && a.approvalTokenId !== undefined,
+      };
+    }
+    case "return_receipt_get": {
+      needSession(s);
+      const r = s.returns.get(String(a.returnId)) ?? fail("VALIDATION_FAILED");
+      const cols = a.widthMm === 58 ? 32 : 48;
+      const pad = (l: string, rt: string) => l + " ".repeat(Math.max(1, cols - l.length - rt.length)) + rt;
+      const amount = `${r.totalMinor / 100n}.${String(r.totalMinor % 100n).padStart(2, "0")}`;
+      const text = ["Corner Shop".padStart(Math.floor((cols + 11) / 2)), "*** REFUND ***", "-".repeat(cols), `Return ${r.number}`, pad("REFUND TOTAL", amount)];
+      return { receiptNumber: r.number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t.startsWith("REFUND TOTAL") })) };
+    }
+    case "return_receipt_print":
     case "receipt_print":
     case "print_job_retry":
     case "print_job_resolve": {
       needSession(s);
       let jobId = String(a.jobId ?? "");
       let job = s.printJobs.get(jobId);
-      if (cmd === "receipt_print") {
+      if (cmd === "receipt_print" || cmd === "return_receipt_print") {
         jobId = id();
         job = { status: "queued", reprint: s.printed > 0, errorCode: null, attempts: 0 };
         s.printJobs.set(jobId, job);
