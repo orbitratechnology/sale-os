@@ -89,17 +89,6 @@ export const commands = {
 	 *  stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
 	 */
 	checkoutComplete: (cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedSaleDto, IpcError_Serialize>(__TAURI_INVOKE("checkout_complete", { cartId, revision, tenders })),
-	/**  Creates the demo workspace and product if missing. */
-	devDemoSetup: () => typedError<DemoProduct, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_setup")),
-	/**  Current demo cart. */
-	devDemoCart: () => typedError<DemoCart, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_cart")),
-	/**
-	 *  Adds the scanned product to the cart. `scan_event_id` is accepted for the E07-T02
-	 *  contract; duplicate-delivery handling arrives with that task.
-	 */
-	devDemoScan: (raw: string, scanEventId: string) => typedError<DemoCart, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_scan", { raw, scanEventId })),
-	/**  Completes a cash sale atomically, then prints to the virtual printer. */
-	devDemoCompleteSale: (cashReceivedMinor: string) => typedError<DemoSaleResult, IpcError_Serialize>(__TAURI_INVOKE("dev_demo_complete_sale", { cashReceivedMinor })),
 };
 
 /* Types */
@@ -400,36 +389,6 @@ export type DatabaseStatus = DatabaseStatus_Serialize | DatabaseStatus_Deseriali
 export type DatabaseStatus_Deserialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Deserialize };
 
 export type DatabaseStatus_Serialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Serialize };
-
-export type DemoCart = {
-	lines: DemoCartLine[],
-	totalMinor: string,
-	totalFormatted: string,
-};
-
-export type DemoCartLine = {
-	name: string,
-	quantity: string,
-	lineTotalFormatted: string,
-};
-
-export type DemoProduct = {
-	name: string,
-	barcode: string,
-	priceFormatted: string,
-};
-
-export type DemoSaleResult = {
-	receiptNumber: string,
-	totalFormatted: string,
-	changeFormatted: string,
-	outboxSequence: number,
-	/**
-	 *  Path of the virtual printer's ESC/POS capture, or why printing failed (a print
-	 *  failure never undoes a committed sale).
-	 */
-	print: string,
-};
 
 export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;
 

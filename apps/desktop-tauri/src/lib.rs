@@ -4,14 +4,12 @@
 mod app_commands;
 mod command_names;
 mod commands;
-mod demo;
 mod dto;
 mod error;
 mod sale_commands;
 mod services;
 
 pub use command_names::COMMANDS;
-pub use demo::DEMO_BARCODE;
 pub use error::{ErrorDetails, IpcError};
 pub use services::AppServices;
 
@@ -58,10 +56,6 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::cart_clear,
         sale_commands::cart_void,
         sale_commands::checkout_complete,
-        demo::dev_demo_setup,
-        demo::dev_demo_cart,
-        demo::dev_demo_scan,
-        demo::dev_demo_complete_sale,
     ])
 }
 

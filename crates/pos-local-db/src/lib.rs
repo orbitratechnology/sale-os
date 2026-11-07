@@ -11,7 +11,6 @@ mod error;
 mod migrate;
 mod pragmas;
 mod queries;
-pub mod spike;
 mod stock_queries;
 mod store;
 

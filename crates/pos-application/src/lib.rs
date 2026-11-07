@@ -14,7 +14,6 @@ pub mod records;
 pub mod scan;
 pub mod settings;
 pub mod setup;
-pub mod spike;
 pub mod staff;
 pub mod write;
 

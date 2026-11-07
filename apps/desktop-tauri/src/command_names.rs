@@ -35,9 +35,4 @@ pub const COMMANDS: &[&str] = &[
     "cart_clear",
     "cart_void",
     "checkout_complete",
-    // Stage 0 vertical slice (E00-T06), removed with the spike.
-    "dev_demo_setup",
-    "dev_demo_cart",
-    "dev_demo_scan",
-    "dev_demo_complete_sale",
 ];

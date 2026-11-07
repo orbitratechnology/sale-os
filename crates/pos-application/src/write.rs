@@ -19,7 +19,6 @@ use crate::records::{
     AggregateRef, BusinessRecord, DeviceIdentity, LocationRecord, RegisterRecord, SessionEnd, SettingRecord,
     StaffRecord, TaxCategoryRecord, TaxRateRecord, ThrottleRecord,
 };
-use crate::spike::{SpikeCartAdd, SpikeProduct, SpikeSale};
 use pos_domain::{
     BusinessId, ErrorCode, EventId, HasErrorCode, IdGenerator, LocationId, RegisterId, SessionId, Timestamp,
     UserId,
@@ -150,12 +149,6 @@ pub enum WriteOp {
         session_id: SessionId,
         reason: SessionEnd,
     },
-    /// STAGE 0 SPIKE (E00-T06): delete with the spike module.
-    SpikePutProduct(SpikeProduct),
-    /// STAGE 0 SPIKE (E00-T06): a local-only cart edit.
-    SpikeCartAdd(SpikeCartAdd),
-    /// STAGE 0 SPIKE (E00-T06): uses the receipt number allocated for `receipt_slot`.
-    SpikeCompleteSale(SpikeSale),
 }
 
 /// How an op relates to sync.
@@ -196,20 +189,6 @@ impl WriteOp {
                 record,
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
-            WriteOp::SpikePutProduct(p) => master(
-                AggregateRef {
-                    aggregate_type: "spike_product",
-                    aggregate_id: p.product_id.to_string(),
-                },
-                1,
-                None,
-            ),
-            WriteOp::SpikeCompleteSale(sale) => SyncKind::Fact {
-                aggregate: AggregateRef {
-                    aggregate_type: "sale",
-                    aggregate_id: sale.sale_id.to_string(),
-                },
-            },
             WriteOp::PutStaff {
                 record,
                 expected_version,
@@ -235,7 +214,6 @@ impl WriteOp {
             },
             WriteOp::AllocateNumber { .. }
             | WriteOp::CloseCart { .. }
-            | WriteOp::SpikeCartAdd(_)
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
             | WriteOp::PutCart { .. }
@@ -574,21 +552,6 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::EndSession { session_id, reason });
         self
     }
-    /// STAGE 0 SPIKE (E00-T06).
-    pub fn spike_put_product(mut self, product: SpikeProduct) -> Self {
-        self.ops.push(WriteOp::SpikePutProduct(product));
-        self
-    }
-    /// STAGE 0 SPIKE (E00-T06).
-    pub fn spike_cart_add(mut self, add: SpikeCartAdd) -> Self {
-        self.ops.push(WriteOp::SpikeCartAdd(add));
-        self
-    }
-    /// STAGE 0 SPIKE (E00-T06).
-    pub fn spike_complete_sale(mut self, sale: SpikeSale) -> Self {
-        self.ops.push(WriteOp::SpikeCompleteSale(sale));
-        self
-    }
     pub fn outbox(mut self, draft: OutboxDraft) -> Self {
         self.outbox.push(draft);
         self
@@ -698,10 +661,7 @@ impl WriteSetBuilder {
             | WriteOp::PutCart { .. }
             | WriteOp::RecordScanEvent { .. }
             | WriteOp::StartSession { .. }
-            | WriteOp::EndSession { .. }
-            | WriteOp::SpikePutProduct(_)
-            | WriteOp::SpikeCartAdd(_)
-            | WriteOp::SpikeCompleteSale(_) => return Ok(()),
+            | WriteOp::EndSession { .. } => return Ok(()),
         };
         if found != self.context.business_id {
             return Err(WriteSetError::ForeignBusiness {

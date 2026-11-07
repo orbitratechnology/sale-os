@@ -27,8 +27,6 @@ enum Need {
     Session,
     /// A signed-in user whose role holds the permission.
     Perm(Permission),
-    /// Stage 0 spike commands: removed in E09-T08, not exercised here.
-    Spike,
 }
 
 const UNKNOWN_ID: &str = "0190a5b0-0000-7000-8000-000000000000";
@@ -164,10 +162,6 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SaleComplete),
             json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}]}),
         ),
-        ("dev_demo_setup", Spike, Value::Null),
-        ("dev_demo_cart", Spike, Value::Null),
-        ("dev_demo_scan", Spike, Value::Null),
-        ("dev_demo_complete_sale", Spike, Value::Null),
     ]
 }
 
@@ -342,7 +336,6 @@ fn each_role_gets_exactly_what_the_matrix_grants() {
                     got.as_deref().is_some_and(|c| REFUSED.contains(&c)),
                     "{role:?} lacks {p:?} but {cmd} gave {res:?}"
                 ),
-                Need::Spike => unreachable!(),
             }
         }
         // Signing out locks everything that needs a session.
