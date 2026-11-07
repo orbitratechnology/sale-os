@@ -310,3 +310,17 @@ pub async fn auth_request_approval(
         expires_at_ms: token.expires_at.as_millis().to_string(),
     })
 }
+
+/// The owner switches this till from sandbox (practice) to live, confirming with their PIN
+/// (PRD §7.1 step 9). One way; refused while a cart has items or a drawer session is open.
+#[tauri::command]
+#[specta::specta]
+pub async fn register_go_live(services: State<'_, AppServices>, pin_code: String) -> Result<(), IpcError> {
+    let ctx = services.context().await?;
+    services
+        .app()?
+        .mode
+        .go_live(&ctx, pin(&pin_code)?)
+        .await
+        .map_err(err)
+}

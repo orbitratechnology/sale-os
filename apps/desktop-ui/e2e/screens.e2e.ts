@@ -1055,3 +1055,48 @@ describe("reports (E14-T03)", () => {
     expect(await page.getByRole("button", { name: "Reports" }).count()).toBe(0);
   });
 });
+
+describe("going live (E04-T02)", () => {
+  it("the owner confirms with their PIN; the till turns live and needs a drawer", async () => {
+    const page = await checkout();
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    // With an item in the cart it is refused, with what to do.
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.getByRole("button", { name: "Go live…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Go live" });
+    await dialog.getByText("This cannot be undone").waitFor();
+    await page.keyboard.type("1234");
+    await page.keyboard.press("Enter");
+    await dialog.getByRole("alert").filter({ hasText: "Finish or clear the cart" }).waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    // The PIN was not taken as a scan.
+    expect(await page.locator("[data-testid=cart-line]").count()).toBe(1);
+    await page.getByRole("button", { name: /^Clear cart/ }).click();
+    await page.getByRole("dialog", { name: "Clear the cart?" }).getByRole("button", { name: "Clear cart" }).click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 0);
+
+    await page.getByRole("button", { name: "Go live…" }).click();
+    await page.keyboard.type("9999");
+    await page.keyboard.press("Enter");
+    await dialog.getByRole("alert").filter({ hasText: "Wrong PIN" }).waitFor();
+    await page.keyboard.type("1234");
+    await page.keyboard.press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    expect(await page.getByText("SANDBOX: practice mode").count()).toBe(0);
+    await page.getByText("Open the cash drawer before selling.").waitFor();
+    await page.getByRole("contentinfo", { name: "Status" }).getByText("LIVE").waitFor();
+    expect((await calls(page, "register_go_live")).map((c) => c.pinCode)).toEqual(["1234", "9999", "1234"]);
+  });
+
+  it("only the owner is offered the switch", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByText("SANDBOX: practice mode").waitFor();
+    expect(await page.getByRole("button", { name: "Go live…" }).count()).toBe(0);
+  });
+});

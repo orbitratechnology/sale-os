@@ -9,6 +9,7 @@ use pos_application::cash::CashService;
 use pos_application::catalog::CatalogService;
 use pos_application::checkout::CheckoutService;
 use pos_application::context::{Actor, ApprovalToken, CommandContext};
+use pos_application::mode::ModeService;
 use pos_application::printing::{DEFAULT_PRINT_TIMEOUT, PrintService};
 use pos_application::queries::SetupQueries;
 use pos_application::receipts::ReceiptService;
@@ -45,6 +46,7 @@ pub(crate) struct Services {
     pub setup: SetupService,
     pub auth: AuthService,
     pub staff: StaffService,
+    pub mode: ModeService,
     pub catalog: CatalogService,
     pub carts: Arc<CartService>,
     pub checkout: CheckoutService,
@@ -142,6 +144,14 @@ impl AppServices {
                     staff: a.clone(),
                     hasher: hasher.clone(),
                     approvals: approvals.clone(),
+                },
+                mode: ModeService {
+                    store: a.clone(),
+                    staff: a.clone(),
+                    hasher: hasher.clone(),
+                    setup: a.clone(),
+                    carts: a.clone(),
+                    cash: a.clone(),
                 },
                 staff: StaffService {
                     store: a.clone(),

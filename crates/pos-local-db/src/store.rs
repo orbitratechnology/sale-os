@@ -896,6 +896,18 @@ async fn apply_in_transaction(
                 .map_err(map_sqlx)?;
                 applied.receipt_numbers.insert(*number_slot, number);
             }
+            WriteOp::SetRegisterMode { from, to } => {
+                st.step()?;
+                let done = sqlx::query("UPDATE device_identity SET mode = ? WHERE id = 1 AND mode = ?")
+                    .bind(to.as_str())
+                    .bind(from.as_str())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::ModeChanged);
+                }
+            }
             WriteOp::RebuildStockBalances => {
                 st.step()?;
                 sqlx::query("DELETE FROM stock_balances")

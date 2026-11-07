@@ -99,9 +99,9 @@ pub struct AuthService {
 }
 
 /// A PIN that checked out: the user, and the throttle reset to write with the success.
-struct Verified {
-    staff: StaffRecord,
-    reset: ThrottleRecord,
+pub(crate) struct Verified {
+    pub(crate) staff: StaffRecord,
+    pub(crate) reset: ThrottleRecord,
 }
 
 impl AuthService {
@@ -113,7 +113,7 @@ impl AuthService {
     /// Checks a PIN under the lockout policy (ADR-013). A wrong PIN is recorded, audited and
     /// may lock the user, all before the error returns. Used for sign-in and for approvals,
     /// so an approver's PIN is protected exactly like a sign-in.
-    async fn verify_pin(
+    pub(crate) async fn verify_pin(
         &self,
         ctx: &CommandContext,
         user_id: UserId,

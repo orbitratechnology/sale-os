@@ -73,6 +73,8 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Session,
             json!({"approverUserId": UNKNOWN_ID, "pin": "0000", "scope": {"permission": "cart_void", "entityId": "x", "maxPpm": null}}),
         ),
+        // Owner only; a wrong PIN, so the permitted call is refused for the PIN, not the role.
+        ("register_go_live", Perm(SettingsEdit), json!({"pinCode": "0000"})),
         ("staff_list", Perm(StaffManage), json!({})),
         (
             "staff_create",
@@ -827,4 +829,17 @@ fn a_cash_session_over_ipc() {
     )
     .unwrap_err();
     assert_eq!(gone["code"], "CASH_SESSION_REQUIRED");
+
+    // Going live: the owner's PIN; then the till is live and sales need an open drawer.
+    let wrong = invoke(&w, "register_go_live", json!({"pinCode": "9999"})).unwrap_err();
+    assert_eq!(wrong["code"], "AUTH_PIN_INVALID");
+    invoke(&w, "register_go_live", json!({"pinCode": "1234"})).unwrap();
+    let boot = invoke(&w, "app_bootstrap_state", json!({})).unwrap();
+    assert_eq!(boot["workspace"]["mode"], "live");
+    assert_eq!(
+        invoke(&w, "cash_session_current", json!({})).unwrap()["required"],
+        true
+    );
+    let again = invoke(&w, "register_go_live", json!({"pinCode": "1234"})).unwrap_err();
+    assert_eq!(again["code"], "VALIDATION_FAILED");
 }

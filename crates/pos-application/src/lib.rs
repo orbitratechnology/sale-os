@@ -10,6 +10,7 @@ pub mod cash;
 pub mod catalog;
 pub mod checkout;
 pub mod context;
+pub mod mode;
 pub mod printing;
 pub mod queries;
 pub mod receipts;

@@ -114,6 +114,7 @@ export function App() {
     default:
       return (
         <Checkout
+          key={workspace.mode /* going live re-reads the drawer and the banner */}
           workspace={workspace}
           session={state.session}
           onSignedOut={signedOut}
@@ -124,6 +125,7 @@ export function App() {
           onDrawer={() => setScreen({ kind: "drawer" })}
           onStock={canEdit ? () => setScreen({ kind: "stock" }) : null}
           onReports={canEdit ? () => setScreen({ kind: "reports" }) : null}
+          onWentLive={state.session.role === "owner" ? refresh : null}
           onCreateProduct={(barcode) => setScreen({ kind: "editor", productId: null, barcode, returnTo: "till" })}
         />
       );

@@ -4,6 +4,7 @@ import type { CashStateDto_Serialize as CashState } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent, scaleDecimal, stepMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
+import { GoLiveDialog } from "../setup/GoLiveDialog";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
@@ -14,6 +15,7 @@ import { StatusBar } from "./StatusBar";
 import { useCart } from "./useCart";
 
 type Modal =
+  | "goLive"
   | "pay"
   | "clear"
   | "void"
@@ -56,6 +58,7 @@ export function Checkout({
   onDrawer,
   onStock,
   onReports,
+  onWentLive,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -70,6 +73,8 @@ export function Checkout({
   onStock: (() => void) | null;
   /** Reports; `null` for roles without ReportsView (UI only: Rust checks). */
   onReports: (() => void) | null;
+  /** Owner only: the till went live (refresh the workspace). `null` hides "Go live". */
+  onWentLive: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
@@ -239,6 +244,14 @@ export function Checkout({
       {workspace.mode === "sandbox" && (
         <div className="sandbox-banner" role="note">
           SANDBOX: practice mode. Sales here are excluded from reports.
+          {onWentLive && (
+            <>
+              {" "}
+              <button type="button" className="link" onClick={() => setModal("goLive")}>
+                Go live…
+              </button>
+            </>
+          )}
         </div>
       )}
       <section className="entry" aria-label="Add items">
@@ -365,6 +378,15 @@ export function Checkout({
           onDone={() => {
             setModal(null);
             void c.refresh();
+          }}
+        />
+      )}
+      {modal === "goLive" && onWentLive && (
+        <GoLiveDialog
+          onCancel={() => setModal(null)}
+          onDone={() => {
+            setModal(null);
+            onWentLive();
           }}
         />
       )}

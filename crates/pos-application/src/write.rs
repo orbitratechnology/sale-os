@@ -158,6 +158,12 @@ pub enum WriteOp {
         doc: pos_domain::stock_docs::DocumentSnapshot,
         number_slot: NumberSlot,
     },
+    /// Switches this installation's register mode (PRD §7.1 step 9), only if it is still
+    /// `from` (else `ModeChanged`). Local only: each sale records its own mode.
+    SetRegisterMode {
+        from: crate::records::RegisterMode,
+        to: crate::records::RegisterMode,
+    },
     /// Recomputes every stock balance from the movements (E11-T06, INV-004). Local only:
     /// balances are a projection; the movements are the record.
     RebuildStockBalances,
@@ -281,6 +287,7 @@ impl WriteOp {
             },
             WriteOp::AllocateNumber { .. }
             | WriteOp::RebuildStockBalances
+            | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::CloseCart { .. }
             | WriteOp::InsertReceipt { .. }
@@ -631,6 +638,14 @@ impl WriteSetBuilder {
             .push(WriteOp::InsertInventoryDocument { doc, number_slot });
         self
     }
+    pub fn set_register_mode(
+        mut self,
+        from: crate::records::RegisterMode,
+        to: crate::records::RegisterMode,
+    ) -> Self {
+        self.ops.push(WriteOp::SetRegisterMode { from, to });
+        self
+    }
     pub fn rebuild_stock_balances(mut self) -> Self {
         self.ops.push(WriteOp::RebuildStockBalances);
         self
@@ -833,6 +848,7 @@ impl WriteSetBuilder {
             | WriteOp::CloseCashSession { .. }
             | WriteOp::InsertInventoryDocument { .. }
             | WriteOp::RebuildStockBalances
+            | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
@@ -902,6 +918,8 @@ pub enum WriteError {
     /// A sale or return joined the session after its totals were read; read them again.
     #[error("the cash session changed while it was being closed")]
     CashSessionChanged,
+    #[error("the register mode changed meanwhile")]
+    ModeChanged,
 }
 
 impl HasErrorCode for WriteError {
@@ -920,7 +938,7 @@ impl HasErrorCode for WriteError {
                 ErrorCode::CashSessionRequired
             }
             WriteError::CashSessionAlreadyOpen => ErrorCode::CashSessionAlreadyOpen,
-            WriteError::CashSessionChanged => ErrorCode::ConflictVersion,
+            WriteError::CashSessionChanged | WriteError::ModeChanged => ErrorCode::ConflictVersion,
         }
     }
 }

@@ -45,6 +45,11 @@ export const commands = {
 	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
 	/**  Sets a temporary PIN; the user must change it at next sign-in. */
 	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
+	/**
+	 *  The owner switches this till from sandbox (practice) to live, confirming with their PIN
+	 *  (PRD §7.1 step 9). One way; refused while a cart has items or a drawer session is open.
+	 */
+	registerGoLive: (pinCode: string) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("register_go_live", { pinCode })),
 	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
 	/**  The product list (E06-T06a): one page, by name, with summary columns. */
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),

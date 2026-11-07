@@ -577,6 +577,16 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         scope,
       };
     }
+    case "register_go_live": {
+      const me = needSession(s);
+      if (me.role !== "owner") fail("PERMISSION_DENIED");
+      const owner = s.users.find((u) => u.userId === me.userId) ?? fail("VALIDATION_FAILED");
+      if (a.pinCode !== owner.pin) fail("AUTH_PIN_INVALID", { remainingAttempts: 4, retryAtMs: null });
+      if (workspace.mode === "live" || s.lines.length > 0 || s.drawer.session) fail("VALIDATION_FAILED");
+      workspace.mode = "live";
+      s.drawer.required = true;
+      return null;
+    }
     case "inventory_post_document": {
       const me = needSession(s);
       if (me.role === "cashier") fail("PERMISSION_DENIED");
