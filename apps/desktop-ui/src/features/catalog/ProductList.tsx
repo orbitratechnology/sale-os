@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { ProductRowDto_Serialize as ProductRowDto, ProductStatusDto } from "../../ipc/bindings";
+import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { describeError } from "../shell/errors";
 
@@ -148,7 +149,16 @@ export function ProductList({
             <span role="cell" className="num">
               {r.barcodeCount}
             </span>
-            <span role="cell">{r.trackStock ? "Tracked" : "Not tracked"}</span>
+            <span role="cell">
+              {r.onHandMilli == null ? (
+                "Not tracked"
+              ) : (
+                <>
+                  {formatMilli(r.onHandMilli)}
+                  {r.negativeStock && <span className="stock-flag"> Negative stock</span>}
+                </>
+              )}
+            </span>
           </button>
         ) : (
           <span role="cell" className="small">

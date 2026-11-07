@@ -22,12 +22,18 @@ pub struct CartView {
     /// highlighting after recovery (POS-011). Always empty until E09-T02 stores the
     /// price-at-add snapshot needed to detect it.
     pub repriced_lines: Vec<CartLineId>,
+    /// E11-T04: per stock-tracked variant whose quantity in the cart is more than the
+    /// sellable stock on hand, that on-hand quantity ("Only 2 in stock"). A hint only: the
+    /// negative-stock policy decides at completion.
+    pub short_stock: std::collections::BTreeMap<pos_domain::VariantId, Quantity>,
 }
 
 pub struct CartService {
     store: Arc<dyn LocalStore>,
     carts: Arc<dyn CartQueries>,
     pub(crate) catalog: Arc<dyn CatalogQueries>,
+    /// Stock on hand for the "only N in stock" hint; none means no hints.
+    stock: Option<Arc<dyn crate::queries::StockQueries>>,
     /// Serializes load → change → save. Tauri runs commands concurrently, and two fast scans
     /// must both count. The store's revision check is the backstop if this is bypassed.
     lock: Mutex<()>,
@@ -50,8 +56,15 @@ impl CartService {
             store,
             carts,
             catalog,
+            stock: None,
             lock: Mutex::new(()),
         }
+    }
+
+    /// Shows "only N in stock" hints on lines that exceed the stock on hand (E11-T04).
+    pub fn with_stock(mut self, stock: Arc<dyn crate::queries::StockQueries>) -> Self {
+        self.stock = Some(stock);
+        self
     }
 
     pub(crate) fn store(&self) -> &Arc<dyn LocalStore> {
@@ -142,12 +155,31 @@ impl CartService {
         let policy = PricingPolicy::new(settings.tax_mode);
         let priced = price_cart(&cart.pricing_lines(), cart.order_discount.as_ref(), &policy)
             .map_err(|e| AppError::Validation(e.to_string(), pos_domain::HasErrorCode::error_code(&e)))?;
-        let _ = ctx;
+        let mut short_stock = std::collections::BTreeMap::new();
+        if let Some(stock) = &self.stock {
+            // The cart's total per tracked variant (one item may be on several lines).
+            let mut wanted: std::collections::BTreeMap<pos_domain::VariantId, i64> =
+                std::collections::BTreeMap::new();
+            for l in cart.lines.iter().filter(|l| l.variant.track_stock) {
+                *wanted.entry(l.variant.variant_id).or_default() += l.quantity.milli();
+            }
+            if !wanted.is_empty() {
+                let variants: Vec<_> = wanted.keys().copied().collect();
+                let on_hand = stock.on_hand(ctx.register.location_id, &variants).await?;
+                for (v, qty) in wanted {
+                    let have = on_hand.get(&v).copied().unwrap_or(Quantity::ZERO);
+                    if qty > have.milli() {
+                        short_stock.insert(v, have);
+                    }
+                }
+            }
+        }
         Ok(CartView {
             cart,
             priced,
             settings,
             repriced_lines: repriced,
+            short_stock,
         })
     }
 

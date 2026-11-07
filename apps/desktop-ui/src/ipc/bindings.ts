@@ -323,6 +323,11 @@ export type CartLineDto_Deserialize = {
 	totalMinor: string,
 	/**  `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`. */
 	addedVia: string,
+	/**
+	 *  E11-T04: set when the cart holds more of this item than is in stock: what is on hand
+	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
+	 */
+	onlyInStockMilli?: string | null,
 };
 
 export type CartLineDto_Serialize = {
@@ -345,6 +350,11 @@ export type CartLineDto_Serialize = {
 	totalMinor: string,
 	/**  `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`. */
 	addedVia: string,
+	/**
+	 *  E11-T04: set when the cart holds more of this item than is in stock: what is on hand
+	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
+	 */
+	onlyInStockMilli: string | null,
 };
 
 export type CartLineId = string;
@@ -935,6 +945,10 @@ export type ProductRowDto_Deserialize = {
 	barcodeCount: number,
 	trackStock: boolean,
 	quickSelect: boolean,
+	/**  Sellable on hand across tracked variants; `null` when nothing tracks stock. */
+	onHandMilli?: string | null,
+	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
+	negativeStock: boolean,
 };
 
 export type ProductRowDto_Serialize = {
@@ -949,6 +963,10 @@ export type ProductRowDto_Serialize = {
 	barcodeCount: number,
 	trackStock: boolean,
 	quickSelect: boolean,
+	/**  Sellable on hand across tracked variants; `null` when nothing tracks stock. */
+	onHandMilli: string | null,
+	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
+	negativeStock: boolean,
 };
 
 export type ProductStatusDto = "active" | "archived" | "all";

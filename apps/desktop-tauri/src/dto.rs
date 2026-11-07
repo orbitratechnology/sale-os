@@ -499,6 +499,10 @@ pub struct ProductRowDto {
     pub barcode_count: u32,
     pub track_stock: bool,
     pub quick_select: bool,
+    /// Sellable on hand across tracked variants; `null` when nothing tracks stock.
+    pub on_hand_milli: Option<String>,
+    /// A tracked variant is below zero: show the red "Negative stock" flag (INV-008).
+    pub negative_stock: bool,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -527,6 +531,8 @@ impl ProductPageDto {
                     barcode_count: r.barcode_count,
                     track_stock: r.track_stock,
                     quick_select: r.quick_select,
+                    on_hand_milli: r.on_hand.map(qty),
+                    negative_stock: r.negative_stock,
                 })
             })
             .collect::<Result<_, IpcError>>()?;
@@ -583,6 +589,9 @@ pub struct CartLineDto {
     pub total_minor: String,
     /// `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`.
     pub added_via: String,
+    /// E11-T04: set when the cart holds more of this item than is in stock: what is on hand
+    /// (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
+    pub only_in_stock_milli: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -691,6 +700,7 @@ impl CartViewDto {
                     tax_minor: money(p.tax),
                     total_minor: money(p.total),
                     added_via: via(&l.added_via).into(),
+                    only_in_stock_milli: v.short_stock.get(&l.variant.variant_id).map(|q| qty(*q)),
                 })
             })
             .collect::<Result<Vec<_>, IpcError>>()?;

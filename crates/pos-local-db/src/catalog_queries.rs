@@ -322,7 +322,12 @@ impl CatalogQueries for SqliteStore {
                (SELECT max(v.price_minor) FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active'),
                (SELECT count(*) FROM product_barcodes bc JOIN product_variants v ON v.variant_id = bc.variant_id
                  WHERE v.product_id = p.product_id AND v.status = 'active' AND bc.status = 'active'),
-               EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1)
+               EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1),
+               (SELECT coalesce(sum(b.on_hand_milli), 0) FROM stock_balances b JOIN product_variants v ON v.variant_id = b.variant_id
+                 WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1 AND b.bucket = 'sellable'),
+               EXISTS (SELECT 1 FROM stock_balances b JOIN product_variants v ON v.variant_id = b.variant_id
+                 WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1 AND b.bucket = 'sellable'
+                   AND b.on_hand_milli < 0)
              FROM products p",
         );
         filtered(&mut b, filter, fts);
@@ -342,6 +347,8 @@ impl CatalogQueries for SqliteStore {
             Option<i64>,
             i64,
             bool,
+            i64,
+            bool,
         );
         let rows: Vec<Row> = b
             .build_query_as()
@@ -351,7 +358,21 @@ impl CatalogQueries for SqliteStore {
         let rows = rows
             .into_iter()
             .map(
-                |(id, name, archived, version, quick, variants, sku, min, max, barcodes, track)| {
+                |(
+                    id,
+                    name,
+                    archived,
+                    version,
+                    quick,
+                    variants,
+                    sku,
+                    min,
+                    max,
+                    barcodes,
+                    track,
+                    on_hand,
+                    negative,
+                )| {
                     Ok(ProductRow {
                         product_id: id.parse().map_err(q)?,
                         name,
@@ -364,6 +385,8 @@ impl CatalogQueries for SqliteStore {
                         barcode_count: u32::try_from(barcodes).map_err(q)?,
                         track_stock: track,
                         quick_select: quick,
+                        on_hand: track.then(|| pos_domain::Quantity::from_milli(on_hand)),
+                        negative_stock: negative,
                     })
                 },
             )

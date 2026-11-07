@@ -129,7 +129,7 @@ impl AppServices {
         let app = store.as_ref().map(|s| {
             let a = Arc::new(s.clone());
             let approvals = Arc::new(Approvals::default());
-            let carts = Arc::new(CartService::new(a.clone(), a.clone(), a.clone()));
+            let carts = Arc::new(CartService::new(a.clone(), a.clone(), a.clone()).with_stock(a.clone()));
             let printer = Arc::new(pos_device_virtual::printer::VirtualPrinter::new(
                 data_dir.join("virtual-printer"),
             ));

@@ -384,3 +384,74 @@ async fn a_failure_at_any_statement_leaves_nothing_and_uses_no_number() {
     }
     assert!(statement >= 6, "only {statement} statements");
 }
+
+#[tokio::test]
+async fn hints_only_n_in_stock_and_flags_negative_products() {
+    use pos_application::cart::CartService;
+    use pos_application::queries::{CatalogQueries, ProductFilter, ProductStatusFilter};
+    use pos_domain::cart::AddVia;
+    let t = shop().await;
+    let s = t.shop.store.clone();
+    let owner = &t.shop.owner;
+    service(&t, s.clone())
+        .post(owner, doc(DocumentType::Receipt, None, vec![line(t.tea, 2_000)]))
+        .await
+        .unwrap();
+    let carts = CartService::new(Arc::new(s.clone()), Arc::new(s.clone()), Arc::new(s.clone()))
+        .with_stock(Arc::new(s.clone()));
+    let (view, _) = carts
+        .add_variant(owner, t.tea, Some(Quantity::from_milli(2_000)), AddVia::Search)
+        .await
+        .unwrap();
+    assert!(view.short_stock.is_empty(), "2 wanted, 2 in stock");
+    let (view, _) = carts
+        .add_variant(owner, t.tea, None, AddVia::Search)
+        .await
+        .unwrap();
+    assert_eq!(
+        view.short_stock.get(&t.tea).map(|q| q.milli()),
+        Some(2_000),
+        "3 wanted: only 2 in stock"
+    );
+    // An untracked item never gets a hint; cake has none in stock: 0.
+    let (view, _) = carts
+        .add_variant(owner, t.wrap, None, AddVia::Search)
+        .await
+        .unwrap();
+    assert!(!view.short_stock.contains_key(&t.wrap));
+    let (view, _) = carts
+        .add_variant(owner, t.cake, None, AddVia::Search)
+        .await
+        .unwrap();
+    assert_eq!(view.short_stock.get(&t.cake).map(|q| q.milli()), Some(0));
+
+    // The product list shows on hand and flags negative stock.
+    sqlx::query("UPDATE stock_balances SET on_hand_milli = -1000 WHERE variant_id = ?")
+        .bind(t.tea.to_string())
+        .execute(s.db().writer())
+        .await
+        .unwrap();
+    let page = s
+        .list_products(
+            &ProductFilter {
+                query: String::new(),
+                status: ProductStatusFilter::Active,
+                track_stock: None,
+                category_id: None,
+            },
+            0,
+            10,
+        )
+        .await
+        .unwrap();
+    let row = |n: &str| page.rows.iter().find(|r| r.name == n).unwrap().clone();
+    assert_eq!(
+        (row("Tea").on_hand.map(|q| q.milli()), row("Tea").negative_stock),
+        (Some(-1_000), true)
+    );
+    assert_eq!(
+        (row("Cake").on_hand.map(|q| q.milli()), row("Cake").negative_stock),
+        (Some(0), false)
+    );
+    assert_eq!(row("Gift wrap").on_hand, None);
+}

@@ -255,3 +255,5 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 .report-totals + .sales-table { margin-top: 16px; }
 .report-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .report-exports { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; }
+.stock-hint { display: block; font-size: 0.8rem; color: var(--sandbox); }
+.stock-flag { color: var(--danger); font-weight: 700; }

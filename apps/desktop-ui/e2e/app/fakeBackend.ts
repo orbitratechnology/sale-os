@@ -169,6 +169,9 @@ function fail(code: IpcError["code"], details: IpcError["details"] = null): neve
 
 const div = (a: bigint, b: bigint) => (a >= 0n ? (a + b / 2n) / b : (a - b / 2n) / b);
 
+/** Sellable on hand per product name, matching the fake stock report. */
+const FAKE_STOCK: Record<string, bigint> = { "Chocolate bar": -2000n, "Cola 330ml": 40000n, Crisps: 3000n };
+
 export function view(s: FakeState): CartView {
   const lines: CartLine[] = s.lines.map((l) => {
     const p = s.products.find((x) => x.variantId === l.variantId);
@@ -193,6 +196,11 @@ export function view(s: FakeState): CartView {
       taxMinor: div(total, 6n).toString(),
       totalMinor: total.toString(),
       addedVia: "scan",
+      // The same on-hand figures as the fake stock report.
+      onlyInStockMilli: (() => {
+        const have = FAKE_STOCK[p.name];
+        return have !== undefined && l.qtyMilli > have ? have.toString() : null;
+      })(),
     };
   });
   const subtotal = lines.reduce((a, l) => a + BigInt(l.grossMinor), 0n);
@@ -311,7 +319,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         const total = s.bigCatalog;
         const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => {
           const n = offset + i;
-          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false };
+          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false };
         });
         return { rows, total };
       }
@@ -329,6 +337,8 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           productId: p.productId, name: p.name, archived: p.archived, version: p.version, variantCount: p.variants.length,
           sku: p.variants[0]?.sku ?? null, priceMinMinor: min.toString(), priceMaxMinor: max.toString(),
           barcodeCount: p.variants.reduce((n, v) => n + v.barcodes.length, 0), trackStock: p.variants.some((v) => v.trackStock), quickSelect: p.quickSelect,
+          onHandMilli: p.variants.some((v) => v.trackStock) ? (FAKE_STOCK[p.name] ?? 0n).toString() : null,
+          negativeStock: (FAKE_STOCK[p.name] ?? 0n) < 0n,
         };
       });
       return { rows, total: all.length };

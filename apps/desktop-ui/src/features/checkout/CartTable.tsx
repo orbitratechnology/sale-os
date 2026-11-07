@@ -74,6 +74,13 @@ export function CartTable({
               <span className="item-name">{l.name}</span>
               {l.label && <span className="item-label"> {l.label}</span>}
               {cart.repricedLines.includes(l.lineId) && <span className="tag">price changed</span>}
+              {l.onlyInStockMilli != null && (
+                <span className="stock-hint" data-testid="stock-hint">
+                  {l.onlyInStockMilli.startsWith("-") || l.onlyInStockMilli === "0"
+                    ? "None in stock"
+                    : `Only ${formatMilli(l.onlyInStockMilli)} in stock`}
+                </span>
+              )}
             </td>
             <td className="num">
               {editing?.lineId === l.lineId && editing.field === "qty" ? (

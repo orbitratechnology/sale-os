@@ -955,6 +955,24 @@ describe("stock (E11-T02/T03)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 
+  it("hints when the cart holds more than is in stock, and flags negative stock in the product list", async () => {
+    const page = await checkout();
+    for (let i = 0; i < 3; i++) await scan(page, CRISPS); // 3 in stock: no hint yet
+    await page.waitForFunction(() => document.querySelector("[data-testid=cart-line] [data-testid=qty]")?.textContent === "3");
+    expect(await page.getByTestId("stock-hint").count()).toBe(0);
+    await scan(page, CRISPS);
+    await page.getByTestId("stock-hint").filter({ hasText: "Only 3 in stock" }).waitFor();
+    await scan(page, CHOC); // already below zero
+    await page.getByTestId("stock-hint").filter({ hasText: "None in stock" }).waitFor();
+    // A hint only: paying is still possible.
+    expect(await page.getByRole("button", { name: /^Pay/ }).isDisabled()).toBe(false);
+
+    await page.keyboard.press("F6");
+    const row = page.getByRole("row", { name: /Chocolate bar/ });
+    await row.getByText("Negative stock").waitFor();
+    expect(await page.getByRole("row", { name: /Crisps/ }).getByText("Negative stock").count()).toBe(0);
+  });
+
   it("a cashier sees stock on hand and its history, but cannot receive or adjust", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Cal/ }).click();

@@ -139,6 +139,11 @@ pub struct ProductRow {
     pub barcode_count: u32,
     pub track_stock: bool,
     pub quick_select: bool,
+    /// Sellable stock on hand across the product's tracked variants (E11-T04); `None` when
+    /// none of them tracks stock.
+    pub on_hand: Option<pos_domain::Quantity>,
+    /// Some tracked variant is below zero (INV-008): shown as a red "Negative stock" flag.
+    pub negative_stock: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
