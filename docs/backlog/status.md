@@ -134,11 +134,16 @@ keyboard.
 | E14-T01 Report definitions and summary queries | **Done** | `docs/reporting-definitions.md` (gross, line/order discounts, tax, rounding, sales total, refunds and refunded tax by return date, net incl./excl. tax, payment mix by operator/provider, top products with returns netted, stock status); the fixture day matches to the minor unit (gross 30.90, discounts 0.74, tax 5.04, refunds 3.70, net 26.46 incl. / 22.04 excl.); a 23:30 sale in Kolkata (UTC+5:30) lands on the local date; practice sales never count; the report reconciles with the sales list; 500k lines: 30-day summary 26 ms, payment mix 21 ms (budget 1 s), so no `daily_sales_summary` projection is needed | — |
 | E14-T02 Top products and stock reports | **Done** | Top N by quantity or value, returns in the period netted off (fixture: Cola 9 / 10.56, Bread 5 / 12.00); 30-day top products at 500k lines 281 ms (budget 1.5 s); stock report from the balance projection with OK / Low (at or under the threshold) / Negative, low-only filter, archived products left out | The stock overview screen with history per variant (E11-T05) |
 | E14-T03 Reports UI | **Done (Chromium + real app)** | Daily sales (totals and by day), payments, top products, stock; presets (today, yesterday, last 7 days, this month) and dates; every report shows the "This device only · as of HH:MM" badge; the stock tab says stock is calculated from recorded movements; managers and owners only; axe clean. Real app: a live 5.00 sale shows 0.83 tax and 4.17 net excl. tax | The Stage 3 cloud badges; the default "today" uses this computer's calendar, which is the business day unless the till's clock zone differs from the business zone |
+| E14-T04 CSV exports | **Done (Chromium; files from the shell)** | RFC 4180, UTF-8 with BOM, CRLF, exact decimals with `.` and the currency digits (no floats), quantities without trailing zeros, text starting with `= + - @` prefixed with `'` (CSV injection); datasets: sale lines, payments, returns (record exports include practice rows with a `mode` column), products (the format the CSV import will read), stock, and each report (live only); `ReportsExport`, or `CatalogExport` for products and stock; saved under `<app data>/exports/` through a temp file and rename, never overwriting (`-2`, `-3`…); audited `report.exported` with dataset, rows and file; Reports screen buttons per report and for the records of the chosen dates | The products round-trip test waits for the CSV import (E06-T07); a native save dialog (exports go to the app data folder for now) |
 
 ### Next up
 
-E14-T04 CSV exports; E11-T05 stock overview and history; E11-T05 stock overview and history; E15-T01 audit viewer; E13-T04 receipt PDF;
+E11-T05 stock overview and history; E11-T05 stock overview and history; E15-T01 audit viewer; E13-T04 receipt PDF;
 E06-T05 categories and tax configuration; the settings UI (E04-T03).
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
 `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
+
+**Known flaky:** `e2e/scanCapture.e2e.ts` "delivers 20 scans typed at 5 ms/key" failed once in a full
+run on a loaded machine and passed 3/3 on its own (2026-11-07). It types at 5 ms per key, so it is
+timing-sensitive; watch it in CI before loosening anything.

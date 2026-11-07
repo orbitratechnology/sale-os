@@ -105,7 +105,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `receipt_print` / `receipt_reprint` | SalesView / ReceiptReprint | `{ receiptId } → PrintJobDto` | E13-T06 |
 | `print_jobs_active` / `print_job_resolve_unknown` | session | `{ jobId, outcome:'printed'\|'not_printed' } → ()` | E13-T06 |
 | `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range: { from, to } }` (+ `by`, `limit` for top products; `lowOnly` for stock) → … + `scope: { scope: 'device', asOfMs }`. The `scope: 'cloud'` argument arrives with Stage 3. Definitions: docs/reporting-definitions.md | E14 |
-| `export_csv` | ReportsExport / CatalogExport | `{ dataset, range?, saveTo } → { rows }` | E14-T04 |
+| `export_csv` | ReportsExport / CatalogExport (products, stock) | `{ dataset, range? } → { path, fileName, rows }`. Saved under `<app data>/exports/` (never overwriting) until a native save dialog exists; datasets `transactions`, `tenders`, `returns`, `products`, `stock`, `sales_summary`, `tender_mix`, `top_products` | E14-T04 |
 | `audit_list` | AuditView | | E15-T01 |
 | `sync_status` | session | `→ SyncStatusDto { linkState, pending, rejected, conflicts, lastPushOkAt, lastPullOkAt, lastError?, clockSkewWarning }` | E17-T09 |
 | `sync_link_start` / `sync_link_complete` | DeviceLink | Owner email + password → link result | E17-T08 |

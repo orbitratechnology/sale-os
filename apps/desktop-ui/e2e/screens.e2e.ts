@@ -1046,6 +1046,23 @@ describe("reports (E14-T03)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 
+  it("exports the report on screen and the records for the dates as CSV", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Reports" }).click();
+    await page.getByRole("heading", { name: "Reports" }).waitFor();
+    await page.getByRole("button", { name: "Export this report (CSV)" }).click();
+    await page.getByTestId("export-saved").filter({ hasText: "sales_summary_" }).waitFor();
+    await page.getByRole("tab", { name: "Stock" }).click();
+    await page.getByRole("button", { name: "Export this report (CSV)" }).click();
+    await page.getByTestId("export-saved").filter({ hasText: "stock.csv" }).waitFor();
+    await page.getByRole("region", { name: "Data exports" }).getByRole("button", { name: "Products" }).click();
+    await page.getByTestId("export-saved").filter({ hasText: "Saved 3 rows" }).waitFor();
+    const sent = await calls(page, "export_csv");
+    expect(sent.map((c) => c.dataset)).toEqual(["sales_summary", "stock", "products"]);
+    expect(sent[0]?.range).toMatchObject({ from: expect.any(String), to: expect.any(String) });
+    expect(sent[1]?.range).toBeNull();
+  });
+
   it("a cashier has no Reports action", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Cal/ }).click();

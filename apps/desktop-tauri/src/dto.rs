@@ -1720,3 +1720,43 @@ impl StockReportDto {
         }
     }
 }
+
+// ---------- CSV exports (E14-T04) ----------
+
+#[derive(Copy, Clone, Debug, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportDatasetDto {
+    Transactions,
+    Tenders,
+    Returns,
+    Products,
+    Stock,
+    SalesSummary,
+    TenderMix,
+    TopProducts,
+}
+
+impl ExportDatasetDto {
+    pub fn into_domain(self) -> pos_application::export::Dataset {
+        use pos_application::export::Dataset as D;
+        match self {
+            Self::Transactions => D::Transactions,
+            Self::Tenders => D::Tenders,
+            Self::Returns => D::Returns,
+            Self::Products => D::Products,
+            Self::Stock => D::Stock,
+            Self::SalesSummary => D::SalesSummary,
+            Self::TenderMix => D::TenderMix,
+            Self::TopProducts => D::TopProducts,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportResultDto {
+    /// Where the file was saved.
+    pub path: String,
+    pub file_name: String,
+    pub rows: u32,
+}

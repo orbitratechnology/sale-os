@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type {
+  ExportDatasetDto,
+  ExportResultDto,
   ReportScopeDto,
   SalesFiguresDto,
   SalesSummaryDto,
@@ -57,6 +59,8 @@ export function ReportsScreen({ workspace, onBack }: { workspace: Workspace; onB
   const [top, setTop] = useState<TopProductsDto | null>(null);
   const [stock, setStock] = useState<StockReportDto | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
+  const [saved, setSaved] = useState<ExportResultDto | null>(null);
+  const [exporting, setExporting] = useState(false);
   const exp = sales?.currencyExponent ?? workspace.currencyExponent;
   const money = (m: string) => formatMoney(m, { exponent: exp });
 
@@ -88,6 +92,19 @@ export function ReportsScreen({ workspace, onBack }: { workspace: Workspace; onB
       live = false;
     };
   }, [tab, range.from, range.to, topBy, lowOnly]);
+
+  async function exportCsv(dataset: ExportDatasetDto) {
+    setExporting(true);
+    setSaved(null);
+    const dated = dataset !== "products" && dataset !== "stock";
+    const res = await commands.exportCsv(dataset, dated ? { from: range.from, to: range.to } : null);
+    setExporting(false);
+    if (res.status === "ok") {
+      setSaved(res.data);
+      setError(null);
+    } else setError(res.error);
+  }
+  const tabDataset: Record<Tab, ExportDatasetDto> = { sales: "sales_summary", payments: "tender_mix", top: "top_products", stock: "stock" };
 
   const scope = (tab === "sales" ? sales?.scope : tab === "payments" ? mix?.scope : tab === "top" ? top?.scope : stock?.scope) ?? null;
 
@@ -130,13 +147,40 @@ export function ReportsScreen({ workspace, onBack }: { workspace: Workspace; onB
           </label>
         </form>
       )}
-      <ScopeBadge scope={scope} />
+      <div className="report-bar">
+        <ScopeBadge scope={scope} />
+        <button type="button" className="secondary" disabled={exporting} onClick={() => void exportCsv(tabDataset[tab])}>
+          Export this report (CSV)
+        </button>
+      </div>
+      <div aria-live="polite">
+        {saved && (
+          <p role="status" className="small" data-testid="export-saved">
+            Saved {saved.rows} {saved.rows === 1 ? "row" : "rows"} to <span className="mono">{saved.path}</span>
+          </p>
+        )}
+      </div>
       {error && (
         <p role="alert" className="field-error">
           {describeError(error)}
         </p>
       )}
 
+      <section className="card report-exports" aria-label="Data exports">
+        <span className="small">Export the records for these dates (CSV):</span>
+        {(
+          [
+            ["transactions", "Sale lines"],
+            ["tenders", "Payments"],
+            ["returns", "Returns"],
+            ["products", "Products"],
+          ] as const
+        ).map(([d, label]) => (
+          <button key={d} type="button" className="secondary" disabled={exporting} onClick={() => void exportCsv(d)}>
+            {label}
+          </button>
+        ))}
+      </section>
       <section className="card" aria-label={TABS.find((t) => t.value === tab)?.label}>
         {tab === "sales" && sales && <SalesReport s={sales} money={money} />}
         {tab === "payments" && mix && <PaymentsReport m={mix} money={money} />}

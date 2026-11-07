@@ -52,6 +52,8 @@ export interface FakeState {
   };
   /** Inventory documents posted so far (for their numbers). */
   documents: number;
+  /** CSV exports made. */
+  exports: number;
   /** Completed returns: id → number. */
   returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
@@ -153,6 +155,7 @@ function initialStateInner(preset: Preset): FakeState {
     returns: new Map(),
     drawer: { required: false, seq: 0, session: null, lastClosed: null },
     documents: 0,
+    exports: 0,
     printScript: [],
     printJobs: new Map(),
     printed: 0,
@@ -576,6 +579,17 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           .map((r) => ({ variantId: id(), name: r.name, label: "", sku: null, unit: "ea", sellableMilli: r.sellable, damagedMilli: "0", lowStockThresholdMilli: r.low, status: r.status, lastMovementMs: null })),
         scope,
       };
+    }
+    case "export_csv": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const dated = a.dataset !== "products" && a.dataset !== "stock";
+      const range = a.range as { from: string; to: string } | null;
+      if (dated && !range) fail("VALIDATION_FAILED");
+      s.exports += 1;
+      const name = dated && range ? `${String(a.dataset)}_${range.from}_${range.to}.csv` : `${String(a.dataset)}.csv`;
+      const rows = a.dataset === "transactions" ? s.sales.reduce((n, x) => n + x.lines.length, 0) : a.dataset === "products" ? s.products.length : 3;
+      return { path: `/data/exports/${name}`, fileName: name, rows };
     }
     case "register_go_live": {
       const me = needSession(s);

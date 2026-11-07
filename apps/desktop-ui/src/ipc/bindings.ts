@@ -157,6 +157,11 @@ export const commands = {
 	reportsTopProducts: (range: DateRangeDto, by: TopByDto, limit: number) => typedError<TopProductsDto, IpcError_Serialize>(__TAURI_INVOKE("reports_top_products", { range, by, limit })),
 	/**  Current stock from the recorded movements; `lowOnly` keeps low and negative items. */
 	reportsStock: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_stock", { lowOnly })),
+	/**
+	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM) into `<app data>/exports/`, then
+	 *  audits it (`report.exported`). Dated datasets need `range`.
+	 */
+	exportCsv: (dataset: ExportDatasetDto, range: DateRangeDto | null) => typedError<ExportResultDto, IpcError_Serialize>(__TAURI_INVOKE("export_csv", { dataset, range })),
 	/**  The register's drawer: the open session (if any) and whether sales need one. */
 	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
 	/**  Opens the drawer with a float (minor units). */
@@ -700,6 +705,15 @@ export type ErrorDetails_Serialize = {
 	ownerProductId: ProductId | null,
 	/**  `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string. */
 	remainingMinor: string | null,
+};
+
+export type ExportDatasetDto = "transactions" | "tenders" | "returns" | "products" | "stock" | "sales_summary" | "tender_mix" | "top_products";
+
+export type ExportResultDto = {
+	/**  Where the file was saved. */
+	path: string,
+	fileName: string,
+	rows: number,
 };
 
 export type InventoryDocumentId = string;

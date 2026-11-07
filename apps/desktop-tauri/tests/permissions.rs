@@ -235,6 +235,12 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}, "by": "value", "limit": 10}),
         ),
         ("reports_stock", Perm(ReportsView), json!({"lowOnly": false})),
+        // Products and stock need CatalogExport instead; the matrix gives both to the same roles.
+        (
+            "export_csv",
+            Perm(ReportsExport),
+            json!({"dataset": "transactions", "range": {"from": "2026-01-01", "to": "2026-01-31"}}),
+        ),
         ("cash_session_current", Perm(CashSessionOpen), json!({})),
         // A negative float is refused after the permission check: nothing is opened.
         (
@@ -744,6 +750,26 @@ fn a_cash_sale_over_ipc() {
     )
     .unwrap_err();
     assert_eq!(bad["code"], "VALIDATION_FAILED");
+
+    // E14-T04: export the day's lines; a second export never overwrites the first.
+    let day = page["rows"][0]["businessDate"].clone();
+    let export = || {
+        invoke(
+            &w,
+            "export_csv",
+            json!({"dataset": "transactions", "range": {"from": day, "to": day}}),
+        )
+        .unwrap()
+    };
+    let first = export();
+    let second = export();
+    assert_eq!(first["rows"], 1);
+    assert_ne!(first["path"], second["path"]);
+    assert!(second["fileName"].as_str().unwrap().ends_with("-2.csv"));
+    let bytes = std::fs::read(first["path"].as_str().unwrap()).unwrap();
+    assert!(bytes.starts_with("\u{feff}receipt_number,".as_bytes()));
+    let products = invoke(&w, "export_csv", json!({"dataset": "products", "range": null})).unwrap();
+    assert_eq!(products["rows"], 1);
 }
 
 #[test]
