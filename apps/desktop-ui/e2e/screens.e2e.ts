@@ -880,3 +880,89 @@ describe("cash drawer (E15-T02)", () => {
     expect(serious).toEqual([]);
   });
 });
+
+describe("stock (E11-T02/T03)", () => {
+  it("receive goods by scanning: a second scan adds to the line; then an adjustment with a reason", async () => {
+    const page = await checkout();
+    await page.keyboard.press("F11");
+    await page.getByRole("heading", { name: "Stock" }).waitFor();
+    // The code field has focus: a scanner types there and ends with Enter.
+    await page.keyboard.type(COLA, { delay: 5 });
+    await page.keyboard.press("Enter");
+    await page.getByTestId("stock-line").first().waitFor();
+    // Scanner-ready elsewhere on the screen works too, and a case barcode adds 12.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.type(COLA, { delay: 5 });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (document.querySelector("[aria-label='Quantity: Cola 330ml']") as HTMLInputElement | null)?.value === "2");
+    await page.getByLabel("Scan or type a code").fill("CASE12");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (document.querySelector("[aria-label='Quantity: Cola 330ml']") as HTMLInputElement | null)?.value === "14");
+    await page.getByLabel("Scan or type a code").fill("CRISP");
+    await page.keyboard.press("Enter");
+    await page.getByLabel("Quantity: Crisps").fill("24");
+    await page.getByLabel("Unit cost: Crisps").fill("0.40");
+    await page.getByLabel("Scan or type a code").fill("NOPE");
+    await page.keyboard.press("Enter");
+    await page.getByRole("alert").filter({ hasText: "No item has the code NOPE" }).waitFor();
+    await page.getByLabel("Supplier (optional)").fill("Wholesale Ltd");
+    await page.getByRole("button", { name: "Post goods received" }).click();
+    await page.getByTestId("posted").filter({ hasText: "R01-IN-000001" }).waitFor();
+    expect(await page.getByTestId("stock-line").count()).toBe(0);
+    expect((await calls(page, "inventory_post_document"))[0]).toMatchObject({
+      draft: {
+        docType: "receipt",
+        reason: null,
+        supplierName: "Wholesale Ltd",
+        lines: [
+          { quantityMilli: "14000", unitCostMinor: null },
+          { quantityMilli: "24000", unitCostMinor: "40" },
+        ],
+      },
+    });
+
+    // An "other" adjustment needs a note; a count correction may be negative.
+    await page.getByRole("radio", { name: "Adjust stock" }).click();
+    await page.getByLabel("Reason").selectOption("other");
+    await page.getByLabel("Scan or type a code").fill("CHOC");
+    await page.keyboard.press("Enter");
+    await page.getByLabel("Quantity: Chocolate bar").fill("-1");
+    expect(await page.getByLabel("Unit cost: Chocolate bar").count()).toBe(0);
+    await page.getByRole("button", { name: "Post adjustment" }).click();
+    await page.getByRole("alert").filter({ hasText: "not valid" }).waitFor();
+    await page.getByLabel(/^Note/).fill("used for the window display");
+    await page.getByRole("button", { name: "Post adjustment" }).click();
+    await page.getByTestId("posted").filter({ hasText: "R01-IN-000002" }).waitFor();
+    expect((await calls(page, "inventory_post_document")).at(-1)).toMatchObject({
+      draft: { docType: "adjustment", reason: "other", note: "used for the window display", lines: [{ quantityMilli: "-1000" }] },
+    });
+    // A loss cannot be negative: refused on the screen before Rust.
+    await page.getByLabel("Reason").selectOption("loss");
+    await page.getByLabel("Scan or type a code").fill("CHOC");
+    await page.keyboard.press("Enter");
+    await page.getByLabel("Quantity: Chocolate bar").fill("-1");
+    await page.getByRole("button", { name: "Post adjustment" }).click();
+    await page.getByRole("alert").filter({ hasText: "Check the quantity for Chocolate bar" }).waitFor();
+
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    const serious = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+    expect(serious).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("a cashier has no Stock action", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await page.getByRole("button", { name: /^Stock/ }).count()).toBe(0);
+    await page.keyboard.press("F11");
+    expect(await page.getByRole("heading", { name: "Stock" }).count()).toBe(0);
+  });
+});

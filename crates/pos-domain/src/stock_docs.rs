@@ -508,7 +508,12 @@ mod tests {
     #[test]
     fn write_offs_take_damaged_stock_and_no_more() {
         let a = item(false, 3000);
-        let wo = |lines| plan_document(&draft(DocumentType::WriteOff, None, lines), std::slice::from_ref(&a));
+        let wo = |lines| {
+            plan_document(
+                &draft(DocumentType::WriteOff, None, lines),
+                std::slice::from_ref(&a),
+            )
+        };
         assert_eq!(
             moves(&wo(vec![line(&a, 2000)]).unwrap()),
             [(StockBucket::Damaged, MovementType::WriteOff, -2000)]

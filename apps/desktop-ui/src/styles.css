@@ -239,3 +239,8 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
 button.link { background: none; border: none; color: var(--accent, #1d4ed8); padding: 0; min-height: 0; text-decoration: underline; cursor: pointer; }
 .drawer-needed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--sandbox-bg); color: var(--sandbox); font-weight: 600; }
 .drawer-needed button.link { color: inherit; }
+
+/* Stock documents (E11-T02/T03) */
+.stock-code { max-width: 480px; }
+.stock-code input { font-family: var(--mono, monospace); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

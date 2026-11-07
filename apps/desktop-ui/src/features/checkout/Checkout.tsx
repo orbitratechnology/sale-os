@@ -31,6 +31,7 @@ export const KEYS = {
   returns: "F7",
   sales: "F8",
   drawer: "F10",
+  stock: "F11",
   pay: "F9",
   lock: "F12",
 } as const;
@@ -53,6 +54,7 @@ export function Checkout({
   onReturns,
   onSales,
   onDrawer,
+  onStock,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -63,6 +65,8 @@ export function Checkout({
   onReturns: () => void;
   onSales: () => void;
   onDrawer: () => void;
+  /** Receive and adjust stock; `null` for roles that cannot (UI only: Rust checks). */
+  onStock: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
@@ -176,6 +180,10 @@ export function Checkout({
           e.preventDefault();
           onDrawer();
           return;
+        case "F11":
+          e.preventDefault();
+          onStock?.();
+          return;
         case "F9":
           e.preventDefault();
           if (c.cart?.lines.length) setModal("pay");
@@ -210,7 +218,7 @@ export function Checkout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [c, modal, lock, onProducts, onReturns, onSales, onDrawer]);
+  }, [c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock]);
 
   const submitCode = (e: FormEvent) => {
     e.preventDefault();
@@ -320,6 +328,11 @@ export function Checkout({
           <button type="button" className="secondary" onClick={onDrawer}>
             Drawer <kbd>F10</kbd>
           </button>
+          {onStock && (
+            <button type="button" className="secondary" onClick={onStock}>
+              Stock <kbd>F11</kbd>
+            </button>
+          )}
           <button type="button" className="secondary" onClick={() => void lock()}>
             Lock <kbd>F12</kbd>
           </button>

@@ -50,6 +50,8 @@ export interface FakeState {
     session: { id: string; number: string; floatMinor: bigint; cashInMinor: bigint; sales: number; openedBy: string } | null;
     lastClosed: { id: string; number: string } | null;
   };
+  /** Inventory documents posted so far (for their numbers). */
+  documents: number;
   /** Completed returns: id → number. */
   returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
@@ -150,6 +152,7 @@ function initialStateInner(preset: Preset): FakeState {
     sales: [],
     returns: new Map(),
     drawer: { required: false, seq: 0, session: null, lastClosed: null },
+    documents: 0,
     printScript: [],
     printJobs: new Map(),
     printed: 0,
@@ -516,6 +519,22 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         returns: x.returns.map((r) => ({ returnId: r.returnId, returnNumber: r.returnNumber, localTime: "2026-11-07 10:00", reason: r.reason, totalMinor: r.totalMinor.toString(), refunds: r.refunds })),
       };
     }
+    case "inventory_post_document": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      // The same checks as pos_domain::stock_docs::plan_document (the ones the screen can hit).
+      const d = a.draft as { docType: string; reason: string | null; note: string | null; lines: { quantityMilli: string }[] };
+      if (d.lines.length === 0) fail("VALIDATION_FAILED");
+      if (d.docType === "adjustment" && !d.reason) fail("VALIDATION_FAILED");
+      if (d.reason === "other" && !d.note) fail("VALIDATION_FAILED");
+      const signed = d.reason === "count_correction" || d.reason === "other";
+      if (d.lines.some((l) => BigInt(l.quantityMilli) === 0n || (!signed && BigInt(l.quantityMilli) < 0n))) fail("VALIDATION_FAILED");
+      s.documents += 1;
+      return {
+        documentId: id(), documentNo: `R01-IN-${String(s.documents).padStart(6, "0")}`, docType: d.docType,
+        movementCount: d.lines.length * (d.reason === "damage" ? 2 : 1),
+      };
+    }
     case "cash_session_current":
     case "cash_session_open": {
       const me = needSession(s);
@@ -632,6 +651,13 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const before = s.lines.length;
       const lineId = add(s, p, BigInt(p.barcodes[raw] ?? 1) * 1000n);
       return { outcome: s.lines.length > before ? "added" : "incremented", cart: view(s), lineId };
+    }
+    case "catalog_lookup_code": {
+      needSession(s);
+      const raw = String(a.code).trim();
+      const p = s.products.find((x) => raw in x.barcodes || x.sku.toLowerCase() === raw.toLowerCase());
+      if (!p) return null;
+      return { ...hit(p), scanQtyMilli: (BigInt(p.barcodes[raw] ?? 1) * 1000n).toString(), matchedBy: raw in p.barcodes ? "barcode" : "sku" };
     }
     case "catalog_search": {
       needSession(s);
