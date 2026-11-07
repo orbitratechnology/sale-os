@@ -3,6 +3,7 @@ import { commands, type CartView, type IpcError } from "../../ipc";
 import type { CompletedSaleDto, TenderKind } from "../../ipc/bindings";
 import { scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 
@@ -133,6 +134,7 @@ export function PaymentPanel({
                 : `${done.negativeStockItems} items went below zero stock and were flagged for a stock check.`}
             </p>
           )}
+          <PrintControls saleId={done.saleId} autoPrint={done.autoPrint} />
           {showReceipt && <ReceiptPreview saleId={done.saleId} />}
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>

@@ -52,6 +52,8 @@ pub struct CompletedSale {
     pub outbox_sequence: u64,
     /// Variants this sale took below zero (allowed and flagged by the policy).
     pub negative_stock: Vec<NegativeStockFlag>,
+    /// `receipt.auto_print`: the UI prints right away (after the commit, RCP-006).
+    pub auto_print: bool,
 }
 
 /// The `sale.completed` v1 payload (07-contracts §4): self-contained.
@@ -181,6 +183,7 @@ impl CheckoutService {
             receipt_number,
             outbox_sequence,
             negative_stock: negative,
+            auto_print: info.auto_print,
         })
     }
 }

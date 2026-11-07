@@ -9,6 +9,7 @@ pub mod cart;
 pub mod catalog;
 pub mod checkout;
 pub mod context;
+pub mod printing;
 pub mod queries;
 pub mod receipts;
 pub mod records;

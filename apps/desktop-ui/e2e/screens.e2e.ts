@@ -512,3 +512,38 @@ describe("payment (E10-T03, E09-T08)", () => {
     expect(await lines(page)).toHaveLength(2);
   });
 });
+
+describe("printing (E13-T06)", () => {
+  async function sold(script: string[]): Promise<Page> {
+    const page = await checkout();
+    await page.evaluate((sc) => {
+      window.__fake.printScript = sc;
+    }, script);
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    return page;
+  }
+
+  it("no answer: asks whether it printed; 'not printed' makes a reprint", async () => {
+    const page = await sold(["timeout"]);
+    const done = page.getByRole("dialog", { name: "Sale completed" });
+    await done.getByRole("button", { name: "Print receipt" }).click();
+    await done.getByText("Print status unknown — did it print?").waitFor();
+    await done.getByRole("button", { name: "Not printed — reprint" }).click();
+    await done.getByTestId("print-status").filter({ hasText: "Reprint printed." }).waitFor();
+    expect((await calls(page, "print_job_resolve"))[0]).toMatchObject({ printed: false });
+  });
+
+  it("paper out: says what to do; trying again prints the original", async () => {
+    const page = await sold(["paper_out"]);
+    const done = page.getByRole("dialog", { name: "Sale completed" });
+    await done.getByRole("button", { name: "Print receipt" }).click();
+    await done.getByText("The printer is out of paper. Load paper, then try again.").waitFor();
+    await done.getByRole("button", { name: "Try again" }).click();
+    await done.getByTestId("print-status").filter({ hasText: /^Printed\.$/ }).waitFor();
+    expect(await calls(page, "print_job_retry")).toHaveLength(1);
+  });
+});

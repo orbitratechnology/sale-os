@@ -211,3 +211,4 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
   font: 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, monospace; text-align: left; white-space: pre; max-height: 50vh; overflow: auto; }
 .receipt-bold { font-weight: 800; }
 .dialog.pay-done { width: min(560px, calc(100vw - 32px)); }
+.print-controls { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }

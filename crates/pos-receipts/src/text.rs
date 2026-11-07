@@ -259,10 +259,19 @@ pub fn to_plain_text(lines: &[TextLine]) -> String {
 pub fn to_escpos(lines: &[TextLine]) -> Vec<u8> {
     use crate::escpos::{Cut, EscPos};
     let mut p = EscPos::new();
+    // Send style changes only when the style changes.
+    let mut bold = false;
     for l in lines {
-        p.bold(l.style == Style::Bold);
+        let want = l.style == Style::Bold;
+        if want != bold {
+            p.bold(want);
+            bold = want;
+        }
         p.line(&l.text);
     }
-    p.bold(false).feed(3).cut(Cut::Partial);
+    if bold {
+        p.bold(false);
+    }
+    p.feed(3).cut(Cut::Partial);
     p.into_bytes()
 }

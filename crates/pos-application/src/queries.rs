@@ -219,6 +219,8 @@ pub struct ReceiptInfo {
     pub cashier_name: String,
     /// `receipt.paper_width_mm`: 58 or 80.
     pub paper_width_mm: u32,
+    /// `receipt.auto_print`: print as soon as a sale completes.
+    pub auto_print: bool,
 }
 
 #[async_trait::async_trait]
@@ -238,4 +240,20 @@ pub trait ReceiptQueries: Send + Sync {
         &self,
         register: pos_domain::RegisterId,
     ) -> Result<Option<pos_domain::SaleId>, QueryError>;
+}
+
+/// Print queue reads (E13-T06).
+#[async_trait::async_trait]
+pub trait PrintQueries: Send + Sync {
+    async fn print_job(
+        &self,
+        job: pos_domain::PrintJobId,
+    ) -> Result<Option<crate::records::PrintJobRecord>, QueryError>;
+    /// Jobs for a receipt, oldest first.
+    async fn receipt_jobs(
+        &self,
+        receipt: pos_domain::ReceiptId,
+    ) -> Result<Vec<crate::records::PrintJobRecord>, QueryError>;
+    /// A receipt's stored document (JSON text).
+    async fn receipt_document(&self, receipt: pos_domain::ReceiptId) -> Result<Option<String>, QueryError>;
 }

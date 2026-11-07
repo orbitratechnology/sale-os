@@ -11,7 +11,7 @@ use pos_domain::{
     Currency, CurrencyCode, IdGenerator, Money, ProductId, Quantity, RatePpm, TaxRateId, Timestamp, UserId,
     VariantId,
 };
-use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, render, to_plain_text};
+use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, render, to_escpos, to_plain_text};
 use pos_receipts::{CopyKind, ReceiptContext, ReceiptDocument, sale_receipt};
 use pos_testkit::SeqIdGenerator;
 use std::path::PathBuf;
@@ -253,6 +253,21 @@ fn check(path: PathBuf, actual: &str) {
     );
 }
 
+fn check_bytes(path: PathBuf, actual: &[u8]) {
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(&path, actual).unwrap();
+        return;
+    }
+    let expected = std::fs::read(&path).unwrap_or_else(|_| panic!("missing golden {}", path.display()));
+    if actual != expected.as_slice() {
+        panic!(
+            "{} differs; decoded actual:\n{}",
+            path.display(),
+            pos_receipts::escpos::decode(actual)
+        );
+    }
+}
+
 #[test]
 fn golden_documents_and_text() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
@@ -268,6 +283,8 @@ fn golden_documents_and_text() {
                 "{name} overflows {width} columns"
             );
             check(dir.join(format!("{name}.{width}.txt")), &to_plain_text(&lines));
+            // AT-09: the exact ESC/POS bytes, reviewed through their decode.
+            check_bytes(dir.join(format!("{name}.{width}.bin")), &to_escpos(&lines));
         }
         // The document round-trips through JSON (it is stored as JSON).
         let back: ReceiptDocument = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();

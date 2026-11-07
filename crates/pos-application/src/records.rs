@@ -246,3 +246,56 @@ pub struct DeviceIdentity {
     pub register_id: RegisterId,
     pub mode: RegisterMode,
 }
+
+/// Print job states (E13-T06). `Submitted` is never retried automatically: if the printer
+/// does not answer, the job becomes `Unknown` and the operator decides.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrintStatus {
+    Queued,
+    Submitted,
+    Completed,
+    Failed,
+    Unknown,
+    Cancelled,
+}
+
+impl PrintStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            PrintStatus::Queued => "queued",
+            PrintStatus::Submitted => "submitted",
+            PrintStatus::Completed => "completed",
+            PrintStatus::Failed => "failed",
+            PrintStatus::Unknown => "unknown",
+            PrintStatus::Cancelled => "cancelled",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "queued" => PrintStatus::Queued,
+            "submitted" => PrintStatus::Submitted,
+            "completed" => PrintStatus::Completed,
+            "failed" => PrintStatus::Failed,
+            "unknown" => PrintStatus::Unknown,
+            "cancelled" => PrintStatus::Cancelled,
+            _ => return None,
+        })
+    }
+}
+
+/// A print job (local only, ADR-009).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrintJobRecord {
+    pub job_id: pos_domain::PrintJobId,
+    pub receipt_id: pos_domain::ReceiptId,
+    pub adapter: &'static str,
+    /// `true`: printed with the REPRINT marker (RCP-007).
+    pub reprint: bool,
+    pub status: PrintStatus,
+    pub attempt_count: u32,
+    pub last_error_code: Option<String>,
+    pub requested_by: pos_domain::UserId,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}

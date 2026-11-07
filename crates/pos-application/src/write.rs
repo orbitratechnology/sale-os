@@ -136,6 +136,12 @@ pub enum WriteOp {
         document: serde_json::Value,
         receipt_slot: Option<NumberSlot>,
     },
+    /// Creates or updates a print job and appends its state change to `print_job_events`
+    /// (E13-T06). Local only.
+    PutPrintJob {
+        job: crate::records::PrintJobRecord,
+        detail: serde_json::Value,
+    },
     /// Closes the open cart a sale was made from. Fails with `CartRevisionMismatch` if the
     /// cart changed since `expected_revision`.
     CloseCart {
@@ -224,6 +230,7 @@ impl WriteOp {
                 aggregate: aggregate.clone(),
             },
             WriteOp::AllocateNumber { .. }
+            | WriteOp::PutPrintJob { .. }
             | WriteOp::CloseCart { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::PutLoginThrottle(_)
@@ -549,6 +556,10 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn put_print_job(mut self, job: crate::records::PrintJobRecord, detail: serde_json::Value) -> Self {
+        self.ops.push(WriteOp::PutPrintJob { job, detail });
+        self
+    }
     pub fn close_cart(
         mut self,
         cart_id: pos_domain::CartId,
@@ -685,6 +696,7 @@ impl WriteSetBuilder {
             WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
             | WriteOp::InsertSale { .. }
+            | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }

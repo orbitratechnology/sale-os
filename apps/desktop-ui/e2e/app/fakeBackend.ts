@@ -41,6 +41,10 @@ export interface FakeState {
   bigCatalog: number | null;
   /** Completed sales: receipt numbers in order. */
   receipts: string[];
+  /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
+  printScript: string[];
+  printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
+  printed: number;
 }
 
 export type Preset = "fresh" | "signIn" | "checkout";
@@ -119,6 +123,9 @@ function initialStateInner(preset: Preset): FakeState {
     catalog: new Map(),
     bigCatalog: null,
     receipts: [],
+    printScript: [],
+    printJobs: new Map(),
+    printed: 0,
   };
 }
 
@@ -361,8 +368,37 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.revision = 0;
       return {
         saleId: id(), receiptNumber, totalMinor: total.toString(), tenderedMinor: tendered.toString(),
-        changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0,
+        changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0, autoPrint: false,
       };
+    }
+    case "receipt_print":
+    case "print_job_retry":
+    case "print_job_resolve": {
+      needSession(s);
+      let jobId = String(a.jobId ?? "");
+      let job = s.printJobs.get(jobId);
+      if (cmd === "receipt_print") {
+        jobId = id();
+        job = { status: "queued", reprint: s.printed > 0, errorCode: null, attempts: 0 };
+        s.printJobs.set(jobId, job);
+      } else if (!job) fail("VALIDATION_FAILED");
+      if (cmd === "print_job_resolve") {
+        if (job.status !== "unknown") fail("VALIDATION_FAILED");
+        if (a.printed) {
+          job.status = "completed";
+          return { jobId, ...job };
+        }
+        job.status = "failed";
+        jobId = id();
+        job = { status: "queued", reprint: true, errorCode: null, attempts: 0 };
+        s.printJobs.set(jobId, job);
+      }
+      const outcome = s.printScript.shift() ?? "printed";
+      job.attempts += 1;
+      job.status = outcome === "printed" ? "completed" : outcome === "timeout" ? "unknown" : "failed";
+      job.errorCode = outcome === "paper_out" ? "paper_out" : null;
+      if (outcome !== "paper_out") s.printed += 1;
+      return { jobId, ...job };
     }
     case "receipt_get": {
       needSession(s);

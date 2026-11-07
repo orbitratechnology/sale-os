@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-print-job-resolve"
+description = "Enables the print_job_resolve command without any pre-configured scope."
+commands.allow = ["print_job_resolve"]
+
+[[permission]]
+identifier = "deny-print-job-resolve"
+description = "Denies the print_job_resolve command without any pre-configured scope."
+commands.deny = ["print_job_resolve"]

@@ -8,6 +8,7 @@ use pos_application::cart::CartService;
 use pos_application::catalog::CatalogService;
 use pos_application::checkout::CheckoutService;
 use pos_application::context::{Actor, ApprovalToken, CommandContext};
+use pos_application::printing::{DEFAULT_PRINT_TIMEOUT, PrintService};
 use pos_application::queries::SetupQueries;
 use pos_application::receipts::ReceiptService;
 use pos_application::setup::SetupService;
@@ -43,6 +44,9 @@ pub(crate) struct Services {
     pub carts: Arc<CartService>,
     pub checkout: CheckoutService,
     pub receipts: ReceiptService,
+    /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
+    /// hardware adapters arrive in Stage 5.
+    pub prints: PrintService,
     pub queries: SqliteStore,
     /// Issued manager approvals waiting to be used (E05-T04).
     pub approvals: Arc<Approvals>,
@@ -90,6 +94,9 @@ impl AppServices {
             let a = Arc::new(s.clone());
             let approvals = Arc::new(Approvals::default());
             let carts = Arc::new(CartService::new(a.clone(), a.clone(), a.clone()));
+            let printer = Arc::new(pos_device_virtual::printer::VirtualPrinter::new(
+                data_dir.join("virtual-printer"),
+            ));
             Services {
                 setup: SetupService {
                     store: a.clone(),
@@ -121,7 +128,14 @@ impl AppServices {
                     stock: a.clone(),
                     receipts: a.clone(),
                 },
-                receipts: ReceiptService { receipts: a },
+                receipts: ReceiptService { receipts: a.clone() },
+                prints: PrintService {
+                    store: a.clone(),
+                    prints: a.clone(),
+                    receipts: a,
+                    printer,
+                    timeout: DEFAULT_PRINT_TIMEOUT,
+                },
                 queries: s.clone(),
                 approvals,
             }

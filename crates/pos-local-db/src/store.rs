@@ -847,6 +847,40 @@ async fn apply_in_transaction(
                     .map_err(map_sqlx)?;
                 }
             }
+            WriteOp::PutPrintJob { job, detail } => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO print_jobs (job_id, receipt_id, adapter, target, copy_kind, status, attempt_count, last_error_code,
+                       requested_by, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ON CONFLICT (job_id) DO UPDATE SET status = ?5, attempt_count = ?6, last_error_code = ?7, updated_at = ?10",
+                )
+                .bind(job.job_id.to_string())
+                .bind(job.receipt_id.to_string())
+                .bind(job.adapter)
+                .bind(if job.reprint { "reprint" } else { "original" })
+                .bind(job.status.as_str())
+                .bind(i64::from(job.attempt_count))
+                .bind(&job.last_error_code)
+                .bind(job.requested_by.to_string())
+                .bind(job.created_at.as_millis())
+                .bind(job.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO print_job_events (job_id, seq, status, detail_json, occurred_at)
+                     VALUES (?1, (SELECT coalesce(max(seq), 0) + 1 FROM print_job_events WHERE job_id = ?1), ?2, ?3, ?4)",
+                )
+                .bind(job.job_id.to_string())
+                .bind(job.status.as_str())
+                .bind(detail.to_string())
+                .bind(job.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
             WriteOp::InsertReceipt {
                 receipt_id,
                 source_type,

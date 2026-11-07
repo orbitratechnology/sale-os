@@ -25,6 +25,8 @@ name = "crash-harness"
 path = "src/bin/crash-harness.rs"
 
 [dev-dependencies]
+pos-device-ports.workspace = true
+pos-device-virtual.workspace = true
 pos-receipts.workspace = true
 pos-testkit.workspace = true
 tempfile.workspace = true

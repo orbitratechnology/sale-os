@@ -94,6 +94,19 @@ export const commands = {
 	 *  `saleId: null` is the last sale on this till. `widthMm: null` uses the setting.
 	 */
 	receiptGet: (saleId: SaleId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("receipt_get", { saleId, widthMm })),
+	/**
+	 *  Prints a sale's receipt (the last sale's for `saleId: null`). The first copy is the
+	 *  original; later copies are reprints. Runs after the sale is committed: a printer problem
+	 *  never affects the sale.
+	 */
+	receiptPrint: (saleId: SaleId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("receipt_print", { saleId })),
+	/**  Tries a failed print job again (the printer refused it, so nothing was printed). */
+	printJobRetry: (jobId: PrintJobId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("print_job_retry", { jobId })),
+	/**
+	 *  The operator's answer to "did it print?" for a job with an unknown outcome. `printed:
+	 *  false` prints a new copy marked REPRINT.
+	 */
+	printJobResolve: (jobId: PrintJobId, printed: boolean) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("print_job_resolve", { jobId, printed })),
 };
 
 /* Types */
@@ -343,6 +356,8 @@ export type CompletedSaleDto = {
 	syncPending: boolean,
 	/**  Items this sale took below zero stock (allowed and flagged). */
 	negativeStockItems: number,
+	/**  Print the receipt right away (`receipt.auto_print`). */
+	autoPrint: boolean,
 };
 
 export type CreateWorkspaceInput = CreateWorkspaceInput_Serialize | CreateWorkspaceInput_Deserialize;
@@ -507,6 +522,36 @@ export type NewStaffInput = {
 export type Permission = "sale_complete" | "cart_line_discount" | "cart_order_discount" | "discount_above_threshold" | "price_override" | "cart_clear" | "cart_void" | "external_tender_record" | "sales_view" | "receipt_reprint" | "return_create" | "return_approve" | "catalog_view" | "catalog_edit" | "catalog_import" | "catalog_export" | "barcode_create_from_scan" | "inventory_view" | "inventory_receive" | "inventory_adjust" | "cash_session_open" | "cash_session_close" | "cash_session_view_variance" | "reports_view" | "reports_export" | "audit_view" | "settings_edit" | "staff_manage" | "device_link" | "sync_manage" | "conflict_resolve" | 
 /**  Simulators and dev panels; additionally restricted to debug builds by the shell. */
 "devtools_use";
+
+export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;
+
+export type PrintJobDto_Deserialize = {
+	jobId: PrintJobId,
+	/**
+	 *  `completed`, `failed` (the printer refused it; retry is safe) or `unknown` (no
+	 *  answer: ask the operator whether it printed).
+	 */
+	status: string,
+	reprint: boolean,
+	/**  For `failed`: `paper_out`, `cover_open`, `disconnected` or `rejected`. */
+	errorCode?: string | null,
+	attempts: number,
+};
+
+export type PrintJobDto_Serialize = {
+	jobId: PrintJobId,
+	/**
+	 *  `completed`, `failed` (the printer refused it; retry is safe) or `unknown` (no
+	 *  answer: ask the operator whether it printed).
+	 */
+	status: string,
+	reprint: boolean,
+	/**  For `failed`: `paper_out`, `cover_open`, `disconnected` or `rejected`. */
+	errorCode: string | null,
+	attempts: number,
+};
+
+export type PrintJobId = string;
 
 export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
 

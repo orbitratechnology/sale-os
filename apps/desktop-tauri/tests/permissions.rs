@@ -167,6 +167,13 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SalesView),
             json!({"saleId": UNKNOWN_ID, "widthMm": 58}),
         ),
+        ("receipt_print", Perm(SalesView), json!({"saleId": UNKNOWN_ID})),
+        ("print_job_retry", Perm(SalesView), json!({"jobId": UNKNOWN_ID})),
+        (
+            "print_job_resolve",
+            Perm(SalesView),
+            json!({"jobId": UNKNOWN_ID, "printed": true}),
+        ),
     ]
 }
 
@@ -552,6 +559,16 @@ fn a_cash_sale_over_ipc() {
         "{text:?}"
     );
     assert!(text.iter().all(|l| l.chars().count() <= 32));
+    // Printed on the virtual printer; a second copy is a reprint.
+    let printed = invoke(&w, "receipt_print", json!({"saleId": null})).unwrap();
+    assert_eq!(
+        (printed["status"].as_str(), printed["reprint"].as_bool()),
+        (Some("completed"), Some(false))
+    );
+    let again = invoke(&w, "receipt_print", json!({"saleId": null})).unwrap();
+    assert_eq!(again["reprint"], true);
+    let services = _app.state::<AppServices>();
+    assert!(services.data_dir.join("virtual-printer/R01-000001.bin").exists());
     // Paying the old cart again is refused: it is closed.
     assert_eq!(pay("500").unwrap_err()["code"], "CART_REVISION_MISMATCH");
 }

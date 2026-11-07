@@ -399,3 +399,53 @@ pub async fn receipt_get(
         .map_err(err)?;
     Ok(crate::dto::ReceiptDto::from_rendered(&r))
 }
+
+/// Prints a sale's receipt (the last sale's for `saleId: null`). The first copy is the
+/// original; later copies are reprints. Runs after the sale is committed: a printer problem
+/// never affects the sale.
+#[tauri::command]
+#[specta::specta]
+pub async fn receipt_print(
+    services: State<'_, AppServices>,
+    sale_id: Option<pos_domain::SaleId>,
+) -> Result<crate::dto::PrintJobDto, IpcError> {
+    let ctx = services.context().await?;
+    let job = services
+        .app()?
+        .prints
+        .print_sale(&ctx, sale_id)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::PrintJobDto::from_record(&job))
+}
+
+/// Tries a failed print job again (the printer refused it, so nothing was printed).
+#[tauri::command]
+#[specta::specta]
+pub async fn print_job_retry(
+    services: State<'_, AppServices>,
+    job_id: pos_domain::PrintJobId,
+) -> Result<crate::dto::PrintJobDto, IpcError> {
+    let ctx = services.context().await?;
+    let job = services.app()?.prints.retry(&ctx, job_id).await.map_err(err)?;
+    Ok(crate::dto::PrintJobDto::from_record(&job))
+}
+
+/// The operator's answer to "did it print?" for a job with an unknown outcome. `printed:
+/// false` prints a new copy marked REPRINT.
+#[tauri::command]
+#[specta::specta]
+pub async fn print_job_resolve(
+    services: State<'_, AppServices>,
+    job_id: pos_domain::PrintJobId,
+    printed: bool,
+) -> Result<crate::dto::PrintJobDto, IpcError> {
+    let ctx = services.context().await?;
+    let job = services
+        .app()?
+        .prints
+        .resolve_unknown(&ctx, job_id, printed)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::PrintJobDto::from_record(&job))
+}

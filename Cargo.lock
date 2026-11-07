@@ -3063,6 +3063,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "async-trait",
+ "pos-device-ports",
  "pos-domain",
  "pos-receipts",
  "pos-testkit",
@@ -3084,6 +3085,7 @@ dependencies = [
 name = "pos-device-ports"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "pos-domain",
 ]
 
@@ -3091,10 +3093,12 @@ dependencies = [
 name = "pos-device-virtual"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "pos-device-ports",
  "pos-domain",
  "pos-receipts",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -3119,6 +3123,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "pos-application",
+ "pos-device-ports",
+ "pos-device-virtual",
  "pos-domain",
  "pos-receipts",
  "pos-testkit",

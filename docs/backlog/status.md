@@ -120,10 +120,11 @@ keyboard.
 | E10-T03 Payment panel | **Done (Chromium + real app)** | F9 opens; empty + Enter pays exact; quick notes scaled by currency; split tenders with remove; external rows say "Externally confirmed by operator", never "approved"; complete only when nothing is due; completed view with change, receipt number and "Saved on this device" | — |
 | E13-T02 ReceiptDocument model | **Done for sales** | `ReceiptDocument` v1 built from the sale snapshot only; stored in `receipts` in the sale's own transaction, its number filled in from the same slot; goldens (JSON + 32/48-column text) for a sale, split tender, discounts with an override, two-rate exclusive tax on a weighed item, and a sandbox reprint; the stored receipt is unchanged after a product rename and reprice | Return receipts and Z summaries (with E12, E15); the D-02 `ComplianceProfile` hook |
 | E13-T03 Receipt preview | **Done** | Rust renders the stored document into the printer's lines (32 or 48 columns); the preview shows exactly those on a monospace grid with a 58/80 mm switch; real app shows it after a sale | Playwright visual snapshots per golden (the text goldens cover the content) |
+| E13-T06 Print queue, virtual printer, uncertain outcomes | **Done (virtual printer)** | Jobs `queued → submitted → completed / failed / unknown`, every change in `print_job_events`; AT-09: captured bytes equal the stored receipt's rendering, and ESC/POS byte goldens per scenario and width; no answer gives `unknown` with exactly one submission and no automatic resubmit; the operator resolves it ("Printed", or "Not printed" which prints a new REPRINT job, audited `print.unknown_resolved`); paper out gives `failed` with an actionable message, and its retry stays the original; any later copy is a REPRINT, audited `receipt.reprinted`; printing is a separate command after the commit; auto-print (setting) runs the same path from the completed-sale screen; real app prints to `<app data>/virtual-printer/` | Hardware adapters (Stage 5); a dev panel to script the virtual printer in the app (E07-T03 style) |
 
 ### Next up
 
-E13-T06 print queue with the virtual printer and uncertain outcomes; E12 returns; E15 cash
+E12 returns; E15 cash
 sessions; E06-T05 categories and tax configuration.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use

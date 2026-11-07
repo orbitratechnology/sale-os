@@ -40,6 +40,9 @@
     "allow-cart-clear",
     "allow-cart-void",
     "allow-checkout-complete",
-    "allow-receipt-get"
+    "allow-receipt-get",
+    "allow-receipt-print",
+    "allow-print-job-retry",
+    "allow-print-job-resolve"
   ]
 }

@@ -66,6 +66,7 @@ impl ReceiptQueries for SqliteStore {
             register_code: code,
             cashier_name: cashier_name.unwrap_or_default(),
             paper_width_mm: if width == Some(58) { 58 } else { 80 },
+            auto_print: setting("receipt.auto_print").await?.as_deref().map(str::trim) == Some("true"),
         })
     }
 
@@ -90,5 +91,83 @@ impl ReceiptQueries for SqliteStore {
         .await
         .map_err(q)?;
         id.map(|i| i.parse().map_err(q)).transpose()
+    }
+}
+
+type JobRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    Option<String>,
+    String,
+    i64,
+    i64,
+);
+const JOB_COLUMNS: &str = "job_id, receipt_id, adapter, copy_kind, status, attempt_count, last_error_code, requested_by, created_at, updated_at";
+
+fn job(row: JobRow) -> Result<pos_application::records::PrintJobRecord, QueryError> {
+    use pos_application::records::{PrintJobRecord, PrintStatus};
+    let (id, receipt, adapter, copy, status, attempts, error, by, created, updated) = row;
+    Ok(PrintJobRecord {
+        job_id: id.parse().map_err(q)?,
+        receipt_id: receipt.parse().map_err(q)?,
+        // Only adapters this build knows are ever written.
+        adapter: match adapter.as_str() {
+            "virtual" => "virtual",
+            "pdf" => "pdf",
+            "os_spooler" => "os_spooler",
+            "escpos_usb" => "escpos_usb",
+            "escpos_net" => "escpos_net",
+            other => return Err(QueryError(format!("unknown print adapter {other:?}"))),
+        },
+        reprint: copy == "reprint",
+        status: PrintStatus::parse(&status)
+            .ok_or_else(|| QueryError(format!("unknown print status {status:?}")))?,
+        attempt_count: u32::try_from(attempts).map_err(q)?,
+        last_error_code: error,
+        requested_by: by.parse().map_err(q)?,
+        created_at: pos_domain::Timestamp::from_millis(created),
+        updated_at: pos_domain::Timestamp::from_millis(updated),
+    })
+}
+
+#[async_trait::async_trait]
+impl pos_application::queries::PrintQueries for SqliteStore {
+    async fn print_job(
+        &self,
+        id: pos_domain::PrintJobId,
+    ) -> Result<Option<pos_application::records::PrintJobRecord>, QueryError> {
+        let row: Option<JobRow> =
+            sqlx::query_as(&format!("SELECT {JOB_COLUMNS} FROM print_jobs WHERE job_id = ?"))
+                .bind(id.to_string())
+                .fetch_optional(self.db().readers())
+                .await
+                .map_err(q)?;
+        row.map(job).transpose()
+    }
+
+    async fn receipt_jobs(
+        &self,
+        receipt: ReceiptId,
+    ) -> Result<Vec<pos_application::records::PrintJobRecord>, QueryError> {
+        let rows: Vec<JobRow> = sqlx::query_as(&format!(
+            "SELECT {JOB_COLUMNS} FROM print_jobs WHERE receipt_id = ? ORDER BY created_at, rowid"
+        ))
+        .bind(receipt.to_string())
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        rows.into_iter().map(job).collect()
+    }
+
+    async fn receipt_document(&self, receipt: ReceiptId) -> Result<Option<String>, QueryError> {
+        sqlx::query_scalar("SELECT document_json FROM receipts WHERE receipt_id = ?")
+            .bind(receipt.to_string())
+            .fetch_optional(self.db().readers())
+            .await
+            .map_err(q)
     }
 }

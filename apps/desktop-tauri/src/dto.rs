@@ -788,6 +788,8 @@ pub struct CompletedSaleDto {
     pub sync_pending: bool,
     /// Items this sale took below zero stock (allowed and flagged).
     pub negative_stock_items: u32,
+    /// Print the receipt right away (`receipt.auto_print`).
+    pub auto_print: bool,
 }
 
 impl CompletedSaleDto {
@@ -803,6 +805,7 @@ impl CompletedSaleDto {
             mode: c.sale.mode.as_str().into(),
             sync_pending: c.outbox_sequence > 0,
             negative_stock_items: u32::try_from(c.negative_stock.len()).unwrap_or(u32::MAX),
+            auto_print: c.auto_print,
         }
     }
 }
@@ -841,6 +844,31 @@ impl ReceiptDto {
                 })
                 .collect(),
             sandbox: r.document.sandbox,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PrintJobDto {
+    pub job_id: pos_domain::PrintJobId,
+    /// `completed`, `failed` (the printer refused it; retry is safe) or `unknown` (no
+    /// answer: ask the operator whether it printed).
+    pub status: String,
+    pub reprint: bool,
+    /// For `failed`: `paper_out`, `cover_open`, `disconnected` or `rejected`.
+    pub error_code: Option<String>,
+    pub attempts: u32,
+}
+
+impl PrintJobDto {
+    pub fn from_record(j: &pos_application::records::PrintJobRecord) -> Self {
+        Self {
+            job_id: j.job_id,
+            status: j.status.as_str().into(),
+            reprint: j.reprint,
+            error_code: j.last_error_code.clone(),
+            attempts: j.attempt_count,
         }
     }
 }

@@ -57,6 +57,9 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::cart_void,
         sale_commands::checkout_complete,
         sale_commands::receipt_get,
+        sale_commands::receipt_print,
+        sale_commands::print_job_retry,
+        sale_commands::print_job_resolve,
     ])
 }
 
