@@ -17,6 +17,8 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   CART_REVISION_MISMATCH: "The cart changed. Check it and try again.",
   PRICING_DISCOUNT_EXCEEDS: "The discount is larger than the amount.",
   RETURN_QTY_EXCEEDS: "That is more than is left to return on this sale (some may already have been returned). Check the quantities.",
+  CASH_SESSION_REQUIRED: "The cash drawer is not open. Open it with a float first (F10).",
+  CASH_SESSION_ALREADY_OPEN: "The drawer is already open on this till.",
   RETURN_REFUND_MISMATCH: "The refund must add up to exactly the amount being returned.",
   STORE_BUSY: "The till is busy. Try again.",
   STORE_IO: "Sale OS cannot read or write its database. Check disk space and that the data folder is on this computer.",

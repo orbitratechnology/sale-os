@@ -237,3 +237,5 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
 .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .plain-list li { border-bottom: 1px solid var(--border); padding: 4px 0; }
 button.link { background: none; border: none; color: var(--accent, #1d4ed8); padding: 0; min-height: 0; text-decoration: underline; cursor: pointer; }
+.drawer-needed { margin: 0; padding: 8px 12px; border-radius: 6px; background: var(--sandbox-bg); color: var(--sandbox); font-weight: 600; }
+.drawer-needed button.link { color: inherit; }

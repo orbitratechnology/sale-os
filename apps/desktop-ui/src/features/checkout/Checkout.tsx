@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
+import type { CashStateDto_Serialize as CashState } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent, scaleDecimal, stepMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
@@ -29,6 +30,7 @@ export const KEYS = {
   remove: "Delete",
   returns: "F7",
   sales: "F8",
+  drawer: "F10",
   pay: "F9",
   lock: "F12",
 } as const;
@@ -50,6 +52,7 @@ export function Checkout({
   onProducts,
   onReturns,
   onSales,
+  onDrawer,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -59,10 +62,20 @@ export function Checkout({
   onProducts: () => void;
   onReturns: () => void;
   onSales: () => void;
+  onDrawer: () => void;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
   const c = useCart(onSignedOut);
+  const [drawer, setDrawer] = useState<CashState | null>(null);
+  useEffect(() => {
+    let live = true;
+    void commands.cashSessionCurrent().then((res) => live && res.status === "ok" && setDrawer(res.data));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const drawerNeeded = drawer !== null && drawer.required && drawer.session === null;
   const [editing, setEditing] = useState<Editing>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [code, setCode] = useState("");
@@ -159,6 +172,10 @@ export function Checkout({
           e.preventDefault();
           onSales();
           return;
+        case "F10":
+          e.preventDefault();
+          onDrawer();
+          return;
         case "F9":
           e.preventDefault();
           if (c.cart?.lines.length) setModal("pay");
@@ -193,7 +210,7 @@ export function Checkout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [c, modal, lock, onProducts, onReturns, onSales]);
+  }, [c, modal, lock, onProducts, onReturns, onSales, onDrawer]);
 
   const submitCode = (e: FormEvent) => {
     e.preventDefault();
@@ -300,6 +317,9 @@ export function Checkout({
           <button type="button" className="secondary" onClick={onSales}>
             Sales <kbd>F8</kbd>
           </button>
+          <button type="button" className="secondary" onClick={onDrawer}>
+            Drawer <kbd>F10</kbd>
+          </button>
           <button type="button" className="secondary" onClick={() => void lock()}>
             Lock <kbd>F12</kbd>
           </button>
@@ -307,10 +327,15 @@ export function Checkout({
             Pay <kbd>F9</kbd>
           </button>
         </div>
+ {drawerNeeded && (
+          <p role="status" className="drawer-needed">
+            Open the cash drawer before selling. <button type="button" className="link" onClick={onDrawer}>Open drawer (F10)</button>
+          </p>
+        )}
         <Notice c={c} onSearch={(text) => search.current?.focus(text)} onCreate={canEditCatalog ? onCreateProduct : null} />
       </aside>
 
-      <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} />
+      <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} drawer={drawer} />
 
       {modal === "pay" && cart && (
         <PaymentPanel

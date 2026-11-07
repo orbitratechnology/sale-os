@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { PrintJobDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
-import type { ReceiptSource } from "./ReceiptPreview";
+import { printReceipt, type ReceiptSource } from "./ReceiptPreview";
 
 const FAILURE: Record<string, string> = {
   paper_out: "The printer is out of paper. Load paper, then try again.",
@@ -31,7 +31,7 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
     else setError(res.error);
   }
 
-  const print = () => (source.kind === "sale" ? commands.receiptPrint(source.id) : commands.returnReceiptPrint(source.id));
+  const print = () => printReceipt(source);
 
   useEffect(() => {
     // Auto-print once, after the sale has been committed (RCP-006).

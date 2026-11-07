@@ -780,3 +780,103 @@ describe("sales history (E12-T03)", () => {
     expect(serious).toEqual([]);
   });
 });
+
+describe("cash drawer (E15-T02)", () => {
+  async function till(preset: "signIn" | "checkout", query = ""): Promise<Page> {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=${preset}${query}`);
+    return page;
+  }
+
+  it("a cashier: no sale until the drawer is open; a blind count to close", async () => {
+    const page = await till("signIn", "&drawer=required");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByText("Open the cash drawer before selling.").waitFor();
+    expect(await page.getByTestId("drawer-status").textContent()).toBe("Drawer closed");
+    // Rust (the fake) refuses the sale; the panel says what to do.
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("alert").filter({ hasText: "The cash drawer is not open" }).waitFor();
+    await page.keyboard.press("Escape");
+
+    await page.keyboard.press("F10");
+    await page.getByRole("heading", { name: "Cash drawer" }).waitFor();
+    await page.keyboard.type("100");
+    await page.keyboard.press("Enter");
+    await page.getByText("R01-Z-0001").waitFor();
+    // A cashier never sees what the drawer should hold.
+    expect(await page.getByText("Expected in the drawer").count()).toBe(0);
+    await page.keyboard.press("Escape");
+    expect(await page.getByTestId("drawer-status").textContent()).toBe("Drawer open · R01-Z-0001");
+    expect(await page.getByText("Open the cash drawer before selling.").count()).toBe(0);
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+
+    await page.keyboard.press("F10");
+    await page.getByLabel(/Counted cash/).fill("101.20");
+    await page.keyboard.press("Enter");
+    const confirm = page.getByRole("dialog", { name: "Close the drawer?" });
+    await confirm.getByText("Closing is final").waitFor();
+    await confirm.getByRole("button", { name: "Close drawer" }).click();
+    const closed = page.getByRole("region", { name: "Drawer closed" });
+    await closed.waitFor();
+    expect(await closed.getByTestId("counted").textContent()).toBe("101.20");
+    await closed.getByText("A manager will check the count").waitFor();
+    expect(await closed.getByTestId("variance").count()).toBe(0);
+    expect(await closed.getByRole("button", { name: "Print receipt" }).count()).toBe(0);
+    expect((await calls(page, "cash_session_close"))[0]).toMatchObject({ countedMinor: "10120", note: null });
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await page.getByTestId("drawer-status").textContent()).toBe("Drawer closed");
+  });
+
+  it("an owner sees expected cash and the variance, then prints the Z summary", async () => {
+    const page = await till("checkout");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F10");
+    await page.getByLabel(/Opening float/).fill("50");
+    await page.keyboard.press("Enter");
+    await page.getByText("R01-Z-0001").waitFor();
+    await page.keyboard.press("Escape");
+    await scan(page, COLA); // 1.20, cash 5.00
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.getByLabel("Cash received").fill("5");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+
+    await page.keyboard.press("F10");
+    expect(await page.getByTestId("running-expected").textContent()).toBe("51.20");
+    await page.getByLabel(/Counted cash/).fill("51");
+    await page.getByLabel("Note (optional)").fill("coin short");
+    await page.getByRole("button", { name: "Close drawer" }).click();
+    await page.getByRole("dialog", { name: "Close the drawer?" }).getByRole("button", { name: "Close drawer" }).click();
+    const closed = page.getByRole("region", { name: "Drawer closed" });
+    await closed.waitFor();
+    expect(await closed.getByTestId("expected").textContent()).toBe("51.20");
+    expect(await closed.getByTestId("variance").textContent()).toBe("0.20 short");
+    expect(await closed.getByTestId("receipt-text").textContent()).toContain("Z SUMMARY");
+    await closed.getByRole("button", { name: "Print receipt" }).click();
+    await closed.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
+    expect(await calls(page, "cash_session_z_print")).toHaveLength(1);
+
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    const serious = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+    expect(serious).toEqual([]);
+  });
+});

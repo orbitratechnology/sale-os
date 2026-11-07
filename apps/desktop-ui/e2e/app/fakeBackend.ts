@@ -43,6 +43,13 @@ export interface FakeState {
   receipts: string[];
   /** Completed sales with their lines, for returns. */
   sales: FakeSale[];
+  /** The cash drawer (E15-T02). Totals are kept simply: cash net of change, and the count. */
+  drawer: {
+    required: boolean;
+    seq: number;
+    session: { id: string; number: string; floatMinor: bigint; cashInMinor: bigint; sales: number; openedBy: string } | null;
+    lastClosed: { id: string; number: string } | null;
+  };
   /** Completed returns: id → number. */
   returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
@@ -142,6 +149,7 @@ function initialStateInner(preset: Preset): FakeState {
     receipts: [],
     sales: [],
     returns: new Map(),
+    drawer: { required: false, seq: 0, session: null, lastClosed: null },
     printScript: [],
     printJobs: new Map(),
     printed: 0,
@@ -364,6 +372,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       if (a.cartId !== s.cartId || a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
       if (s.lines.length === 0) fail("CART_EMPTY");
+      if (s.drawer.required && !s.drawer.session) fail("CASH_SESSION_REQUIRED");
       // The same rules as pos_domain::settlement::settle.
       const total = BigInt(view(s).totalMinor);
       let remaining = total;
@@ -379,6 +388,11 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         tendered += amount;
       }
       if (remaining > 0n) fail("TENDER_INSUFFICIENT", { remainingMinor: remaining.toString() });
+      if (s.drawer.session) {
+        s.drawer.session.sales += 1;
+        const cashIn = tenders.filter((t) => t.kind === "cash").reduce((n, t) => n + BigInt(t.amountMinor), 0n);
+        s.drawer.session.cashInMinor += cashIn - (tendered - total);
+      }
       const receiptNumber = `R01-${String(s.receipts.length + 1).padStart(6, "0")}`;
       s.receipts.push(receiptNumber);
       const saleId = id();
@@ -502,6 +516,61 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         returns: x.returns.map((r) => ({ returnId: r.returnId, returnNumber: r.returnNumber, localTime: "2026-11-07 10:00", reason: r.reason, totalMinor: r.totalMinor.toString(), refunds: r.refunds })),
       };
     }
+    case "cash_session_current":
+    case "cash_session_open": {
+      const me = needSession(s);
+      if (cmd === "cash_session_open") {
+        if (s.drawer.session) fail("CASH_SESSION_ALREADY_OPEN");
+        const float = BigInt(String(a.floatMinor));
+        if (float < 0n) fail("VALIDATION_FAILED");
+        s.drawer.seq += 1;
+        s.drawer.session = { id: id(), number: `R01-Z-${String(s.drawer.seq).padStart(4, "0")}`, floatMinor: float, cashInMinor: 0n, sales: 0, openedBy: me.displayName };
+      }
+      const d = s.drawer.session;
+      const manager = me.role !== "cashier";
+      return {
+        required: s.drawer.required,
+        session: d && {
+          cashSessionId: d.id, number: d.number, open: true, openedByName: d.openedBy, openedLocal: "2026-11-07 08:00",
+          openingFloatMinor: d.floatMinor.toString(), businessDate: "2026-11-07", closedByName: null, closedLocal: null, currencyExponent: 2,
+        },
+        totals:
+          d && manager
+            ? {
+                salesCount: d.sales, salesTotalMinor: "0", taxTotalMinor: "0", discountTotalMinor: "0", roundingTotalMinor: "0",
+                tenders: d.cashInMinor ? [{ kind: "cash", count: d.sales, amountMinor: d.cashInMinor.toString() }] : [],
+                returnsCount: 0, refundsTotalMinor: "0", refunds: [],
+              }
+            : null,
+        expectedMinor: d && manager ? (d.floatMinor + d.cashInMinor).toString() : null,
+      };
+    }
+    case "cash_session_close": {
+      const me = needSession(s);
+      const d = s.drawer.session ?? fail("CASH_SESSION_REQUIRED");
+      const counted = BigInt(String(a.countedMinor));
+      const expected = d.floatMinor + d.cashInMinor;
+      s.drawer.session = null;
+      s.drawer.lastClosed = { id: d.id, number: d.number };
+      const manager = me.role !== "cashier";
+      return {
+        session: {
+          cashSessionId: d.id, number: d.number, open: false, openedByName: d.openedBy, openedLocal: "2026-11-07 08:00",
+          openingFloatMinor: d.floatMinor.toString(), businessDate: "2026-11-07", closedByName: me.displayName, closedLocal: "2026-11-07 18:00", currencyExponent: 2,
+        },
+        countedMinor: counted.toString(),
+        expectedMinor: manager ? expected.toString() : null,
+        varianceMinor: manager ? (counted - expected).toString() : null,
+        totals: null,
+      };
+    }
+    case "cash_session_z_get": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const z = s.drawer.lastClosed ?? fail("VALIDATION_FAILED");
+      const cols = a.widthMm === 58 ? 32 : 48;
+      return { receiptNumber: z.number, columns: cols, sandbox: true, lines: ["*** Z SUMMARY ***", `Session ${z.number}`, "EXPECTED CASH"].map((t) => ({ text: t, bold: t.startsWith("EXPECTED") })) };
+    }
     case "return_receipt_get": {
       needSession(s);
       const r = s.returns.get(String(a.returnId)) ?? fail("VALIDATION_FAILED");
@@ -511,6 +580,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const text = ["Corner Shop".padStart(Math.floor((cols + 11) / 2)), "*** REFUND ***", "-".repeat(cols), `Return ${r.number}`, pad("REFUND TOTAL", amount)];
       return { receiptNumber: r.number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t.startsWith("REFUND TOTAL") })) };
     }
+    case "cash_session_z_print":
     case "return_receipt_print":
     case "receipt_print":
     case "print_job_retry":
@@ -518,7 +588,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       let jobId = String(a.jobId ?? "");
       let job = s.printJobs.get(jobId);
-      if (cmd === "receipt_print" || cmd === "return_receipt_print") {
+      if (cmd === "receipt_print" || cmd === "return_receipt_print" || cmd === "cash_session_z_print") {
         jobId = id();
         job = { status: "queued", reprint: s.printed > 0, errorCode: null, attempts: 0 };
         s.printJobs.set(jobId, job);

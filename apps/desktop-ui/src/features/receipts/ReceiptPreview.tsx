@@ -3,8 +3,23 @@ import { commands, type IpcError } from "../../ipc";
 import type { ReceiptDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 
-/** Whose receipt: a sale's (`id: null` is the last sale on this till) or a return's. */
-export type ReceiptSource = { kind: "sale"; id: string | null } | { kind: "return"; id: string };
+/**
+ * Whose receipt: a sale's (`id: null` is the last sale on this till), a return's, or a
+ * closed cash session's Z summary (`id: null` is the last one).
+ */
+export type ReceiptSource = { kind: "sale"; id: string | null } | { kind: "return"; id: string } | { kind: "z"; id: string | null };
+
+export function getReceipt(source: ReceiptSource, width: 58 | 80 | null) {
+  if (source.kind === "sale") return commands.receiptGet(source.id, width);
+  if (source.kind === "return") return commands.returnReceiptGet(source.id, width);
+  return commands.cashSessionZGet(source.id, width);
+}
+
+export function printReceipt(source: ReceiptSource) {
+  if (source.kind === "sale") return commands.receiptPrint(source.id);
+  if (source.kind === "return") return commands.returnReceiptPrint(source.id);
+  return commands.cashSessionZPrint(source.id);
+}
 
 /**
  * A receipt exactly as it prints (E13-T03): Rust renders the stored document into lines for
@@ -15,10 +30,11 @@ export function ReceiptPreview({ source }: { source: ReceiptSource }) {
   const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
 
+  // Callers pass a new object each render: depend on what it says, not on its identity.
+  const { kind, id } = source;
   useEffect(() => {
     let live = true;
-    const get = source.kind === "sale" ? commands.receiptGet(source.id, width) : commands.returnReceiptGet(source.id, width);
-    void get.then((res) => {
+    void getReceipt({ kind, id } as ReceiptSource, width).then((res) => {
       if (!live) return;
       if (res.status === "ok") {
         setReceipt(res.data);
@@ -28,7 +44,7 @@ export function ReceiptPreview({ source }: { source: ReceiptSource }) {
     return () => {
       live = false;
     };
-  }, [source.kind, source.id, width]);
+  }, [kind, id, width]);
 
   if (error) return <p role="alert">{describeError(error)}</p>;
   if (!receipt) return <p className="small">Loading receipt…</p>;

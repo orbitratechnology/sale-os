@@ -7,6 +7,7 @@ import { ProductEditor } from "./features/catalog/ProductEditor";
 import { ProductList } from "./features/catalog/ProductList";
 import { ReturnScreen } from "./features/returns/ReturnScreen";
 import { SalesScreen } from "./features/sales/SalesScreen";
+import { DrawerScreen } from "./features/cash/DrawerScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
 
 /**
@@ -68,6 +69,8 @@ export function App() {
           onBack={() => setScreen({ kind: "till" })}
         />
       );
+    case "drawer":
+      return <DrawerScreen workspace={workspace} session={state.session} onBack={() => setScreen({ kind: "till" })} />;
     case "sales":
       return (
         <SalesScreen
@@ -112,6 +115,7 @@ export function App() {
           onProducts={() => setScreen({ kind: "products" })}
           onReturns={() => setScreen({ kind: "returns" })}
           onSales={() => setScreen({ kind: "sales" })}
+          onDrawer={() => setScreen({ kind: "drawer" })}
           onCreateProduct={(barcode) => setScreen({ kind: "editor", productId: null, barcode, returnTo: "till" })}
         />
       );
@@ -123,4 +127,5 @@ type Screen =
   | { kind: "products" }
   | { kind: "returns"; receipt?: string }
   | { kind: "sales" }
+  | { kind: "drawer" }
   | { kind: "editor"; productId: string | null; barcode?: string; returnTo: "till" | "products" };

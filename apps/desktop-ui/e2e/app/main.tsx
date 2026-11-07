@@ -16,6 +16,8 @@ const preset = (new URLSearchParams(location.search).get("preset") ?? "fresh") a
 window.__fake = initialState(preset);
 const big = new URLSearchParams(location.search).get("big");
 if (big) window.__fake.bigCatalog = parseInt(big, 10);
+// A live till with cash.require_session_for_sale: sales need an open drawer.
+if (new URLSearchParams(location.search).get("drawer") === "required") window.__fake.drawer.required = true;
 window.__ipc = [];
 mockIPC((cmd, args) => {
   const a = (args ?? {}) as Record<string, unknown>;
