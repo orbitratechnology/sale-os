@@ -144,9 +144,29 @@ keyboard.
 | E06-T05 Categories and tax configuration | **Done (Chromium)** | Domain rules in `catalog::config`: category tree at most 3 levels, no loops, parent must exist; rates with dates (`from` inclusive, `to` exclusive), no two active rates of the same name (ignoring case) over the same days, a rate still in a tax category cannot be archived (the error names the categories); exactly one default tax category (making one default moves the flag in the same transaction). `ConfigService` (categories: `CatalogEdit`; taxes: `SettingsEdit`, owner), each change one WriteSet with an outbox event and a `catalog.category_saved` / `tax.config_updated` audit row; stale versions give `CONFLICT_VERSION`. Store test: a VAT change from 20% to 22% on 2026-04-01 prices 2026-03-31 at 20% and 2026-04-01 at 22%. UI: Categories screen from the product list (add, rename, move, archive, refusals explained); category picker in the product editor and a category filter in the product list; Settings → Taxes (rates with dates, add/edit/archive, tax categories with rate checkboxes, make default); axe clean | Drag-and-drop reordering (`sort_order` is kept but not edited); a real-app smoke of the Taxes page |
 | E13-T04 Receipt PDF | **Done (Chromium + real app)** | `pos_receipts::pdf`: receipt-width PDFs (58/80 mm continuous: the same lines as the preview and the printer, 1.5 mm per column) and A4 invoice-style PDFs (shop and receipt details, item table with the header repeated on each page, totals, payments, footer; Z summaries as their 48-column lines). krilla + rustybuzz with embedded Noto fonts (Sans, Sans Mono, Arabic, Devanagari, CJK and Hangul subsets; OFL): fonts are subset, a receipt PDF is about 12 KB and renders in about 30 ms. Goldens: the text read back out of each PDF (pdf-extract) equals the 32/48-column golden lines for every golden receipt; A4 goldens per receipt; page sizes and embedded Noto fonts checked; Arabic, Devanagari, Chinese, Japanese and Korean names have glyphs (`missing_glyphs`) and, except Arabic, read back as typed; wide characters take 2 columns in the text renderer, so amounts stay aligned on paper, in the preview and in the PDF. `receipt_export_pdf` (SalesView): Rust renders, opens the system Save dialog (no `dialog:*` permission for the WebView; the ACL test proves it is refused), writes through a temp file and rename, and audits `receipt.exported_pdf` (file name only); Cancel writes and records nothing. "Save as PDF" / "Save A4 PDF" after a sale, in sale detail and after a return. Real app (AT-08): no printer; GTK dialog, `receipt-R01-000001-A4.pdf` written and audited; Cancel left nothing | Right-to-left reordering within a mixed Arabic/Latin line (runs are shaped, not reordered; D-02); a Code128 barcode image (the number is printed as text); Z summary PDFs (the command takes sales and returns); Windows dialog check |
 
+### Stage 1–2 acceptance tests (08-test-strategy)
+
+Checked 2026-11-08 against the code on this branch. "Linux" means run here; the Windows
+runs (E01-T01 packaging, the crash harness on NTFS, the GTK→WebView2 dialogs) are deferred
+as agreed.
+
+| AT | What | Evidence | Status |
+|---|---|---|---|
+| AT-01 | New business: profile, ≥ 20 products, a test cash sale, no cloud | `desktop-tauri/tests/permissions.rs::at01_new_business_twenty_products_and_a_cash_sale` (setup → profile → import demo20 → barcode + SKU scans → cash sale with change → receipt shows the profile); the app has no HTTP/WebSocket client (`cargo tree`, no `fetch` in the UI) and the CSP allows only local content (`security_config.rs`); real-app runs under Xvfb | **Pass (Linux)** |
+| AT-02 | Find by barcode, SKU and name | `pos-local-db/tests/catalog.rs::create_then_find_by_barcode_sku_and_name`; the AT-01 test; e2e search (F2) | **Pass** |
+| AT-03 | Repeated scans increment; no lost rapid scans | `cart.rs::ten_fast_scans_are_ten_items`, `a_repeated_delivery_counts_once`, `concurrent_scans_are_never_lost`; `e2e/scanCapture.e2e.ts` 20 scans at 5 ms/key | **Pass** (the 5 ms e2e is timing-sensitive, see Known flaky) |
+| AT-04 | A sale and all its records commit atomically | `checkout.rs::a_failure_at_any_statement_leaves_nothing_behind` (a fault before every statement: nothing written, no receipt number used); `refusals_write_nothing`; e2e: a refused payment keeps the cart | **Pass** (store); the UI after an injected *store* failure is not driven end to end |
+| AT-05 | A restart loses no committed sale or pending event | `cargo xtask crash-harness`: 500 kills, 0 violations (`docs/perf/crash-harness.md`); `cart.rs::the_cart_survives_a_restart` | **Pass (Linux)**; Windows run deferred |
+| AT-08 | Preview a receipt and save it as PDF with no printer | `pos-receipts/tests/pdf.rs` (text read back = golden lines, page sizes, embedded fonts), `permissions.rs::a_receipt_pdf_over_ipc`, e2e "saves the receipt as a PDF with no printer"; real app with the GTK dialog | **Pass (Linux)** |
+| AT-09 | ESC/POS captured by the virtual printer | `printing.rs::prints_the_stored_receipt_and_marks_later_copies_as_reprints` (captured bytes = the stored receipt's encoding); `pos-receipts/tests/golden.rs` byte goldens at 32/48 columns | **Pass** |
+| AT-10 | A return links to its sale and moves stock correctly | `returns.rs::a_return_moves_stock_by_disposition_and_commits_everything_together` (restock / damaged / none) | **Pass** |
+| AT-11 | A cashier cannot do manager-only operations by direct IPC | `permissions.rs::each_role_gets_exactly_what_the_matrix_grants` (every command × every role; an unclassified command fails the build) | **Pass** |
+| AT-06, AT-07, AT-12, AT-13 | Sync, conflicts, tenant isolation, sync labels | Stage 3 | Not started |
+
 ### Next up
 
-The Stage 2 wrap-up: an AT-01..AT-09 checklist against what is built.
+Stage 3 (cloud sync) per 00-roadmap, starting with E16 (cloud API, auth, device link) and
+E17 (outbox push, pull, idempotent ingestion).
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
 `CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.

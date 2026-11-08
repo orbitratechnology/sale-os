@@ -1265,3 +1265,95 @@ fn a_products_import_over_ipc() {
     assert_eq!(report.lines().count(), 23);
     invoke(&w, "import_products_cancel", json!({"jobId": again["jobId"]})).unwrap();
 }
+
+#[test]
+fn at01_new_business_twenty_products_and_a_cash_sale() {
+    // AT-01 (PRD §16.4.1): a new business creates its profile, adds at least 20 products and
+    // completes a cash sale, all on this machine. Stage 2 has no network client at all (no
+    // sync transport exists yet and the CSP allows only local content), so nothing here can
+    // reach a cloud.
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/catalogue/demo20.csv");
+    let out = tempfile::tempdir().unwrap();
+    let (_dir, _app, w) = start_with(Some(Arc::new(ImportDialog {
+        open: fixture,
+        save_dir: out.path().to_path_buf(),
+    })));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Corner Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    // The profile.
+    let profile = invoke(&w, "business_profile_get", json!({})).unwrap();
+    let mut input = json!({"name": "Corner Shop", "legalName": null, "taxRegistrationNo": "GB123456789",
+        "addressLines": ["1 High Street"], "phone": null, "email": null, "registerName": "Front till"});
+    input["name"] = profile["name"].clone();
+    invoke(
+        &w,
+        "business_profile_update",
+        json!({"input": input, "businessVersion": profile["businessVersion"], "registerVersion": profile["registerVersion"]}),
+    )
+    .unwrap();
+    // 20 products from the demo file.
+    let preview = invoke(&w, "import_products_open", json!({})).unwrap();
+    invoke(
+        &w,
+        "import_products_validate",
+        json!({"jobId": preview["jobId"], "mapping": preview["mapping"], "onDuplicate": "error"}),
+    )
+    .unwrap();
+    assert_eq!(
+        invoke(&w, "import_products_commit", json!({"jobId": preview["jobId"]})).unwrap()["productsCreated"],
+        20
+    );
+    // AT-02 on the way: found by barcode, by SKU and by name.
+    let by_code = invoke(&w, "catalog_lookup_code", json!({"code": "4006381333931"})).unwrap();
+    assert_eq!(by_code["name"], "Cola 330ml");
+    let by_sku = invoke(&w, "catalog_lookup_code", json!({"code": "BREAD-W"})).unwrap();
+    assert_eq!(by_sku["name"], "White Bread");
+    let by_name = invoke(&w, "catalog_search", json!({"query": "banan", "limit": 5})).unwrap();
+    assert_eq!(by_name[0]["name"], "Bananas");
+    // The test cash sale: two scans (one barcode, one SKU), paid in cash with change.
+    let mut cart = Value::Null;
+    for (i, code) in ["4006381333931", "BREAD-W"].iter().enumerate() {
+        cart = invoke(
+            &w,
+            "scan_submit",
+            json!({"scanEventId": format!("0190a5b0-0000-7000-8000-0000000001{i:02}"), "raw": code, "source": "manual"}),
+        )
+        .unwrap()["cart"]
+            .clone();
+    }
+    assert_eq!(cart["lines"].as_array().unwrap().len(), 2);
+    let done = invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "500", "reference": null}]}),
+    )
+    .unwrap();
+    assert_eq!(done["receiptNumber"], "R01-000001");
+    assert_eq!(
+        (done["totalMinor"].as_str(), done["changeMinor"].as_str()),
+        (Some("260"), Some("240"))
+    );
+    // Saved here, waiting for a cloud that is not linked.
+    assert_eq!(done["syncPending"], true);
+    let receipt = invoke(&w, "receipt_get", json!({"saleId": null, "widthMm": 80})).unwrap();
+    let text: Vec<&str> = receipt["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["text"].as_str().unwrap())
+        .collect();
+    assert!(text.iter().any(|l| l.trim() == "Corner Shop"), "{text:?}");
+    assert!(text.iter().any(|l| l.contains("Tax no. GB123456789")), "{text:?}");
+}
