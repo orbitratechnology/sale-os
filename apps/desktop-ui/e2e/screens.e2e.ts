@@ -1115,8 +1115,15 @@ describe("reports (E14-T03)", () => {
     await page.getByTestId("export-saved").filter({ hasText: "stock.csv" }).waitFor();
     await page.getByRole("region", { name: "Data exports" }).getByRole("button", { name: "Products" }).click();
     await page.getByTestId("export-saved").filter({ hasText: "Saved 3 rows" }).waitFor();
+    // Cancelling the save dialog saves nothing and says nothing.
+    await page.evaluate(() => {
+      window.__fake.saveAs = [null];
+    });
+    await page.getByRole("region", { name: "Data exports" }).getByRole("button", { name: "Products" }).click();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "export_csv").length === 4);
+    await expect.poll(() => page.getByTestId("export-saved").count()).toBe(0);
     const sent = await calls(page, "export_csv");
-    expect(sent.map((c) => c.dataset)).toEqual(["sales_summary", "stock", "products"]);
+    expect(sent.map((c) => c.dataset)).toEqual(["sales_summary", "stock", "products", "products"]);
     expect(sent[0]?.range).toMatchObject({ from: expect.any(String), to: expect.any(String) });
     expect(sent[1]?.range).toBeNull();
   });

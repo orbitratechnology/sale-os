@@ -701,7 +701,11 @@ fn an_approval_round_trip_over_ipc() {
 fn a_cash_sale_over_ipc() {
     // E09-T08 through the shell: short tender reports what is still due; enough cash
     // completes with a receipt number, change, and a fresh cart.
-    let (_dir, _app, w) = start();
+    let out = tempfile::tempdir().unwrap();
+    let (_dir, _app, w) = start_with(Some(Arc::new(ImportDialog {
+        open: std::path::PathBuf::new(),
+        save_dir: out.path().to_path_buf(),
+    })));
     let created = invoke(
         &w,
         "setup_create_workspace",
@@ -849,22 +853,25 @@ fn a_cash_sale_over_ipc() {
     .unwrap_err();
     assert_eq!(bad["code"], "VALIDATION_FAILED");
 
-    // E14-T04: export the day's lines; a second export never overwrites the first.
+    // E14-T04: export the day's lines where the save dialog says (the suggested name here).
     let day = page["rows"][0]["businessDate"].clone();
-    let export = || {
-        invoke(
-            &w,
-            "export_csv",
-            json!({"dataset": "transactions", "range": {"from": day, "to": day}}),
-        )
-        .unwrap()
-    };
-    let first = export();
-    let second = export();
+    let first = invoke(
+        &w,
+        "export_csv",
+        json!({"dataset": "transactions", "range": {"from": day, "to": day}}),
+    )
+    .unwrap();
     assert_eq!(first["rows"], 1);
-    assert_ne!(first["path"], second["path"]);
-    assert!(second["fileName"].as_str().unwrap().ends_with("-2.csv"));
-    let bytes = std::fs::read(first["path"].as_str().unwrap()).unwrap();
+    let name = first["fileName"].as_str().unwrap();
+    assert!(
+        name.starts_with("transactions_") && name.ends_with(".csv"),
+        "{name}"
+    );
+    assert_eq!(
+        first["path"].as_str().unwrap(),
+        out.path().join(name).display().to_string()
+    );
+    let bytes = std::fs::read(out.path().join(name)).unwrap();
     assert!(bytes.starts_with("\u{feff}receipt_number,".as_bytes()));
     let products = invoke(&w, "export_csv", json!({"dataset": "products", "range": null})).unwrap();
     assert_eq!(products["rows"], 1);

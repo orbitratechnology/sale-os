@@ -30,7 +30,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
   `core:event` and `core:window` basics. The `fs`, `shell`, `http` and `sql` plugins are
   **not** enabled. File saving (PDF) opens the system "Save as" dialog **from Rust**
   (`tauri-plugin-dialog`, no `dialog:*` permission granted to the WebView) and Rust writes
-  the file, so the WebView never names a path. CSV exports still go to `<app data>/exports/`.
+  the file, so the WebView never names a path. CSV exports, the import's file and its error
+  report use the same dialogs.
 
 ### 1.2 Role → permission matrix (enforced by `role_grants`; covered by test E05-T03)
 
@@ -115,7 +116,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `receipt_print` / `receipt_reprint` | SalesView / ReceiptReprint | `{ receiptId } → PrintJobDto` | E13-T06 |
 | `print_jobs_active` / `print_job_resolve_unknown` | session | `{ jobId, outcome:'printed'\|'not_printed' } → ()` | E13-T06 |
 | `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range: { from, to } }` (+ `by`, `limit` for top products; `lowOnly` for stock) → … + `scope: { scope: 'device', asOfMs }`. The `scope: 'cloud'` argument arrives with Stage 3. Definitions: docs/reporting-definitions.md | E14 |
-| `export_csv` | ReportsExport / CatalogExport (products, stock) | `{ dataset, range? } → { path, fileName, rows }`. Saved under `<app data>/exports/` (never overwriting) until a native save dialog exists; datasets `transactions`, `tenders`, `returns`, `products`, `stock`, `sales_summary`, `tender_mix`, `top_products` | E14-T04 |
+| `export_csv` | ReportsExport / CatalogExport (products, stock) | `{ dataset, range? } → { path, fileName, rows } \| null`: Rust asks where to save with the system dialog and writes the file (null: cancelled; nothing saved or audited); audited `report.exported` with the saved file's name | E14-T04 |
 | `audit_list` | AuditView | | E15-T01 |
 | `sync_status` | session | `→ SyncStatusDto { linkState, pending, rejected, conflicts, lastPushOkAt, lastPullOkAt, lastError?, clockSkewWarning }` | E17-T09 |
 | `sync_link_start` / `sync_link_complete` | DeviceLink | Owner email + password → link result | E17-T08 |

@@ -100,6 +100,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
     const res = await commands.exportCsv(dataset, dated ? { from: range.from, to: range.to } : null);
     setExporting(false);
     if (res.status === "ok") {
+      // null: the save dialog was cancelled; nothing was written.
       setSaved(res.data);
       setError(null);
     } else setError(res.error);

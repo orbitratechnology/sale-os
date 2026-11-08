@@ -764,7 +764,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.exports += 1;
       const name = dated && range ? `${String(a.dataset)}_${range.from}_${range.to}.csv` : `${String(a.dataset)}.csv`;
       const rows = a.dataset === "transactions" ? s.sales.reduce((n, x) => n + x.lines.length, 0) : a.dataset === "products" ? s.products.length : 3;
-      return { path: `/data/exports/${name}`, fileName: name, rows };
+      const answer = s.saveAs.length ? s.saveAs.shift() : name;
+      if (answer == null) return null;
+      return { path: `/home/user/Documents/${answer}`, fileName: answer, rows };
     }
     case "settings_get":
     case "settings_update": {

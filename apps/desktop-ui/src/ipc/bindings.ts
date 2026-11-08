@@ -229,10 +229,12 @@ export const commands = {
 	/**  Current stock from the recorded movements; `lowOnly` keeps low and negative items. */
 	reportsStock: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_stock", { lowOnly })),
 	/**
-	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM) into `<app data>/exports/`, then
-	 *  audits it (`report.exported`). Dated datasets need `range`.
+	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
+	 *  the system dialog and writes the file (the WebView never names a path), then audits it
+	 *  (`report.exported`). `null` when the user cancels: nothing is saved or recorded. Dated
+	 *  datasets need `range`.
 	 */
-	exportCsv: (dataset: ExportDatasetDto, range: DateRangeDto | null) => typedError<ExportResultDto, IpcError_Serialize>(__TAURI_INVOKE("export_csv", { dataset, range })),
+	exportCsv: (dataset: ExportDatasetDto, range: DateRangeDto | null) => typedError<ExportResultDto | null, IpcError_Serialize>(__TAURI_INVOKE("export_csv", { dataset, range })),
 	/**  E15-T01 (owner): the audit log, newest first, filtered by action, user and dates. */
 	auditList: (filter: AuditFilterDto_Deserialize, before: string | null, limit: number | null) => typedError<AuditPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("audit_list", { filter, before, limit })),
 	/**  The register's drawer: the open session (if any) and whether sales need one. */

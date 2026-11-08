@@ -77,60 +77,50 @@ pub async fn reports_stock(
     Ok(StockReportDto::from_rows(&rows, ctx.now()))
 }
 
-/// Exports a dataset as CSV (RFC 4180, UTF-8 with BOM) into `<app data>/exports/`, then
-/// audits it (`report.exported`). Dated datasets need `range`.
+/// Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
+/// the system dialog and writes the file (the WebView never names a path), then audits it
+/// (`report.exported`). `null` when the user cancels: nothing is saved or recorded. Dated
+/// datasets need `range`.
 #[tauri::command]
 #[specta::specta]
 pub async fn export_csv(
     services: State<'_, AppServices>,
     dataset: crate::dto::ExportDatasetDto,
     range: Option<DateRangeDto>,
-) -> Result<crate::dto::ExportResultDto, IpcError> {
+) -> Result<Option<crate::dto::ExportResultDto>, IpcError> {
     let ctx = services.context().await?;
     let range = range.map(|r| r.parse()).transpose()?;
     let app = services.app()?;
-    let export = app
+    let mut export = app
         .exports
         .build(&ctx, dataset.into_domain(), range)
         .await
         .map_err(err)?;
-    let dir = services.data_dir.join("exports");
-    let path = write_new_file(&dir, &export.file_name, &export.bytes).map_err(IpcError::internal)?;
-    app.exports.record(&ctx, &export).await.map_err(err)?;
-    Ok(crate::dto::ExportResultDto {
-        path: path.display().to_string(),
-        file_name: path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-        rows: u32::try_from(export.rows).unwrap_or(u32::MAX),
-    })
-}
-
-/// Writes `bytes` to a new file in `dir` (never overwriting: `name-2.csv`, `name-3.csv`…),
-/// through a temporary file and a rename so a half-written file is never left behind.
-fn write_new_file(dir: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::Result<std::path::PathBuf> {
-    std::fs::create_dir_all(dir)?;
-    let (stem, ext) = name.rsplit_once('.').unwrap_or((name, "csv"));
-    let mut n = 1;
-    let target = loop {
-        let candidate = if n == 1 {
-            dir.join(name)
-        } else {
-            dir.join(format!("{stem}-{n}.{ext}"))
-        };
-        if !candidate.exists() {
-            break candidate;
-        }
-        n += 1;
+    let chosen = services
+        .file_dialog
+        .ask(&export.file_name, ("CSV", &["csv"]))
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = chosen else {
+        return Ok(None);
     };
-    let tmp = dir.join(format!(
-        ".{}.tmp",
-        target.file_name().and_then(|f| f.to_str()).unwrap_or("export")
-    ));
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, &target)?;
-    Ok(target)
+    let path = if path.extension().is_some() {
+        path
+    } else {
+        path.with_extension("csv")
+    };
+    crate::sale_commands::write_replacing(&path, &export.bytes).map_err(IpcError::internal)?;
+    export.file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    app.exports.record(&ctx, &export).await.map_err(err)?;
+    Ok(Some(crate::dto::ExportResultDto {
+        path: path.display().to_string(),
+        file_name: export.file_name.clone(),
+        rows: u32::try_from(export.rows).unwrap_or(u32::MAX),
+    }))
 }
 
 /// E15-T01 (owner): the audit log, newest first, filtered by action, user and dates.
