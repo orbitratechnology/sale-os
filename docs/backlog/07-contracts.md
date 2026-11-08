@@ -99,6 +99,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
 | `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
 | `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
+| `settings_get` / `settings_update` | SettingsEdit (owner) | `→ [{ key, group, label, help, kind, valueJson, defaultJson, version }]`; `{ key, valueJson, baseVersion } → setting` (unknown key or wrong type: `VALIDATION_FAILED`; stale version: `CONFLICT_VERSION`). Registry and defaults: docs/settings.md (generated) | E04-T03 |
+| `app_preferences` / `auth_lock` | session | Scanner suffix and key gap, idle-lock seconds; `auth_lock` ends the session for inactivity (`auth.session_locked`) | E04-T03 |
 | `audit_list` | AuditView (owner) | `{ filter: { action? (exact, or a group ending in `.`), userId? (actor or approver), from?, to? (business dates) }, before?, limit? } → { rows: [{ localTime, action, actorName, approverName, entityType, entityId, entityLabel, metadata }], next }` | E15-T01 |
 | `stock_verify` | InventoryView | `→ [{ variantId, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
 | `stock_rebuild` | SettingsEdit (owner) | `→` the drift that was repaired; audited `inventory.projection_rebuilt` | E11-T06 |

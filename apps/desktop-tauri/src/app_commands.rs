@@ -324,3 +324,69 @@ pub async fn register_go_live(services: State<'_, AppServices>, pin_code: String
         .await
         .map_err(err)
 }
+
+/// E04-T03 (owner): every setting with its type, current value and version.
+#[tauri::command]
+#[specta::specta]
+pub async fn settings_get(services: State<'_, AppServices>) -> Result<Vec<crate::dto::SettingDto>, IpcError> {
+    let ctx = services.context().await?;
+    let all = services.app()?.settings.list(&ctx).await.map_err(err)?;
+    all.iter().map(crate::dto::SettingDto::from_value).collect()
+}
+
+/// E04-T03 (owner): changes one setting. `valueJson` must match the setting's type;
+/// `baseVersion` is the version shown (a newer change gives `CONFLICT_VERSION`).
+#[tauri::command]
+#[specta::specta]
+pub async fn settings_update(
+    services: State<'_, AppServices>,
+    key: String,
+    value_json: String,
+    base_version: u32,
+) -> Result<crate::dto::SettingDto, IpcError> {
+    let ctx = services.context().await?;
+    let value: serde_json::Value = serde_json::from_str(&value_json).map_err(|_| {
+        IpcError::coded(
+            pos_domain::ErrorCode::ValidationFailed,
+            "that value is not valid JSON",
+        )
+    })?;
+    let v = services
+        .app()?
+        .settings
+        .update(&ctx, &key, value, u64::from(base_version))
+        .await
+        .map_err(err)?;
+    crate::dto::SettingDto::from_value(&v)
+}
+
+/// The till's own preferences (scanner, idle lock), for anyone signed in.
+#[tauri::command]
+#[specta::specta]
+pub async fn app_preferences(
+    services: State<'_, AppServices>,
+) -> Result<crate::dto::PreferencesDto, IpcError> {
+    let ctx = services.context().await?;
+    let p = services.app()?.settings.preferences(&ctx).await.map_err(err)?;
+    Ok(crate::dto::PreferencesDto {
+        scanner_suffix: p.scanner_suffix,
+        scanner_max_key_gap_ms: p.scanner_max_key_gap_ms,
+        lock_timeout_secs: p.lock_timeout_secs,
+    })
+}
+
+/// Locks the till after inactivity (`security.lock_timeout_secs`): ends the session like a
+/// sign-out, audited as `auth.session_locked`. The cart is kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_lock(services: State<'_, AppServices>) -> Result<(), IpcError> {
+    let ctx = services.context().await?;
+    services
+        .app()?
+        .auth
+        .end_session(&ctx, SessionEnd::InactivityLock)
+        .await
+        .map_err(err)?;
+    services.set_session(None).await;
+    Ok(())
+}

@@ -76,6 +76,11 @@ impl CheckoutService {
         ctx.authorize(Permission::SaleComplete)?;
         if input.tenders.iter().any(|t| !t.kind.is_cash()) {
             ctx.authorize(Permission::ExternalTenderRecord)?;
+            // The shop may keep card and other external payments to managers and owners.
+            if ctx.actor()?.role == pos_domain::Role::Cashier && !self.setup.cashier_external_tender().await?
+            {
+                return Err(AppError::PermissionDenied(Permission::ExternalTenderRecord));
+            }
         }
         let actor = ctx.actor()?.clone();
         // Hold the cart lock: no scan or edit can slip in between pricing and commit.

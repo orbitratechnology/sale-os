@@ -34,6 +34,9 @@ pub trait SetupQueries: Send + Sync {
     /// `cash.require_session_for_sale` (default true). Applies to live mode only: practice
     /// (sandbox) sales never need a drawer session.
     async fn cash_session_required(&self) -> Result<bool, QueryError>;
+    /// `payments.cashier_external_tender` (default true): may a cashier record card,
+    /// transfer, QR and other external payments.
+    async fn cashier_external_tender(&self) -> Result<bool, QueryError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -63,6 +63,8 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ("auth_login", Public, json!({"userId": UNKNOWN_ID, "pin": "0000"})),
         // Exercised explicitly at the end of each role's run.
         ("auth_logout", Session, Value::Null),
+        // Ends the session too; not invoked mid-run (null args), checked in the IPC test below.
+        ("auth_lock", Session, Value::Null),
         (
             "auth_change_pin",
             Session,
@@ -75,6 +77,14 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ),
         // Owner only; a wrong PIN, so the permitted call is refused for the PIN, not the role.
         ("register_go_live", Perm(SettingsEdit), json!({"pinCode": "0000"})),
+        ("settings_get", Perm(SettingsEdit), json!({})),
+        // An unknown key: permitted roles get VALIDATION_FAILED, so nothing changes.
+        (
+            "settings_update",
+            Perm(SettingsEdit),
+            json!({"key": "harness.none", "valueJson": "true", "baseVersion": 1}),
+        ),
+        ("app_preferences", Session, json!({})),
         ("staff_list", Perm(StaffManage), json!({})),
         (
             "staff_create",
@@ -879,4 +889,42 @@ fn a_cash_session_over_ipc() {
     );
     let again = invoke(&w, "register_go_live", json!({"pinCode": "1234"})).unwrap_err();
     assert_eq!(again["code"], "VALIDATION_FAILED");
+
+    // E04-T03: settings over IPC, then the idle lock ends the session.
+    let all = invoke(&w, "settings_get", json!({})).unwrap();
+    let width = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["key"] == "receipt.paper_width_mm")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (width["valueJson"].as_str(), width["kind"]["type"].as_str()),
+        (Some("80"), Some("choice"))
+    );
+    let changed = invoke(
+        &w,
+        "settings_update",
+        json!({"key": "receipt.paper_width_mm", "valueJson": "58", "baseVersion": width["version"]}),
+    )
+    .unwrap();
+    assert_eq!(changed["valueJson"], "58");
+    let bad = invoke(
+        &w,
+        "settings_update",
+        json!({"key": "receipt.paper_width_mm", "valueJson": "{oops", "baseVersion": changed["version"]}),
+    )
+    .unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    let prefs = invoke(&w, "app_preferences", json!({})).unwrap();
+    assert_eq!(
+        (prefs["scannerSuffix"].as_str(), prefs["lockTimeoutSecs"].as_u64()),
+        (Some("Enter"), Some(300))
+    );
+    invoke(&w, "auth_lock", json!({})).unwrap();
+    assert_eq!(
+        invoke(&w, "app_preferences", json!({})).unwrap_err()["code"],
+        "SESSION_LOCKED"
+    );
 }

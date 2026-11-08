@@ -50,6 +50,20 @@ export const commands = {
 	 *  (PRD §7.1 step 9). One way; refused while a cart has items or a drawer session is open.
 	 */
 	registerGoLive: (pinCode: string) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("register_go_live", { pinCode })),
+	/**  E04-T03 (owner): every setting with its type, current value and version. */
+	settingsGet: () => typedError<SettingDto[], IpcError_Serialize>(__TAURI_INVOKE("settings_get")),
+	/**
+	 *  E04-T03 (owner): changes one setting. `valueJson` must match the setting's type;
+	 *  `baseVersion` is the version shown (a newer change gives `CONFLICT_VERSION`).
+	 */
+	settingsUpdate: (key: string, valueJson: string, baseVersion: number) => typedError<SettingDto, IpcError_Serialize>(__TAURI_INVOKE("settings_update", { key, valueJson, baseVersion })),
+	/**  The till's own preferences (scanner, idle lock), for anyone signed in. */
+	appPreferences: () => typedError<PreferencesDto, IpcError_Serialize>(__TAURI_INVOKE("app_preferences")),
+	/**
+	 *  Locks the till after inactivity (`security.lock_timeout_secs`): ends the session like a
+	 *  sign-out, audited as `auth.session_locked`. The cart is kept.
+	 */
+	authLock: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_lock")),
 	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
 	/**  The product list (E06-T06a): one page, by name, with summary columns. */
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
@@ -875,6 +889,15 @@ export type PostedDocumentDto = {
 	movementCount: number,
 };
 
+/**  What the till needs from the settings, for anyone signed in. */
+export type PreferencesDto = {
+	/**  `"Enter"`, `"Tab"` or `"none"`. */
+	scannerSuffix: string,
+	scannerMaxKeyGapMs: number,
+	/**  0: never lock. */
+	lockTimeoutSecs: number,
+};
+
 export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;
 
 export type PrintJobDto_Deserialize = {
@@ -1357,6 +1380,25 @@ export type SessionTotalsDto = {
 	refundsTotalMinor: string,
 	refunds: TenderTotalDto[],
 };
+
+export type SettingDto = {
+	key: string,
+	group: string,
+	label: string,
+	help: string,
+	kind: SettingKindDto,
+	/**  The current value as JSON text. */
+	valueJson: string,
+	defaultJson: string,
+	/**  Pass back as `baseVersion` when changing it. */
+	version: number,
+};
+
+export type SettingKindDto = { type: "bool" } | { type: "int"; min: number; max: number } | 
+/**  Parts per million (100000 = 10%). */
+{ type: "ppm" } | 
+/**  One of these JSON values. */
+{ type: "choice"; options: string[] } | { type: "lines"; maxLines: number; maxChars: number };
 
 /**  For the PIN pad: no PIN state, no versions. */
 export type SignInUser = {

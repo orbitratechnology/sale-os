@@ -1882,3 +1882,82 @@ impl AuditPageDto {
         }
     }
 }
+
+// ---------- settings (E04-T03) ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SettingKindDto {
+    Bool,
+    Int {
+        min: i32,
+        max: i32,
+    },
+    /// Parts per million (100000 = 10%).
+    Ppm,
+    /// One of these JSON values.
+    Choice {
+        options: Vec<String>,
+    },
+    Lines {
+        max_lines: u32,
+        max_chars: u32,
+    },
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingDto {
+    pub key: String,
+    pub group: String,
+    pub label: String,
+    pub help: String,
+    pub kind: SettingKindDto,
+    /// The current value as JSON text.
+    pub value_json: String,
+    pub default_json: String,
+    /// Pass back as `baseVersion` when changing it.
+    pub version: u32,
+}
+
+impl SettingDto {
+    pub fn from_value(v: &pos_application::settings::SettingValue) -> Result<Self, IpcError> {
+        use pos_application::settings::SettingKind as K;
+        let d = v.def;
+        Ok(Self {
+            key: d.key.into(),
+            group: d.group.into(),
+            label: d.label.into(),
+            help: d.help.into(),
+            kind: match d.kind {
+                K::Bool => SettingKindDto::Bool,
+                K::Int { min, max } => SettingKindDto::Int {
+                    min: i32::try_from(min).map_err(IpcError::internal)?,
+                    max: i32::try_from(max).map_err(IpcError::internal)?,
+                },
+                K::Ppm => SettingKindDto::Ppm,
+                K::Choice(o) => SettingKindDto::Choice {
+                    options: o.iter().map(|s| (*s).to_owned()).collect(),
+                },
+                K::Lines { max_lines, max_chars } => SettingKindDto::Lines {
+                    max_lines: u32::try_from(max_lines).map_err(IpcError::internal)?,
+                    max_chars: u32::try_from(max_chars).map_err(IpcError::internal)?,
+                },
+            },
+            value_json: v.value.to_string(),
+            default_json: d.default.into(),
+            version: version_out(v.version)?,
+        })
+    }
+}
+
+/// What the till needs from the settings, for anyone signed in.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PreferencesDto {
+    /// `"Enter"`, `"Tab"` or `"none"`.
+    pub scanner_suffix: String,
+    pub scanner_max_key_gap_ms: u32,
+    /// 0: never lock.
+    pub lock_timeout_secs: u32,
+}

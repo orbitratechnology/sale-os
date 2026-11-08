@@ -102,6 +102,16 @@ impl StaffQueries for SqliteStore {
 
 #[async_trait::async_trait]
 impl SetupQueries for SqliteStore {
+    async fn cashier_external_tender(&self) -> Result<bool, QueryError> {
+        let v: Option<String> = sqlx::query_scalar(
+            "SELECT value_json FROM business_settings WHERE key = 'payments.cashier_external_tender' LIMIT 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        Ok(v.as_deref().map(str::trim) != Some("false"))
+    }
+
     async fn cash_session_required(&self) -> Result<bool, QueryError> {
         let v: Option<String> = sqlx::query_scalar(
             "SELECT value_json FROM business_settings WHERE key = 'cash.require_session_for_sale' LIMIT 1",
@@ -185,5 +195,25 @@ impl SetupQueries for SqliteStore {
             },
         )
         .transpose()
+    }
+}
+
+#[async_trait::async_trait]
+impl pos_application::settings::SettingsQueries for SqliteStore {
+    async fn stored_settings(&self) -> Result<Vec<(String, serde_json::Value, u64)>, QueryError> {
+        let rows: Vec<(String, String, i64)> =
+            sqlx::query_as("SELECT key, value_json, version FROM business_settings ORDER BY key")
+                .fetch_all(self.db().readers())
+                .await
+                .map_err(q)?;
+        rows.into_iter()
+            .map(|(k, v, n)| {
+                Ok((
+                    k,
+                    serde_json::from_str(&v).map_err(q)?,
+                    u64::try_from(n).map_err(q)?,
+                ))
+            })
+            .collect()
     }
 }

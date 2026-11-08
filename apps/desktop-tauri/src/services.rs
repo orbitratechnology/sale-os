@@ -18,6 +18,7 @@ use pos_application::receipts::ReceiptService;
 use pos_application::reports::ReportService;
 use pos_application::returns::ReturnService;
 use pos_application::sales::SalesService;
+use pos_application::settings::SettingsService;
 use pos_application::setup::SetupService;
 use pos_application::staff::StaffService;
 use pos_application::stock::StockService;
@@ -49,6 +50,7 @@ pub(crate) struct Services {
     pub auth: AuthService,
     pub staff: StaffService,
     pub mode: ModeService,
+    pub settings: SettingsService,
     pub catalog: CatalogService,
     pub carts: Arc<CartService>,
     pub checkout: CheckoutService,
@@ -148,6 +150,10 @@ impl AppServices {
                     staff: a.clone(),
                     hasher: hasher.clone(),
                     approvals: approvals.clone(),
+                },
+                settings: SettingsService {
+                    store: a.clone(),
+                    settings: a.clone(),
                 },
                 mode: ModeService {
                     store: a.clone(),
