@@ -12,6 +12,7 @@ import { Checkout } from "./features/checkout/Checkout";
 import { ProductEditor } from "./features/catalog/ProductEditor";
 import { ProductList } from "./features/catalog/ProductList";
 import { CategoriesScreen } from "./features/catalog/CategoriesScreen";
+import { ImportWizard } from "./features/catalog/ImportWizard";
 import { ReturnScreen } from "./features/returns/ReturnScreen";
 import { SalesScreen } from "./features/sales/SalesScreen";
 import { DrawerScreen } from "./features/cash/DrawerScreen";
@@ -208,8 +209,11 @@ export function App() {
             }
             onBack={() => setScreen({ kind: "till" })}
             onCategories={() => setScreen({ kind: "categories" })}
+            onImport={() => setScreen({ kind: "import" })}
           />
         );
+      case "import":
+        return <ImportWizard onClose={() => setScreen({ kind: "products" })} />;
       case "categories":
         return (
           <CategoriesScreen onBack={() => setScreen({ kind: "products" })} />
@@ -282,6 +286,7 @@ type Screen =
   | { kind: "till" }
   | { kind: "products" }
   | { kind: "categories" }
+  | { kind: "import" }
   | { kind: "returns"; receipt?: string }
   | { kind: "sales" }
   | { kind: "drawer" }

@@ -71,6 +71,10 @@ export interface FakeState {
   printed: number;
   /** What the next "Save as" dialogs answer: a file name, or null for Cancel. */
   saveAs: (string | null)[];
+  /** What the next "Open" dialog picks: CSV text and a file name, or null for Cancel. */
+  openFile: { name: string; text: string } | null;
+  /** Import jobs by id: the rows and what validation decided. */
+  imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[] }>;
   /** The business profile besides the name and till name (which live in `workspace`). */
   business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number };
   /** Product categories (E06-T05). */
@@ -180,6 +184,8 @@ function initialStateInner(preset: Preset): FakeState {
     printJobs: new Map(),
     printed: 0,
     saveAs: [],
+    openFile: null,
+    imports: new Map(),
     business: { legalName: null, taxRegistrationNo: "GB123456789", addressLines: ["1 High Street", "Leeds LS1 1AA"], phone: null, email: null, version: 1, registerVersion: 1 },
     categories: [],
     taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
@@ -951,6 +957,82 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         b.registerVersion += 1;
       }
       return view();
+    }
+    case "import_products_open": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      if (!s.openFile) return null;
+      const [head, ...lines] = s.openFile.text.trim().split("\n").map((l) => l.split(","));
+      const header = head ?? [];
+      const jobId = id();
+      s.imports.set(jobId, { name: s.openFile.name, header, rows: lines, status: "parsed", valid: [] });
+      const synonyms: Record<string, string> = { name: "name", price: "price", sku: "sku", barcode: "barcode", variant: "variant", unit: "unit" };
+      const mapping = header.flatMap((h, index) => (synonyms[h.toLowerCase()] ? [{ column: synonyms[h.toLowerCase()], index }] : []));
+      return { jobId, fileName: s.openFile.name, encoding: "utf8", delimiter: ",", header, sample: lines.slice(0, 10), totalRows: lines.length, mapping };
+    }
+    case "import_products_validate":
+    case "import_products_commit":
+    case "import_products_error_report":
+    case "import_products_cancel": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const job = s.imports.get(String(a.jobId)) ?? fail("VALIDATION_FAILED");
+      if (cmd === "import_products_cancel") {
+        if (job.status === "committed") fail("VALIDATION_FAILED");
+        job.status = "cancelled";
+        return null;
+      }
+      if (cmd === "import_products_error_report") {
+        const answer = s.saveAs.length ? s.saveAs.shift() : `${job.name.replace(/\.csv$/, "")}-errors.csv`;
+        return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
+      }
+      if (cmd === "import_products_validate") {
+        if (!["parsed", "validated"].includes(job.status)) fail("VALIDATION_FAILED");
+        const m = a.mapping as { column: string; index: number }[];
+        const col = (c: string) => m.find((x) => x.column === c)?.index;
+        const nameAt = col("name");
+        const priceAt = col("price");
+        if (nameAt === undefined || priceAt === undefined) fail("VALIDATION_FAILED");
+        const problems: { line: number; status: string; messages: string[] }[] = [];
+        const existing = new Set([...s.catalog.values()].map((p) => p.name.toLowerCase()));
+        let dup = 0;
+        let skipped = 0;
+        job.valid = [];
+        job.rows.forEach((r, i) => {
+          const line = i + 2;
+          const name = (r[nameAt] ?? "").trim();
+          const price = (r[priceAt] ?? "").trim();
+          if (!name) return problems.push({ line, status: "error", messages: ["name: required"] });
+          if (!/^\d+([.,]\d{1,2})?$/.test(price)) return problems.push({ line, status: "error", messages: [price ? "price: cannot be negative" : "price: required"] });
+          if (existing.has(name.toLowerCase())) {
+            if (a.onDuplicate === "skip") return skipped++;
+            if (a.onDuplicate === "error") {
+              dup++;
+              return problems.push({ line, status: "duplicate_existing", messages: [`"${name}" already exists`] });
+            }
+          }
+          job.valid.push(i);
+        });
+        job.status = "validated";
+        const updates = a.onDuplicate === "update" ? job.valid.filter((i) => existing.has((job.rows[i]?.[nameAt] ?? "").trim().toLowerCase())).length : 0;
+        return {
+          totalRows: job.rows.length, validRows: job.valid.length, errorRows: problems.length - dup, duplicateRows: dup, skippedRows: skipped,
+          productsToCreate: job.valid.length - updates, productsToUpdate: updates, problems,
+        };
+      }
+      if (job.status !== "validated") fail("VALIDATION_FAILED");
+      job.status = "committed";
+      for (const i of job.valid) {
+        const r = job.rows[i] ?? [];
+        const productId = id();
+        const name = (r[0] ?? "").trim();
+        if ([...s.catalog.values()].some((p) => p.name.toLowerCase() === name.toLowerCase())) continue;
+        s.catalog.set(productId, {
+          productId, name, description: null, categoryId: null, productType: "stock", unit: "ea", taxCategoryId: TAX, quickSelect: false, archived: false, version: 1,
+          variants: [{ variantId: id(), isDefault: true, sku: null, options: {}, priceMinor: String(Math.round(parseFloat((r[1] ?? "0").replace(",", ".")) * 100)), costMinor: null, trackStock: true, lowStockThresholdMilli: null, scanQtyMilli: "1000", barcodes: [], archived: false }],
+        });
+      }
+      return { productsCreated: job.valid.length, productsUpdated: 0, rowsCommitted: job.valid.length };
     }
     case "receipt_export_pdf": {
       needSession(s);

@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 let server: ViteDevServer;
@@ -237,5 +238,96 @@ describe("categories (E06-T05)", () => {
       { categoryId: null, name: "Fizzy", parentId: soft, baseVersion: null },
       { categoryId: expect.any(String), name: "Drinks", parentId: expect.any(String), baseVersion: 1 },
     ]);
+  });
+});
+
+describe("CSV import (E06-T08)", () => {
+  const CSV = "name,price,sku\nLemonade,1.10,LEM\nIced tea,1.30,TEA\n,0.50,NONAME\nCrisps,0.85,CR2\nGinger beer,-1,GB\n";
+
+  async function openWizard(page: Page) {
+    await products(page);
+    await page.getByRole("button", { name: "Import CSV" }).click();
+    await page.getByRole("heading", { name: "Import products" }).waitFor();
+  }
+
+  it("preview, columns, check, import; problems listed and saved as a report", async () => {
+    const page = await till();
+    await openWizard(page);
+    // Cancelling the system dialog changes nothing.
+    await page.getByRole("button", { name: "Choose file…" }).click();
+    await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "import_products_open"));
+    await page.getByRole("button", { name: "Choose file…" }).waitFor();
+    await page.evaluate((text) => {
+      window.__fake.openFile = { name: "new-lines.csv", text };
+    }, CSV);
+    await page.getByRole("button", { name: "Choose file…" }).click();
+    await page.getByRole("heading", { name: "new-lines.csv · 5 rows" }).waitFor();
+    expect(await page.getByRole("region", { name: "Preview" }).getByRole("row").count()).toBe(1 + 5);
+    // Matched by heading; without a price column the file cannot be checked.
+    expect(await page.getByLabel("Product name (required)").inputValue()).toBe("0");
+    expect(await page.getByLabel("SKU", { exact: true }).inputValue()).toBe("2");
+    await page.getByLabel("Price (required)").selectOption("");
+    expect(await page.getByRole("button", { name: "Check the file" }).isDisabled()).toBe(true);
+    await page.getByLabel("Price (required)").selectOption({ label: "price" });
+    await page.getByLabel("Report them as errors").check();
+    await page.getByRole("button", { name: "Check the file" }).click();
+    const counts = page.getByTestId("import-counts");
+    await counts.waitFor();
+    expect((await counts.textContent())?.replace(/\s+/g, " ")).toContain("New products2");
+    expect(await page.getByTestId("import-problem").allTextContents()).toEqual([
+      "4name: required",
+      '5"Crisps" already exists',
+      "6price: cannot be negative",
+    ]);
+    expect((await calls(page, "import_products_validate")).at(-1)).toEqual({
+      jobId: expect.any(String),
+      mapping: [
+        { column: "name", index: 0 },
+        { column: "price", index: 1 },
+        { column: "sku", index: 2 },
+      ],
+      onDuplicate: "error",
+    });
+    await page.getByRole("button", { name: "Save error report" }).click();
+    await page.getByText("Saved new-lines-errors.csv.").waitFor();
+    const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
+    await page.addScriptTag({ path: axePath });
+    const violations = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
+    });
+    expect(violations).toEqual([]);
+    await page.getByRole("button", { name: "Import 2 products" }).click();
+    await page.getByRole("heading", { name: "Imported: 2 new, 0 updated." }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("product-total").filter({ hasText: "5 products" }).waitFor();
+    expect(await calls(page, "import_products_cancel")).toEqual([]);
+  });
+
+  it("leaving before importing cancels the job and changes nothing", async () => {
+    const page = await till();
+    await page.evaluate((text) => {
+      window.__fake.openFile = { name: "new-lines.csv", text };
+    }, CSV);
+    await openWizard(page);
+    await page.getByRole("button", { name: "Choose file…" }).click();
+    await page.getByRole("button", { name: "Check the file" }).click();
+    await page.getByTestId("import-counts").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("product-total").filter({ hasText: "3 products" }).waitFor();
+    expect(await calls(page, "import_products_cancel")).toHaveLength(1);
+    expect(await calls(page, "import_products_commit")).toEqual([]);
+  });
+
+  it("a cashier has no Import button", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    await page.goto(`${base}/app-harness.html?preset=signIn`);
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await products(page);
+    expect(await page.getByRole("button", { name: "Import CSV" }).count()).toBe(0);
   });
 });

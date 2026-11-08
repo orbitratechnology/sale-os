@@ -31,6 +31,7 @@ export function ProductList({
   onNew,
   onBack,
   onCategories,
+  onImport,
 }: {
   workspace: Workspace;
   canEdit: boolean;
@@ -39,6 +40,8 @@ export function ProductList({
   onBack: () => void;
   /** Editors only: open the category tree. */
   onCategories?: () => void;
+  /** Owners and managers: import products from a CSV file. */
+  onImport?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>({ query: "", status: "active", tracked: "any", category: "" });
   const [categories, setCategories] = useState<CategoryDto[]>([]);
@@ -189,6 +192,11 @@ export function ProductList({
         <span className="small" aria-live="polite" data-testid="product-total">
           {total === null ? "" : `${total} ${total === 1 ? "product" : "products"}`}
         </span>
+        {canEdit && onImport && (
+          <button type="button" className="secondary" onClick={onImport}>
+            Import CSV
+          </button>
+        )}
         {canEdit && onCategories && (
           <button type="button" className="secondary" onClick={onCategories}>
             Categories
