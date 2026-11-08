@@ -1731,6 +1731,33 @@ impl StockReportDto {
     }
 }
 
+// ---------- receipt PDF (E13-T04) ----------
+
+/// `receipt`: the receipt as printed, on the till's paper width; `a4`: an A4 page.
+#[derive(Copy, Clone, Debug, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfPaperDto {
+    Receipt,
+    A4,
+}
+
+impl PdfPaperDto {
+    pub fn into_domain(self) -> pos_application::receipts::PdfPaper {
+        match self {
+            PdfPaperDto::Receipt => pos_application::receipts::PdfPaper::Receipt,
+            PdfPaperDto::A4 => pos_application::receipts::PdfPaper::A4,
+        }
+    }
+}
+
+/// A file saved where the user chose.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedFileDto {
+    pub path: String,
+    pub file_name: String,
+}
+
 // ---------- CSV exports (E14-T04) ----------
 
 #[derive(Copy, Clone, Debug, Deserialize, Type)]

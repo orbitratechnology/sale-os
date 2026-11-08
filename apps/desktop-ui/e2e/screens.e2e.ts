@@ -546,6 +546,29 @@ describe("printing (E13-T06)", () => {
     await done.getByTestId("print-status").filter({ hasText: /^Printed\.$/ }).waitFor();
     expect(await calls(page, "print_job_retry")).toHaveLength(1);
   });
+
+  it("saves the receipt as a PDF with no printer: receipt width or A4; Cancel saves nothing (AT-08)", async () => {
+    const page = await sold([]);
+    await page.evaluate(() => {
+      window.__fake.saveAs = [null, "receipt-R01-000001.pdf", "invoice.pdf"];
+    });
+    const done = page.getByRole("dialog", { name: "Sale completed" });
+    await done.getByRole("button", { name: "Save as PDF" }).click();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "receipt_export_pdf").length === 1);
+    expect(await done.getByTestId("pdf-status").textContent()).toBe("");
+    await done.getByRole("button", { name: "Save as PDF" }).click();
+    await done.getByTestId("pdf-status").filter({ hasText: "Saved receipt-R01-000001.pdf." }).waitFor();
+    await done.getByRole("button", { name: "Save A4 PDF" }).click();
+    await done.getByTestId("pdf-status").filter({ hasText: "Saved invoice.pdf." }).waitFor();
+    const saleId = await page.evaluate(() => window.__fake.sales[0]?.saleId);
+    expect(await calls(page, "receipt_export_pdf")).toEqual([
+      { saleId, returnId: null, paper: "receipt" },
+      { saleId, returnId: null, paper: "receipt" },
+      { saleId, returnId: null, paper: "a4" },
+    ]);
+    // Nothing was printed.
+    expect(await calls(page, "receipt_print")).toEqual([]);
+  });
 });
 
 describe("returns (E12-T04)", () => {

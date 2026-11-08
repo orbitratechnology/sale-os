@@ -164,6 +164,13 @@ export const commands = {
 	/**  Prints a return's refund receipt (later copies are reprints). */
 	returnReceiptPrint: (returnId: ReturnId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_print", { returnId })),
 	/**
+	 *  Saves a sale's receipt (`saleId`) or a return's refund receipt (`returnId`) as a PDF
+	 *  (E13-T04, AT-08: no printer needed). Rust renders it, asks where to save it with the
+	 *  system dialog, and writes the file; the WebView never names a path. `null` when the
+	 *  user cancels the dialog. Audited as `receipt.exported_pdf`.
+	 */
+	receiptExportPdf: (saleId: SaleId | null, returnId: ReturnId | null, paper: PdfPaperDto) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("receipt_export_pdf", { saleId, returnId, paper })),
+	/**
 	 *  Completed sales on this device, newest first, a page at a time. `after` is the previous
 	 *  page's `next`; `limit` defaults to 50 (at most 200).
 	 */
@@ -905,6 +912,9 @@ export type NewStaffInput = {
 	pin: string,
 };
 
+/**  `receipt`: the receipt as printed, on the till's paper width; `a4`: an A4 page. */
+export type PdfPaperDto = "receipt" | "a4";
+
 export type Permission = "sale_complete" | "cart_line_discount" | "cart_order_discount" | "discount_above_threshold" | "price_override" | "cart_clear" | "cart_void" | "external_tender_record" | "sales_view" | "receipt_reprint" | "return_create" | "return_approve" | "catalog_view" | "catalog_edit" | "catalog_import" | "catalog_export" | "barcode_create_from_scan" | "inventory_view" | "inventory_receive" | "inventory_adjust" | "cash_session_open" | "cash_session_close" | "cash_session_view_variance" | "reports_view" | "reports_export" | "audit_view" | "settings_edit" | "staff_manage" | "device_link" | "sync_manage" | "conflict_resolve" | 
 /**  Simulators and dev panels; additionally restricted to debug builds by the shell. */
 "devtools_use";
@@ -1369,6 +1379,12 @@ export type SalesSummaryDto = {
 	pricesIncludeTax: boolean,
 	currencyExponent: number,
 	scope: ReportScopeDto,
+};
+
+/**  A file saved where the user chose. */
+export type SavedFileDto = {
+	path: string,
+	fileName: string,
 };
 
 export type ScanEventId = string;

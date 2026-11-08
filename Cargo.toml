@@ -36,6 +36,11 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 chrono-tz = "0.10"
 proptest = "1"
 jsonschema = { version = "=0.58.6", default-features = false }
+krilla = { version = "0.8.2", default-features = false, features = ["simple-text"] }
+lopdf = { version = "0.42", default-features = false }
+pdf-extract = "0.12"
+rustybuzz = "0.20"
+unicode-width = "0.2"
 serde_yaml_ng = "0.10"
 rust_decimal = { version = "1.43", default-features = false, features = ["std", "serde-str"] }
 serde = { version = "1", features = ["derive"] }
@@ -46,6 +51,7 @@ strum = { version = "0.27", features = ["derive"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "macros", "migrate"] }
 tauri = { version = "2.12", features = [] }
 tauri-build = { version = "2.7", features = [] }
+tauri-plugin-dialog = "2.8"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 tempfile = "3"
 thiserror = "2"

@@ -197,8 +197,12 @@ campaign in `E19-T02`.
   return snapshot.
 - Renderers:
   - **HTML preview:** a React component that reads the same JSON.
-  - **PDF:** rendered in Rust with `printpdf` and an **embedded Noto Sans** font, so glyph
-    coverage does not depend on the OS.
+  - **PDF:** rendered in Rust with an **embedded Noto Sans** font family, so glyph
+    coverage does not depend on the OS. *Implemented (E13-T04) with `krilla` instead of
+    `printpdf`*: it subsets fonts and writes ToUnicode maps (small, searchable PDFs), and
+    each run is shaped with `rustybuzz`, so Arabic joins and Devanagari forms conjuncts.
+    Fallback fonts cover Arabic, Devanagari, Chinese/Japanese (GB 2312 + JIS X 0208) and
+    Korean (KS X 1001 Hangul); see `crates/pos-receipts/fonts/README.md`.
   - **ESC/POS:** a byte encoder with a capability profile.
 - The PDF and ESC/POS renderers have separate golden test suites (PRD §12.4).
 

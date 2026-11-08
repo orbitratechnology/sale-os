@@ -3,6 +3,7 @@ import { commands, type IpcError } from "../../ipc";
 import type { PrintJobDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { printReceipt, type ReceiptSource } from "./ReceiptPreview";
+import { SavePdf } from "./SavePdf";
 
 const FAILURE: Record<string, string> = {
   paper_out: "The printer is out of paper. Load paper, then try again.",
@@ -72,13 +73,17 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
   })();
 
   return (
-    <div className="print-controls" aria-live="polite">
-      <button type="button" className="secondary" disabled={busy} onClick={() => void run(print)}>
-        {job ? "Print another copy" : "Print receipt"}
-      </button>
-      <span className="small" data-testid="print-status">
-        {status}
-      </span>
-    </div>
+    <>
+      <div className="print-controls" aria-live="polite">
+        <button type="button" className="secondary" disabled={busy} onClick={() => void run(print)}>
+          {job ? "Print another copy" : "Print receipt"}
+        </button>
+        <span className="small" data-testid="print-status">
+          {status}
+        </span>
+      </div>
+      {source.kind === "sale" && source.id && <SavePdf saleId={source.id} returnId={null} />}
+      {source.kind === "return" && <SavePdf saleId={null} returnId={source.id} />}
+    </>
   );
 }

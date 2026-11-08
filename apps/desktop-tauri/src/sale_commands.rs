@@ -570,6 +570,78 @@ pub async fn return_receipt_print(
     Ok(crate::dto::PrintJobDto::from_record(&job))
 }
 
+/// Saves a sale's receipt (`saleId`) or a return's refund receipt (`returnId`) as a PDF
+/// (E13-T04, AT-08: no printer needed). Rust renders it, asks where to save it with the
+/// system dialog, and writes the file; the WebView never names a path. `null` when the
+/// user cancels the dialog. Audited as `receipt.exported_pdf`.
+#[tauri::command]
+#[specta::specta]
+pub async fn receipt_export_pdf(
+    services: State<'_, AppServices>,
+    sale_id: Option<pos_domain::SaleId>,
+    return_id: Option<pos_domain::ReturnId>,
+    paper: crate::dto::PdfPaperDto,
+) -> Result<Option<crate::dto::SavedFileDto>, IpcError> {
+    use pos_application::receipts::ReceiptOf;
+    let ctx = services.context().await?;
+    let of = match (sale_id, return_id) {
+        (Some(s), None) => ReceiptOf::Sale(s),
+        (None, Some(r)) => ReceiptOf::Return(r),
+        _ => {
+            return Err(err(pos_application::context::AppError::Validation(
+                "name a sale or a return".into(),
+                pos_domain::ErrorCode::ValidationFailed,
+            )));
+        }
+    };
+    let app = services.app()?;
+    let pdf = app
+        .receipt_pdfs
+        .render(&ctx, of, paper.into_domain())
+        .await
+        .map_err(err)?;
+    let chosen = services
+        .save_dialog
+        .ask(&pdf.file_name, ("PDF", &["pdf"]))
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = chosen else {
+        return Ok(None);
+    };
+    let path = if path.extension().is_some() {
+        path
+    } else {
+        path.with_extension("pdf")
+    };
+    write_replacing(&path, &pdf.bytes).map_err(IpcError::internal)?;
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    app.receipt_pdfs
+        .record(&ctx, &pdf, &file_name)
+        .await
+        .map_err(err)?;
+    Ok(Some(crate::dto::SavedFileDto {
+        path: path.display().to_string(),
+        file_name,
+    }))
+}
+
+/// Writes `bytes` to `path` (the dialog has already asked about replacing an existing
+/// file) through a temporary file beside it and a rename, so a half-written file is never
+/// left under the chosen name.
+fn write_replacing(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("receipt.pdf");
+    let tmp = dir.join(format!(".{name}.tmp"));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
 // ---------- sales history (E12-T03) ----------
 
 /// Completed sales on this device, newest first, a page at a time. `after` is the previous

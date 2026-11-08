@@ -1,0 +1,20 @@
+--- page 1
+Corner Shop Receipt
+1 High Street No. R01-000003
+Leeds LS1 1AA 2026-11-07 14:03
+Tel 0113 496 0000 Till 1 (R01)
+Tax no. GB123456789 Served by Olu
+Item Qty Unit price Discount Amount
+Kettle 1 20.00 -2.00 18.00
+Discount 10%
+Mug 2 7.00 * 14.00
+Subtotal 34.00
+Item discounts -2.00
+Order discount -1.00
+Total 31.00
+incl. VAT 20% 5.17
+Cash 50.00
+Change 19.00
+Thank you!
+Returns within 30 days with this receipt.
+R01-000003

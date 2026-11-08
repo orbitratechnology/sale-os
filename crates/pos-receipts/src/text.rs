@@ -3,6 +3,7 @@
 //! encoder prints them, so what the cashier sees is what prints.
 
 use crate::document::{CopyKind, DocumentKind, ReceiptDocument, ZSection, amount, tender_label};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub const COLUMNS_58MM: usize = 32;
 pub const COLUMNS_80MM: usize = 48;
@@ -320,17 +321,40 @@ fn render_z(out: &mut Vec<TextLine>, doc: &ReceiptDocument, z: &ZSection, width:
     }
 }
 
+/// Columns a character takes on a receipt: 2 for wide (CJK) characters, 0 for combining
+/// marks, otherwise 1. Printers and the monospace preview lay text out the same way.
+pub fn char_columns(c: char) -> usize {
+    c.width().unwrap_or(0)
+}
+
+/// Columns a string takes (see [`char_columns`]).
+pub fn text_columns(s: &str) -> usize {
+    s.width()
+}
+
+/// The longest prefix of `s` that fits in `room` columns.
+fn take_columns(s: &str, room: usize) -> &str {
+    let mut used = 0;
+    for (i, c) in s.char_indices() {
+        used += char_columns(c);
+        if used > room {
+            return &s[..i];
+        }
+    }
+    s
+}
+
 /// Left text and right-aligned amount on one line; the left side is cut to fit.
 fn columns(left: &str, right: &str, width: usize) -> String {
-    let rlen = right.chars().count();
+    let rlen = text_columns(right);
     let room = width.saturating_sub(rlen + if right.is_empty() { 0 } else { 1 });
-    let left: String = left.chars().take(room).collect();
-    let pad = width - left.chars().count() - rlen;
+    let left = take_columns(left, room);
+    let pad = width.saturating_sub(text_columns(left) + rlen);
     format!("{left}{}{right}", " ".repeat(pad))
 }
 
 fn center(s: &str, width: usize) -> String {
-    let len = s.chars().count();
+    let len = text_columns(s);
     if len >= width {
         return s.to_owned();
     }
@@ -352,22 +376,27 @@ fn wrap_words(s: &str, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();
     for word in s.split_whitespace() {
-        let mut word: Vec<char> = word.chars().collect();
-        while word.len() > width {
+        let mut word = word;
+        while text_columns(word) > width {
             if !cur.is_empty() {
                 lines.push(std::mem::take(&mut cur));
             }
-            lines.push(word.drain(..width).collect());
+            let mut head = take_columns(word, width);
+            if head.is_empty() {
+                // A single character wider than the line: it gets a line of its own.
+                head = &word[..word.chars().next().map_or(word.len(), char::len_utf8)];
+            }
+            lines.push(head.to_owned());
+            word = &word[head.len()..];
         }
-        let word: String = word.into_iter().collect();
-        let need = cur.chars().count() + usize::from(!cur.is_empty()) + word.chars().count();
+        let need = text_columns(&cur) + usize::from(!cur.is_empty()) + text_columns(word);
         if need > width && !cur.is_empty() {
             lines.push(std::mem::take(&mut cur));
         }
         if !cur.is_empty() {
             cur.push(' ');
         }
-        cur.push_str(&word);
+        cur.push_str(word);
     }
     if !cur.is_empty() {
         lines.push(cur);

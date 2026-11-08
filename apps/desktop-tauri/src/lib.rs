@@ -14,7 +14,7 @@ mod services;
 
 pub use command_names::COMMANDS;
 pub use error::{ErrorDetails, IpcError};
-pub use services::AppServices;
+pub use services::{AppServices, SaveDialog};
 
 use pos_observability::LogConfig;
 use std::path::Path;
@@ -80,6 +80,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::return_create,
         sale_commands::return_receipt_get,
         sale_commands::return_receipt_print,
+        sale_commands::receipt_export_pdf,
         sale_commands::sales_list,
         sale_commands::sales_get,
         sale_commands::inventory_post_document,
@@ -115,6 +116,8 @@ pub fn export_bindings(path: &Path) -> Result<(), String> {
 pub fn run() {
     let builder = specta_builder::<tauri::Wry>();
     tauri::Builder::default()
+        // Rust-side only: no `dialog:*` permission is granted to the WebView.
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
@@ -130,7 +133,8 @@ pub fn run() {
             .map_err(|e| eprintln!("logging unavailable: {e}"))
             .ok();
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
-            let services = tauri::async_runtime::block_on(AppServices::start(&dir, log));
+            let services = tauri::async_runtime::block_on(AppServices::start(&dir, log))
+                .with_save_dialog(std::sync::Arc::new(NativeSaveDialog(app.handle().clone())));
             app.manage(services);
             Ok(())
         })
@@ -140,4 +144,31 @@ pub fn run() {
             eprintln!("Sale OS failed to start: {e}");
             std::process::exit(1);
         });
+}
+
+/// The system "Save as" dialog, opened from Rust over the main window.
+struct NativeSaveDialog(tauri::AppHandle);
+
+impl services::SaveDialog for NativeSaveDialog {
+    fn ask(
+        &self,
+        suggested_name: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut dialog = self
+            .0
+            .dialog()
+            .file()
+            .set_file_name(suggested_name)
+            .add_filter(filter.0, filter.1);
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.save_file(move |chosen| {
+            let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
+        });
+        rx
+    }
 }

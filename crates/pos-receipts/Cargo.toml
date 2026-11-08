@@ -10,8 +10,14 @@ publish.workspace = true
 [dependencies]
 pos-domain.workspace = true
 serde.workspace = true
+thiserror.workspace = true
+krilla.workspace = true
+rustybuzz.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
+lopdf.workspace = true
+pdf-extract.workspace = true
 serde_json.workspace = true
 pos-testkit.workspace = true
 

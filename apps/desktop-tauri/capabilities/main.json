@@ -61,6 +61,7 @@
     "allow-return-create",
     "allow-return-receipt-get",
     "allow-return-receipt-print",
+    "allow-receipt-export-pdf",
     "allow-sales-list",
     "allow-sales-get",
     "allow-inventory-post-document",

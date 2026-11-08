@@ -15,7 +15,7 @@ use pos_application::export::ExportService;
 use pos_application::mode::ModeService;
 use pos_application::printing::{DEFAULT_PRINT_TIMEOUT, PrintService};
 use pos_application::queries::SetupQueries;
-use pos_application::receipts::ReceiptService;
+use pos_application::receipts::{ReceiptPdfService, ReceiptService};
 use pos_application::reports::ReportService;
 use pos_application::returns::ReturnService;
 use pos_application::sales::SalesService;
@@ -43,7 +43,31 @@ pub struct AppServices {
     app: Option<Services>,
     /// The signed-in staff member. Lives only in memory: a restart signs everyone out.
     session: RwLock<Option<Session>>,
+    /// Asks where to save a file (the native dialog in the app; none in tests).
+    pub(crate) save_dialog: Arc<dyn SaveDialog>,
     _log: Option<LogGuard>,
+}
+
+/// Asks the user where to save a file. Rust opens the dialog and writes the file, so the
+/// WebView never names a path (docs/backlog/07 §1).
+pub trait SaveDialog: Send + Sync {
+    /// The chosen path, or `None` when the user cancels (or there is no dialog).
+    fn ask(
+        &self,
+        suggested_name: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<PathBuf>>;
+}
+
+/// No dialog: every save is "cancelled". Used until the app wires the native one.
+struct NoDialog;
+
+impl SaveDialog for NoDialog {
+    fn ask(&self, _: &str, _: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<PathBuf>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(None);
+        rx
+    }
 }
 
 pub(crate) struct Services {
@@ -57,6 +81,7 @@ pub(crate) struct Services {
     pub carts: Arc<CartService>,
     pub checkout: CheckoutService,
     pub receipts: ReceiptService,
+    pub receipt_pdfs: ReceiptPdfService,
     pub returns: ReturnService,
     pub sales: SalesService,
     pub cash: CashService,
@@ -85,6 +110,12 @@ impl AppServices {
     /// Opens the database under `data_dir` and wires the production ports.
     pub async fn start(data_dir: &Path, log: Option<LogGuard>) -> Self {
         Self::start_with_hasher(data_dir, log, Arc::new(Argon2PinHasher::new())).await
+    }
+
+    /// Uses `dialog` to ask where files are saved (the app passes the native dialog).
+    pub fn with_save_dialog(mut self, dialog: Arc<dyn SaveDialog>) -> Self {
+        self.save_dialog = dialog;
+        self
     }
 
     /// As [`AppServices::start`] with a chosen PIN hasher. Tests use cheap Argon2 parameters;
@@ -187,6 +218,10 @@ impl AppServices {
                     receipts: a.clone(),
                 },
                 receipts: ReceiptService { receipts: a.clone() },
+                receipt_pdfs: ReceiptPdfService {
+                    receipts: a.clone(),
+                    store: a.clone(),
+                },
                 sales: SalesService { sales: a.clone() },
                 reports: ReportService { reports: a.clone() },
                 audit: AuditService {
@@ -236,6 +271,7 @@ impl AppServices {
             data_dir: data_dir.to_path_buf(),
             app,
             session: RwLock::new(None),
+            save_dialog: Arc::new(NoDialog),
             _log: log,
         }
     }

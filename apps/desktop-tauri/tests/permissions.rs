@@ -242,6 +242,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"returnId": UNKNOWN_ID}),
         ),
         (
+            "receipt_export_pdf",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "returnId": null, "paper": "a4"}),
+        ),
+        (
             "sales_list",
             Perm(SalesView),
             json!({"filter": {"from": null, "to": null, "receipt": null, "cashierUserId": null, "tender": null}, "after": null, "limit": null}),
@@ -414,10 +419,24 @@ fn start() -> (
     tauri::App<MockRuntime>,
     WebviewWindow<MockRuntime>,
 ) {
+    start_with(None)
+}
+
+fn start_with(
+    dialog: Option<Arc<dyn desktop_tauri_lib::SaveDialog>>,
+) -> (
+    tempfile::TempDir,
+    tauri::App<MockRuntime>,
+    WebviewWindow<MockRuntime>,
+) {
     let dir = tempfile::tempdir().unwrap();
     // Cheap Argon2 parameters: this test signs in many times. The app uses ADR-013's cost.
     let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
-    let services = tauri::async_runtime::block_on(AppServices::start_with_hasher(dir.path(), None, hasher));
+    let mut services =
+        tauri::async_runtime::block_on(AppServices::start_with_hasher(dir.path(), None, hasher));
+    if let Some(d) = dialog {
+        services = services.with_save_dialog(d);
+    }
     let app = mock_builder()
         .invoke_handler(desktop_tauri_lib::specta_builder::<MockRuntime>().invoke_handler())
         .build(tauri::generate_context!())
@@ -819,6 +838,146 @@ fn a_cash_sale_over_ipc() {
     assert!(bytes.starts_with("\u{feff}receipt_number,".as_bytes()));
     let products = invoke(&w, "export_csv", json!({"dataset": "products", "range": null})).unwrap();
     assert_eq!(products["rows"], 1);
+}
+
+/// A save dialog that answers from a script and remembers the names it suggested.
+#[derive(Default)]
+struct ScriptedDialog {
+    answers: std::sync::Mutex<Vec<Option<std::path::PathBuf>>>,
+    suggested: std::sync::Mutex<Vec<String>>,
+}
+
+impl desktop_tauri_lib::SaveDialog for ScriptedDialog {
+    fn ask(
+        &self,
+        suggested: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter, ("PDF", ["pdf"].as_slice()));
+        self.suggested.lock().unwrap().push(suggested.to_owned());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(self.answers.lock().unwrap().remove(0));
+        rx
+    }
+}
+
+#[test]
+fn a_receipt_pdf_over_ipc() {
+    // E13-T04 / AT-08: no printer involved. Rust asks where to save (the dialog is scripted
+    // here), writes the PDF and audits it; cancelling writes and records nothing.
+    let out = tempfile::tempdir().unwrap();
+    let dialog = Arc::new(ScriptedDialog::default());
+    *dialog.answers.lock().unwrap() = vec![
+        None,
+        Some(out.path().join("my receipt")),
+        Some(out.path().join("refund.pdf")),
+    ];
+    let (_dir, _app, w) = start_with(Some(dialog.clone()));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("可口可乐 كولا");
+    product["product"]["variants"][0]["sku"] = json!("COLA");
+    invoke(&w, "product_create", product).unwrap();
+    let cart = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-00000000000a", "raw": "COLA", "source": "manual"}),
+    )
+    .unwrap()["cart"]
+        .clone();
+    invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}]}),
+    )
+    .unwrap();
+    let sale = invoke(&w, "return_find", json!({"receiptNumber": "R01-000001"})).unwrap();
+    let pdf = |args: Value| invoke(&w, "receipt_export_pdf", args);
+    let exported = || {
+        invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "receipt.exported_pdf", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+
+    // A sale or a return, not both and not neither.
+    for (s, r) in [
+        (Value::Null, Value::Null),
+        (sale["saleId"].clone(), json!(UNKNOWN_ID)),
+    ] {
+        let e = pdf(json!({"saleId": s, "returnId": r, "paper": "a4"})).unwrap_err();
+        assert_eq!(e["code"], "VALIDATION_FAILED");
+    }
+    // Cancelled: nothing saved, nothing recorded.
+    assert_eq!(
+        pdf(json!({"saleId": sale["saleId"], "returnId": null, "paper": "receipt"})).unwrap(),
+        Value::Null
+    );
+    assert!(exported().is_empty());
+    assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+    // Saved: ".pdf" is added to a bare name; the file is a PDF; the save is audited.
+    let saved = pdf(json!({"saleId": sale["saleId"], "returnId": null, "paper": "a4"})).unwrap();
+    assert_eq!(saved["fileName"], "my receipt.pdf");
+    let bytes = std::fs::read(out.path().join("my receipt.pdf")).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"), "not a PDF");
+    let rows = exported();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["entityType"], "receipt");
+    let meta: Value = serde_json::from_str(rows[0]["metadata"].as_str().unwrap()).unwrap();
+    assert_eq!(meta["file"], "my receipt.pdf");
+    assert_eq!(meta["format"], "a4");
+    assert_eq!(meta["receiptNumber"], "R01-000001");
+    // Only the temporary file's rename leaves the folder: no ".tmp" behind.
+    let names: Vec<String> = std::fs::read_dir(out.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["my receipt.pdf".to_owned()]);
+
+    // A return's refund receipt, on the till's paper width (80 mm by default).
+    let lines = json!([{"saleLineId": sale["lines"][0]["saleLineId"], "quantityMilli": "1000", "disposition": "restock"}]);
+    let done = invoke(
+        &w,
+        "return_create",
+        json!({"saleId": sale["saleId"], "lines": lines, "reason": "defective", "note": null,
+               "refunds": [{"kind": "cash", "amountMinor": "100", "reference": null}], "approvalTokenId": null}),
+    )
+    .unwrap();
+    let saved = pdf(json!({"saleId": null, "returnId": done["returnId"], "paper": "receipt"})).unwrap();
+    assert_eq!(saved["fileName"], "refund.pdf");
+    assert!(
+        std::fs::read(out.path().join("refund.pdf"))
+            .unwrap()
+            .starts_with(b"%PDF-")
+    );
+    assert_eq!(exported().len(), 2);
+    assert_eq!(
+        *dialog.suggested.lock().unwrap(),
+        vec![
+            "receipt-R01-000001.pdf",
+            "receipt-R01-000001-A4.pdf",
+            "refund-R01-R-000001.pdf"
+        ]
+    );
 }
 
 #[test]

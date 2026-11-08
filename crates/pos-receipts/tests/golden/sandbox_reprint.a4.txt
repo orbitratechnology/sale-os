@@ -1,0 +1,18 @@
+--- page 1
+Corner Shop Receipt
+1 High Street No. R01-000005
+Leeds LS1 1AA 2026-11-07 14:03
+Tel 0113 496 0000 Till 1 (R01)
+Tax no. GB123456789 Served by Olu
+REPRINT
+SANDBOX - PRACTICE SALE
+Item Qty Unit price Discount Amount
+A product with a very long name that has to wrap on narrow 1 1.99 1.99
+paper
+Subtotal 1.99
+Total 1.99
+incl. VAT 20% 0.33
+Cash 1.99
+Thank you!
+Returns within 30 days with this receipt.
+R01-000005

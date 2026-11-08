@@ -156,7 +156,6 @@ pub const PLANNED: &[(&str, &str)] = &[
     ("cart.recovered", "E09-T02 cart recovery"),
     ("cart.recovery_discarded", "E09-T02 cart recovery"),
     ("tender.status_changed", "E10-T04 payment provider integration"),
-    ("receipt.exported_pdf", "E13-T04 receipt PDF"),
     ("data.exported", "E19-T07 diagnostics / full data export"),
     ("backup.created", "E18 backup"),
     ("backup.restored", "E18 restore"),

@@ -1,8 +1,10 @@
 //! Canonical `ReceiptDocument` and its renderers (ADR-014): the document model (E13-T02),
-//! monospace text for previews and printers (E13-T03), and the ESC/POS encoder (E13-T01).
+//! monospace text for previews and printers (E13-T03), the ESC/POS encoder (E13-T01) and
+//! PDF (E13-T04).
 
 pub mod document;
 pub mod escpos;
+pub mod pdf;
 pub mod text;
 
 pub use document::{

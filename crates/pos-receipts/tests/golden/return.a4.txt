@@ -1,0 +1,16 @@
+--- page 1
+Corner Shop Refund receipt
+1 High Street No. R01-R-000001
+Leeds LS1 1AA Original receipt R01-000001
+Tel 0113 496 0000 2026-11-07 14:03
+Tax no. GB123456789 Till 1 (R01)
+Served by Olu
+Item Qty returned Refund
+Tea 1 -3.33
+Subtotal 3.33
+Refund total 3.33
+incl. Tax refunded 0.56
+Refunded: Cash 3.33
+Thank you!
+Returns within 30 days with this receipt.
+R01-R-000001

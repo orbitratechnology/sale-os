@@ -69,6 +69,8 @@ export interface FakeState {
   printScript: string[];
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
   printed: number;
+  /** What the next "Save as" dialogs answer: a file name, or null for Cancel. */
+  saveAs: (string | null)[];
   /** Product categories (E06-T05). */
   categories: CategoryDto[];
   /** Tax configuration (E06-T05). */
@@ -175,6 +177,7 @@ function initialStateInner(preset: Preset): FakeState {
     printScript: [],
     printJobs: new Map(),
     printed: 0,
+    saveAs: [],
     categories: [],
     taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
     taxCategories: [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rateIds: [RATE], archived: false, version: 1 }],
@@ -912,6 +915,13 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       job.errorCode = outcome === "paper_out" ? "paper_out" : null;
       if (outcome !== "paper_out") s.printed += 1;
       return { jobId, ...job };
+    }
+    case "receipt_export_pdf": {
+      needSession(s);
+      if ((a.saleId == null) === (a.returnId == null)) fail("VALIDATION_FAILED");
+      const answer = s.saveAs.length ? s.saveAs.shift() : "receipt.pdf";
+      if (answer == null) return null;
+      return { path: `/home/user/Documents/${answer}`, fileName: answer };
     }
     case "receipt_get": {
       needSession(s);

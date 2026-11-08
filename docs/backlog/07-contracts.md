@@ -28,7 +28,9 @@ There are three contract surfaces. Each has one source of truth and is checked i
   - `stock://changed`
 - Tauri **capabilities**: the main window may call only the commands below, plus
   `core:event` and `core:window` basics. The `fs`, `shell`, `http` and `sql` plugins are
-  **not** enabled. File saving (PDF/CSV) uses `dialog:save` and the write happens in Rust.
+  **not** enabled. File saving (PDF) opens the system "Save as" dialog **from Rust**
+  (`tauri-plugin-dialog`, no `dialog:*` permission granted to the WebView) and Rust writes
+  the file, so the WebView never names a path. CSV exports still go to `<app data>/exports/`.
 
 ### 1.2 Role → permission matrix (enforced by `role_grants`; covered by test E05-T03)
 
@@ -107,7 +109,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `stock_verify` | InventoryView | `→ [{ variantId, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
 | `stock_rebuild` | SettingsEdit (owner) | `→` the drift that was repaired; audited `inventory.projection_rebuilt` | E11-T06 |
 | `receipt_get_document` | SalesView | `{ source, id } → ReceiptDocument` | E13-T03 |
-| `receipt_export_pdf` | SalesView | `{ receiptId, saveTo } → ()` | E13-T04 |
+| `receipt_export_pdf` | SalesView | `{ saleId \| returnId, paper: receipt\|a4 } → { path, fileName } \| null` (null: the user cancelled the save dialog); audited `receipt.exported_pdf` | E13-T04 |
 | `receipt_print` / `receipt_reprint` | SalesView / ReceiptReprint | `{ receiptId } → PrintJobDto` | E13-T06 |
 | `print_jobs_active` / `print_job_resolve_unknown` | session | `{ jobId, outcome:'printed'\|'not_printed' } → ()` | E13-T06 |
 | `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range: { from, to } }` (+ `by`, `limit` for top products; `lowOnly` for stock) → … + `scope: { scope: 'device', asOfMs }`. The `scope: 'cloud'` argument arrives with Stage 3. Definitions: docs/reporting-definitions.md | E14 |
