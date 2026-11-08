@@ -320,6 +320,41 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
             }
+            WriteOp::PutCategory {
+                record: r,
+                expected_version,
+            } => {
+                st.step()?;
+                check_version(
+                    &mut tx,
+                    "categories",
+                    "category_id",
+                    &r.category_id.to_string(),
+                    *expected_version,
+                    r.aggregate(),
+                )
+                .await?;
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO categories (category_id, business_id, parent_id, name, sort_order, status, version,
+                       sync_status, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, ?9)
+                     ON CONFLICT (category_id) DO UPDATE SET parent_id = ?3, name = ?4, sort_order = ?5, status = ?6,
+                       version = ?7, sync_status = 'pending', updated_at = ?9",
+                )
+                .bind(r.category_id.to_string())
+                .bind(r.business_id.to_string())
+                .bind(r.parent_id.map(|p| p.to_string()))
+                .bind(&r.name)
+                .bind(r.sort_order)
+                .bind(if r.archived { "archived" } else { "active" })
+                .bind(as_i64(r.version)?)
+                .bind(r.created_at.as_millis())
+                .bind(r.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
             WriteOp::PutTaxCategory {
                 record: r,
                 expected_version,

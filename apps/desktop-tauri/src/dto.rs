@@ -1961,3 +1961,93 @@ pub struct PreferencesDto {
     /// 0: never lock.
     pub lock_timeout_secs: u32,
 }
+
+// ---------- categories and tax configuration (E06-T05) ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryDto {
+    pub category_id: CategoryId,
+    pub parent_id: Option<CategoryId>,
+    pub name: String,
+    pub archived: bool,
+    pub version: u32,
+}
+
+impl CategoryDto {
+    pub fn from_record(r: &pos_application::records::CategoryRecord) -> Result<Self, IpcError> {
+        Ok(Self {
+            category_id: r.category_id,
+            parent_id: r.parent_id,
+            name: r.name.clone(),
+            archived: r.archived,
+            version: version_out(r.version)?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxRateConfigDto {
+    pub tax_rate_id: pos_domain::TaxRateId,
+    pub name: String,
+    pub rate_ppm: u32,
+    /// Business date, inclusive; `null`: always.
+    pub from: Option<String>,
+    /// Business date, exclusive; `null`: open.
+    pub to: Option<String>,
+    pub archived: bool,
+    pub version: u32,
+}
+
+impl TaxRateConfigDto {
+    pub fn from_record(r: &pos_application::records::TaxRateRecord) -> Result<Self, IpcError> {
+        Ok(Self {
+            tax_rate_id: r.tax_rate_id,
+            name: r.name.clone(),
+            rate_ppm: r.rate.ppm(),
+            from: r.effective_from.map(|d| d.to_string()),
+            to: r.effective_to.map(|d| d.to_string()),
+            archived: r.archived,
+            version: version_out(r.version)?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxCategoryConfigDto {
+    pub tax_category_id: TaxCategoryId,
+    pub name: String,
+    pub is_default: bool,
+    pub rate_ids: Vec<pos_domain::TaxRateId>,
+    pub archived: bool,
+    pub version: u32,
+}
+
+impl TaxCategoryConfigDto {
+    pub fn from_record(r: &pos_application::records::TaxCategoryRecord) -> Result<Self, IpcError> {
+        Ok(Self {
+            tax_category_id: r.tax_category_id,
+            name: r.name.clone(),
+            is_default: r.is_default,
+            rate_ids: r.rate_ids.clone(),
+            archived: r.archived,
+            version: version_out(r.version)?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxConfigDto {
+    pub rates: Vec<TaxRateConfigDto>,
+    pub categories: Vec<TaxCategoryConfigDto>,
+}
+
+pub fn opt_date(field: &str, v: Option<String>) -> Result<Option<pos_domain::time::BusinessDate>, IpcError> {
+    match v.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(None),
+        Some(s) => s.parse().map(Some).map_err(|_| invalid(field, s)),
+    }
+}

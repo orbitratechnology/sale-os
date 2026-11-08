@@ -188,6 +188,30 @@ pub struct TaxRateRecord {
     pub updated_at: Timestamp,
 }
 
+/// A product category (E06-T05): a tree at most 3 levels deep.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryRecord {
+    pub category_id: pos_domain::CategoryId,
+    pub business_id: BusinessId,
+    pub parent_id: Option<pos_domain::CategoryId>,
+    pub name: String,
+    pub sort_order: i64,
+    pub archived: bool,
+    pub version: u64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+impl CategoryRecord {
+    pub fn aggregate(&self) -> AggregateRef {
+        AggregateRef {
+            aggregate_type: "category",
+            aggregate_id: self.category_id.to_string(),
+        }
+    }
+}
+
 impl TaxRateRecord {
     pub fn aggregate(&self) -> AggregateRef {
         AggregateRef {

@@ -107,6 +107,34 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"userId": UNKNOWN_ID, "baseVersion": 1, "pin": "5555"}),
         ),
         ("tax_list", Perm(CatalogView), json!({})),
+        ("categories_list", Perm(CatalogView), json!({})),
+        // An empty name: permitted roles get VALIDATION_FAILED and nothing is written.
+        (
+            "category_save",
+            Perm(CatalogEdit),
+            json!({"categoryId": null, "name": " ", "parentId": null, "baseVersion": null}),
+        ),
+        (
+            "category_archive",
+            Perm(CatalogEdit),
+            json!({"categoryId": UNKNOWN_ID, "baseVersion": 1}),
+        ),
+        ("tax_config_get", Perm(SettingsEdit), json!({})),
+        (
+            "tax_rate_save",
+            Perm(SettingsEdit),
+            json!({"taxRateId": null, "name": " ", "ratePpm": 0, "from": null, "to": null, "baseVersion": null}),
+        ),
+        (
+            "tax_rate_archive",
+            Perm(SettingsEdit),
+            json!({"taxRateId": UNKNOWN_ID, "baseVersion": 1}),
+        ),
+        (
+            "tax_category_save",
+            Perm(SettingsEdit),
+            json!({"taxCategoryId": null, "name": " ", "rateIds": [], "isDefault": false, "baseVersion": null}),
+        ),
         (
             "product_list",
             Perm(CatalogView),

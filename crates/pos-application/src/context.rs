@@ -146,6 +146,8 @@ pub enum AppError {
     #[error(transparent)]
     Setting(#[from] crate::settings::SettingError),
     #[error(transparent)]
+    Config(#[from] pos_domain::catalog::config::ConfigError),
+    #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
     WriteSet(#[from] WriteSetError),
@@ -176,6 +178,7 @@ impl HasErrorCode for AppError {
             AppError::Return(e) => e.error_code(),
             AppError::Document(e) => e.error_code(),
             AppError::Setting(e) => e.error_code(),
+            AppError::Config(e) => e.error_code(),
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,

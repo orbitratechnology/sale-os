@@ -93,6 +93,15 @@ impl IpcError {
                 ..ErrorDetails::default()
             })),
             AppError::Catalog(c) => catalog_details(c).map(Box::new),
+            AppError::Config(c) => Some(Box::new(ErrorDetails {
+                field: Some(c.field().into()),
+                value: match c {
+                    pos_domain::catalog::config::ConfigError::RateInUse(names) => Some(names.join(", ")),
+                    pos_domain::catalog::config::ConfigError::OverlappingRate(name) => Some(name.clone()),
+                    _ => None,
+                },
+                ..ErrorDetails::default()
+            })),
             AppError::Settlement(pos_domain::settlement::SettlementError::Insufficient { remaining }) => {
                 Some(Box::new(ErrorDetails {
                     remaining_minor: Some(remaining.minor().to_string()),

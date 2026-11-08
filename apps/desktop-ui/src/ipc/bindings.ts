@@ -65,6 +65,26 @@ export const commands = {
 	 */
 	authLock: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_lock")),
 	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
+	/**  Every category, archived ones included (flagged). */
+	categoriesList: () => typedError<CategoryDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("categories_list")),
+	/**  Creates (`categoryId: null`) or renames / moves a category; at most 3 levels, no cycles. */
+	categorySave: (categoryId: CategoryId | null, name: string, parentId: CategoryId | null, baseVersion: number | null) => typedError<CategoryDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("category_save", { categoryId, name, parentId, baseVersion })),
+	/**  Archives a category without active subcategories. */
+	categoryArchive: (categoryId: CategoryId, baseVersion: number) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("category_archive", { categoryId, baseVersion })),
+	/**  (owner) Every tax rate with its dates, and every tax category with its rates. */
+	taxConfigGet: () => typedError<TaxConfigDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("tax_config_get")),
+	/**
+	 *  (owner) Creates or changes a tax rate. `from` inclusive, `to` exclusive (business dates);
+	 *  two active rates with the same name may not cover the same day.
+	 */
+	taxRateSave: (taxRateId: TaxRateId | null, name: string, ratePpm: number, from: string | null, to: string | null, baseVersion: number | null) => typedError<TaxRateConfigDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("tax_rate_save", { taxRateId, name, ratePpm, from, to, baseVersion })),
+	/**
+	 *  (owner) Archives a rate no active tax category uses; otherwise `VALIDATION_FAILED` with
+	 *  the categories in `details.value`.
+	 */
+	taxRateArchive: (taxRateId: TaxRateId, baseVersion: number) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("tax_rate_archive", { taxRateId, baseVersion })),
+	/**  (owner) Creates or changes a tax category; making it the default moves the flag. */
+	taxCategorySave: (taxCategoryId: TaxCategoryId | null, name: string, rateIds: TaxRateId[], isDefault: boolean, baseVersion: number | null) => typedError<TaxCategoryConfigDto, IpcError_Serialize>(__TAURI_INVOKE("tax_category_save", { taxCategoryId, name, rateIds, isDefault, baseVersion })),
 	/**  The product list (E06-T06a): one page, by name, with summary columns. */
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
 	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
@@ -577,6 +597,24 @@ export type CatalogHitDto_Serialize = {
 	scanQtyMilli: string,
 	/**  `"barcode"`, `"sku"` or `"search"`. */
 	matchedBy: string,
+};
+
+export type CategoryDto = CategoryDto_Serialize | CategoryDto_Deserialize;
+
+export type CategoryDto_Deserialize = {
+	categoryId: CategoryId,
+	parentId?: CategoryId | null,
+	name: string,
+	archived: boolean,
+	version: number,
+};
+
+export type CategoryDto_Serialize = {
+	categoryId: CategoryId,
+	parentId: CategoryId | null,
+	name: string,
+	archived: boolean,
+	version: number,
 };
 
 export type CategoryId = string;
@@ -1500,6 +1538,15 @@ export type Symbology = "ean13" | "ean8" | "upc_a" | "upc_e" | "code128" | "code
 /**  The shop's own numbering, or a numeric code that failed its GTIN check digit. */
 "internal" | "unknown";
 
+export type TaxCategoryConfigDto = {
+	taxCategoryId: TaxCategoryId,
+	name: string,
+	isDefault: boolean,
+	rateIds: TaxRateId[],
+	archived: boolean,
+	version: number,
+};
+
 export type TaxCategoryDto = {
 	taxCategoryId: TaxCategoryId,
 	name: string,
@@ -1508,6 +1555,18 @@ export type TaxCategoryDto = {
 };
 
 export type TaxCategoryId = string;
+
+export type TaxConfigDto = TaxConfigDto_Serialize | TaxConfigDto_Deserialize;
+
+export type TaxConfigDto_Deserialize = {
+	rates: TaxRateConfigDto_Deserialize[],
+	categories: TaxCategoryConfigDto[],
+};
+
+export type TaxConfigDto_Serialize = {
+	rates: TaxRateConfigDto_Serialize[],
+	categories: TaxCategoryConfigDto[],
+};
 
 export type TaxLineDto = {
 	name: string,
@@ -1522,10 +1581,38 @@ export type TaxMode =
 /**  Tax is added on top of shelf prices. */
 "exclusive";
 
+export type TaxRateConfigDto = TaxRateConfigDto_Serialize | TaxRateConfigDto_Deserialize;
+
+export type TaxRateConfigDto_Deserialize = {
+	taxRateId: TaxRateId,
+	name: string,
+	ratePpm: number,
+	/**  Business date, inclusive; `null`: always. */
+	from?: string | null,
+	/**  Business date, exclusive; `null`: open. */
+	to?: string | null,
+	archived: boolean,
+	version: number,
+};
+
+export type TaxRateConfigDto_Serialize = {
+	taxRateId: TaxRateId,
+	name: string,
+	ratePpm: number,
+	/**  Business date, inclusive; `null`: always. */
+	from: string | null,
+	/**  Business date, exclusive; `null`: open. */
+	to: string | null,
+	archived: boolean,
+	version: number,
+};
+
 export type TaxRateDto = {
 	name: string,
 	ratePpm: number,
 };
+
+export type TaxRateId = string;
 
 export type TaxRateInput = {
 	name: string,

@@ -10,6 +10,7 @@ pub mod cart;
 pub mod cash;
 pub mod catalog;
 pub mod checkout;
+pub mod config;
 pub mod context;
 pub mod export;
 pub mod mode;

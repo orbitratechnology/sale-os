@@ -5,6 +5,7 @@ mod app_commands;
 mod cash_commands;
 mod command_names;
 mod commands;
+mod config_commands;
 mod dto;
 mod error;
 mod report_commands;
@@ -45,6 +46,13 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         app_commands::app_preferences,
         app_commands::auth_lock,
         sale_commands::tax_list,
+        config_commands::categories_list,
+        config_commands::category_save,
+        config_commands::category_archive,
+        config_commands::tax_config_get,
+        config_commands::tax_rate_save,
+        config_commands::tax_rate_archive,
+        config_commands::tax_category_save,
         sale_commands::product_list,
         sale_commands::product_get,
         sale_commands::product_create,

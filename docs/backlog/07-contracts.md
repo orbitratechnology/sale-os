@@ -66,6 +66,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `auth_unlock` | none | `{ pin } → SessionDto` (the same user, or a manager who takes over) | E05-T05 |
 | `auth_request_approval` | session | `{ approverUserId, pin, scope } → { approvalTokenId, expiresAt }` | E05-T04 |
 | `staff_list` / `staff_create` / `staff_update` / `staff_deactivate` / `staff_reset_pin` | StaffManage | … | E05-T01 |
+| `categories_list` / `category_save` / `category_archive` | CatalogView / CatalogEdit | Tree at most 3 levels, no cycles (`VALIDATION_FAILED`, `details.field = parent`); archiving needs no active subcategories; versioned | E06-T05 |
+| `tax_config_get` / `tax_rate_save` / `tax_rate_archive` / `tax_category_save` | SettingsEdit (owner) | Rates with `from` (inclusive) / `to` (exclusive) business dates; same-name active rates may not overlap; a used rate cannot be archived (`details.value` lists the categories); exactly one default category (setting a new default moves the flag) | E06-T05 |
 | `settings_get` / `settings_update` | session / SettingsEdit | `{ key, value, baseVersion }` | E04-T03 |
 | `business_get` / `business_update` | session / SettingsEdit | | E04-T03 |
 | `tax_list` / `tax_rate_upsert` / `tax_category_upsert` | CatalogView / SettingsEdit | | E06-T05 |
@@ -299,7 +301,8 @@ Server-side validation for facts (they are `rejected` if any check fails):
 auth.login, auth.login_failed, auth.locked_out, auth.logout, auth.session_locked, auth.approval_granted,
 staff.created, staff.updated, staff.deactivated, staff.pin_reset,
 settings.updated, business.created, business.updated, location.upserted, register.updated, mode.changed,
-catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed,
+catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed, catalog.category_saved,
+tax.config_updated,
 cart.cleared, cart.voided, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
 sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded,

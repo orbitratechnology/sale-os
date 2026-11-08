@@ -10,6 +10,7 @@ mod cart_queries;
 mod cash;
 mod cash_queries;
 mod catalog_queries;
+mod config_queries;
 mod error;
 mod export_queries;
 mod migrate;

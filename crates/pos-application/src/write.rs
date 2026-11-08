@@ -92,6 +92,10 @@ pub enum WriteOp {
         record: TaxRateRecord,
         expected_version: Option<u64>,
     },
+    PutCategory {
+        record: crate::records::CategoryRecord,
+        expected_version: Option<u64>,
+    },
     /// The whole product aggregate (product + variants + barcodes), ADR-019.
     PutProduct {
         product: pos_domain::catalog::Product,
@@ -255,6 +259,10 @@ impl WriteOp {
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
             WriteOp::PutTaxRate {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutCategory {
                 record,
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
@@ -429,6 +437,12 @@ impl OutboxDraft {
     ) -> Result<Self, WriteSetError> {
         Self::master(ids, "product.upserted", product_aggregate(p), p.version, p)
     }
+    pub fn category_upserted(
+        ids: &dyn IdGenerator,
+        r: &crate::records::CategoryRecord,
+    ) -> Result<Self, WriteSetError> {
+        Self::master(ids, "category.upserted", r.aggregate(), r.version, r)
+    }
     pub fn tax_rate_upserted(ids: &dyn IdGenerator, r: &TaxRateRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "tax_rate.upserted", r.aggregate(), r.version, r)
     }
@@ -591,6 +605,17 @@ impl WriteSetBuilder {
     }
     pub fn put_tax_rate(mut self, record: TaxRateRecord, expected_version: Option<u64>) -> Self {
         self.ops.push(WriteOp::PutTaxRate {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn put_category(
+        mut self,
+        record: crate::records::CategoryRecord,
+        expected_version: Option<u64>,
+    ) -> Self {
+        self.ops.push(WriteOp::PutCategory {
             record,
             expected_version,
         });
@@ -838,6 +863,7 @@ impl WriteSetBuilder {
             WriteOp::PutSetting { record, .. } => record.business_id,
             WriteOp::PutStaff { record, .. } => record.business_id,
             WriteOp::PutTaxRate { record, .. } => record.business_id,
+            WriteOp::PutCategory { record, .. } => record.business_id,
             WriteOp::PutProduct { business_id, .. } => *business_id,
             WriteOp::PutTaxCategory { record, .. } => record.business_id,
             WriteOp::SetDeviceIdentity(d) => d.business_id,

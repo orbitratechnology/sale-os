@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tax-config-get"
+description = "Enables the tax_config_get command without any pre-configured scope."
+commands.allow = ["tax_config_get"]
+
+[[permission]]
+identifier = "deny-tax-config-get"
+description = "Denies the tax_config_get command without any pre-configured scope."
+commands.deny = ["tax_config_get"]

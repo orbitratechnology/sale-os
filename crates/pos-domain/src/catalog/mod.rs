@@ -2,6 +2,7 @@
 //! (PRD §6.2): a barcode carries an identifier; the store's catalogue supplies the rest.
 
 pub mod barcode;
+pub mod config;
 pub mod product;
 pub mod unit;
 

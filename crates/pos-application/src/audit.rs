@@ -44,6 +44,8 @@ actions! {
     CATALOG_PRODUCT_UPDATED = "catalog.product_updated",
     CATALOG_PRODUCT_ARCHIVED = "catalog.product_archived",
     CATALOG_IMPORT_COMMITTED = "catalog.import_committed",
+    CATALOG_CATEGORY_SAVED = "catalog.category_saved",
+    TAX_CONFIG_UPDATED = "tax.config_updated",
     CART_CLEARED = "cart.cleared",
     CART_VOIDED = "cart.voided",
     CART_PRICE_OVERRIDDEN = "cart.price_overridden",
