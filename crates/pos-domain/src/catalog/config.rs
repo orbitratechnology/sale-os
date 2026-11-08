@@ -5,6 +5,9 @@
 //!   two active rates with the same name may not cover the same day.
 //! - A tax category groups 0..n rates; exactly one category is the default.
 //! - A rate still used by an active category cannot be archived.
+//!
+//! And the business profile printed on receipts (E04-T03, SET-004): name and till name
+//! required, lengths bounded, at most 4 address lines, a plausible email.
 
 use crate::time::BusinessDate;
 use crate::{CategoryId, ErrorCode, HasErrorCode, TaxRateId};
@@ -32,6 +35,14 @@ pub enum ConfigError {
     DefaultRequired,
     #[error("that tax rate does not exist or is archived")]
     UnknownRate,
+    #[error("{0} is required")]
+    Required(&'static str),
+    #[error("{0} is too long (at most {1} characters)")]
+    TooLong(&'static str, usize),
+    #[error("at most {MAX_ADDRESS_LINES} address lines")]
+    TooManyLines,
+    #[error("that is not an email address")]
+    BadEmail,
 }
 
 impl HasErrorCode for ConfigError {
@@ -50,6 +61,9 @@ impl ConfigError {
             ConfigError::RateInUse(_) => "categories",
             ConfigError::DefaultRequired => "default",
             ConfigError::UnknownRate => "rates",
+            ConfigError::Required(f) | ConfigError::TooLong(f, _) => f,
+            ConfigError::TooManyLines => "addressLines",
+            ConfigError::BadEmail => "email",
         }
     }
 }
@@ -267,5 +281,145 @@ mod tests {
             check_rate_archivable(TaxRateId::generate(&UuidV7Generator), &users),
             Ok(())
         );
+    }
+}
+
+/// Address lines printed under the business name.
+pub const MAX_ADDRESS_LINES: usize = 4;
+
+/// The business details on receipts, and this till's name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BusinessProfile {
+    pub name: String,
+    pub legal_name: Option<String>,
+    pub tax_registration_no: Option<String>,
+    pub address_lines: Vec<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub register_name: String,
+}
+
+/// Trims every field, drops empty optional fields and blank address lines, and checks
+/// lengths. Field names are the IPC input's (`legalName`, `addressLines`...).
+pub fn clean_profile(p: &BusinessProfile) -> Result<BusinessProfile, ConfigError> {
+    fn required(field: &'static str, v: &str, max: usize) -> Result<String, ConfigError> {
+        let v = v.trim();
+        if v.is_empty() {
+            return Err(ConfigError::Required(field));
+        }
+        bounded(field, v, max)
+    }
+    fn bounded(field: &'static str, v: &str, max: usize) -> Result<String, ConfigError> {
+        if v.chars().count() > max {
+            return Err(ConfigError::TooLong(field, max));
+        }
+        Ok(v.to_owned())
+    }
+    fn optional(field: &'static str, v: &Option<String>, max: usize) -> Result<Option<String>, ConfigError> {
+        match v.as_deref().map(str::trim) {
+            None | Some("") => Ok(None),
+            Some(v) => bounded(field, v, max).map(Some),
+        }
+    }
+    let address_lines: Vec<String> = p
+        .address_lines
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(|l| bounded("addressLines", l, 80))
+        .collect::<Result<_, _>>()?;
+    if address_lines.len() > MAX_ADDRESS_LINES {
+        return Err(ConfigError::TooManyLines);
+    }
+    let email = optional("email", &p.email, 120)?;
+    if let Some(e) = &email {
+        let plausible = e.split_once('@').is_some_and(|(user, host)| {
+            !user.is_empty() && host.contains('.') && !host.starts_with('.') && !host.ends_with('.')
+        }) && !e.chars().any(char::is_whitespace)
+            && e.matches('@').count() == 1;
+        if !plausible {
+            return Err(ConfigError::BadEmail);
+        }
+    }
+    Ok(BusinessProfile {
+        name: required("name", &p.name, 80)?,
+        legal_name: optional("legalName", &p.legal_name, 120)?,
+        tax_registration_no: optional("taxRegistrationNo", &p.tax_registration_no, 40)?,
+        address_lines,
+        phone: optional("phone", &p.phone, 40)?,
+        email,
+        register_name: required("registerName", &p.register_name, 40)?,
+    })
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn profile() -> BusinessProfile {
+        BusinessProfile {
+            name: "  Corner Shop ".into(),
+            legal_name: Some("  ".into()),
+            tax_registration_no: Some(" GB123456789 ".into()),
+            address_lines: vec!["1 High Street".into(), "  ".into(), " Leeds ".into()],
+            phone: None,
+            email: Some(" shop@example.co.uk ".into()),
+            register_name: " Till 1 ".into(),
+        }
+    }
+
+    #[test]
+    fn trims_and_drops_empty_fields() {
+        let p = clean_profile(&profile()).unwrap();
+        assert_eq!(p.name, "Corner Shop");
+        assert_eq!(p.legal_name, None);
+        assert_eq!(p.tax_registration_no.as_deref(), Some("GB123456789"));
+        assert_eq!(p.address_lines, vec!["1 High Street", "Leeds"]);
+        assert_eq!(p.email.as_deref(), Some("shop@example.co.uk"));
+        assert_eq!(p.register_name, "Till 1");
+    }
+
+    #[test]
+    fn refuses_what_would_print_badly() {
+        let check = |f: fn(&mut BusinessProfile)| {
+            let mut p = profile();
+            f(&mut p);
+            clean_profile(&p).unwrap_err()
+        };
+        assert_eq!(check(|p| p.name = " ".into()), ConfigError::Required("name"));
+        assert_eq!(
+            check(|p| p.register_name = String::new()),
+            ConfigError::Required("registerName")
+        );
+        assert_eq!(
+            check(|p| p.name = "x".repeat(81)),
+            ConfigError::TooLong("name", 80)
+        );
+        assert_eq!(
+            check(|p| p.address_lines = vec!["a".into(); 5]),
+            ConfigError::TooManyLines
+        );
+        assert_eq!(
+            check(|p| p.address_lines = vec!["a".repeat(81)]),
+            ConfigError::TooLong("addressLines", 80)
+        );
+        for bad in [
+            "shop",
+            "shop@",
+            "@example.com",
+            "shop@example",
+            "a b@example.com",
+            "a@b@example.com",
+            "shop@.com",
+        ] {
+            assert_eq!(check_email(bad), Some(ConfigError::BadEmail), "{bad}");
+        }
+        assert_eq!(check_email("Ana.López@tienda.es"), None);
+    }
+
+    fn check_email(e: &str) -> Option<ConfigError> {
+        let mut p = profile();
+        p.email = Some(e.into());
+        clean_profile(&p).err()
     }
 }

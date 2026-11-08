@@ -1,4 +1,5 @@
-//! Categories (CatalogEdit) and tax configuration (owner) (E06-T05).
+//! Categories (CatalogEdit) and tax configuration (owner) (E06-T05); the business profile
+//! (owner, E04-T03).
 
 use crate::app_commands::err;
 use crate::dto::{CategoryDto, TaxCategoryConfigDto, TaxConfigDto, TaxRateConfigDto, opt_date, rate_in};
@@ -145,4 +146,40 @@ pub async fn tax_category_save(
         .await
         .map_err(err)?;
     TaxCategoryConfigDto::from_record(&r)
+}
+
+/// The business profile and this till's name (owner).
+#[tauri::command]
+#[specta::specta]
+pub async fn business_profile_get(
+    services: State<'_, AppServices>,
+) -> Result<crate::dto::BusinessProfileDto, IpcError> {
+    let ctx = services.context().await?;
+    let v = services.app()?.config.business_profile(&ctx).await.map_err(err)?;
+    crate::dto::BusinessProfileDto::from_view(&v)
+}
+
+/// Saves the profile with the versions it showed (`CONFLICT_VERSION` if either changed).
+/// Only what changed is written; `business.updated` / `register.updated` are audited.
+#[tauri::command]
+#[specta::specta]
+pub async fn business_profile_update(
+    services: State<'_, AppServices>,
+    input: crate::dto::BusinessProfileInputDto,
+    business_version: u32,
+    register_version: u32,
+) -> Result<crate::dto::BusinessProfileDto, IpcError> {
+    let ctx = services.context().await?;
+    let v = services
+        .app()?
+        .config
+        .save_business_profile(
+            &ctx,
+            &input.into_domain(),
+            u64::from(business_version),
+            u64::from(register_version),
+        )
+        .await
+        .map_err(err)?;
+    crate::dto::BusinessProfileDto::from_view(&v)
 }

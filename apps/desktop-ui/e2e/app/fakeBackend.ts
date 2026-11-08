@@ -71,6 +71,8 @@ export interface FakeState {
   printed: number;
   /** What the next "Save as" dialogs answer: a file name, or null for Cancel. */
   saveAs: (string | null)[];
+  /** The business profile besides the name and till name (which live in `workspace`). */
+  business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number };
   /** Product categories (E06-T05). */
   categories: CategoryDto[];
   /** Tax configuration (E06-T05). */
@@ -178,6 +180,7 @@ function initialStateInner(preset: Preset): FakeState {
     printJobs: new Map(),
     printed: 0,
     saveAs: [],
+    business: { legalName: null, taxRegistrationNo: "GB123456789", addressLines: ["1 High Street", "Leeds LS1 1AA"], phone: null, email: null, version: 1, registerVersion: 1 },
     categories: [],
     taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
     taxCategories: [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rateIds: [RATE], archived: false, version: 1 }],
@@ -915,6 +918,39 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       job.errorCode = outcome === "paper_out" ? "paper_out" : null;
       if (outcome !== "paper_out") s.printed += 1;
       return { jobId, ...job };
+    }
+    case "business_profile_get":
+    case "business_profile_update": {
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      const b = s.business;
+      const view = () => ({
+        name: workspace.businessName, legalName: b.legalName, taxRegistrationNo: b.taxRegistrationNo, addressLines: b.addressLines,
+        phone: b.phone, email: b.email, registerName: workspace.registerName, registerCode: workspace.registerCode, countryCode: "GB",
+        timezone: "Europe/London", currencyCode: workspace.currencyCode, pricesIncludeTax: true, businessVersion: b.version, registerVersion: b.registerVersion,
+      });
+      if (cmd === "business_profile_get") return view();
+      if (a.businessVersion !== b.version || a.registerVersion !== b.registerVersion) fail("CONFLICT_VERSION");
+      const input = a.input as { name: string; legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; registerName: string };
+      const opt = (v: string | null) => v?.trim() || null;
+      if (!input.name.trim()) fail("VALIDATION_FAILED", { field: "name" });
+      if (input.name.trim().length > 80) fail("VALIDATION_FAILED", { field: "name", value: "80" });
+      if (!input.registerName.trim()) fail("VALIDATION_FAILED", { field: "registerName" });
+      const lines = input.addressLines.map((l) => l.trim()).filter(Boolean);
+      if (lines.length > 4) fail("VALIDATION_FAILED", { field: "addressLines" });
+      const email = opt(input.email);
+      if (email && !/^[^\s@]+@[^\s@.][^\s@]*\.[^\s@]*[^\s@.]$/.test(email)) fail("VALIDATION_FAILED", { field: "email" });
+      const next = { legalName: opt(input.legalName), taxRegistrationNo: opt(input.taxRegistrationNo), addressLines: lines, phone: opt(input.phone), email };
+      const businessChanged =
+        input.name.trim() !== workspace.businessName || JSON.stringify(next) !== JSON.stringify({ legalName: b.legalName, taxRegistrationNo: b.taxRegistrationNo, addressLines: b.addressLines, phone: b.phone, email: b.email });
+      if (businessChanged) {
+        workspace.businessName = input.name.trim();
+        Object.assign(b, next, { version: b.version + 1 });
+      }
+      if (input.registerName.trim() !== workspace.registerName) {
+        workspace.registerName = input.registerName.trim();
+        b.registerVersion += 1;
+      }
+      return view();
     }
     case "receipt_export_pdf": {
       needSession(s);

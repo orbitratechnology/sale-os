@@ -2078,3 +2078,74 @@ pub fn opt_date(field: &str, v: Option<String>) -> Result<Option<pos_domain::tim
         Some(s) => s.parse().map(Some).map_err(|_| invalid(field, s)),
     }
 }
+
+// ---------- business profile (E04-T03) ----------
+
+/// The business details printed on receipts and this till's name. Country, time zone,
+/// currency and tax mode are shown but fixed after setup.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BusinessProfileDto {
+    pub name: String,
+    pub legal_name: Option<String>,
+    pub tax_registration_no: Option<String>,
+    pub address_lines: Vec<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub register_name: String,
+    pub register_code: String,
+    pub country_code: String,
+    pub timezone: String,
+    pub currency_code: String,
+    pub prices_include_tax: bool,
+    pub business_version: u32,
+    pub register_version: u32,
+}
+
+impl BusinessProfileDto {
+    pub fn from_view(v: &pos_application::config::ProfileView) -> Result<Self, IpcError> {
+        let b = &v.business;
+        Ok(Self {
+            name: b.name.clone(),
+            legal_name: b.legal_name.clone(),
+            tax_registration_no: b.tax_registration_no.clone(),
+            address_lines: v.address_lines(),
+            phone: b.phone.clone(),
+            email: b.email.clone(),
+            register_name: v.register.name.clone(),
+            register_code: v.register.code.clone(),
+            country_code: b.country_code.clone(),
+            timezone: b.timezone.clone(),
+            currency_code: b.currency.code.to_string(),
+            prices_include_tax: b.prices_include_tax,
+            business_version: version_out(b.version)?,
+            register_version: version_out(v.register.version)?,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BusinessProfileInputDto {
+    pub name: String,
+    pub legal_name: Option<String>,
+    pub tax_registration_no: Option<String>,
+    pub address_lines: Vec<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub register_name: String,
+}
+
+impl BusinessProfileInputDto {
+    pub fn into_domain(self) -> pos_domain::catalog::config::BusinessProfile {
+        pos_domain::catalog::config::BusinessProfile {
+            name: self.name,
+            legal_name: self.legal_name,
+            tax_registration_no: self.tax_registration_no,
+            address_lines: self.address_lines,
+            phone: self.phone,
+            email: self.email,
+            register_name: self.register_name,
+        }
+    }
+}

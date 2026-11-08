@@ -85,6 +85,13 @@ export const commands = {
 	taxRateArchive: (taxRateId: TaxRateId, baseVersion: number) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("tax_rate_archive", { taxRateId, baseVersion })),
 	/**  (owner) Creates or changes a tax category; making it the default moves the flag. */
 	taxCategorySave: (taxCategoryId: TaxCategoryId | null, name: string, rateIds: TaxRateId[], isDefault: boolean, baseVersion: number | null) => typedError<TaxCategoryConfigDto, IpcError_Serialize>(__TAURI_INVOKE("tax_category_save", { taxCategoryId, name, rateIds, isDefault, baseVersion })),
+	/**  The business profile and this till's name (owner). */
+	businessProfileGet: () => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_get")),
+	/**
+	 *  Saves the profile with the versions it showed (`CONFLICT_VERSION` if either changed).
+	 *  Only what changed is written; `business.updated` / `register.updated` are audited.
+	 */
+	businessProfileUpdate: (input: BusinessProfileInputDto_Deserialize, businessVersion: number, registerVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_update", { input, businessVersion, registerVersion })),
 	/**  The product list (E06-T06a): one page, by name, with summary columns. */
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
 	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
@@ -402,6 +409,76 @@ export type BootstrapState_Serialize = {
 	setupComplete: boolean,
 	workspace: WorkspaceDto | null,
 	session: SessionDto | null,
+};
+
+/**
+ *  The business details printed on receipts and this till's name. Country, time zone,
+ *  currency and tax mode are shown but fixed after setup.
+ */
+export type BusinessProfileDto = BusinessProfileDto_Serialize | BusinessProfileDto_Deserialize;
+
+/**
+ *  The business details printed on receipts and this till's name. Country, time zone,
+ *  currency and tax mode are shown but fixed after setup.
+ */
+export type BusinessProfileDto_Deserialize = {
+	name: string,
+	legalName?: string | null,
+	taxRegistrationNo?: string | null,
+	addressLines: string[],
+	phone?: string | null,
+	email?: string | null,
+	registerName: string,
+	registerCode: string,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	businessVersion: number,
+	registerVersion: number,
+};
+
+/**
+ *  The business details printed on receipts and this till's name. Country, time zone,
+ *  currency and tax mode are shown but fixed after setup.
+ */
+export type BusinessProfileDto_Serialize = {
+	name: string,
+	legalName: string | null,
+	taxRegistrationNo: string | null,
+	addressLines: string[],
+	phone: string | null,
+	email: string | null,
+	registerName: string,
+	registerCode: string,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	businessVersion: number,
+	registerVersion: number,
+};
+
+export type BusinessProfileInputDto = BusinessProfileInputDto_Serialize | BusinessProfileInputDto_Deserialize;
+
+export type BusinessProfileInputDto_Deserialize = {
+	name: string,
+	legalName?: string | null,
+	taxRegistrationNo?: string | null,
+	addressLines: string[],
+	phone?: string | null,
+	email?: string | null,
+	registerName: string,
+};
+
+export type BusinessProfileInputDto_Serialize = {
+	name: string,
+	legalName: string | null,
+	taxRegistrationNo: string | null,
+	addressLines: string[],
+	phone: string | null,
+	email: string | null,
+	registerName: string,
 };
 
 export type CartId = string;

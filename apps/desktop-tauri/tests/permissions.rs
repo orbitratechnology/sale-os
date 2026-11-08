@@ -135,6 +135,14 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SettingsEdit),
             json!({"taxCategoryId": null, "name": " ", "rateIds": [], "isDefault": false, "baseVersion": null}),
         ),
+        ("business_profile_get", Perm(SettingsEdit), json!({})),
+        // Stale versions: refused for the version, after the role check.
+        (
+            "business_profile_update",
+            Perm(SettingsEdit),
+            json!({"input": {"name": "X", "legalName": null, "taxRegistrationNo": null, "addressLines": [],
+                   "phone": null, "email": null, "registerName": "X"}, "businessVersion": 999, "registerVersion": 999}),
+        ),
         (
             "product_list",
             Perm(CatalogView),

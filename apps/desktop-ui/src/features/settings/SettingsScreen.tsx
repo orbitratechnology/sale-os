@@ -3,9 +3,11 @@ import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { BusinessPanel } from "./BusinessPanel";
 import { TaxesPanel } from "./TaxesPanel";
 
-/** The tax page sits beside the registry groups; it is not a registry setting. */
+/** The business and tax pages sit beside the registry groups; they are not registry settings. */
+const BUSINESS = "Business";
 const TAXES = "Taxes";
 
 /**
@@ -37,7 +39,7 @@ export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onCh
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), TAXES];
+  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -58,7 +60,11 @@ export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onCh
           </button>
         ))}
       </div>
-      {group === TAXES ? (
+      {group === BUSINESS ? (
+        <section className="card settings-list" aria-label={BUSINESS}>
+          <BusinessPanel onChanged={onChanged} />
+        </section>
+      ) : group === TAXES ? (
         <section className="card settings-list" aria-label={TAXES}>
           <TaxesPanel />
         </section>

@@ -29,6 +29,8 @@ pub const COMMANDS: &[&str] = &[
     "tax_rate_save",
     "tax_rate_archive",
     "tax_category_save",
+    "business_profile_get",
+    "business_profile_update",
     "product_list",
     "product_get",
     "product_create",

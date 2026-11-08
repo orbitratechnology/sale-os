@@ -53,6 +53,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         config_commands::tax_rate_save,
         config_commands::tax_rate_archive,
         config_commands::tax_category_save,
+        config_commands::business_profile_get,
+        config_commands::business_profile_update,
         sale_commands::product_list,
         sale_commands::product_get,
         sale_commands::product_create,

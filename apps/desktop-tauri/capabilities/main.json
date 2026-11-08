@@ -34,6 +34,8 @@
     "allow-tax-rate-save",
     "allow-tax-rate-archive",
     "allow-tax-category-save",
+    "allow-business-profile-get",
+    "allow-business-profile-update",
     "allow-product-list",
     "allow-product-get",
     "allow-product-create",

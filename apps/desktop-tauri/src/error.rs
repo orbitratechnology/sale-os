@@ -98,6 +98,7 @@ impl IpcError {
                 value: match c {
                     pos_domain::catalog::config::ConfigError::RateInUse(names) => Some(names.join(", ")),
                     pos_domain::catalog::config::ConfigError::OverlappingRate(name) => Some(name.clone()),
+                    pos_domain::catalog::config::ConfigError::TooLong(_, max) => Some(max.to_string()),
                     _ => None,
                 },
                 ..ErrorDetails::default()

@@ -1285,6 +1285,67 @@ describe("settings (E04-T03)", () => {
   });
 });
 
+describe("business profile (E04-T03)", () => {
+  it("the owner edits the receipt details and the till name; mistakes are shown at their field", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Business" }).click();
+    const form = page.getByRole("form", { name: "Business details" });
+    await expect.poll(() => form.getByLabel("Business name").inputValue()).toBe("Corner Shop");
+    expect(await form.getByTestId("fixed-profile").textContent()).toContain("GBP");
+    // A bad email and an empty till name: refused, shown next to the input.
+    await form.getByLabel("Email").fill("shop at example");
+    await form.getByRole("button", { name: "Save details" }).click();
+    await form.getByRole("alert").filter({ hasText: "That is not an email address." }).waitFor();
+    await form.getByLabel("Email").fill("hello@cornershop.example");
+    await form.getByLabel("This till's name").fill("  ");
+    await form.getByRole("button", { name: "Save details" }).click();
+    await form.getByRole("alert").filter({ hasText: "This till's name is required." }).waitFor();
+    // Saved together, with the versions shown.
+    await form.getByLabel("Business name").fill("Corner Shop & Deli");
+    await form.getByLabel("Address").fill("1 High Street\n\nLeeds LS1 1AA\nUK");
+    await form.getByLabel("This till's name").fill("Front till");
+    await form.getByRole("button", { name: "Save details" }).click();
+    await form.getByText("Saved. New receipts use these details.").waitFor();
+    const saves = await calls(page, "business_profile_update");
+    expect(saves.at(-1)).toEqual({
+      input: {
+        name: "Corner Shop & Deli",
+        legalName: null,
+        taxRegistrationNo: "GB123456789",
+        addressLines: ["1 High Street", "Leeds LS1 1AA", "UK"],
+        phone: null,
+        email: "hello@cornershop.example",
+        registerName: "Front till",
+      },
+      businessVersion: 1,
+      registerVersion: 1,
+    });
+    // Someone else saved meanwhile: refused, and the current details are shown.
+    await page.evaluate(() => {
+      window.__fake.business.version = 7;
+    });
+    await form.getByLabel("Phone").fill("0113 496 0000");
+    await form.getByRole("button", { name: "Save details" }).click();
+    await form.getByRole("alert").filter({ hasText: "Someone changed these details meanwhile" }).waitFor();
+    await expect.poll(() => form.getByLabel("Phone").inputValue()).toBe("");
+    // The shell shows the new till name after going back.
+    await page.keyboard.press("Escape");
+    await page.getByText("Front till").first().waitFor();
+    const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Business" }).click();
+    await form.getByLabel("Business name").waitFor();
+    await page.addScriptTag({ path: axePath });
+    const violations = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
+    });
+    expect(violations).toEqual([]);
+  });
+});
+
 describe("taxes (E06-T05)", () => {
   it("a VAT change on a date: end the old rate, add the new one, swap it into the category", async () => {
     const page = await checkout();

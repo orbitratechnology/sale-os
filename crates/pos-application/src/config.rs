@@ -1,16 +1,17 @@
 //! Categories and tax configuration (E06-T05). Rules: pos_domain::catalog::config.
 //!
 //! Categories: anyone who edits the catalogue (`CatalogEdit`). Tax rates and tax categories
-//! change what customers pay, so they are the owner's (`SettingsEdit`).
+//! change what customers pay, so they are the owner's (`SettingsEdit`). So is the business
+//! profile printed on receipts, with this till's name (E04-T03).
 
 use crate::audit::{self, AuditEntry};
 use crate::context::{AppError, CommandContext};
 use crate::queries::QueryError;
-use crate::records::{CategoryRecord, TaxCategoryRecord, TaxRateRecord};
+use crate::records::{BusinessRecord, CategoryRecord, RegisterRecord, TaxCategoryRecord, TaxRateRecord};
 use crate::{LocalStore, OutboxDraft, WriteSet};
 use pos_domain::catalog::config::{
-    CategoryNode, ConfigError, RatePeriod, check_category_parent, check_rate_archivable, check_rate_period,
-    clean_name,
+    BusinessProfile, CategoryNode, ConfigError, RatePeriod, check_category_parent, check_rate_archivable,
+    check_rate_period, clean_name, clean_profile,
 };
 use pos_domain::time::BusinessDate;
 use pos_domain::{CategoryId, ErrorCode, Permission, RatePpm, TaxCategoryId, TaxRateId};
@@ -21,6 +22,30 @@ pub trait ConfigQueries: Send + Sync {
     async fn all_categories(&self) -> Result<Vec<CategoryRecord>, QueryError>;
     async fn all_tax_rates(&self) -> Result<Vec<TaxRateRecord>, QueryError>;
     async fn all_tax_categories(&self) -> Result<Vec<TaxCategoryRecord>, QueryError>;
+    /// The business this installation belongs to, `None` before setup.
+    async fn business(&self) -> Result<Option<BusinessRecord>, QueryError>;
+    async fn register(&self, id: pos_domain::RegisterId) -> Result<Option<RegisterRecord>, QueryError>;
+}
+
+/// The business profile as stored, and this till.
+#[derive(Clone, Debug)]
+pub struct ProfileView {
+    pub business: BusinessRecord,
+    pub register: RegisterRecord,
+}
+
+impl ProfileView {
+    pub fn address_lines(&self) -> Vec<String> {
+        address_lines(&self.business.address)
+    }
+}
+
+fn address_lines(address: &serde_json::Value) -> Vec<String> {
+    address
+        .get("lines")
+        .and_then(|l| l.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default()
 }
 
 pub struct ConfigService {
@@ -59,6 +84,109 @@ pub struct TaxCategoryInput {
 }
 
 impl ConfigService {
+    /// The business profile and this till's name (owner).
+    pub async fn business_profile(&self, ctx: &CommandContext) -> Result<ProfileView, AppError> {
+        ctx.authorize(Permission::SettingsEdit)?;
+        self.profile(ctx).await
+    }
+
+    async fn profile(&self, ctx: &CommandContext) -> Result<ProfileView, AppError> {
+        let business = self
+            .config
+            .business()
+            .await?
+            .ok_or_else(|| not_found("business"))?;
+        let register = self
+            .config
+            .register(ctx.register.register_id)
+            .await?
+            .ok_or_else(|| not_found("till"))?;
+        Ok(ProfileView { business, register })
+    }
+
+    /// Saves the profile, each part only if it changed: the business (`business.updated`,
+    /// audited with the names of the fields that changed) and the till's name
+    /// (`register.upserted`, audited `register.updated` from/to), in one transaction.
+    /// Country, time zone, currency and tax mode are not editable here: past sales and
+    /// prices were made under them.
+    pub async fn save_business_profile(
+        &self,
+        ctx: &CommandContext,
+        input: &BusinessProfile,
+        business_version: u64,
+        register_version: u64,
+    ) -> Result<ProfileView, AppError> {
+        ctx.authorize(Permission::SettingsEdit)?;
+        let cur = self.profile(ctx).await?;
+        stale(business_version, cur.business.version)?;
+        stale(register_version, cur.register.version)?;
+        let p = clean_profile(input)?;
+        let old = &cur.business;
+        let mut changed = Vec::new();
+        for (field, differs) in [
+            ("name", p.name != old.name),
+            ("legalName", p.legal_name != old.legal_name),
+            (
+                "taxRegistrationNo",
+                p.tax_registration_no != old.tax_registration_no,
+            ),
+            ("addressLines", p.address_lines != cur.address_lines()),
+            ("phone", p.phone != old.phone),
+            ("email", p.email != old.email),
+        ] {
+            if differs {
+                changed.push(field);
+            }
+        }
+        let rename = p.register_name != cur.register.name;
+        if changed.is_empty() && !rename {
+            return Ok(cur);
+        }
+        let ids = ctx.ids.as_ref();
+        let now = ctx.now();
+        let mut set = WriteSet::builder(ctx.write_context());
+        if !changed.is_empty() {
+            let mut address = match &old.address {
+                serde_json::Value::Object(_) => old.address.clone(),
+                _ => serde_json::json!({}),
+            };
+            address["lines"] = serde_json::json!(p.address_lines);
+            let record = BusinessRecord {
+                name: p.name.clone(),
+                legal_name: p.legal_name.clone(),
+                tax_registration_no: p.tax_registration_no.clone(),
+                address,
+                phone: p.phone.clone(),
+                email: p.email.clone(),
+                version: old.version + 1,
+                updated_at: now,
+                ..old.clone()
+            };
+            let entry = AuditEntry::new(ids, audit::BUSINESS_UPDATED, "business", record.business_id)
+                .with_metadata(serde_json::json!({ "changed": changed }));
+            set = set
+                .outbox(OutboxDraft::business_updated(ids, &record)?)
+                .put_business(record, Some(old.version))
+                .audit(entry);
+        }
+        if rename {
+            let record = RegisterRecord {
+                name: p.register_name.clone(),
+                version: cur.register.version + 1,
+                updated_at: now,
+                ..cur.register.clone()
+            };
+            let entry = AuditEntry::new(ids, audit::REGISTER_UPDATED, "register", record.register_id)
+                .with_metadata(serde_json::json!({ "from": cur.register.name, "to": record.name }));
+            set = set
+                .outbox(OutboxDraft::register_upserted(ids, &record)?)
+                .put_register(record, Some(cur.register.version))
+                .audit(entry);
+        }
+        self.store.apply(set.build()?).await?;
+        self.profile(ctx).await
+    }
+
     // ---------- categories ----------
 
     pub async fn categories(&self, ctx: &CommandContext) -> Result<Vec<CategoryRecord>, AppError> {

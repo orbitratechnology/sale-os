@@ -304,3 +304,142 @@ async fn tax_rates_change_on_a_date_and_categories_keep_one_default() {
             .unwrap();
     assert!(audited >= 6, "{audited}");
 }
+
+fn profile(name: &str, till: &str) -> pos_domain::catalog::config::BusinessProfile {
+    pos_domain::catalog::config::BusinessProfile {
+        name: name.into(),
+        legal_name: Some("Corner Shop Ltd".into()),
+        tax_registration_no: Some("GB123456789".into()),
+        address_lines: vec!["1 High Street".into(), "Leeds LS1 1AA".into()],
+        phone: Some("0113 496 0000".into()),
+        email: None,
+        register_name: till.into(),
+    }
+}
+
+#[tokio::test]
+async fn the_business_profile_reaches_new_receipts_and_is_audited() {
+    use pos_application::queries::ReceiptQueries;
+    let shop = common::shop().await;
+    let cfg = service(&shop);
+    let owner = &shop.owner;
+    let count = |sql: &'static str| {
+        let store = shop.store.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(sql)
+                .fetch_one(store.db().readers())
+                .await
+                .unwrap()
+        }
+    };
+    let before = cfg.business_profile(owner).await.unwrap();
+    let (bv, rv) = (before.business.version, before.register.version);
+    let business_events = "SELECT count(*) FROM outbox_events WHERE event_type = 'business.updated'";
+    let register_events = "SELECT count(*) FROM outbox_events WHERE event_type = 'register.upserted'";
+    let (b0, r0) = (count(business_events).await, count(register_events).await);
+
+    // Owner only.
+    for role in [Role::Manager, Role::Cashier] {
+        let e = cfg.business_profile(&shop.as_role(role)).await.unwrap_err();
+        assert_eq!(e.error_code(), ErrorCode::PermissionDenied);
+    }
+    // Invalid input names its field and changes nothing.
+    let e = cfg
+        .save_business_profile(owner, &profile(" ", "Till 1"), bv, rv)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, AppError::Config(ConfigError::Required("name"))),
+        "{e:?}"
+    );
+
+    let saved = cfg
+        .save_business_profile(owner, &profile("Corner Shop & Deli", "Front till"), bv, rv)
+        .await
+        .unwrap();
+    assert_eq!(saved.business.name, "Corner Shop & Deli");
+    assert_eq!(saved.business.version, bv + 1);
+    assert_eq!(saved.register.name, "Front till");
+    assert_eq!(saved.register.version, rv + 1);
+    assert_eq!(saved.address_lines(), vec!["1 High Street", "Leeds LS1 1AA"]);
+    // Country, zone and currency are untouched.
+    assert_eq!(
+        (
+            &saved.business.country_code,
+            &saved.business.timezone,
+            saved.business.currency
+        ),
+        (
+            &before.business.country_code,
+            &before.business.timezone,
+            before.business.currency
+        )
+    );
+    // New receipts print the new details.
+    let actor = owner.actor.as_ref().unwrap();
+    let info = shop
+        .store
+        .receipt_info(owner.register.register_id, actor.user_id)
+        .await
+        .unwrap();
+    assert_eq!(info.business_name, "Corner Shop & Deli");
+    assert_eq!(info.address_lines, vec!["1 High Street", "Leeds LS1 1AA"]);
+    assert_eq!(info.tax_registration_no.as_deref(), Some("GB123456789"));
+    assert_eq!(info.register_name, "Front till");
+    // One transaction: both events, both audit rows (the business row lists what changed).
+    assert_eq!(count(business_events).await, b0 + 1);
+    assert_eq!(count(register_events).await, r0 + 1);
+    let changed: String =
+        sqlx::query_scalar("SELECT metadata_json FROM audit_events WHERE action = 'business.updated'")
+            .fetch_one(shop.store.db().readers())
+            .await
+            .unwrap();
+    let changed: serde_json::Value = serde_json::from_str(&changed).unwrap();
+    assert_eq!(
+        changed["changed"],
+        serde_json::json!(["name", "legalName", "taxRegistrationNo", "addressLines", "phone"])
+    );
+    let renamed: String =
+        sqlx::query_scalar("SELECT metadata_json FROM audit_events WHERE action = 'register.updated'")
+            .fetch_one(shop.store.db().readers())
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&renamed).unwrap(),
+        serde_json::json!({"from": before.register.name, "to": "Front till"})
+    );
+
+    // Saving the same values writes nothing.
+    let again = cfg
+        .save_business_profile(
+            owner,
+            &profile("Corner Shop & Deli", "Front till"),
+            bv + 1,
+            rv + 1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(again.business.version, bv + 1);
+    assert_eq!(
+        count("SELECT count(*) FROM audit_events WHERE action IN ('business.updated', 'register.updated')")
+            .await,
+        2
+    );
+    // A stale version is refused.
+    let e = cfg
+        .save_business_profile(owner, &profile("Other", "Front till"), bv, rv + 1)
+        .await
+        .unwrap_err();
+    assert_eq!(e.error_code(), ErrorCode::ConflictVersion);
+    // Only the till renamed: only the register changes.
+    let renamed = cfg
+        .save_business_profile(owner, &profile("Corner Shop & Deli", "Till A"), bv + 1, rv + 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        (renamed.business.version, renamed.register.version),
+        (bv + 1, rv + 2)
+    );
+    assert_eq!(count(business_events).await, b0 + 1);
+    assert_eq!(count(register_events).await, r0 + 2);
+}

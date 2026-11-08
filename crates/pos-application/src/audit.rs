@@ -150,8 +150,6 @@ mod tests {
 /// The completeness test fails if an action is neither emitted nor listed here, or if one
 /// listed here has started being emitted (keep the list honest).
 pub const PLANNED: &[(&str, &str)] = &[
-    ("business.updated", "E04-T03 settings: business profile"),
-    ("register.updated", "E04-T03 settings: register"),
     ("catalog.import_committed", "E06-T07 CSV import"),
     ("cart.recovered", "E09-T02 cart recovery"),
     ("cart.recovery_discarded", "E09-T02 cart recovery"),

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-business-profile-get"
+description = "Enables the business_profile_get command without any pre-configured scope."
+commands.allow = ["business_profile_get"]
+
+[[permission]]
+identifier = "deny-business-profile-get"
+description = "Denies the business_profile_get command without any pre-configured scope."
+commands.deny = ["business_profile_get"]
