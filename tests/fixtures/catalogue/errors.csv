@@ -1,0 +1,10 @@
+name,sku,barcode,price,unit,tax_category,scan_quantity
+Good Cola,GOOD1,4006381333931,1.20,ea,Standard,
+Copy Cola,GOOD2,4006381333931,1.20,ea,Standard,
+Taken Code,TAKEN,5000159407236,0.80,ea,Standard,
+No Price,NOPRICE,,,ea,Standard,
+Odd Tax,ODDTAX,,1.00,ea,Luxury,
+Short Row,SHORT,,1.00
+Minus,MINUS,,-2.00,ea,Standard,
+Half Egg,EGG,,0.30,ea,Standard,0.5
+"Open quote,QUOTE,,1.00,ea,Standard,

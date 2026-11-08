@@ -601,7 +601,7 @@ pub async fn receipt_export_pdf(
         .await
         .map_err(err)?;
     let chosen = services
-        .save_dialog
+        .file_dialog
         .ask(&pdf.file_name, ("PDF", &["pdf"]))
         .await
         .ok()
@@ -632,7 +632,7 @@ pub async fn receipt_export_pdf(
 /// Writes `bytes` to `path` (the dialog has already asked about replacing an existing
 /// file) through a temporary file beside it and a rename, so a half-written file is never
 /// left under the chosen name.
-fn write_replacing(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_replacing(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("receipt.pdf");
     let tmp = dir.join(format!(".{name}.tmp"));

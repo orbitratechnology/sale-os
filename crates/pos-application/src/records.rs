@@ -512,3 +512,116 @@ pub struct CashSessionRecord {
     pub note: Option<String>,
     pub currency_exponent: u8,
 }
+
+/// Where an import job is (E06-T07).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportStatus {
+    Parsed,
+    Validated,
+    Committing,
+    Committed,
+    Failed,
+    Cancelled,
+}
+
+impl ImportStatus {
+    pub fn code(self) -> &'static str {
+        match self {
+            ImportStatus::Parsed => "parsed",
+            ImportStatus::Validated => "validated",
+            ImportStatus::Committing => "committing",
+            ImportStatus::Committed => "committed",
+            ImportStatus::Failed => "failed",
+            ImportStatus::Cancelled => "cancelled",
+        }
+    }
+    pub fn from_code(c: &str) -> Option<Self> {
+        [
+            ImportStatus::Parsed,
+            ImportStatus::Validated,
+            ImportStatus::Committing,
+            ImportStatus::Committed,
+            ImportStatus::Failed,
+            ImportStatus::Cancelled,
+        ]
+        .into_iter()
+        .find(|s| s.code() == c)
+    }
+}
+
+/// What became of one row of an import file.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportRowStatus {
+    Pending,
+    Valid,
+    Error,
+    DuplicateInFile,
+    DuplicateExisting,
+    Skipped,
+    Committed,
+}
+
+impl ImportRowStatus {
+    pub fn code(self) -> &'static str {
+        match self {
+            ImportRowStatus::Pending => "pending",
+            ImportRowStatus::Valid => "valid",
+            ImportRowStatus::Error => "error",
+            ImportRowStatus::DuplicateInFile => "duplicate_in_file",
+            ImportRowStatus::DuplicateExisting => "duplicate_existing",
+            ImportRowStatus::Skipped => "skipped",
+            ImportRowStatus::Committed => "committed",
+        }
+    }
+    pub fn from_code(c: &str) -> Option<Self> {
+        [
+            ImportRowStatus::Pending,
+            ImportRowStatus::Valid,
+            ImportRowStatus::Error,
+            ImportRowStatus::DuplicateInFile,
+            ImportRowStatus::DuplicateExisting,
+            ImportRowStatus::Skipped,
+            ImportRowStatus::Committed,
+        ]
+        .into_iter()
+        .find(|s| s.code() == c)
+    }
+    /// Not imported because of a problem the report should list.
+    pub fn is_problem(self) -> bool {
+        matches!(
+            self,
+            ImportRowStatus::Error | ImportRowStatus::DuplicateInFile | ImportRowStatus::DuplicateExisting
+        )
+    }
+}
+
+/// An import job (`import_jobs`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportJobRecord {
+    pub job_id: pos_domain::ImportJobId,
+    pub file_name: String,
+    pub file_sha256: String,
+    /// Column → file column index, once chosen.
+    pub mapping: Option<serde_json::Value>,
+    /// The header, encoding, delimiter and duplicate policy.
+    pub options: serde_json::Value,
+    pub status: ImportStatus,
+    pub total_rows: u32,
+    pub valid_rows: u32,
+    pub error_rows: u32,
+    pub created_by: pos_domain::UserId,
+    pub created_at: Timestamp,
+    pub committed_at: Option<Timestamp>,
+}
+
+/// One row of an import file (`import_rows`). `line` is where it starts in the file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportRowRecord {
+    pub line: u32,
+    pub raw: Vec<String>,
+    pub parsed: Option<serde_json::Value>,
+    pub status: ImportRowStatus,
+    pub errors: Vec<pos_domain::catalog::import::RowError>,
+}

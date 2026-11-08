@@ -13,6 +13,7 @@ pub mod checkout;
 pub mod config;
 pub mod context;
 pub mod export;
+pub mod import;
 pub mod mode;
 pub mod printing;
 pub mod queries;

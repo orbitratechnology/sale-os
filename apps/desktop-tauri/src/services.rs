@@ -12,6 +12,7 @@ use pos_application::checkout::CheckoutService;
 use pos_application::config::ConfigService;
 use pos_application::context::{Actor, ApprovalToken, CommandContext};
 use pos_application::export::ExportService;
+use pos_application::import::ImportService;
 use pos_application::mode::ModeService;
 use pos_application::printing::{DEFAULT_PRINT_TIMEOUT, PrintService};
 use pos_application::queries::SetupQueries;
@@ -44,25 +45,33 @@ pub struct AppServices {
     /// The signed-in staff member. Lives only in memory: a restart signs everyone out.
     session: RwLock<Option<Session>>,
     /// Asks where to save a file (the native dialog in the app; none in tests).
-    pub(crate) save_dialog: Arc<dyn SaveDialog>,
+    pub(crate) file_dialog: Arc<dyn FileDialog>,
     _log: Option<LogGuard>,
 }
 
-/// Asks the user where to save a file. Rust opens the dialog and writes the file, so the
-/// WebView never names a path (docs/backlog/07 §1).
-pub trait SaveDialog: Send + Sync {
-    /// The chosen path, or `None` when the user cancels (or there is no dialog).
+/// Asks the user which file to open or where to save one. Rust opens the dialog and reads
+/// or writes the file, so the WebView never names a path (docs/backlog/07 §1).
+pub trait FileDialog: Send + Sync {
+    /// Where to save: the chosen path, or `None` when the user cancels (or there is no dialog).
     fn ask(
         &self,
         suggested_name: &str,
         filter: (&str, &[&str]),
     ) -> tokio::sync::oneshot::Receiver<Option<PathBuf>>;
+
+    /// Which file to open, or `None` when the user cancels (or there is no dialog).
+    fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<PathBuf>> {
+        let _ = filter;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(None);
+        rx
+    }
 }
 
-/// No dialog: every save is "cancelled". Used until the app wires the native one.
+/// No dialog: every open and save is "cancelled". Used until the app wires the native one.
 struct NoDialog;
 
-impl SaveDialog for NoDialog {
+impl FileDialog for NoDialog {
     fn ask(&self, _: &str, _: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<PathBuf>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = tx.send(None);
@@ -88,6 +97,7 @@ pub(crate) struct Services {
     pub stock: StockService,
     pub reports: ReportService,
     pub exports: ExportService,
+    pub imports: ImportService,
     pub audit: AuditService,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
@@ -113,8 +123,8 @@ impl AppServices {
     }
 
     /// Uses `dialog` to ask where files are saved (the app passes the native dialog).
-    pub fn with_save_dialog(mut self, dialog: Arc<dyn SaveDialog>) -> Self {
-        self.save_dialog = dialog;
+    pub fn with_file_dialog(mut self, dialog: Arc<dyn FileDialog>) -> Self {
+        self.file_dialog = dialog;
         self
     }
 
@@ -228,6 +238,13 @@ impl AppServices {
                     audit: a.clone(),
                     pricing: a.clone(),
                 },
+                imports: ImportService {
+                    store: a.clone(),
+                    imports: a.clone(),
+                    catalog: a.clone(),
+                    config: a.clone(),
+                    setup: a.clone(),
+                },
                 exports: ExportService {
                     store: a.clone(),
                     exports: a.clone(),
@@ -271,7 +288,7 @@ impl AppServices {
             data_dir: data_dir.to_path_buf(),
             app,
             session: RwLock::new(None),
-            save_dialog: Arc::new(NoDialog),
+            file_dialog: Arc::new(NoDialog),
             _log: log,
         }
     }

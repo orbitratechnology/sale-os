@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-import-products-cancel"
+description = "Enables the import_products_cancel command without any pre-configured scope."
+commands.allow = ["import_products_cancel"]
+
+[[permission]]
+identifier = "deny-import-products-cancel"
+description = "Denies the import_products_cancel command without any pre-configured scope."
+commands.deny = ["import_products_cancel"]

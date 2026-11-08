@@ -81,10 +81,11 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `catalog_lookup_code` | CatalogView | `{ code } → { kind:'barcode'\|'sku', variant } \| null` | E06-T04 |
 | `catalog_search` | CatalogView | `{ query, limit } → [SearchHit]` | E06-T04 |
 | `catalog_quick_select` | CatalogView | `→ [SellableVariantDto]` | E09-T04 |
-| `import_parse` | CatalogImport | `{ filePath (from dialog) } → { jobId, headers, sampleRows }` | E06-T07 |
-| `import_set_mapping` / `import_validate` | CatalogImport | `→ { valid, errors, duplicates, preview }` | E06-T07 |
-| `import_commit` | CatalogImport | `{ jobId, onDuplicate } → { created, updated, skipped }` | E06-T07 |
-| `import_error_report` | CatalogImport | `{ jobId, saveTo } → ()` | E06-T07 |
+| `import_products_open` | CatalogImport | `→ { jobId, fileName, encoding, delimiter, header, sample, totalRows, mapping } \| null`: Rust opens the system "Open" dialog and reads the file (the WebView never names a path); null when cancelled | E06-T07 |
+| `import_products_validate` | CatalogImport | `{ jobId, mapping: [{ column, index }], onDuplicate: skip\|update\|error } → { totalRows, validRows, errorRows, duplicateRows, skippedRows, productsToCreate, productsToUpdate, problems: [{ line, status, messages }] }` (first 200 problems); repeatable until committed | E06-T07 |
+| `import_products_commit` | CatalogImport | `{ jobId } → { productsCreated, productsUpdated, rowsCommitted }`; 500 products per transaction, each with one `catalog.import_committed` audit row; run again to resume | E06-T07 |
+| `import_products_error_report` | CatalogImport | `{ jobId } → { path, fileName } \| null`: the rows not imported with an `error` column, saved through the system dialog | E06-T07 |
+| `import_products_cancel` | CatalogImport | `{ jobId } → ()` before committing | E06-T07 |
 | `scan_submit` | SaleComplete | `{ scanEventId, raw, source, symbologyHint? } → ScanOutcome` (`Added{line} \| Incremented{line} \| NotFound{code} \| Duplicate \| Invalid{reason}`) | E07-T02 |
 | `cart_current` | session | `→ CartView` (cart and `PricedCart`) | E09-T01 |
 | `cart_add_variant` | SaleComplete | `{ variantId, qty?, via } → CartView` | E09-T01 |

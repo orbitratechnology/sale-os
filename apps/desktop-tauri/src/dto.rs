@@ -2149,3 +2149,137 @@ impl BusinessProfileInputDto {
         }
     }
 }
+
+// ---------- products CSV import (E06-T07) ----------
+
+/// The file column (0-based) chosen for a meaning.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MappingEntryDto {
+    pub column: pos_domain::catalog::import::Column,
+    pub index: u32,
+}
+
+pub fn mapping_out(m: &pos_domain::catalog::import::Mapping) -> Vec<MappingEntryDto> {
+    m.iter()
+        .map(|(c, i)| MappingEntryDto {
+            column: *c,
+            index: u32::try_from(*i).unwrap_or(u32::MAX),
+        })
+        .collect()
+}
+
+pub fn mapping_in(m: Vec<MappingEntryDto>) -> pos_domain::catalog::import::Mapping {
+    m.into_iter().map(|e| (e.column, e.index as usize)).collect()
+}
+
+/// The file as read: its columns, the first rows, and the suggested mapping.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreviewDto {
+    pub job_id: pos_domain::ImportJobId,
+    pub file_name: String,
+    /// `utf8`, `utf8_bom` or `windows1252`.
+    pub encoding: String,
+    pub delimiter: String,
+    pub header: Vec<String>,
+    pub sample: Vec<Vec<String>>,
+    pub total_rows: u32,
+    pub mapping: Vec<MappingEntryDto>,
+}
+
+impl ImportPreviewDto {
+    pub fn from_preview(p: pos_application::import::ImportPreview) -> Self {
+        Self {
+            job_id: p.job_id,
+            file_name: p.file_name,
+            encoding: serde_json::to_value(p.encoding)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            delimiter: if p.delimiter == '\t' {
+                "tab".into()
+            } else {
+                p.delimiter.to_string()
+            },
+            header: p.header,
+            sample: p.sample,
+            total_rows: p.total_rows,
+            mapping: mapping_out(&p.mapping),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum OnDuplicateDto {
+    Skip,
+    Update,
+    Error,
+}
+
+impl OnDuplicateDto {
+    pub fn into_domain(self) -> pos_application::import::OnDuplicate {
+        match self {
+            OnDuplicateDto::Skip => pos_application::import::OnDuplicate::Skip,
+            OnDuplicateDto::Update => pos_application::import::OnDuplicate::Update,
+            OnDuplicateDto::Error => pos_application::import::OnDuplicate::Error,
+        }
+    }
+}
+
+/// A row that will not be imported, and why (one message per problem).
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProblemDto {
+    /// Line of the file (the header is line 1).
+    pub line: u32,
+    /// `error`, `duplicate_in_file` or `duplicate_existing`.
+    pub status: String,
+    pub messages: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummaryDto {
+    pub total_rows: u32,
+    pub valid_rows: u32,
+    pub error_rows: u32,
+    pub duplicate_rows: u32,
+    pub skipped_rows: u32,
+    pub products_to_create: u32,
+    pub products_to_update: u32,
+    /// The first 200 problems; the error report has them all.
+    pub problems: Vec<ImportProblemDto>,
+}
+
+impl ImportSummaryDto {
+    pub fn from_summary(s: pos_application::import::ImportSummary) -> Self {
+        Self {
+            total_rows: s.total_rows,
+            valid_rows: s.valid_rows,
+            error_rows: s.error_rows,
+            duplicate_rows: s.duplicate_rows,
+            skipped_rows: s.skipped_rows,
+            products_to_create: s.products_to_create,
+            products_to_update: s.products_to_update,
+            problems: s
+                .problems
+                .into_iter()
+                .map(|p| ImportProblemDto {
+                    line: p.line,
+                    status: p.status.code().to_owned(),
+                    messages: p.errors.iter().map(|e| e.message()).collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportCommitDto {
+    pub products_created: u32,
+    pub products_updated: u32,
+    pub rows_committed: u32,
+}

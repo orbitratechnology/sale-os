@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-import-products-validate"
+description = "Enables the import_products_validate command without any pre-configured scope."
+commands.allow = ["import_products_validate"]
+
+[[permission]]
+identifier = "deny-import-products-validate"
+description = "Denies the import_products_validate command without any pre-configured scope."
+commands.deny = ["import_products_validate"]

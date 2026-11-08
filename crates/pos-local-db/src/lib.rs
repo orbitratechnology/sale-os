@@ -13,6 +13,7 @@ mod catalog_queries;
 mod config_queries;
 mod error;
 mod export_queries;
+mod import_queries;
 mod migrate;
 mod pragmas;
 mod queries;

@@ -202,6 +202,13 @@ pub enum WriteOp {
     RecordScanEvent {
         scan_event_id: pos_domain::ScanEventId,
     },
+    /// Creates or replaces an import job (E06-T07; local staging, never synced).
+    PutImportJob(crate::records::ImportJobRecord),
+    /// Creates or replaces rows of an import job.
+    PutImportRows {
+        job_id: pos_domain::ImportJobId,
+        rows: Vec<crate::records::ImportRowRecord>,
+    },
     /// Device-local login throttle (never synced).
     PutLoginThrottle(ThrottleRecord),
     /// Device-local session start.
@@ -303,6 +310,8 @@ impl WriteOp {
             | WriteOp::SetDeviceIdentity(_)
             | WriteOp::PutCart { .. }
             | WriteOp::RecordScanEvent { .. }
+            | WriteOp::PutImportJob(_)
+            | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
         }
@@ -749,6 +758,20 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::RecordScanEvent { scan_event_id });
         self
     }
+
+    pub fn put_import_job(mut self, job: crate::records::ImportJobRecord) -> Self {
+        self.ops.push(WriteOp::PutImportJob(job));
+        self
+    }
+
+    pub fn put_import_rows(
+        mut self,
+        job_id: pos_domain::ImportJobId,
+        rows: Vec<crate::records::ImportRowRecord>,
+    ) -> Self {
+        self.ops.push(WriteOp::PutImportRows { job_id, rows });
+        self
+    }
     pub fn set_device_identity(mut self, identity: DeviceIdentity) -> Self {
         self.ops.push(WriteOp::SetDeviceIdentity(identity));
         self
@@ -882,6 +905,8 @@ impl WriteSetBuilder {
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::PutCart { .. }
             | WriteOp::RecordScanEvent { .. }
+            | WriteOp::PutImportJob(_)
+            | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. } => return Ok(()),
         };

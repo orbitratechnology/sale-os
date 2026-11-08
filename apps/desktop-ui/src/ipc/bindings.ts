@@ -92,6 +92,22 @@ export const commands = {
 	 *  Only what changed is written; `business.updated` / `register.updated` are audited.
 	 */
 	businessProfileUpdate: (input: BusinessProfileInputDto_Deserialize, businessVersion: number, registerVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_update", { input, businessVersion, registerVersion })),
+	/**
+	 *  Asks for a CSV file, reads it and stages it as an import job. `null` when the user
+	 *  cancels the dialog. The catalogue does not change.
+	 */
+	importProductsOpen: () => typedError<ImportPreviewDto | null, IpcError_Serialize>(__TAURI_INVOKE("import_products_open")),
+	/**  Checks every row with the chosen columns and duplicate policy. Repeatable until committed. */
+	importProductsValidate: (jobId: ImportJobId, mapping: MappingEntryDto[], onDuplicate: OnDuplicateDto) => typedError<ImportSummaryDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_validate", { jobId, mapping, onDuplicate })),
+	/**
+	 *  Creates and updates the products, 500 per transaction. After an interruption, run it
+	 *  again: rows already committed are not imported twice.
+	 */
+	importProductsCommit: (jobId: ImportJobId) => typedError<ImportCommitDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_commit", { jobId })),
+	/**  Saves the rows that were not imported (with an `error` column) where the user chooses. */
+	importProductsErrorReport: (jobId: ImportJobId) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("import_products_error_report", { jobId })),
+	/**  Abandons an import that has not started committing. */
+	importProductsCancel: (jobId: ImportJobId) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("import_products_cancel", { jobId })),
 	/**  The product list (E06-T06a): one page, by name, with summary columns. */
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
 	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
@@ -723,6 +739,9 @@ export type ClosedCashDto_Serialize = {
 	totals: SessionTotalsDto | null,
 };
 
+/**  What a column of the file means. */
+export type Column = "name" | "variant" | "parent_sku" | "sku" | "barcode" | "price" | "cost" | "unit" | "tax_category" | "category" | "track_stock" | "low_stock_threshold" | "scan_quantity" | "status";
+
 export type CompletedReturnDto = {
 	returnId: ReturnId,
 	returnNumber: string,
@@ -933,6 +952,48 @@ export type ExportResultDto = {
 	rows: number,
 };
 
+export type ImportCommitDto = {
+	productsCreated: number,
+	productsUpdated: number,
+	rowsCommitted: number,
+};
+
+export type ImportJobId = string;
+
+/**  The file as read: its columns, the first rows, and the suggested mapping. */
+export type ImportPreviewDto = {
+	jobId: ImportJobId,
+	fileName: string,
+	/**  `utf8`, `utf8_bom` or `windows1252`. */
+	encoding: string,
+	delimiter: string,
+	header: string[],
+	sample: string[][],
+	totalRows: number,
+	mapping: MappingEntryDto[],
+};
+
+/**  A row that will not be imported, and why (one message per problem). */
+export type ImportProblemDto = {
+	/**  Line of the file (the header is line 1). */
+	line: number,
+	/**  `error`, `duplicate_in_file` or `duplicate_existing`. */
+	status: string,
+	messages: string[],
+};
+
+export type ImportSummaryDto = {
+	totalRows: number,
+	validRows: number,
+	errorRows: number,
+	duplicateRows: number,
+	skippedRows: number,
+	productsToCreate: number,
+	productsToUpdate: number,
+	/**  The first 200 problems; the error report has them all. */
+	problems: ImportProblemDto[],
+};
+
 export type InventoryDocumentId = string;
 
 /**
@@ -975,6 +1036,12 @@ export type IpcError_Serialize = {
 	details: ErrorDetails_Serialize | null,
 };
 
+/**  The file column (0-based) chosen for a meaning. */
+export type MappingEntryDto = {
+	column: Column,
+	index: number,
+};
+
 export type MoneyAddResult = {
 	/**  Decimal string of minor units (ADR-001): never a JS number. */
 	sumMinor: string,
@@ -988,6 +1055,8 @@ export type NewStaffInput = {
 	role: Role,
 	pin: string,
 };
+
+export type OnDuplicateDto = "skip" | "update" | "error";
 
 /**  `receipt`: the receipt as printed, on the till's paper width; `a4`: an A4 page. */
 export type PdfPaperDto = "receipt" | "a4";

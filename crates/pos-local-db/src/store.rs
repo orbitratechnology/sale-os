@@ -679,6 +679,50 @@ async fn apply_in_transaction(
                     .map_err(map_sqlx)?;
                 }
             }
+            WriteOp::PutImportJob(j) => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO import_jobs (job_id, kind, file_name, file_sha256, mapping_json, options_json, status,
+                       total_rows, valid_rows, error_rows, created_by, created_at, committed_at)
+                     VALUES (?1, 'products', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                     ON CONFLICT (job_id) DO UPDATE SET mapping_json = ?4, options_json = ?5, status = ?6,
+                       total_rows = ?7, valid_rows = ?8, error_rows = ?9, committed_at = ?12",
+                )
+                .bind(j.job_id.to_string())
+                .bind(&j.file_name)
+                .bind(&j.file_sha256)
+                .bind(j.mapping.as_ref().map(|m| m.to_string()))
+                .bind(j.options.to_string())
+                .bind(j.status.code())
+                .bind(i64::from(j.total_rows))
+                .bind(i64::from(j.valid_rows))
+                .bind(i64::from(j.error_rows))
+                .bind(j.created_by.to_string())
+                .bind(j.created_at.as_millis())
+                .bind(j.committed_at.map(|t| t.as_millis()))
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::PutImportRows { job_id, rows } => {
+                for r in rows {
+                    st.step()?;
+                    sqlx::query(
+                        "INSERT INTO import_rows (job_id, row_no, raw_json, parsed_json, status, errors_json)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                         ON CONFLICT (job_id, row_no) DO UPDATE SET parsed_json = ?4, status = ?5, errors_json = ?6",
+                    )
+                    .bind(job_id.to_string())
+                    .bind(i64::from(r.line))
+                    .bind(serde_json::to_string(&r.raw).map_err(|e| WriteError::Io(e.to_string()))?)
+                    .bind(r.parsed.as_ref().map(|p| p.to_string()))
+                    .bind(r.status.code())
+                    .bind(serde_json::to_string(&r.errors).map_err(|e| WriteError::Io(e.to_string()))?)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+                }
+            }
             WriteOp::RecordScanEvent { scan_event_id } => {
                 st.step()?;
                 sqlx::query(

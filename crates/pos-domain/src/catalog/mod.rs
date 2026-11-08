@@ -3,6 +3,7 @@
 
 pub mod barcode;
 pub mod config;
+pub mod import;
 pub mod product;
 pub mod unit;
 

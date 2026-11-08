@@ -8,13 +8,14 @@ mod commands;
 mod config_commands;
 mod dto;
 mod error;
+mod import_commands;
 mod report_commands;
 mod sale_commands;
 mod services;
 
 pub use command_names::COMMANDS;
 pub use error::{ErrorDetails, IpcError};
-pub use services::{AppServices, SaveDialog};
+pub use services::{AppServices, FileDialog};
 
 use pos_observability::LogConfig;
 use std::path::Path;
@@ -55,6 +56,11 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         config_commands::tax_category_save,
         config_commands::business_profile_get,
         config_commands::business_profile_update,
+        import_commands::import_products_open,
+        import_commands::import_products_validate,
+        import_commands::import_products_commit,
+        import_commands::import_products_error_report,
+        import_commands::import_products_cancel,
         sale_commands::product_list,
         sale_commands::product_get,
         sale_commands::product_create,
@@ -136,7 +142,7 @@ pub fn run() {
             .ok();
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
             let services = tauri::async_runtime::block_on(AppServices::start(&dir, log))
-                .with_save_dialog(std::sync::Arc::new(NativeSaveDialog(app.handle().clone())));
+                .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())));
             app.manage(services);
             Ok(())
         })
@@ -148,10 +154,10 @@ pub fn run() {
         });
 }
 
-/// The system "Save as" dialog, opened from Rust over the main window.
-struct NativeSaveDialog(tauri::AppHandle);
+/// The system "Open" and "Save as" dialogs, opened from Rust over the main window.
+struct NativeFileDialog(tauri::AppHandle);
 
-impl services::SaveDialog for NativeSaveDialog {
+impl services::FileDialog for NativeFileDialog {
     fn ask(
         &self,
         suggested_name: &str,
@@ -169,6 +175,19 @@ impl services::SaveDialog for NativeSaveDialog {
             dialog = dialog.set_parent(&window);
         }
         dialog.save_file(move |chosen| {
+            let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
+        });
+        rx
+    }
+
+    fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut dialog = self.0.dialog().file().add_filter(filter.0, filter.1);
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.pick_file(move |chosen| {
             let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
         });
         rx

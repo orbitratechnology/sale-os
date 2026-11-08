@@ -136,6 +136,28 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"taxCategoryId": null, "name": " ", "rateIds": [], "isDefault": false, "baseVersion": null}),
         ),
         ("business_profile_get", Perm(SettingsEdit), json!({})),
+        // No dialog in tests: an allowed call answers null (cancelled).
+        ("import_products_open", Perm(CatalogImport), json!({})),
+        (
+            "import_products_validate",
+            Perm(CatalogImport),
+            json!({"jobId": UNKNOWN_ID, "mapping": [{"column": "name", "index": 0}, {"column": "price", "index": 1}], "onDuplicate": "skip"}),
+        ),
+        (
+            "import_products_commit",
+            Perm(CatalogImport),
+            json!({"jobId": UNKNOWN_ID}),
+        ),
+        (
+            "import_products_error_report",
+            Perm(CatalogImport),
+            json!({"jobId": UNKNOWN_ID}),
+        ),
+        (
+            "import_products_cancel",
+            Perm(CatalogImport),
+            json!({"jobId": UNKNOWN_ID}),
+        ),
         // Stale versions: refused for the version, after the role check.
         (
             "business_profile_update",
@@ -431,7 +453,7 @@ fn start() -> (
 }
 
 fn start_with(
-    dialog: Option<Arc<dyn desktop_tauri_lib::SaveDialog>>,
+    dialog: Option<Arc<dyn desktop_tauri_lib::FileDialog>>,
 ) -> (
     tempfile::TempDir,
     tauri::App<MockRuntime>,
@@ -443,7 +465,7 @@ fn start_with(
     let mut services =
         tauri::async_runtime::block_on(AppServices::start_with_hasher(dir.path(), None, hasher));
     if let Some(d) = dialog {
-        services = services.with_save_dialog(d);
+        services = services.with_file_dialog(d);
     }
     let app = mock_builder()
         .invoke_handler(desktop_tauri_lib::specta_builder::<MockRuntime>().invoke_handler())
@@ -855,7 +877,7 @@ struct ScriptedDialog {
     suggested: std::sync::Mutex<Vec<String>>,
 }
 
-impl desktop_tauri_lib::SaveDialog for ScriptedDialog {
+impl desktop_tauri_lib::FileDialog for ScriptedDialog {
     fn ask(
         &self,
         suggested: &str,
@@ -1122,4 +1144,117 @@ fn a_cash_session_over_ipc() {
         invoke(&w, "app_preferences", json!({})).unwrap_err()["code"],
         "SESSION_LOCKED"
     );
+}
+
+/// Opens a given file, and saves the error report into a folder.
+struct ImportDialog {
+    open: std::path::PathBuf,
+    save_dir: std::path::PathBuf,
+}
+
+impl desktop_tauri_lib::FileDialog for ImportDialog {
+    fn ask(
+        &self,
+        suggested: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter.0, "CSV");
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Some(self.save_dir.join(suggested)));
+        rx
+    }
+    fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter, ("CSV", ["csv", "txt"].as_slice()));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Some(self.open.clone()));
+        rx
+    }
+}
+
+#[test]
+fn a_products_import_over_ipc() {
+    // E06-T07: Rust opens the file the dialog names; the WebView sends only the mapping.
+    let out = tempfile::tempdir().unwrap();
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/catalogue/demo20.csv");
+    let dialog = Arc::new(ImportDialog {
+        open: fixture,
+        save_dir: out.path().to_path_buf(),
+    });
+    let (_dir, _app, w) = start_with(Some(dialog));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let preview = invoke(&w, "import_products_open", json!({})).unwrap();
+    assert_eq!(preview["fileName"], "demo20.csv");
+    assert_eq!(preview["totalRows"], 22);
+    assert_eq!(preview["delimiter"], ",");
+    assert_eq!(preview["header"][0], "name");
+    let job = preview["jobId"].clone();
+    // Without the price column: refused.
+    let mut mapping: Vec<Value> = preview["mapping"].as_array().unwrap().clone();
+    let no_price: Vec<Value> = mapping
+        .iter()
+        .filter(|m| m["column"] != "price")
+        .cloned()
+        .collect();
+    let e = invoke(
+        &w,
+        "import_products_validate",
+        json!({"jobId": job, "mapping": no_price, "onDuplicate": "error"}),
+    )
+    .unwrap_err();
+    assert_eq!(e["code"], "VALIDATION_FAILED");
+    let summary = invoke(
+        &w,
+        "import_products_validate",
+        json!({"jobId": job, "mapping": mapping, "onDuplicate": "error"}),
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            summary["validRows"].as_u64(),
+            summary["productsToCreate"].as_u64()
+        ),
+        (Some(22), Some(20))
+    );
+    let done = invoke(&w, "import_products_commit", json!({"jobId": job})).unwrap();
+    assert_eq!(done["productsCreated"], 20);
+    let list = invoke(
+        &w,
+        "product_list",
+        json!({"filter": {"query": "", "status": "active", "trackStock": null, "categoryId": null}, "offset": 0, "limit": 50}),
+    )
+    .unwrap();
+    assert_eq!(list["total"], 20);
+    // The same file again: every product exists, so every row is a duplicate; the report lists them.
+    let again = invoke(&w, "import_products_open", json!({})).unwrap();
+    mapping = again["mapping"].as_array().unwrap().clone();
+    let s = invoke(
+        &w,
+        "import_products_validate",
+        json!({"jobId": again["jobId"], "mapping": mapping, "onDuplicate": "error"}),
+    )
+    .unwrap();
+    assert_eq!(s["duplicateRows"], 22);
+    assert_eq!(s["problems"][0]["status"], "duplicate_existing");
+    let saved = invoke(
+        &w,
+        "import_products_error_report",
+        json!({"jobId": again["jobId"]}),
+    )
+    .unwrap();
+    assert_eq!(saved["fileName"], "demo20-errors.csv");
+    let report = std::fs::read_to_string(out.path().join("demo20-errors.csv")).unwrap();
+    assert_eq!(report.lines().count(), 23);
+    invoke(&w, "import_products_cancel", json!({"jobId": again["jobId"]})).unwrap();
 }
