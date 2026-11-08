@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
-import type { ProductRowDto_Serialize as ProductRowDto, ProductStatusDto } from "../../ipc/bindings";
+import type { CategoryDto, ProductRowDto_Serialize as ProductRowDto, ProductStatusDto } from "../../ipc/bindings";
 import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { describeError } from "../shell/errors";
+import { flatTree } from "./categories";
 
 /** Fixed row height: the list positions rows by index, so 50k rows cost the same as 50. */
 export const ROW_PX = 44;
@@ -15,6 +16,8 @@ interface Filter {
   query: string;
   status: ProductStatusDto;
   tracked: "any" | "yes" | "no";
+  /** A category id, or "" for any. */
+  category: string;
 }
 
 /**
@@ -27,14 +30,21 @@ export function ProductList({
   onOpen,
   onNew,
   onBack,
+  onCategories,
 }: {
   workspace: Workspace;
   canEdit: boolean;
   onOpen: (productId: string) => void;
   onNew: () => void;
   onBack: () => void;
+  /** Editors only: open the category tree. */
+  onCategories?: () => void;
 }) {
-  const [filter, setFilter] = useState<Filter>({ query: "", status: "active", tracked: "any" });
+  const [filter, setFilter] = useState<Filter>({ query: "", status: "active", tracked: "any", category: "" });
+  const [categories, setCategories] = useState<CategoryDto[]>([]);
+  useEffect(() => {
+    void commands.categoriesList().then((res) => res.status === "ok" && setCategories(res.data));
+  }, []);
   const [applied, setApplied] = useState<Filter>(filter);
   const [total, setTotal] = useState<number | null>(null);
   const [rows, setRows] = useState<Map<number, ProductRowDto>>(new Map());
@@ -51,7 +61,7 @@ export function ProductList({
     requested.current.add(page);
     void commands
       .productList(
-        { query: f.query, status: f.status, trackStock: f.tracked === "any" ? null : f.tracked === "yes", categoryId: null },
+        { query: f.query, status: f.status, trackStock: f.tracked === "any" ? null : f.tracked === "yes", categoryId: f.category || null },
         page * PAGE,
         PAGE,
       )
@@ -179,6 +189,11 @@ export function ProductList({
         <span className="small" aria-live="polite" data-testid="product-total">
           {total === null ? "" : `${total} ${total === 1 ? "product" : "products"}`}
         </span>
+        {canEdit && onCategories && (
+          <button type="button" className="secondary" onClick={onCategories}>
+            Categories
+          </button>
+        )}
         {canEdit && (
           <button type="button" onClick={onNew}>
             New product
@@ -210,6 +225,20 @@ export function ProductList({
             <option value="no">Not tracked</option>
           </select>
         </label>
+        {categories.length > 0 && (
+          <label>
+            Category
+            <select value={filter.category} onChange={(e) => setFilter((f) => ({ ...f, category: e.target.value }))}>
+              <option value="">Any</option>
+              {flatTree(categories).map(({ category: c, depth }) => (
+                <option key={c.categoryId} value={c.categoryId}>
+                  {"— ".repeat(depth - 1)}
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {error && (
         <p role="alert" className="field-error">

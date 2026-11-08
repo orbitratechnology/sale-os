@@ -182,3 +182,60 @@ describe("unknown barcode (E07-T04)", () => {
     expect(await page.getByRole("button", { name: "Create product" }).count()).toBe(0);
   });
 });
+
+describe("categories (E06-T05)", () => {
+  it("builds a tree 3 deep, refuses a 4th level and archiving a parent, then files a product", async () => {
+    const page = await till();
+    await products(page);
+    await page.getByRole("button", { name: "Categories" }).click();
+    await page.getByRole("heading", { name: "Categories" }).waitFor();
+    const add = async (name: string, inside: string | null) => {
+      await page.getByLabel("New category").fill(name);
+      if (inside) await page.getByLabel("Inside").selectOption({ label: inside });
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByTestId("category-row").filter({ hasText: name }).waitFor();
+    };
+    await add("Drinks", null);
+    await add("Soft drinks", "Drinks");
+    await add("Fizzy", "— Soft drinks");
+    // A third-level category cannot hold another: it is not offered as a parent.
+    const parents = await page.getByLabel("Inside").locator("option").allTextContents();
+    expect(parents).toEqual(["(top level)", "Drinks", "— Soft drinks"]);
+    // Moving Drinks under Fizzy would be a loop (and too deep): refused, the tree is unchanged.
+    await page.getByTestId("category-row").filter({ hasText: /^Drinks/ }).getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Move Drinks into").selectOption({ label: "— — Fizzy" });
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("alert").filter({ hasText: "more than 3 levels deep" }).waitFor();
+    await page.keyboard.press("Escape");
+    // Drinks still has subcategories.
+    await page.getByRole("button", { name: "Archive Drinks" }).click();
+    await page.getByRole("alert").filter({ hasText: "Move or archive its subcategories first" }).waitFor();
+    expect(await page.getByTestId("category-row").allTextContents()).toEqual([
+      expect.stringContaining("Drinks"),
+      expect.stringContaining("Soft drinks"),
+      expect.stringContaining("Fizzy"),
+    ]);
+    // Back to products: a new product is filed under Soft drinks, and the filter finds it.
+    await page.keyboard.press("Escape");
+    await page.getByRole("heading", { name: "Products" }).waitFor();
+    await page.getByRole("button", { name: "New product" }).click();
+    await page.getByLabel("Name").fill("Lemonade");
+    await page.getByLabel("Price for Lemonade").fill("1.10");
+    await page.getByLabel("Category").selectOption({ label: "— Soft drinks" });
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByText("Saved on this device").waitFor();
+    const soft = await page.evaluate(() => window.__fake.categories.find((c) => c.name === "Soft drinks")?.categoryId);
+    expect((await calls(page, "product_create"))[0]?.product).toMatchObject({ name: "Lemonade", categoryId: soft });
+    await page.keyboard.press("Escape");
+    await page.getByRole("heading", { name: "Products" }).waitFor();
+    await page.getByLabel("Category").selectOption({ label: "— Soft drinks" });
+    await page.getByTestId("product-total").filter({ hasText: "1 product" }).waitFor();
+    expect((await calls(page, "product_list")).at(-1)?.filter).toMatchObject({ categoryId: soft });
+    expect(await calls(page, "category_save")).toEqual([
+      { categoryId: null, name: "Drinks", parentId: null, baseVersion: null },
+      { categoryId: null, name: "Soft drinks", parentId: expect.any(String), baseVersion: null },
+      { categoryId: null, name: "Fizzy", parentId: soft, baseVersion: null },
+      { categoryId: expect.any(String), name: "Drinks", parentId: expect.any(String), baseVersion: 1 },
+    ]);
+  });
+});

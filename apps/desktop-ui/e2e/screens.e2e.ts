@@ -1261,3 +1261,68 @@ describe("settings (E04-T03)", () => {
     expect(await page.getByRole("button", { name: "Settings" }).count()).toBe(0); // cashier
   });
 });
+
+describe("taxes (E06-T05)", () => {
+  it("a VAT change on a date: end the old rate, add the new one, swap it into the category", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Taxes" }).click();
+    const rates = page.getByRole("table", { name: "Tax rates" });
+    await rates.getByText("VAT 20%").waitFor();
+    // The old rate ends on the day the new one starts.
+    await page.getByTestId("rate-row").filter({ hasText: "VAT 20%" }).getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Until (not including)").fill("2026-04-01");
+    await page.getByRole("button", { name: "Save rate" }).click();
+    await page.getByTestId("rate-row").filter({ hasText: "2026-04-01" }).waitFor();
+    const form = page.getByRole("form", { name: "Add a rate" });
+    await form.getByLabel("Name").fill("VAT 22%");
+    await form.getByLabel("Rate (%)").fill("22");
+    await form.getByLabel("From").fill("2026-04-01");
+    await page.getByRole("button", { name: "Add rate" }).click();
+    await page.getByTestId("rate-row").filter({ hasText: "VAT 22%" }).waitFor();
+    // A second "VAT 22%" over the same days is refused, naming the clash.
+    await form.getByLabel("Name").fill("vat 22%");
+    await form.getByLabel("Rate (%)").fill("22");
+    await form.getByLabel("From").fill("2026-05-01");
+    await page.getByRole("button", { name: "Add rate" }).click();
+    await page.getByRole("alert").filter({ hasText: 'Another active rate called "VAT 22%"' }).waitFor();
+    // Standard takes both rates (each applies on its own dates).
+    const standard = page.getByRole("group", { name: "Rates in Standard" });
+    await standard.getByLabel("VAT 22%").check();
+    await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "tax_category_save"));
+    // The old rate is still in Standard: archiving it is refused, naming the category.
+    await page.getByRole("button", { name: "Archive VAT 20%" }).click();
+    await page.getByRole("alert").filter({ hasText: "Still used by Standard" }).waitFor();
+    // A new category made the default takes the flag from Standard.
+    await page.getByLabel("New tax category").fill("Zero-rated");
+    await page.getByRole("button", { name: "Add tax category" }).click();
+    await page.getByTestId("taxcat-row").filter({ hasText: "Zero-rated" }).getByRole("button", { name: "Make default" }).click();
+    await page.getByTestId("taxcat-row").filter({ hasText: "Standard" }).getByRole("button", { name: "Make default" }).waitFor();
+    const rate20 = "0190a5b0-0000-7000-8000-00000000ra01";
+    expect(await calls(page, "tax_rate_save")).toEqual([
+      { taxRateId: rate20, name: "VAT 20%", ratePpm: 200000, from: null, to: "2026-04-01", baseVersion: 1 },
+      { taxRateId: null, name: "VAT 22%", ratePpm: 220000, from: "2026-04-01", to: null, baseVersion: null },
+      { taxRateId: null, name: "vat 22%", ratePpm: 220000, from: "2026-05-01", to: null, baseVersion: null },
+    ]);
+    const saves = await calls(page, "tax_category_save");
+    expect(saves[0]).toEqual({ taxCategoryId: expect.any(String), name: "Standard", rateIds: [rate20, expect.any(String)], isDefault: true, baseVersion: 1 });
+    expect(saves.at(-1)).toMatchObject({ name: "Zero-rated", isDefault: true, baseVersion: 1 });
+    const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
+    await page.addScriptTag({ path: axePath });
+    const violations = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("a manager has no Taxes page; Settings is the owner's", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await page.getByRole("button", { name: "Settings" }).count()).toBe(0);
+  });
+});

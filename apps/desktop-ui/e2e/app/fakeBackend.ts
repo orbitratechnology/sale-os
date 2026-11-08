@@ -6,7 +6,14 @@
  * tested there (pricing goldens, cart integration tests, the IPC harness).
  */
 import type { CartLine, CartView, CatalogHit, IpcError, Session, SignInUser, Workspace } from "../../src/ipc";
-import type { Permission, ProductDto_Serialize as ProductDto, ProductInputDto_Deserialize as ProductInput } from "../../src/ipc/bindings";
+import type {
+  CategoryDto_Serialize as CategoryDto,
+  Permission,
+  ProductDto_Serialize as ProductDto,
+  ProductInputDto_Deserialize as ProductInput,
+  TaxCategoryConfigDto,
+  TaxRateConfigDto_Serialize as TaxRateConfigDto,
+} from "../../src/ipc/bindings";
 
 export interface FakeProduct {
   variantId: string;
@@ -62,6 +69,11 @@ export interface FakeState {
   printScript: string[];
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
   printed: number;
+  /** Product categories (E06-T05). */
+  categories: CategoryDto[];
+  /** Tax configuration (E06-T05). */
+  taxRates: TaxRateConfigDto[];
+  taxCategories: TaxCategoryConfigDto[];
 }
 
 export interface FakeSale {
@@ -127,6 +139,7 @@ function dtoFor(p: FakeProduct): ProductDto {
 }
 
 const TAX = "0190a5b0-0000-7000-8000-00000000ta01";
+const RATE = "0190a5b0-0000-7000-8000-00000000ra01";
 
 export function initialState(preset: Preset): FakeState {
   const s = initialStateInner(preset);
@@ -162,6 +175,9 @@ function initialStateInner(preset: Preset): FakeState {
     printScript: [],
     printJobs: new Map(),
     printed: 0,
+    categories: [],
+    taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
+    taxCategories: [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rateIds: [RATE], archived: false, version: 1 }],
   };
 }
 
@@ -322,10 +338,96 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       return null;
     case "tax_list":
       needSession(s);
-      return [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rates: [{ name: "VAT 20%", ratePpm: 200000 }] }];
+      return s.taxCategories
+        .filter((c) => !c.archived)
+        .map((c) => ({
+          taxCategoryId: c.taxCategoryId,
+          name: c.name,
+          isDefault: c.isDefault,
+          rates: s.taxRates.filter((r) => c.rateIds.includes(r.taxRateId)).map((r) => ({ name: r.name, ratePpm: r.ratePpm })),
+        }));
+    case "categories_list":
+      needSession(s);
+      return s.categories;
+    case "category_save":
+    case "category_archive": {
+      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
+      const existing = s.categories.find((c) => c.categoryId === a.categoryId);
+      if (a.categoryId && !existing) fail("VALIDATION_FAILED");
+      if ((existing?.version ?? null) !== (a.baseVersion ?? null)) fail("CONFLICT_VERSION");
+      if (cmd === "category_archive") {
+        if (s.categories.some((c) => c.parentId === a.categoryId && !c.archived)) fail("VALIDATION_FAILED");
+        Object.assign(existing ?? fail("VALIDATION_FAILED"), { archived: true, version: (existing?.version ?? 0) + 1 });
+        return null;
+      }
+      const name = String(a.name).trim();
+      if (!name) fail("VALIDATION_FAILED", { field: "name" });
+      const parent = (a.parentId as string | null) ?? null;
+      // Levels above the new position (a cycle refuses), plus the levels the category brings with it.
+      let above = 0;
+      for (let c = parent; c; c = s.categories.find((x) => x.categoryId === c)?.parentId ?? null) {
+        if (c === a.categoryId || ++above > 5) fail("VALIDATION_FAILED", { field: "parent" });
+      }
+      const levels = (cid: string): number => 1 + Math.max(0, ...s.categories.filter((c) => c.parentId === cid && !c.archived).map((c) => levels(c.categoryId)));
+      if (above + (existing ? levels(existing.categoryId) : 1) > 3) fail("VALIDATION_FAILED", { field: "parent" });
+      if (existing) {
+        Object.assign(existing, { name, parentId: parent, version: existing.version + 1 });
+        return existing;
+      }
+      const created: CategoryDto = { categoryId: id(), parentId: parent, name, archived: false, version: 1 };
+      s.categories.push(created);
+      return created;
+    }
+    case "tax_config_get":
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      return { rates: s.taxRates, categories: s.taxCategories };
+    case "tax_rate_save":
+    case "tax_rate_archive": {
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      const existing = s.taxRates.find((r) => r.taxRateId === a.taxRateId);
+      if (a.taxRateId && !existing) fail("VALIDATION_FAILED");
+      if ((existing?.version ?? null) !== (a.baseVersion ?? null)) fail("CONFLICT_VERSION");
+      if (cmd === "tax_rate_archive") {
+        const users = s.taxCategories.filter((c) => !c.archived && c.rateIds.includes(String(a.taxRateId)));
+        if (users.length) fail("VALIDATION_FAILED", { field: "categories", value: users.map((c) => c.name).join(", ") });
+        Object.assign(existing ?? fail("VALIDATION_FAILED"), { archived: true, version: (existing?.version ?? 0) + 1 });
+        return null;
+      }
+      const name = String(a.name).trim();
+      if (!name) fail("VALIDATION_FAILED", { field: "name" });
+      const from = (a.from as string | null) ?? null;
+      const to = (a.to as string | null) ?? null;
+      if (from && to && to <= from) fail("VALIDATION_FAILED", { field: "period" });
+      const overlap = s.taxRates.find(
+        (r) => !r.archived && r.taxRateId !== a.taxRateId && r.name.toLowerCase() === name.toLowerCase() && (!r.to || !from || from < r.to) && (!to || !r.from || r.from < to),
+      );
+      if (overlap) fail("VALIDATION_FAILED", { field: "name", value: overlap.name });
+      const row = { name, ratePpm: Number(a.ratePpm), from, to };
+      if (existing) return Object.assign(existing, row, { version: existing.version + 1 });
+      const created: TaxRateConfigDto = { taxRateId: id(), ...row, archived: false, version: 1 };
+      s.taxRates.push(created);
+      return created;
+    }
+    case "tax_category_save": {
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      const existing = s.taxCategories.find((c) => c.taxCategoryId === a.taxCategoryId);
+      if (a.taxCategoryId && !existing) fail("VALIDATION_FAILED");
+      if ((existing?.version ?? null) !== (a.baseVersion ?? null)) fail("CONFLICT_VERSION");
+      const name = String(a.name).trim();
+      if (!name) fail("VALIDATION_FAILED", { field: "name" });
+      const rateIds = a.rateIds as string[];
+      if (rateIds.some((r) => !s.taxRates.some((x) => x.taxRateId === r && !x.archived))) fail("VALIDATION_FAILED", { field: "rates" });
+      if (existing?.isDefault && !a.isDefault) fail("VALIDATION_FAILED", { field: "default" });
+      if (a.isDefault) for (const c of s.taxCategories.filter((c) => c.isDefault && c !== existing)) Object.assign(c, { isDefault: false, version: c.version + 1 });
+      const row = { name, rateIds, isDefault: Boolean(a.isDefault) };
+      if (existing) return Object.assign(existing, row, { version: existing.version + 1 });
+      const created: TaxCategoryConfigDto = { taxCategoryId: id(), ...row, archived: false, version: 1 };
+      s.taxCategories.push(created);
+      return created;
+    }
     case "product_list": {
       needSession(s);
-      const f = a.filter as { query: string; status: string; trackStock: boolean | null };
+      const f = a.filter as { query: string; status: string; trackStock: boolean | null; categoryId: string | null };
       const offset = Number(a.offset);
       const limit = Number(a.limit);
       if (s.bigCatalog !== null) {
@@ -340,6 +442,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const all = [...s.catalog.values()]
         .filter((p) => (f.status === "all" ? true : f.status === "archived" ? p.archived : !p.archived))
         .filter((p) => f.trackStock === null || p.variants.some((v) => v.trackStock) === f.trackStock)
+        .filter((p) => !f.categoryId || p.categoryId === f.categoryId)
         .filter((p) => !q || p.name.toLowerCase().includes(q) || p.variants.some((v) => v.sku?.toLowerCase().startsWith(q) || v.barcodes.some((b) => b.raw.includes(q))))
         .sort((x, y) => x.name.localeCompare(y.name));
       const rows = all.slice(offset, offset + limit).map((p) => {
@@ -373,7 +476,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           if (owner) fail("CATALOG_DUPLICATE_BARCODE", { field: "barcode", value: b.raw, ownerProductId: owner.productId });
         }
       const dto: ProductDto = {
-        productId, name: input.name, description: input.description ?? null, categoryId: null, productType: input.productType, unit: input.unit,
+        productId, name: input.name, description: input.description ?? null, categoryId: input.categoryId ?? null, productType: input.productType, unit: input.unit,
         taxCategoryId: input.taxCategoryId, quickSelect: input.quickSelect, archived: false, version: (existing?.version ?? 0) + 1,
         variants: input.variants.map((v, i) => ({
           variantId: v.variantId ?? id(), isDefault: i === 0, sku: v.sku ?? null, options: v.options, priceMinor: v.priceMinor, costMinor: null,

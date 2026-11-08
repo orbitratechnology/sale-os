@@ -40,6 +40,8 @@ export interface ProductDraft {
   productType: ProductType;
   unit: Unit;
   taxCategoryId: string;
+  /** The product's category, or none. */
+  categoryId: string | null;
   quickSelect: boolean;
   axes: Axis[];
   variants: VariantDraft[];
@@ -68,6 +70,7 @@ export function blankDraft(taxCategoryId: string, barcode?: string): ProductDraf
     productType: "stock",
     unit: "ea",
     taxCategoryId,
+    categoryId: null,
     quickSelect: false,
     axes: [],
     variants: [v],
@@ -121,6 +124,7 @@ export function fromProduct(p: ProductDto_Serialize, exponent: number): ProductD
     productType: p.productType,
     unit: p.unit,
     taxCategoryId: p.taxCategoryId,
+    categoryId: p.categoryId ?? null,
     quickSelect: p.quickSelect,
     axes,
     variants: p.variants
@@ -171,7 +175,7 @@ export function toInput(d: ProductDraft, exponent: number): ProductInputDto_Dese
   return {
     name: d.name.trim(),
     description: d.description.trim() || null,
-    categoryId: null,
+    categoryId: d.categoryId,
     productType: d.productType,
     unit: d.unit,
     taxCategoryId: d.taxCategoryId,

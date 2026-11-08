@@ -3,6 +3,10 @@ import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { TaxesPanel } from "./TaxesPanel";
+
+/** The tax page sits beside the registry groups; it is not a registry setting. */
+const TAXES = "Taxes";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
@@ -33,7 +37,7 @@ export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onCh
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group))];
+  const groups = [...new Set((settings ?? []).map((s) => s.group)), TAXES];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -54,21 +58,27 @@ export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onCh
           </button>
         ))}
       </div>
-      <section className="card settings-list" aria-label={group ?? "Settings"}>
-        {(settings ?? [])
-          .filter((s) => s.group === group)
-          .map((s) => (
-            <SettingRow
-              key={s.key}
-              setting={s}
-              onSaved={(updated) => {
-                setSettings((all) => all?.map((x) => (x.key === updated.key ? updated : x)) ?? null);
-                onChanged();
-              }}
-              onConflict={load}
-            />
-          ))}
-      </section>
+      {group === TAXES ? (
+        <section className="card settings-list" aria-label={TAXES}>
+          <TaxesPanel />
+        </section>
+      ) : (
+        <section className="card settings-list" aria-label={group ?? "Settings"}>
+          {(settings ?? [])
+            .filter((s) => s.group === group)
+            .map((s) => (
+              <SettingRow
+                key={s.key}
+                setting={s}
+                onSaved={(updated) => {
+                  setSettings((all) => all?.map((x) => (x.key === updated.key ? updated : x)) ?? null);
+                  onChanged();
+                }}
+                onConflict={load}
+              />
+            ))}
+        </section>
+      )}
     </main>
   );
 }

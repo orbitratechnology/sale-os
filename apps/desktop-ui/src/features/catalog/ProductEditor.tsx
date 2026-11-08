@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
-import type { BarcodeQualifier, ProductType, TaxCategoryDto, Unit } from "../../ipc/bindings";
+import type { BarcodeQualifier, CategoryDto, ProductType, TaxCategoryDto, Unit } from "../../ipc/bindings";
 import { Dialog } from "../checkout/Dialog";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
+import { flatTree } from "./categories";
 import {
   blankDraft,
   fromProduct,
@@ -56,6 +57,7 @@ export function ProductEditor({
   const exponent = workspace.currencyExponent;
   const [draft, setDraft] = useState<ProductDraft | null>(null);
   const [taxes, setTaxes] = useState<TaxCategoryDto[]>([]);
+  const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [selected, setSelected] = useState(0);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [failure, setFailure] = useState<IpcError | null>(null);
@@ -66,10 +68,11 @@ export function ProductEditor({
   useEffect(() => {
     let live = true;
     void (async () => {
-      const t = await commands.taxList();
+      const [t, c] = await Promise.all([commands.taxList(), commands.categoriesList()]);
       if (!live) return;
       if (t.status === "error") return setFailure(t.error);
       setTaxes(t.data);
+      if (c.status === "ok") setCategories(c.data);
       if (productId) {
         const p = await commands.productGet(productId);
         if (!live) return;
@@ -220,6 +223,22 @@ export function ProductEditor({
                   <option key={t.taxCategoryId} value={t.taxCategoryId}>
                     {t.name}
                     {t.rates.length ? ` (${t.rates.map((r) => r.name).join(", ")})` : " (no tax)"}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+          <Field label="Category">
+            {(id) => (
+              <select id={id} disabled={ro} value={draft.categoryId ?? ""} onChange={(e) => update((d) => ({ ...d, categoryId: e.target.value || null }))}>
+                <option value="">(none)</option>
+                {draft.categoryId && !categories.some((c) => c.categoryId === draft.categoryId && !c.archived) && (
+                  <option value={draft.categoryId}>{categories.find((c) => c.categoryId === draft.categoryId)?.name ?? "Archived category"}</option>
+                )}
+                {flatTree(categories).map(({ category: c, depth }) => (
+                  <option key={c.categoryId} value={c.categoryId}>
+                    {"— ".repeat(depth - 1)}
+                    {c.name}
                   </option>
                 ))}
               </select>
