@@ -1192,3 +1192,72 @@ describe("going live (E04-T02)", () => {
     expect(await page.getByRole("button", { name: "Go live…" }).count()).toBe(0);
   });
 });
+
+describe("settings (E04-T03)", () => {
+  async function signInAs(name: RegExp, pin: string, before?: (page: Page) => Promise<void>): Promise<Page> {
+    const page = await open("signIn");
+    if (before) await before(page);
+    await page.getByRole("button", { name }).click();
+    await page.keyboard.type(pin);
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    return page;
+  }
+
+  it("the owner changes typed settings, each saved with the version it showed", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("heading", { name: "Settings" }).waitFor();
+    // Inventory: a switch saves at once.
+    await page.getByLabel(/Allow selling below zero stock/).uncheck();
+    await page.getByText("Saved.").waitFor();
+    // Security: a percentage, sent as ppm; a bad number is caught on the screen.
+    await page.getByRole("tab", { name: "Security" }).click();
+    const limit = page.getByLabel(/Largest discount a cashier may give/);
+    await limit.fill("15");
+    await limit.press("Enter");
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 2);
+    const lock = page.getByLabel(/Lock the till after/);
+    await lock.fill("soon");
+    await lock.press("Enter");
+    await page.getByRole("alert").filter({ hasText: "whole number from 0 to 3600" }).waitFor();
+    // Receipts: footer lines become a JSON list.
+    await page.getByRole("tab", { name: "Receipts" }).click();
+    const footer = page.getByLabel(/Lines at the bottom of receipts/);
+    await footer.fill("Thank you\n\nNo refunds without a receipt");
+    await page.getByRole("region", { name: "Receipts" }).getByRole("button", { name: "Save" }).click();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 3);
+    expect(await calls(page, "settings_update")).toEqual([
+      { key: "inventory.allow_negative", valueJson: "false", baseVersion: 1 },
+      { key: "discount.cashier_max_ppm", valueJson: "150000", baseVersion: 1 },
+      { key: "receipt.footer_lines", valueJson: JSON.stringify(["Thank you", "No refunds without a receipt"]), baseVersion: 1 },
+    ]);
+    // Someone else changed the width meanwhile: refused, and the current value is shown.
+    await page.evaluate(() => {
+      window.__fake.settings.set("receipt.paper_width_mm", { valueJson: "58", version: 2 });
+    });
+    await page.getByLabel(/Paper width/).selectOption("80");
+    await page.getByRole("alert").filter({ hasText: "Someone changed this meanwhile" }).waitFor();
+    await page.waitForFunction(() => (document.querySelector("select[id='setting-receipt.paper_width_mm']") as HTMLSelectElement | null)?.value === "58");
+  });
+
+  it("idle for the lock timeout: back to sign-in, through auth_lock", async () => {
+    const page = await signInAs(/Cal/, "3333", async (p) => {
+      await p.evaluate(() => window.__fake.settings.set("security.lock_timeout_secs", { valueJson: "1", version: 2 }));
+    });
+    await page.getByRole("button", { name: /Mia/ }).waitFor({ timeout: 5000 });
+    expect(await calls(page, "auth_lock")).toHaveLength(1);
+  });
+
+  it("the scanner suffix setting is used: a Tab-terminated scan adds the item", async () => {
+    const page = await signInAs(/Cal/, "3333", async (p) => {
+      await p.evaluate(() => window.__fake.settings.set("scanner.suffix", { valueJson: '"Tab"', version: 2 }));
+    });
+    await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "app_preferences"));
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.type(COLA, { delay: 5 });
+    await page.keyboard.press("Tab");
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    expect(await page.getByRole("button", { name: "Settings" }).count()).toBe(0); // cashier
+  });
+});

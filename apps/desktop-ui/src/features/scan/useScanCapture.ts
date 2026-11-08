@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useRef } from "react";
+import { ScanPreferences } from "./preferences";
 import { DEFAULT_SCAN_CONFIG, ScanDetector, type DetectedScan, type ScanDetectorConfig } from "./scanDetector";
 
 export interface CapturedScan extends DetectedScan {
@@ -39,7 +40,8 @@ export function useScanCapture(
   useEffect(() => {
     onScanRef.current = onScan;
   });
-  const merged: ScanDetectorConfig = { ...DEFAULT_SCAN_CONFIG, ...config };
+  const shop = useContext(ScanPreferences);
+  const merged: ScanDetectorConfig = { ...DEFAULT_SCAN_CONFIG, ...shop, ...config };
   // A stable key so the listener is rebuilt only when a setting actually changes.
   const configKey = JSON.stringify(merged);
 

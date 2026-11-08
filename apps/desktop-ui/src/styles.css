@@ -257,3 +257,10 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 .report-exports { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; }
 .stock-hint { display: block; font-size: 0.8rem; color: var(--sandbox); }
 .stock-flag { color: var(--danger); font-weight: 700; }
+
+/* Settings (E04-T03) */
+.settings-list { display: grid; gap: 4px; }
+.setting-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.setting-row label { display: grid; gap: 2px; }
+.setting-edit { display: flex; gap: 8px; align-items: center; }
+.setting-edit textarea { min-width: 320px; font-family: var(--mono, monospace); }

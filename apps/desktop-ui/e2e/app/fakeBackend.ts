@@ -54,6 +54,8 @@ export interface FakeState {
   documents: number;
   /** CSV exports made. */
   exports: number;
+  /** Business settings: key → value (JSON text) and version. */
+  settings: Map<string, { valueJson: string; version: number }>;
   /** Completed returns: id → number. */
   returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
@@ -156,6 +158,7 @@ function initialStateInner(preset: Preset): FakeState {
     drawer: { required: false, seq: 0, session: null, lastClosed: null },
     documents: 0,
     exports: 0,
+    settings: new Map(FAKE_SETTINGS.map((d) => [d.key, { valueJson: d.defaultJson, version: 1 }])),
     printScript: [],
     printJobs: new Map(),
     printed: 0,
@@ -171,6 +174,16 @@ const div = (a: bigint, b: bigint) => (a >= 0n ? (a + b / 2n) / b : (a - b / 2n)
 
 /** Sellable on hand per product name, matching the fake stock report. */
 const FAKE_STOCK: Record<string, bigint> = { "Chocolate bar": -2000n, "Cola 330ml": 40000n, Crisps: 3000n };
+
+/** A few registry entries, shaped like Rust's (crates/pos-application/src/settings.rs). */
+const FAKE_SETTINGS = [
+  { key: "inventory.allow_negative", group: "Inventory", label: "Allow selling below zero stock", help: "On: sell anyway.", kind: { type: "bool" }, defaultJson: "true" },
+  { key: "discount.cashier_max_ppm", group: "Security", label: "Largest discount a cashier may give", help: "Above this, a manager approves.", kind: { type: "ppm" }, defaultJson: "100000" },
+  { key: "security.lock_timeout_secs", group: "Security", label: "Lock the till after this many idle seconds", help: "0 never locks.", kind: { type: "int", min: 0, max: 3600 }, defaultJson: "300" },
+  { key: "receipt.paper_width_mm", group: "Receipts", label: "Paper width (mm)", help: "58 or 80.", kind: { type: "choice", options: ["58", "80"] }, defaultJson: "80" },
+  { key: "receipt.footer_lines", group: "Receipts", label: "Lines at the bottom of receipts", help: "Up to 5 lines.", kind: { type: "lines", maxLines: 5, maxChars: 48 }, defaultJson: "[]" },
+  { key: "scanner.suffix", group: "Scanner", label: "Key the scanner sends after a code", help: "Match the scanner.", kind: { type: "choice", options: ['"Enter"', '"Tab"', '"none"'] }, defaultJson: '"Enter"' },
+] as const;
 
 export function view(s: FakeState): CartView {
   const lines: CartLine[] = s.lines.map((l) => {
@@ -638,6 +651,44 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const rows = a.dataset === "transactions" ? s.sales.reduce((n, x) => n + x.lines.length, 0) : a.dataset === "products" ? s.products.length : 3;
       return { path: `/data/exports/${name}`, fileName: name, rows };
     }
+    case "settings_get":
+    case "settings_update": {
+      const me = needSession(s);
+      if (me.role !== "owner") fail("PERMISSION_DENIED");
+      const row = (d: (typeof FAKE_SETTINGS)[number]) => {
+        const v = s.settings.get(d.key) ?? { valueJson: d.defaultJson, version: 0 };
+        return { ...d, valueJson: v.valueJson, version: v.version };
+      };
+      if (cmd === "settings_get") return FAKE_SETTINGS.map(row);
+      const d = FAKE_SETTINGS.find((x) => x.key === a.key) ?? fail("VALIDATION_FAILED");
+      const current = s.settings.get(d.key);
+      if ((current?.version ?? 0) !== a.baseVersion) fail("CONFLICT_VERSION");
+      let value: unknown;
+      try {
+        value = JSON.parse(String(a.valueJson));
+      } catch {
+        fail("VALIDATION_FAILED");
+      }
+      const k = d.kind as { type: string; min?: number; max?: number; options?: readonly string[] };
+      const ok =
+        (k.type === "bool" && typeof value === "boolean") ||
+        (k.type === "int" && Number.isInteger(value) && (value as number) >= (k.min ?? 0) && (value as number) <= (k.max ?? 0)) ||
+        (k.type === "ppm" && Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 1_000_000) ||
+        (k.type === "choice" && (k.options ?? []).includes(String(a.valueJson))) ||
+        (k.type === "lines" && Array.isArray(value) && value.length <= 5);
+      if (!ok) fail("VALIDATION_FAILED");
+      s.settings.set(d.key, { valueJson: String(a.valueJson), version: (current?.version ?? 0) + 1 });
+      return row(d);
+    }
+    case "app_preferences": {
+      needSession(s);
+      const get = (k: string) => JSON.parse(s.settings.get(k)?.valueJson ?? "null") as unknown;
+      return { scannerSuffix: get("scanner.suffix"), scannerMaxKeyGapMs: 35, lockTimeoutSecs: get("security.lock_timeout_secs") };
+    }
+    case "auth_lock":
+      needSession(s);
+      s.session = null;
+      return null;
     case "register_go_live": {
       const me = needSession(s);
       if (me.role !== "owner") fail("PERMISSION_DENIED");

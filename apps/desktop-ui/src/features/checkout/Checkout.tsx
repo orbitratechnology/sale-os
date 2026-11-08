@@ -59,6 +59,7 @@ export function Checkout({
   onStock,
   onReports,
   onWentLive,
+  onSettings,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -75,6 +76,8 @@ export function Checkout({
   onReports: (() => void) | null;
   /** Owner only: the till went live (refresh the workspace). `null` hides "Go live". */
   onWentLive: (() => void) | null;
+  /** Owner only: the settings screen. */
+  onSettings: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
@@ -352,6 +355,11 @@ export function Checkout({
           {onReports && (
             <button type="button" className="secondary" onClick={onReports}>
               Reports
+            </button>
+          )}
+          {onSettings && (
+            <button type="button" className="secondary" onClick={onSettings}>
+              Settings
             </button>
           )}
           <button type="button" className="secondary" onClick={() => void lock()}>
