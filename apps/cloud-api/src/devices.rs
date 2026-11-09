@@ -491,3 +491,24 @@ impl FromRequestParts<AppState> for DevicePrincipal {
         }
     }
 }
+
+/// PRD §10.2: the tenant comes from the token. A request body that names a business or a
+/// register (sync events do) must name the token's own, or the request is refused (403).
+pub fn same_tenant(
+    me: &DevicePrincipal,
+    business_id: Option<Uuid>,
+    register_id: Option<Uuid>,
+) -> Result<(), Problem> {
+    let business_ok = business_id.is_none_or(|b| b == *me.business_id.as_uuid());
+    let register_ok = register_id.is_none_or(|r| r == me.register_id);
+    if business_ok && register_ok {
+        Ok(())
+    } else {
+        tracing::warn!(device_id = %me.device_id, "request body names another business or register");
+        Err(problem(
+            StatusCode::FORBIDDEN,
+            ErrorCode::PermissionDenied,
+            "Not this device's business",
+        ))
+    }
+}
