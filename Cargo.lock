@@ -624,6 +624,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "chrono",
  "ed25519-dalek",
  "http-body-util",
  "jsonschema",
@@ -633,6 +634,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "sha2",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
@@ -3418,6 +3420,7 @@ dependencies = [
 name = "pos-cloud-db"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "pos-domain",
  "serde_json",
  "sqlx",

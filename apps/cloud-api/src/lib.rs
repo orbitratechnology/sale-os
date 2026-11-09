@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod devices;
 mod problem;
 mod routes;
 

@@ -45,6 +45,9 @@ pub enum ErrorCode {
     AuthEmailTaken,
     AuthRateLimited,
     AuthRequired,
+    SyncRegisterInUse,
+    SyncBusinessIdTaken,
+    NotFound,
     ConflictVersion,
     Internal,
 }
@@ -96,6 +99,9 @@ impl ErrorCode {
             AuthEmailTaken => "AUTH_EMAIL_TAKEN",
             AuthRateLimited => "AUTH_RATE_LIMITED",
             AuthRequired => "AUTH_REQUIRED",
+            SyncRegisterInUse => "SYNC_REGISTER_IN_USE",
+            SyncBusinessIdTaken => "SYNC_BUSINESS_ID_TAKEN",
+            NotFound => "NOT_FOUND",
             ConflictVersion => "CONFLICT_VERSION",
             Internal => "INTERNAL",
         }
@@ -256,6 +262,18 @@ impl ErrorCode {
                 "The cloud request has no valid token (missing, expired or wrong kind).",
                 "Sign in to the cloud again.",
             ),
+            SyncRegisterInUse => (
+                "Another device is linked to this register; linking this one disconnects it.",
+                "Ask the owner to confirm replacing the other device.",
+            ),
+            SyncBusinessIdTaken => (
+                "Another cloud account already owns a business with this ID.",
+                "Explain; link to another business or contact support.",
+            ),
+            NotFound => (
+                "No such cloud record for this account or device (also the answer for another business's records).",
+                "Refresh the list.",
+            ),
             ConflictVersion => (
                 "Someone else changed this record first.",
                 "Open the conflict view.",
@@ -351,7 +369,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 39);
+        assert_eq!(seen.len(), 42);
     }
 
     #[test]

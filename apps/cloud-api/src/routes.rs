@@ -14,7 +14,7 @@ pub(crate) fn router(state: AppState) -> Router {
     if state.config.debug_routes {
         v1 = v1.route("/_debug/money-add", post(debug_money_add));
     }
-    let v1 = v1.merge(crate::auth::routes());
+    let v1 = v1.merge(crate::auth::routes()).merge(crate::devices::routes());
     Router::new().nest("/v1", v1).with_state(state)
 }
 

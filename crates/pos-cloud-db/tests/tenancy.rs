@@ -153,3 +153,43 @@ async fn a_business_sees_only_its_own_rows_and_cannot_write_anothers() {
         "Till 1"
     );
 }
+
+#[tokio::test]
+async fn a_reused_connection_still_fails_closed() {
+    let Some(pool) = pool().await else { return };
+    let (a, _) = business(&pool, "Shop on a reused connection").await;
+    // One connection: a tenant transaction, then a transaction with no business set. The
+    // setting reads back as '' afterwards, which must mean "no rows", not an error.
+    let mut conn = pool.acquire().await.unwrap();
+    {
+        use sqlx::Connection;
+        let mut tx = conn.begin().await.unwrap();
+        sqlx::query("SET LOCAL ROLE pos_app")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("SELECT set_config('app.business_id', $1, true)")
+            .bind(a.business_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM businesses")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        tx.commit().await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+        sqlx::query("SET LOCAL ROLE pos_app")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        for table in ["businesses", "registers", "devices", "device_refresh_tokens"] {
+            let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table}"))
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+            assert_eq!(n, 0, "{table}");
+        }
+    }
+}

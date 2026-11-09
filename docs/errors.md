@@ -46,5 +46,8 @@ to the action below.
 | `AUTH_EMAIL_TAKEN` |  | A cloud account with this email already exists. | Offer to sign in instead. |
 | `AUTH_RATE_LIMITED` |  | Too many cloud sign-in attempts. The `Retry-After` header says when to try again. | Show when to try again. |
 | `AUTH_REQUIRED` |  | The cloud request has no valid token (missing, expired or wrong kind). | Sign in to the cloud again. |
+| `SYNC_REGISTER_IN_USE` |  | Another device is linked to this register; linking this one disconnects it. | Ask the owner to confirm replacing the other device. |
+| `SYNC_BUSINESS_ID_TAKEN` |  | Another cloud account already owns a business with this ID. | Explain; link to another business or contact support. |
+| `NOT_FOUND` |  | No such cloud record for this account or device (also the answer for another business's records). | Refresh the list. |
 | `CONFLICT_VERSION` |  | Someone else changed this record first. | Open the conflict view. |
 | `INTERNAL` |  | A bug. The correlation ID matches a log line. | Offer the diagnostics bundle. |

@@ -65,3 +65,30 @@ impl<'p> TenantTx<'p> {
         self.tx.rollback().await
     }
 }
+
+/// A transaction for one owner across the businesses they belong to: `app.account_id` is
+/// set (from a verified user token only), which read-only policies use to show their
+/// memberships, businesses, registers and devices. It cannot write tenant rows.
+pub struct AccountTx<'p> {
+    tx: Transaction<'p, Postgres>,
+}
+
+impl<'p> AccountTx<'p> {
+    pub async fn begin(pool: &'p PgPool, account_id: uuid::Uuid) -> Result<Self, sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        sqlx::query("SET LOCAL ROLE pos_app").execute(&mut *tx).await?;
+        sqlx::query("SELECT set_config('app.account_id', $1, true)")
+            .bind(account_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        Ok(Self { tx })
+    }
+
+    pub(crate) fn conn(&mut self) -> &mut PgConnection {
+        &mut self.tx
+    }
+
+    pub async fn commit(self) -> Result<(), sqlx::Error> {
+        self.tx.commit().await
+    }
+}

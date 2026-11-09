@@ -201,7 +201,7 @@ the action available (PRD §5.1).
 | `POST /v1/auth/login` | none | `{ email, password } → { userAccessToken, expiresIn }` | |
 | `POST /v1/businesses` | user | `{ businessId, name, countryCode, timezone, currencyCode, currencyExponent, pricesIncludeTax } → 201 BusinessDto` | Client-generated ID. Idempotent when the same owner sends the same ID. `409` when another account owns that ID. |
 | `GET /v1/businesses` | user | `→ [BusinessDto]` | For the "join existing" path (D-10) |
-| `POST /v1/devices/register` | user | `{ businessId, registerId, locationId, installationId, appVersion, osInfo } → { deviceId, accessToken, refreshToken, expiresIn }` | The user must be an owner of the business. Revokes any previous active device on this register (after confirmation in the UI). |
+| `POST /v1/devices/register` | user | `{ businessId, registerId, registerName, registerCode, locationId, locationName, installationId, appVersion, osInfo, replaceExisting } → { deviceId, accessToken, refreshToken, expiresIn }` | The user must be an owner of the business (else `404 NOT_FOUND`, the same as no such business). Creates the location and register if missing. A device already active on the register: `409 SYNC_REGISTER_IN_USE` unless `replaceExisting` (the owner confirmed), which revokes it. |
 | `POST /v1/auth/device/refresh` | refresh token | `{ refreshToken } → { accessToken, refreshToken, expiresIn }` | Rotation. Reuse ⇒ the device is revoked (`401 SYNC_DEVICE_REVOKED`). |
 | `POST /v1/devices/{deviceId}/revoke` | user | `→ 204` | |
 | `GET /v1/devices` | user | `→ [DeviceDto]` | |

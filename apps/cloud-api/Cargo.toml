@@ -19,6 +19,8 @@ pos-domain.workspace = true
 pos-observability.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+chrono.workspace = true
 sqlx = { workspace = true, features = ["postgres"] }
 tokio = { workspace = true, features = ["net", "signal"] }
 thiserror.workspace = true
@@ -26,6 +28,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+sha2.workspace = true
 http-body-util = "0.1"
 pos-observability.workspace = true
 tokio = { workspace = true, features = ["rt"] }

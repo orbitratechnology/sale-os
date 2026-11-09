@@ -21,6 +21,8 @@ tags:
     description: Health and version policy.
   - name: auth
     description: Owner accounts (E16-T03).
+  - name: devices
+    description: Businesses, device registration, token rotation and revocation (E16-T04).
 paths:
   /v1/health:
     get:
@@ -158,7 +160,250 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/businesses:
+    post:
+      operationId: createBusiness
+      tags: [devices]
+      summary: Creates the cloud business for a till's workspace (client-generated id).
+      description: Idempotent for the same owner and id (200 with the existing business).
+      security:
+        - userToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBusiness"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "200":
+          description: Already created by this owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`SYNC_BUSINESS_ID_TAKEN`: another account owns this id."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listBusinesses
+      tags: [devices]
+      summary: The businesses the owner belongs to (the "join existing" path, D-10).
+      security:
+        - userToken: []
+      responses:
+        "200":
+          description: The owner's businesses.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Business"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/devices/register:
+    post:
+      operationId: registerDevice
+      tags: [devices]
+      summary: Links this installation to a register of the owner's business.
+      description: |
+        Creates the location and register if the cloud does not have them yet. A device already
+        active on the register is revoked only with `replaceExisting: true` (the owner confirmed);
+        otherwise `409 SYNC_REGISTER_IN_USE`. Another owner's business, or none: `404 NOT_FOUND`.
+      security:
+        - userToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDevice"
+      responses:
+        "201":
+          description: Linked. The refresh token is shown once; only its hash is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCredentials"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`SYNC_REGISTER_IN_USE`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/auth/device/refresh:
+    post:
+      operationId: refreshDevice
+      tags: [devices]
+      summary: Rotates the device's refresh token and issues a new 15-minute access token.
+      description: Reusing a spent refresh token revokes the device (`401 SYNC_DEVICE_REVOKED`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+                  writeOnly: true
+      responses:
+        "200":
+          description: New tokens; the old refresh token is spent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCredentials"
+        "401":
+          description: "`SYNC_DEVICE_REVOKED` (revoked, or a spent token reused) or `AUTH_REQUIRED` (unknown or expired: link again)."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      summary: The devices of the owner's businesses.
+      security:
+        - userToken: []
+      responses:
+        "200":
+          description: Devices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      tags: [devices]
+      summary: Disconnects a device at once (its next request gets `401 SYNC_DEVICE_REVOKED`).
+      security:
+        - userToken: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Revoked.
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: no such device among the owner's businesses."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 components:
+  securitySchemes:
+    userToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Owner token from /v1/auth/login (kind `user`, 15 minutes)."
+    deviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Device token (kind `device`, 15 minutes); the device must still be active."
   schemas:
     HealthResponse:
       type: object
@@ -187,6 +432,65 @@ components:
         updateUrl:
           type: string
           format: uri
+    NewBusiness:
+      type: object
+      required: [businessId, name, countryCode, timezone, currencyCode, currencyExponent, pricesIncludeTax]
+      properties:
+        businessId: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 80}
+        countryCode: {type: string, pattern: "^[A-Z]{2}$"}
+        timezone: {type: string, maxLength: 64}
+        currencyCode: {type: string, pattern: "^[A-Z]{3}$"}
+        currencyExponent: {type: integer, minimum: 0, maximum: 4}
+        pricesIncludeTax: {type: boolean}
+    Business:
+      type: object
+      required: [businessId, name, countryCode, timezone, currencyCode, currencyExponent, pricesIncludeTax, version, status]
+      properties:
+        businessId: {type: string, format: uuid}
+        name: {type: string}
+        countryCode: {type: string}
+        timezone: {type: string}
+        currencyCode: {type: string}
+        currencyExponent: {type: integer}
+        pricesIncludeTax: {type: boolean}
+        version: {type: integer}
+        status: {type: string, enum: [active, suspended, deleted]}
+    RegisterDevice:
+      type: object
+      required: [businessId, registerId, registerName, registerCode, locationId, locationName, installationId, appVersion]
+      properties:
+        businessId: {type: string, format: uuid}
+        registerId: {type: string, format: uuid}
+        registerName: {type: string}
+        registerCode: {type: string, pattern: "^[A-Z0-9]{1,6}$"}
+        locationId: {type: string, format: uuid}
+        locationName: {type: string}
+        installationId: {type: string, format: uuid}
+        appVersion: {type: string}
+        osInfo: {type: [string, "null"]}
+        replaceExisting: {type: boolean, default: false}
+    DeviceCredentials:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        deviceId: {type: string, format: uuid, description: Present on registration.}
+        accessToken: {type: string, description: "EdDSA JWT, kind `device`, with businessId, registerId and deviceId claims."}
+        refreshToken: {type: string, description: Opaque; keep it in the OS credential store.}
+        expiresIn: {type: integer, description: Seconds (900).}
+    Device:
+      type: object
+      required: [deviceId, businessId, registerId, appVersion, status, registeredAt]
+      properties:
+        deviceId: {type: string, format: uuid}
+        businessId: {type: string, format: uuid}
+        registerId: {type: string, format: uuid}
+        appVersion: {type: string}
+        osInfo: {type: [string, "null"]}
+        status: {type: string, enum: [active, revoked]}
+        registeredAt: {type: string, format: date-time}
+        lastSeenAt: {type: [string, "null"], format: date-time}
+        revokedAt: {type: [string, "null"], format: date-time}
     Credentials:
       type: object
       required: [email, password]
@@ -276,5 +580,8 @@ components:
             - AUTH_EMAIL_TAKEN
             - AUTH_RATE_LIMITED
             - AUTH_REQUIRED
+            - SYNC_REGISTER_IN_USE
+            - SYNC_BUSINESS_ID_TAKEN
+            - NOT_FOUND
             - CONFLICT_VERSION
             - INTERNAL

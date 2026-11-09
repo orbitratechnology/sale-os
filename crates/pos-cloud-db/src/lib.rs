@@ -4,10 +4,11 @@
 //! row-level security; E16-T02) and the repositories that use them.
 
 pub mod accounts;
+pub mod devices;
 pub mod repo;
 pub mod tenant;
 
-pub use tenant::{Principal, TenantTx};
+pub use tenant::{AccountTx, Principal, TenantTx};
 
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgPool, PgPoolOptions};
