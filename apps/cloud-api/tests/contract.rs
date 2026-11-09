@@ -6,7 +6,6 @@ use axum::http::{Request, StatusCode};
 use cloud_api::{AppState, Config, router};
 use http_body_util::BodyExt;
 use serde_json::Value;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 const SPEC: &str = include_str!("../../../contracts/openapi/pos-cloud.v1.yaml");
@@ -42,10 +41,7 @@ async fn get(state: AppState, uri: &str) -> (StatusCode, Value) {
 }
 
 fn state(config: Config) -> AppState {
-    AppState {
-        config: Arc::new(config),
-        db: None,
-    }
+    AppState::new(config, None)
 }
 
 #[tokio::test]
@@ -57,14 +53,7 @@ async fn health_matches_schema_when_up_and_degraded() {
     let mut cfg = Config::for_tests();
     cfg.database_url = Some("postgres://nobody@127.0.0.1:1/none".into());
     let db = Some(pos_cloud_db::connect_lazy(cfg.database_url.as_deref().unwrap()).unwrap());
-    let (status, body) = get(
-        AppState {
-            config: Arc::new(cfg),
-            db,
-        },
-        "/v1/health",
-    )
-    .await;
+    let (status, body) = get(AppState::new(cfg, db), "/v1/health").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_matches("HealthResponse", &body);
 }

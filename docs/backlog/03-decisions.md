@@ -191,6 +191,11 @@ campaign in `E19-T02`.
 - The refresh token is stored in the **OS credential store** (Windows Credential Manager, via
   the `keyring` crate). It is never stored in SQLite, config files or the WebView.
 
+- *As built (E16-T03):* JWTs are signed with Ed25519 through `ed25519-dalek` directly (no
+  JWT library: `jsonwebtoken`'s pure-Rust backend pulls in `rsa`, which has an open RustSec
+  advisory). Verification accepts only `alg: EdDSA`, checks the issuer, the token kind
+  (`user` / `device`) and the expiry.
+
 ### ADR-014 Receipt rendering
 
 - There is one canonical `ReceiptDocument`: a JSON-serializable model built from a sale or

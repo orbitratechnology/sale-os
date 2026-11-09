@@ -5,8 +5,8 @@ info:
   summary: Device sync, owner accounts and consolidated reports for Sale OS registers.
   description: |
     Source of truth for the cloud REST contract (docs/backlog/07-contracts.md §3).
-    Stage 0 covers the unauthenticated service endpoints. Auth, sync and reports are added
-    by E16-T03..T06 and E17. Errors use RFC 9457 problem+json carrying a catalogued `code`
+    Covers the service endpoints and owner sign-up / sign-in (E16-T03). Devices, sync and
+    reports are added by E16-T04..T06 and E17. Errors use RFC 9457 problem+json carrying a catalogued `code`
     (docs/errors.md).
   contact:
     name: Sale OS engineering
@@ -19,6 +19,8 @@ servers:
 tags:
   - name: service
     description: Health and version policy.
+  - name: auth
+    description: Owner accounts (E16-T03).
 paths:
   /v1/health:
     get:
@@ -64,6 +66,98 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/auth/signup:
+    post:
+      operationId: signup
+      tags: [auth]
+      summary: Creates an owner account (rate-limited per client address, 5 a minute).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "201":
+          description: The account was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupResponse"
+        "409":
+          description: "`AUTH_EMAIL_TAKEN`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not an email, or the password is shorter than 10 characters or too common."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: "`AUTH_RATE_LIMITED`; `Retry-After` gives the seconds to wait."
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Signs an owner in; returns a 15-minute user token (EdDSA JWT).
+      description: |
+        A wrong password and an unknown email give the same status, body and (on average)
+        time. Rate-limited per client address and per email: 5 a minute, then blocks of
+        1, 2, 4… minutes (at most an hour).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: "`AUTH_CREDENTIALS_INVALID`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: "`AUTH_RATE_LIMITED`; `Retry-After` gives the seconds to wait."
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 components:
   schemas:
     HealthResponse:
@@ -93,6 +187,36 @@ components:
         updateUrl:
           type: string
           format: uri
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          writeOnly: true
+    SignupResponse:
+      type: object
+      required: [accountId]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+    LoginResponse:
+      type: object
+      required: [userAccessToken, expiresIn]
+      properties:
+        userAccessToken:
+          type: string
+          description: EdDSA JWT; claims `sub` (account), `kind` = `user`, `iss`, `iat`, `exp`.
+        expiresIn:
+          type: integer
+          description: Seconds (900).
     Problem:
       type: object
       description: RFC 9457 problem details with a catalogued error code.
@@ -148,5 +272,9 @@ components:
             - SYNC_DEVICE_REVOKED
             - SYNC_UPGRADE_REQUIRED
             - SYNC_OUT_OF_ORDER
+            - AUTH_CREDENTIALS_INVALID
+            - AUTH_EMAIL_TAKEN
+            - AUTH_RATE_LIMITED
+            - AUTH_REQUIRED
             - CONFLICT_VERSION
             - INTERNAL

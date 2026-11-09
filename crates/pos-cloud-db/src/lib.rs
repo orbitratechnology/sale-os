@@ -3,6 +3,7 @@
 //! The connection helper, the migration runner, tenant-scoped transactions ([`TenantTx`],
 //! row-level security; E16-T02) and the repositories that use them.
 
+pub mod accounts;
 pub mod repo;
 pub mod tenant;
 

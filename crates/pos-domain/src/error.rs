@@ -41,6 +41,10 @@ pub enum ErrorCode {
     SyncDeviceRevoked,
     SyncUpgradeRequired,
     SyncOutOfOrder,
+    AuthCredentialsInvalid,
+    AuthEmailTaken,
+    AuthRateLimited,
+    AuthRequired,
     ConflictVersion,
     Internal,
 }
@@ -88,6 +92,10 @@ impl ErrorCode {
             SyncDeviceRevoked => "SYNC_DEVICE_REVOKED",
             SyncUpgradeRequired => "SYNC_UPGRADE_REQUIRED",
             SyncOutOfOrder => "SYNC_OUT_OF_ORDER",
+            AuthCredentialsInvalid => "AUTH_CREDENTIALS_INVALID",
+            AuthEmailTaken => "AUTH_EMAIL_TAKEN",
+            AuthRateLimited => "AUTH_RATE_LIMITED",
+            AuthRequired => "AUTH_REQUIRED",
             ConflictVersion => "CONFLICT_VERSION",
             Internal => "INTERNAL",
         }
@@ -232,6 +240,22 @@ impl ErrorCode {
                 "The server expected a different event sequence (REST only).",
                 "Resend automatically.",
             ),
+            AuthCredentialsInvalid => (
+                "Cloud sign-in failed: the email or the password is wrong (never says which).",
+                "Let the owner retry or reset the password.",
+            ),
+            AuthEmailTaken => (
+                "A cloud account with this email already exists.",
+                "Offer to sign in instead.",
+            ),
+            AuthRateLimited => (
+                "Too many cloud sign-in attempts. The `Retry-After` header says when to try again.",
+                "Show when to try again.",
+            ),
+            AuthRequired => (
+                "The cloud request has no valid token (missing, expired or wrong kind).",
+                "Sign in to the cloud again.",
+            ),
             ConflictVersion => (
                 "Someone else changed this record first.",
                 "Open the conflict view.",
@@ -327,7 +351,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 35);
+        assert_eq!(seen.len(), 39);
     }
 
     #[test]

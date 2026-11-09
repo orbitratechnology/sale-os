@@ -2,7 +2,6 @@
 
 use anyhow::Context;
 use cloud_api::{AppState, Config, router};
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -27,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         }
         "--help" | "-h" | "help" => {
             println!(
-                "usage: cloud-api [serve|migrate]\n\nEnvironment: POS_BIND_ADDR, DATABASE_URL, POS_DEBUG_ROUTES, POS_MIN_APP_VERSION, POS_LATEST_APP_VERSION, POS_UPDATE_URL"
+                "usage: cloud-api [serve|migrate]\n\nEnvironment: POS_BIND_ADDR, DATABASE_URL, POS_DEBUG_ROUTES, POS_MIN_APP_VERSION, POS_LATEST_APP_VERSION, POS_UPDATE_URL, POS_JWT_SIGNING_KEY, POS_JWT_ISSUER, POS_ARGON2_MEMORY_KIB, POS_ARGON2_PASSES, POS_TRUST_PROXY"
             );
             Ok(())
         }
@@ -44,20 +43,27 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     if config.debug_routes {
         tracing::warn!("debug routes are enabled; never enable POS_DEBUG_ROUTES in production");
     }
+    if config.jwt_signing_key.is_none() {
+        anyhow::ensure!(
+            config.debug_routes,
+            "POS_JWT_SIGNING_KEY is required (32 bytes, base64, from the platform secret store)"
+        );
+        tracing::warn!("no POS_JWT_SIGNING_KEY: using a random key; tokens end at restart");
+    }
     let addr = config.bind_addr;
-    let app = router(AppState {
-        config: Arc::new(config),
-        db,
-    });
+    let app = router(AppState::new(config, db));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
     tracing::info!(%addr, version = env!("CARGO_PKG_VERSION"), "cloud-api listening");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-            tracing::info!("shutting down");
-        })
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutting down");
+    })
+    .await?;
     Ok(())
 }
