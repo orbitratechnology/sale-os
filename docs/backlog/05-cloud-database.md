@@ -4,6 +4,13 @@ Migrations live in `crates/pos-cloud-db/migrations/`. They are applied by
 `cloud-api migrate`, which runs as the **owner** role. The service itself connects as
 `pos_app`, a role that does not own the tables and does not have `BYPASSRLS` (ADR-016).
 
+**As built (E16-T02):** migration `0002` creates `pos_app` (NOLOGIN). The service's login role
+is granted membership in it (`GRANT pos_app TO <login role>`), and `TenantTx::begin` runs
+`SET LOCAL ROLE pos_app` before `set_config('app.business_id', …, true)`, so row-level
+security applies even if the service were misconfigured to log in as the owner. The file
+numbers are sqlx's (`0002_identity_tenancy.sql` = C0001, `0003_rls_policies.sql` = C0007);
+`0001_service_meta.sql` came from E16-T01.
+
 Migration order:
 
 | # | File | Task |
