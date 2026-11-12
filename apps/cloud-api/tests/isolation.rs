@@ -3,115 +3,16 @@
 //! contract, called with business A's token and business B's ids). PostgreSQL required
 //! (`TEST_DATABASE_URL`); skipped without it.
 
-use axum::body::Body;
-use axum::http::{Method, Request, StatusCode, header};
-use cloud_api::{AppState, Config, router};
-use http_body_util::BodyExt;
+mod common;
+
+use axum::http::{Method, StatusCode};
+use common::{audit_event, call, push, tenant, test_appliers};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use tower::ServiceExt;
 use uuid::Uuid;
 
-async fn state() -> Option<AppState> {
-    let Ok(url) = std::env::var("TEST_DATABASE_URL") else {
-        eprintln!("skipping: TEST_DATABASE_URL not set");
-        return None;
-    };
-    let pool = pos_cloud_db::connect_lazy(&url).unwrap();
-    pos_cloud_db::migrate(&pool).await.unwrap();
-    let mut cfg = Config::for_tests();
-    cfg.trust_proxy = true;
-    Some(AppState::new(cfg, Some(pool)))
-}
-
-async fn call(
-    s: &AppState,
-    method: Method,
-    path: &str,
-    token: Option<&str>,
-    body: Option<Value>,
-) -> (StatusCode, String) {
-    let mut r = Request::builder().method(method).uri(path).header(
-        "x-forwarded-for",
-        format!(
-            "10.12.{}.{}",
-            Uuid::now_v7().as_bytes()[14],
-            Uuid::now_v7().as_bytes()[15]
-        ),
-    );
-    if let Some(t) = token {
-        r = r.header(header::AUTHORIZATION, format!("Bearer {t}"));
-    }
-    let req = match body {
-        Some(b) => r
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(b.to_string())),
-        None => r.body(Body::empty()),
-    }
-    .unwrap();
-    let res = router(s.clone()).oneshot(req).await.unwrap();
-    let status = res.status();
-    let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, String::from_utf8_lossy(&bytes).into_owned())
-}
-
-/// A business with an owner, a register and a linked device.
-struct Tenant {
-    user_token: String,
-    business: Uuid,
-    name: String,
-    register: Uuid,
-    location: Uuid,
-    device: Uuid,
-    device_token: String,
-    refresh_token: String,
-}
-
-async fn tenant(s: &AppState, name: &str) -> Tenant {
-    let email = format!("owner-{}@example.com", Uuid::now_v7().simple());
-    let creds = json!({"email": email, "password": "correct horse battery staple"});
-    call(s, Method::POST, "/v1/auth/signup", None, Some(creds.clone())).await;
-    let (_, login) = call(s, Method::POST, "/v1/auth/login", None, Some(creds)).await;
-    let user_token = serde_json::from_str::<Value>(&login).unwrap()["userAccessToken"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let (business, register, location) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
-    let name = format!("{name} {}", Uuid::now_v7().simple());
-    let (code, _) = call(
-        s,
-        Method::POST,
-        "/v1/businesses",
-        Some(&user_token),
-        Some(
-            json!({"businessId": business, "name": name, "countryCode": "GB", "timezone": "Europe/London",
-                    "currencyCode": "GBP", "currencyExponent": 2, "pricesIncludeTax": true}),
-        ),
-    )
-    .await;
-    assert_eq!(code, StatusCode::CREATED);
-    let (code, creds) = call(
-        s,
-        Method::POST,
-        "/v1/devices/register",
-        Some(&user_token),
-        Some(json!({"businessId": business, "registerId": register, "registerName": "Till 1", "registerCode": "R01",
-                    "locationId": location, "locationName": "Main", "installationId": Uuid::now_v7(),
-                    "appVersion": "0.1.0", "osInfo": null})),
-    )
-    .await;
-    assert_eq!(code, StatusCode::CREATED);
-    let creds: Value = serde_json::from_str(&creds).unwrap();
-    Tenant {
-        user_token,
-        business,
-        name,
-        register,
-        location,
-        device: creds["deviceId"].as_str().unwrap().parse().unwrap(),
-        device_token: creds["accessToken"].as_str().unwrap().to_owned(),
-        refresh_token: creds["refreshToken"].as_str().unwrap().to_owned(),
-    }
+async fn state() -> Option<cloud_api::AppState> {
+    common::state_with(test_appliers()).await
 }
 
 #[tokio::test]
@@ -119,6 +20,9 @@ async fn at12_sql_no_table_shows_another_business_rows() {
     let Some(s) = state().await else { return };
     let pool = s.db.clone().unwrap();
     let (a, b) = (tenant(&s, "A").await, tenant(&s, "B").await);
+    // B's register has pushed: inbox, ack and change-feed rows.
+    let (code, _) = push(&s, &b, &[audit_event(&b, 1, "ok")]).await;
+    assert_eq!(code, StatusCode::OK);
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = 'public' AND c.relkind = 'r'
@@ -224,6 +128,17 @@ async fn at12_http_every_secured_route_refuses_another_business() {
             "POST /v1/devices/{deviceId}/revoke",
             (Method::POST, format!("/v1/devices/{}/revoke", b.device), None),
         ),
+        // Device routes (called with A's device token): push into B's register...
+        (
+            "POST /v1/sync/events",
+            (
+                Method::POST,
+                "/v1/sync/events".into(),
+                Some(json!({"registerId": b.register, "events": [audit_event(&b, 1, "ok")]})),
+            ),
+        ),
+        // ...and the ack, which only ever describes the token's own register.
+        ("GET /v1/sync/ack", (Method::GET, "/v1/sync/ack".into(), None)),
     ]);
     let secured = secured_operations();
     let covered: Vec<String> = cases.keys().map(|k| (*k).to_owned()).collect();
@@ -236,7 +151,12 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         b.device.to_string(),
     ];
     for (op, (method, path, body)) in cases {
-        let (code, text) = call(&s, method, &path, Some(&a.user_token), body).await;
+        let token = if path.starts_with("/v1/sync/") {
+            &a.device_token
+        } else {
+            &a.user_token
+        };
+        let (code, text) = call(&s, method, &path, Some(token), body).await;
         assert!(
             [
                 StatusCode::NOT_FOUND,
@@ -255,7 +175,10 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         }
         // A's own listings still work and show A.
         if code == StatusCode::OK {
-            assert!(text.contains(&a.business.to_string()), "{op}: {text}");
+            assert!(
+                text.contains(&a.business.to_string()) || text.contains(&a.register.to_string()),
+                "{op}: {text}"
+            );
         }
     }
     // B's device and tokens are untouched by all of that.

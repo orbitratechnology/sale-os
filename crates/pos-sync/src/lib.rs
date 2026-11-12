@@ -8,10 +8,11 @@
 //! test replays a scripted day's outbox and requires every event to parse into these types
 //! with unknown fields refused, so the two cannot drift apart unnoticed.
 
+pub mod codes;
 pub mod compat;
 pub mod envelope;
 pub mod events;
 pub mod upcast;
 
-pub use envelope::{EventEnvelope, EventResult, PushRequest, PushResponse, ResultStatus};
+pub use envelope::{AckResponse, EventEnvelope, EventResult, PushRequest, PushResponse, ResultStatus};
 pub use events::{CATALOGUE, Payload, PayloadError, parse_payload};

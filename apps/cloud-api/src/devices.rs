@@ -39,7 +39,7 @@ fn not_found() -> Problem {
     problem(StatusCode::NOT_FOUND, ErrorCode::NotFound, "Not found")
 }
 
-fn internal(e: impl std::fmt::Display) -> Problem {
+pub(crate) fn internal(e: impl std::fmt::Display) -> Problem {
     tracing::error!(error = %e, "database error");
     problem(
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -48,7 +48,7 @@ fn internal(e: impl std::fmt::Display) -> Problem {
     )
 }
 
-fn pool(state: &AppState) -> Result<&PgPool, Problem> {
+pub(crate) fn pool(state: &AppState) -> Result<&PgPool, Problem> {
     state.db.as_ref().ok_or_else(|| {
         problem(
             StatusCode::SERVICE_UNAVAILABLE,

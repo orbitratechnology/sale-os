@@ -6,6 +6,7 @@
 pub mod accounts;
 pub mod devices;
 pub mod repo;
+pub mod sync;
 pub mod tenant;
 
 pub use tenant::{AccountTx, Principal, TenantTx};

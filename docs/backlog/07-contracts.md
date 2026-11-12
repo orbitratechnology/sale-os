@@ -215,6 +215,12 @@ the action available (PRD §5.1).
 
 ### Push contract
 
+**As built (E17-T04):** `ackSequence` is read after the batch, so it is always a committed
+position. A `duplicate` repeats the first outcome's fields and adds `originalStatus`
+(`applied`, `conflict` or `rejected`). `rejected: EVENT_VERSION_UNSUPPORTED` and
+`rejected: EVENT_ID_REUSED` are neither recorded nor acknowledged, and stop the batch; every
+other rejection is recorded and acknowledged. Result codes are listed in `pos_sync::codes`.
+
 ```json
 // POST /v1/sync/events
 {

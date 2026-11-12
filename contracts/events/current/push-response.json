@@ -33,6 +33,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "originalStatus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResultStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "duplicate: what the first delivery's outcome was (applied, conflict or rejected); the\nother fields repeat it."
+        },
         "serverSeq": {
           "description": "Position in the server's change log (applied and duplicate).",
           "format": "int64",

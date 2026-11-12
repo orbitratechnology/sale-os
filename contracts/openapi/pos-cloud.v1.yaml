@@ -23,6 +23,8 @@ tags:
     description: Owner accounts (E16-T03).
   - name: devices
     description: Businesses, device registration, token rotation and revocation (E16-T04).
+  - name: sync
+    description: Event push and acknowledgement (E17-T04).
 paths:
   /v1/health:
     get:
@@ -392,6 +394,84 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/sync/events:
+    post:
+      operationId: pushEvents
+      tags: [sync]
+      summary: Pushes a register's outbox events (E17-T04, ADR-010).
+      description: >-
+        Events are applied in `localSequence` order, each in its own transaction under a lock on
+        the register's sync row, and are acknowledged only once committed. A repeated event gets
+        `duplicate` with its first outcome (`originalStatus`); the same `eventId` with another
+        envelope gets `rejected: EVENT_ID_REUSED`. A gap gives `out_of_order` with
+        `expectedSequence`; an unknown type or newer `schemaVersion` gives
+        `rejected: EVENT_VERSION_UNSUPPORTED` without being acknowledged; a `transient` result
+        stops the batch. `ackSequence` is the highest sequence the server has committed.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushRequest"
+      responses:
+        "200":
+          description: Per-event results, in order, up to where the batch stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushResponse"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: "`PERMISSION_DENIED`: the request or an event names another register or business."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: "`VALIDATION_FAILED`: more than 200 events or 2 MB."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/sync/ack:
+    get:
+      operationId: getAck
+      tags: [sync]
+      summary: The highest local sequence the server has committed for the token's register.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The ack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AckResponse"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 components:
   securitySchemes:
     userToken:
@@ -521,6 +601,83 @@ components:
         expiresIn:
           type: integer
           description: Seconds (900).
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      description: PRD §11.3. The payload follows `contracts/events/current/<eventType>.v<schemaVersion>.json`.
+      required: [eventId, businessId, locationId, registerId, localSequence, eventType, schemaVersion, aggregateType, aggregateId, occurredAt, payload]
+      properties:
+        eventId: { type: string, format: uuid }
+        businessId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        registerId: { type: string, format: uuid }
+        localSequence: { type: integer, minimum: 1 }
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        baseVersion:
+          type: [integer, "null"]
+          minimum: 0
+          description: Master data only (ADR-011).
+        occurredAt: { type: string, format: date-time }
+        payload: { type: object }
+    PushRequest:
+      type: object
+      additionalProperties: false
+      required: [registerId, events]
+      properties:
+        registerId:
+          type: string
+          format: uuid
+          description: Must be the token's register (else 403).
+        events:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/EventEnvelope"
+    ResultStatus:
+      type: string
+      enum: [applied, duplicate, conflict, rejected, out_of_order, transient]
+    EventResult:
+      type: object
+      additionalProperties: false
+      required: [eventId, localSequence, status]
+      properties:
+        eventId: { type: string, format: uuid }
+        localSequence: { type: integer, minimum: 0 }
+        status: { $ref: "#/components/schemas/ResultStatus" }
+        serverSeq: { type: integer }
+        serverVersion: { type: integer, minimum: 0 }
+        serverSnapshot: {}
+        code:
+          type: string
+          description: "conflict: VERSION, BARCODE_TAKEN, SKU_TAKEN; rejected: EVENT_ID_REUSED, EVENT_VERSION_UNSUPPORTED, EVENT_INVALID, SNAPSHOT_MISMATCH; transient: ORIGINAL_SALE_PENDING, APPLIER_UNAVAILABLE, SERVER_BUSY."
+        detail: { type: string }
+        expectedSequence: { type: integer, minimum: 1 }
+        originalStatus: { $ref: "#/components/schemas/ResultStatus" }
+    PushResponse:
+      type: object
+      additionalProperties: false
+      required: [ackSequence, serverTime, results]
+      properties:
+        ackSequence:
+          type: integer
+          minimum: 0
+          description: The client never moves its own ack past this.
+        serverTime: { type: string, format: date-time }
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventResult"
+    AckResponse:
+      type: object
+      additionalProperties: false
+      required: [registerId, ackSequence, serverTime]
+      properties:
+        registerId: { type: string, format: uuid }
+        ackSequence: { type: integer, minimum: 0 }
+        serverTime: { type: string, format: date-time }
     Problem:
       type: object
       description: RFC 9457 problem details with a catalogued error code.

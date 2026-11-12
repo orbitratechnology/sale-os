@@ -5,6 +5,7 @@ pub mod config;
 pub mod devices;
 mod problem;
 mod routes;
+pub mod sync;
 
 pub use config::Config;
 pub use problem::Problem;
@@ -20,6 +21,8 @@ pub struct AppState {
     /// `None` when no `DATABASE_URL` is configured (local smoke runs).
     pub db: Option<PgPool>,
     pub auth: Arc<auth::AuthState>,
+    /// Sync event appliers by type (E17-T04..T06).
+    pub appliers: Arc<sync::Appliers>,
 }
 
 impl AppState {
@@ -50,7 +53,14 @@ impl AppState {
             config: Arc::new(config),
             db,
             auth,
+            appliers: Arc::new(sync::Appliers::standard()),
         }
+    }
+
+    /// The same state with another applier set (tests).
+    pub fn with_appliers(mut self, appliers: sync::Appliers) -> Self {
+        self.appliers = Arc::new(appliers);
+        self
     }
 }
 

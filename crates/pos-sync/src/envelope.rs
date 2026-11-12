@@ -75,6 +75,35 @@ pub struct EventResult {
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_sequence: Option<u64>,
+    /// duplicate: what the first delivery's outcome was (applied, conflict or rejected); the
+    /// other fields repeat it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_status: Option<ResultStatus>,
+}
+
+impl EventResult {
+    /// A result with only the status set.
+    pub fn new(event_id: Uuid, local_sequence: u64, status: ResultStatus) -> Self {
+        Self {
+            event_id,
+            local_sequence,
+            status,
+            server_seq: None,
+            server_version: None,
+            server_snapshot: None,
+            code: None,
+            detail: None,
+            expected_sequence: None,
+            original_status: None,
+        }
+    }
+
+    /// With a `code` (and optional detail).
+    pub fn with_code(mut self, code: &str, detail: Option<String>) -> Self {
+        self.code = Some(code.to_owned());
+        self.detail = detail;
+        self
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -86,4 +115,15 @@ pub struct PushResponse {
     /// RFC 3339, for the client's clock-skew check (ADR-006).
     pub server_time: String,
     pub results: Vec<EventResult>,
+}
+
+/// `GET /v1/sync/ack`: where the server's record of this register stands.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AckResponse {
+    /// From the token, never a parameter.
+    pub register_id: Uuid,
+    pub ack_sequence: u64,
+    /// RFC 3339.
+    pub server_time: String,
 }

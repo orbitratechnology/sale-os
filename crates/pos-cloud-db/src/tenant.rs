@@ -57,6 +57,30 @@ impl<'p> TenantTx<'p> {
         &mut self.tx
     }
 
+    /// Marks a point to undo back to (one at a time): sync ingestion undoes a rejected
+    /// event's partial writes but still records the rejection in the same transaction.
+    pub async fn savepoint(&mut self) -> Result<(), sqlx::Error> {
+        sqlx::query("SAVEPOINT tenant_sp")
+            .execute(&mut *self.tx)
+            .await
+            .map(|_| ())
+    }
+
+    /// Undoes everything since [`savepoint`](Self::savepoint), keeping the transaction.
+    pub async fn rollback_to_savepoint(&mut self) -> Result<(), sqlx::Error> {
+        sqlx::query("ROLLBACK TO SAVEPOINT tenant_sp")
+            .execute(&mut *self.tx)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn release_savepoint(&mut self) -> Result<(), sqlx::Error> {
+        sqlx::query("RELEASE SAVEPOINT tenant_sp")
+            .execute(&mut *self.tx)
+            .await
+            .map(|_| ())
+    }
+
     pub async fn commit(self) -> Result<(), sqlx::Error> {
         self.tx.commit().await
     }

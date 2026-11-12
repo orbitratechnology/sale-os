@@ -17,6 +17,7 @@ ed25519-dalek.workspace = true
 pos-cloud-db.workspace = true
 pos-domain.workspace = true
 pos-observability.workspace = true
+pos-sync.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

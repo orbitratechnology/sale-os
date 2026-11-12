@@ -631,6 +631,7 @@ dependencies = [
  "pos-cloud-db",
  "pos-domain",
  "pos-observability",
+ "pos-sync",
  "serde",
  "serde_json",
  "serde_yaml_ng",

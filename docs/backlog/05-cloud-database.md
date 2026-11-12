@@ -169,6 +169,10 @@ CREATE TABLE change_log (
 CREATE INDEX ix_change_log_business_seq ON change_log(business_id, server_seq);
 ```
 
+**As built (E17-T04, migration `0005`):** `change_log.aggregate_id` is `text`, because a
+setting's id is its key. `event_inbox` and `register_sync_state` have foreign keys to
+`registers`. The application role may only insert into `event_inbox` and `change_log`.
+
 **Cursor semantics.** The pull cursor is the opaque string `"v1:<server_seq>"`.
 `server_seq` comes from a `bigserial`, so it can have gaps but never goes backwards. Rows are
 written in the same transaction as the change they describe.
