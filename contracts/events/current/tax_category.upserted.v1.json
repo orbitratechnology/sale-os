@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archived": {
+      "type": "boolean"
+    },
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "isDefault": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "rateIds": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "taxCategoryId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "taxCategoryId",
+    "businessId",
+    "name",
+    "isDefault",
+    "rateIds",
+    "archived",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "tax_category.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

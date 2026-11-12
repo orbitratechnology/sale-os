@@ -24,6 +24,18 @@ impl Timestamp {
     pub fn from_datetime(dt: DateTime<Utc>) -> Self {
         Self(dt.timestamp_millis())
     }
+    /// RFC 3339 in UTC with milliseconds, e.g. `2026-11-05T09:14:03.120Z` (the sync wire format).
+    pub fn to_rfc3339(self) -> String {
+        self.to_datetime()
+            .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            .unwrap_or_default()
+    }
+    /// Parses RFC 3339 (any offset).
+    pub fn parse_rfc3339(s: &str) -> Option<Self> {
+        DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|d| Self(d.timestamp_millis()))
+    }
 }
 
 /// The trading day in the business time zone, computed once at commit time and never

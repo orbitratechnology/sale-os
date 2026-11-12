@@ -1,0 +1,171 @@
+{
+  "$defs": {
+    "ClosedSessionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "closedAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "closedBy": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "counted": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "expected": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "openingFloat": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "totals": {
+          "$ref": "#/$defs/SessionTotalsV1"
+        },
+        "variance": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "closedBy",
+        "closedAt",
+        "openingFloat",
+        "totals",
+        "expected",
+        "counted",
+        "variance"
+      ],
+      "type": "object"
+    },
+    "KindTotalV1": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/TenderKind"
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "amount"
+      ],
+      "type": "object"
+    },
+    "SessionTotalsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "discountTotal": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "refunds": {
+          "items": {
+            "$ref": "#/$defs/KindTotalV1"
+          },
+          "type": "array"
+        },
+        "refundsTotal": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "returnsCount": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "roundingTotal": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "salesCount": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "salesTotal": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "taxTotal": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "tenders": {
+          "items": {
+            "$ref": "#/$defs/KindTotalV1"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "salesCount",
+        "salesTotal",
+        "taxTotal",
+        "discountTotal",
+        "roundingTotal",
+        "returnsCount",
+        "refundsTotal",
+        "tenders",
+        "refunds"
+      ],
+      "type": "object"
+    },
+    "TenderKind": {
+      "enum": [
+        "cash",
+        "card_external",
+        "bank_transfer_external",
+        "qr_external",
+        "other_external"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "registerId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "session": {
+      "$ref": "#/$defs/ClosedSessionV1"
+    },
+    "sessionNumber": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "registerId",
+    "sessionNumber",
+    "session"
+  ],
+  "title": "cash_session.closed v1",
+  "type": "object",
+  "x-schema-version": 1
+}

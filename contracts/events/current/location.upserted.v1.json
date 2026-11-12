@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "address": true,
+    "archived": {
+      "type": "boolean"
+    },
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "locationId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "locationId",
+    "businessId",
+    "name",
+    "address",
+    "archived",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "location.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

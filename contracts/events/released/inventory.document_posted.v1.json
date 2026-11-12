@@ -1,0 +1,304 @@
+{
+  "$defs": {
+    "AdjustReason": {
+      "enum": [
+        "damage",
+        "loss",
+        "theft",
+        "count_correction",
+        "expired",
+        "other"
+      ],
+      "type": "string"
+    },
+    "DocumentLineV1": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "$ref": "#/$defs/StockBucket"
+        },
+        "delta": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "movementType": {
+          "$ref": "#/$defs/MovementType"
+        },
+        "unitCost": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "variantId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "variantId",
+        "bucket",
+        "movementType",
+        "delta"
+      ],
+      "type": "object"
+    },
+    "DocumentType": {
+      "enum": [
+        "opening",
+        "receipt",
+        "adjustment",
+        "write_off"
+      ],
+      "type": "string"
+    },
+    "MovementSource": {
+      "description": "What caused a movement (field names are snake_case on the wire).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "line_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "sale_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "sale",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "sale_id",
+            "line_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "line_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "return_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "return",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "return_id",
+            "line_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "document_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": {
+              "const": "inventory_document",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "document_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "MovementType": {
+      "enum": [
+        "opening",
+        "receipt",
+        "sale",
+        "return_restock",
+        "return_damaged",
+        "damage",
+        "loss",
+        "adjustment",
+        "write_off",
+        "correction"
+      ],
+      "type": "string"
+    },
+    "StockBucket": {
+      "enum": [
+        "sellable",
+        "damaged"
+      ],
+      "type": "string"
+    },
+    "StockMovementV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "bucket": {
+          "$ref": "#/$defs/StockBucket"
+        },
+        "businessDate": {
+          "type": "string"
+        },
+        "delta": {
+          "description": "Signed milli-units.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "locationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "movementType": {
+          "$ref": "#/$defs/MovementType"
+        },
+        "occurredAt": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/MovementSource"
+        },
+        "unitCost": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "variantId": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "variantId",
+        "locationId",
+        "bucket",
+        "movementType",
+        "delta",
+        "source",
+        "actor",
+        "occurredAt",
+        "businessDate"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "businessDate": {
+      "type": "string"
+    },
+    "docType": {
+      "$ref": "#/$defs/DocumentType"
+    },
+    "documentNo": {
+      "type": "string"
+    },
+    "documentSeq": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "locationId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "movements": {
+      "items": {
+        "$ref": "#/$defs/DocumentLineV1"
+      },
+      "type": "array"
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "occurredAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AdjustReason"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reference": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "registerId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "stockMovements": {
+      "items": {
+        "$ref": "#/$defs/StockMovementV1"
+      },
+      "type": "array"
+    },
+    "supplierName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "docType",
+    "documentSeq",
+    "documentNo",
+    "registerId",
+    "locationId",
+    "actor",
+    "occurredAt",
+    "businessDate",
+    "movements",
+    "stockMovements"
+  ],
+  "title": "inventory.document_posted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

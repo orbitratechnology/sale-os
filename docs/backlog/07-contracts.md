@@ -252,6 +252,19 @@ the action available (PRD §5.1).
 `eventId, businessId, locationId, registerId, localSequence, eventType, schemaVersion,
 aggregateType, aggregateId, baseVersion?, occurredAt, payload` (PRD §11.3).
 
+**As built (E17-T01):** the envelope, the push request and response, and every payload are
+typed in `pos-sync` (`envelope`, `events`). Their JSON Schemas are generated into
+`contracts/events/current/` (`cargo xtask gen-schemas`); the last released set is in
+`contracts/events/released/`, and `cargo xtask schema-compat` (CI) fails on a breaking change
+made without a new `schemaVersion` (a field removed or newly required, a type or an enum's
+values changed). `occurredAt` is RFC 3339 UTC with milliseconds. Inside payloads, amounts are
+integer minor units, quantities milli-units, rates ppm and timestamps epoch milliseconds.
+Field names are camelCase, except these nested names that are snake_case in v1:
+`taxLines[].tax_rate_id` / `taxBreakdown[].tax_rate_id`, `tenders[].external_reference`
+(and refunds), `discount.authorized_by`, and the stock-movement `source` (`type`,
+`sale_id`, `line_id`, `return_id`, `document_id`). A result status `transient` (with `code`,
+e.g. `ORIGINAL_SALE_PENDING`) is added beside the five listed below.
+
 ### Versioning rules (E17-T01)
 
 - **Adding** an optional payload field is a minor change. The schema version stays the same,

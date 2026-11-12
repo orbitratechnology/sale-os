@@ -1,6 +1,8 @@
 //! Shared fixture: a real workspace created through SetupService, with an owner context.
 #![allow(dead_code)]
 
+pub mod contract;
+
 use pos_application::auth::{Argon2PinHasher, PinHasher};
 use pos_application::context::{Actor, CommandContext};
 use pos_application::setup::{CreateWorkspace, NewTaxRate, SetupService};

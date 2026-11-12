@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "EventEnvelope": {
+      "additionalProperties": false,
+      "description": "Every event, whatever its type. `payload` is checked against the catalogue\n(`events::parse_payload`) by its `eventType` and `schemaVersion`.",
+      "properties": {
+        "aggregateId": {
+          "type": "string"
+        },
+        "aggregateType": {
+          "type": "string"
+        },
+        "baseVersion": {
+          "default": null,
+          "description": "Master data only (ADR-011): the version the edit started from (0 for a create).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "businessId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "eventId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "localSequence": {
+          "description": "Gapless per register, from 1 (ADR-010).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "locationId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "occurredAt": {
+          "description": "RFC 3339, UTC.",
+          "type": "string"
+        },
+        "payload": true,
+        "registerId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "eventId",
+        "businessId",
+        "locationId",
+        "registerId",
+        "localSequence",
+        "eventType",
+        "schemaVersion",
+        "aggregateType",
+        "aggregateId",
+        "occurredAt",
+        "payload"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`POST /v1/sync/events`: at most 200 events or 2 MB.",
+  "properties": {
+    "events": {
+      "items": {
+        "$ref": "#/$defs/EventEnvelope"
+      },
+      "type": "array"
+    },
+    "registerId": {
+      "description": "Must equal the token's register (else 403).",
+      "format": "uuid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "registerId",
+    "events"
+  ],
+  "title": "PushRequest",
+  "type": "object"
+}

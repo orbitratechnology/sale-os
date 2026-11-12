@@ -582,4 +582,16 @@ async fn the_stage_2_end_of_day_reconciles() {
             .await
             .unwrap();
     assert_eq!((min, max), (1, count), "outbox sequence is gapless");
+
+    // E17-T01: every event this day wrote matches the sync contract.
+    let seen = common::contract::check_outbox(&day.shop.store).await;
+    for t in [
+        "sale.completed",
+        "return.completed",
+        "inventory.document_posted",
+        "cash_session.opened",
+        "cash_session.closed",
+    ] {
+        assert!(seen.contains(t), "{t} not exercised");
+    }
 }

@@ -46,6 +46,7 @@ jobs:
         run: |
           cargo xtask gen-bindings --check
           cargo xtask gen-schemas --check
+          cargo xtask schema-compat
       - name: requirement traceability
         run: cargo xtask trace
 

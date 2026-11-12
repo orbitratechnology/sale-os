@@ -1,0 +1,107 @@
+{
+  "$defs": {
+    "Currency": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "exponent": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "exponent"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "description": "`{ \"lines\": [..] }`, plus anything later versions add."
+    },
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "countryCode": {
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "currency": {
+      "$ref": "#/$defs/Currency"
+    },
+    "email": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "legalName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "logoPath": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pricesIncludeTax": {
+      "type": "boolean"
+    },
+    "taxRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timezone": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "businessId",
+    "name",
+    "address",
+    "countryCode",
+    "timezone",
+    "currency",
+    "pricesIncludeTax",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "business.updated v1",
+  "type": "object",
+  "x-schema-version": 1
+}
