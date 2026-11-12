@@ -65,6 +65,7 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ("auth_logout", Session, Value::Null),
         // Ends the session too; not invoked mid-run (null args), checked in the IPC test below.
         ("auth_lock", Session, Value::Null),
+        ("sync_retry_now", Session, Value::Null),
         (
             "auth_change_pin",
             Session,

@@ -984,12 +984,14 @@ dependencies = [
 name = "desktop-tauri"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "pos-application",
  "pos-device-virtual",
  "pos-domain",
  "pos-local-db",
  "pos-observability",
  "pos-receipts",
+ "pos-sync",
  "serde",
  "serde_json",
  "specta",
@@ -3409,12 +3411,14 @@ dependencies = [
  "pos-device-ports",
  "pos-domain",
  "pos-receipts",
+ "pos-sync",
  "pos-testkit",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.21",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -3479,6 +3483,7 @@ dependencies = [
  "pos-receipts",
  "pos-sync",
  "pos-testkit",
+ "proptest",
  "serde",
  "serde_json",
  "sqlx",

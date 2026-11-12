@@ -250,6 +250,8 @@ export const commands = {
 	cashSessionZGet: (sessionId: CashSessionId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_get", { sessionId, widthMm })),
 	/**  Prints a closed session's Z summary (later copies are reprints). */
 	cashSessionZPrint: (sessionId: CashSessionId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_print", { sessionId })),
+	/**  Pushes pending events now, with the retry delay reset (E17-T03). Any signed-in user. */
+	syncRetryNow: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_retry_now")),
 };
 
 /* Types */

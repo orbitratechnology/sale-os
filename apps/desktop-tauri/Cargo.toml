@@ -15,12 +15,14 @@ name = "desktop_tauri_lib"
 tauri-build.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 pos-application.workspace = true
 pos-device-virtual.workspace = true
 pos-domain = { workspace = true, features = ["specta"] }
 pos-local-db.workspace = true
 pos-observability.workspace = true
 pos-receipts.workspace = true
+pos-sync.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 specta.workspace = true

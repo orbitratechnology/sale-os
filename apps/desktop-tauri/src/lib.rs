@@ -12,6 +12,8 @@ mod import_commands;
 mod report_commands;
 mod sale_commands;
 mod services;
+mod sync_commands;
+mod sync_loop;
 
 pub use command_names::COMMANDS;
 pub use error::{ErrorDetails, IpcError};
@@ -107,6 +109,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         cash_commands::cash_session_close,
         cash_commands::cash_session_z_get,
         cash_commands::cash_session_z_print,
+        sync_commands::sync_retry_now,
     ])
 }
 

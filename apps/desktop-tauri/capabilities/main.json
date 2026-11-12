@@ -86,6 +86,7 @@
     "allow-cash-session-open",
     "allow-cash-session-close",
     "allow-cash-session-z-get",
-    "allow-cash-session-z-print"
+    "allow-cash-session-z-print",
+    "allow-sync-retry-now"
   ]
 }

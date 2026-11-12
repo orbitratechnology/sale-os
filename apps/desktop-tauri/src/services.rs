@@ -46,6 +46,8 @@ pub struct AppServices {
     session: RwLock<Option<Session>>,
     /// Asks where to save a file (the native dialog in the app; none in tests).
     pub(crate) file_dialog: Arc<dyn FileDialog>,
+    /// The background push worker (E17-T03). `None` when the database failed to open.
+    pub(crate) sync: Option<crate::sync_loop::SyncRunner>,
     _log: Option<LogGuard>,
 }
 
@@ -280,12 +282,20 @@ impl AppServices {
                 approvals,
             }
         });
+        let sync = store.as_ref().map(|s| {
+            crate::sync_loop::SyncRunner::start(
+                s.clone(),
+                Arc::new(crate::sync_loop::NotLinked),
+                clock.clone(),
+            )
+        });
         Self {
             db,
             store,
             clock,
             ids,
             data_dir: data_dir.to_path_buf(),
+            sync,
             app,
             session: RwLock::new(None),
             file_dialog: Arc::new(NoDialog),

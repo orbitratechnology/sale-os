@@ -27,6 +27,7 @@ pub mod settings;
 pub mod setup;
 pub mod staff;
 pub mod stock;
+pub mod sync;
 pub mod write;
 
 pub use write::{
