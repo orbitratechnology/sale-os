@@ -207,7 +207,7 @@ impl Day {
 
 #[tokio::test]
 async fn the_stage_2_end_of_day_reconciles() {
-    let shop = common::shop().await;
+    let shop = common::shop_with(&common::coverage::triggers_sql()).await;
     let s = shop.store.clone();
     let catalog = CatalogService {
         store: Arc::new(s.clone()),
@@ -585,6 +585,9 @@ async fn the_stage_2_end_of_day_reconciles() {
 
     // E17-T01: every event this day wrote matches the sync contract.
     let seen = common::contract::check_outbox(&day.shop.store).await;
+    // E17-T02: every syncable write had its outbox event, in its transaction.
+    let written = common::coverage::check(&day.shop.store).await;
+    eprintln!("syncable tables written: {written:?}");
     for t in [
         "sale.completed",
         "return.completed",

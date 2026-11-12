@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 pub mod contract;
+pub mod coverage;
 
 use pos_application::auth::{Argon2PinHasher, PinHasher};
 use pos_application::context::{Actor, CommandContext};
@@ -40,8 +41,17 @@ impl Shop {
 
 /// GBP, prices include tax, one 20% VAT rate in the default category.
 pub async fn shop() -> Shop {
+    shop_with("").await
+}
+
+/// As [`shop`], running `prepare` (SQL) on the new database before the workspace is set up
+/// (e.g. the E17-T02 coverage triggers).
+pub async fn shop_with(prepare: &str) -> Shop {
     let dir = TempDir::new().unwrap();
     let store = SqliteStore::new(LocalDb::open(&DbOptions::in_dir(dir.path())).await.unwrap());
+    if !prepare.is_empty() {
+        sqlx::raw_sql(prepare).execute(store.db().writer()).await.unwrap();
+    }
     let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
     let clock = Arc::new(FixedClock::new(Timestamp::from_millis(1_767_225_600_000)));
     let ids: Arc<dyn IdGenerator> = Arc::new(UuidV7Generator);

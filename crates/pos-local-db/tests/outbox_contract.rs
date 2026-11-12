@@ -30,7 +30,7 @@ const FROM_THE_DAY: [&str; 5] = [
 
 #[tokio::test]
 async fn master_data_and_audit_events_match_the_contract() {
-    let shop = common::shop().await;
+    let shop = common::shop_with(&common::coverage::triggers_sql()).await;
     let s = shop.store.clone();
     let owner = &shop.owner;
     let config = ConfigService {
@@ -165,6 +165,9 @@ async fn master_data_and_audit_events_match_the_contract() {
     exports.record(owner, &export).await.unwrap();
 
     let seen = common::contract::check_outbox(&s).await;
+    // E17-T02: every syncable write had its outbox event, in its transaction.
+    let written = common::coverage::check(&s).await;
+    eprintln!("syncable tables written: {written:?}");
     let covered: BTreeSet<&str> = seen.iter().map(String::as_str).chain(FROM_THE_DAY).collect();
     let catalogue: BTreeSet<&str> = pos_sync::CATALOGUE.iter().map(|(t, _)| *t).collect();
     assert_eq!(
@@ -179,4 +182,16 @@ async fn master_data_and_audit_events_match_the_contract() {
     .await
     .unwrap();
     assert_eq!(bases, vec![Some(0), Some(1)]);
+}
+
+/// The coverage check is not vacuous: a syncable write that bypasses the outbox fails it.
+#[tokio::test]
+#[should_panic(expected = "syncable writes without an outbox event")]
+async fn a_write_without_its_outbox_event_fails_the_coverage_check() {
+    let shop = common::shop_with(&common::coverage::triggers_sql()).await;
+    sqlx::query("UPDATE businesses SET name = 'Sneaky rename'")
+        .execute(shop.store.db().writer())
+        .await
+        .unwrap();
+    common::coverage::check(&shop.store).await;
 }
