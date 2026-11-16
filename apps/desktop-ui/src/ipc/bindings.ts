@@ -252,6 +252,18 @@ export const commands = {
 	cashSessionZPrint: (sessionId: CashSessionId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_print", { sessionId })),
 	/**  Pushes pending events now, with the retry delay reset (E17-T03). Any signed-in user. */
 	syncRetryNow: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_retry_now")),
+	/**  Where sync stands. Any signed-in user. */
+	syncStatus: () => typedError<SyncStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sync_status")),
+	/**
+	 *  The owner signs in to the cloud (owner only). The password is passed through once and
+	 *  never stored or logged; the sign-in is kept in memory for `sync_link_complete`.
+	 */
+	syncLinkStart: (email: string, password: string) => typedError<LinkOptionsDto, IpcError_Serialize>(__TAURI_INVOKE("sync_link_start", { email, password })),
+	/**
+	 *  Links this register (owner only), after `sync_link_start`. A link interrupted by a lost
+	 *  connection resumes when this is called again.
+	 */
+	syncLinkComplete: (mode: LinkMode, businessId: string | null, replaceExisting: boolean) => typedError<LinkResultDto, IpcError_Serialize>(__TAURI_INVOKE("sync_link_complete", { mode, businessId, replaceExisting })),
 };
 
 /* Types */
@@ -743,6 +755,11 @@ export type ClosedCashDto_Serialize = {
 	totals: SessionTotalsDto | null,
 };
 
+export type CloudBusinessDto = {
+	businessId: string,
+	name: string,
+};
+
 /**  What a column of the file means. */
 export type Column = "name" | "variant" | "parent_sku" | "sku" | "barcode" | "price" | "cost" | "unit" | "tax_category" | "category" | "track_stock" | "low_stock_threshold" | "scan_quantity" | "status";
 
@@ -900,7 +917,7 @@ export type DocumentType =
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
  *  The UI maps codes to actionable copy; `message` strings are for logs only.
  */
-export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
+export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "SYNC_OFFLINE" | "SYNC_JOIN_NOT_ALLOWED" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
 
 /**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
 export type ErrorDetails = ErrorDetails_Serialize | ErrorDetails_Deserialize;
@@ -1038,6 +1055,29 @@ export type IpcError_Serialize = {
 	 *  `Result<_, IpcError>` small; the wire format is unaffected.
 	 */
 	details: ErrorDetails_Serialize | null,
+};
+
+export type LinkMode = 
+/**  Create the cloud business from this register. */
+"create" | 
+/**  Join an existing business (replaces this register's data). */
+"join";
+
+export type LinkOptionsDto = {
+	businesses: CloudBusinessDto[],
+	/**  Joining is only for a register with no live sales and no products (it replaces them). */
+	mayJoin: boolean,
+	/**  This register's business is already in the cloud (an earlier link to finish). */
+	ownBusinessInCloud: boolean,
+};
+
+export type LinkResultDto = {
+	/**  `create` or `join`. */
+	path: string,
+	businessId: string,
+	registerCode: string,
+	/**  Joined: this register's data was replaced, so everyone signs in again. */
+	signInAgain: boolean,
 };
 
 /**  The file column (0-based) chosen for a meaning. */
@@ -1703,6 +1743,40 @@ export type StockRowDto_Serialize = {
 export type Symbology = "ean13" | "ean8" | "upc_a" | "upc_e" | "code128" | "code39" | "itf14" | "qr" | "data_matrix" | 
 /**  The shop's own numbering, or a numeric code that failed its GTIN check digit. */
 "internal" | "unknown";
+
+export type SyncStatusDto = SyncStatusDto_Serialize | SyncStatusDto_Deserialize;
+
+export type SyncStatusDto_Deserialize = {
+	/**  `unlinked`, `linking`, `linked` or `revoked` (the owner disconnected this register). */
+	linkState: string,
+	/**  Whether this app has a cloud to link to. */
+	cloudConfigured: boolean,
+	/**  Events not yet acknowledged by the cloud. */
+	pending: number,
+	/**  RFC 3339. */
+	lastPushOkAt?: string | null,
+	lastPullOkAt?: string | null,
+	lastErrorCode?: string | null,
+	/**  The cloud's clock and this computer's differ by more than 10 minutes (ADR-006). */
+	clockSkewWarning: boolean,
+	registerCode?: string | null,
+};
+
+export type SyncStatusDto_Serialize = {
+	/**  `unlinked`, `linking`, `linked` or `revoked` (the owner disconnected this register). */
+	linkState: string,
+	/**  Whether this app has a cloud to link to. */
+	cloudConfigured: boolean,
+	/**  Events not yet acknowledged by the cloud. */
+	pending: number,
+	/**  RFC 3339. */
+	lastPushOkAt: string | null,
+	lastPullOkAt: string | null,
+	lastErrorCode: string | null,
+	/**  The cloud's clock and this computer's differ by more than 10 minutes (ADR-006). */
+	clockSkewWarning: boolean,
+	registerCode: string | null,
+};
 
 export type TaxCategoryConfigDto = {
 	taxCategoryId: TaxCategoryId,

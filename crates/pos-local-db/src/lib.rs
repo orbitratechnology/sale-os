@@ -14,6 +14,7 @@ mod config_queries;
 mod error;
 mod export_queries;
 mod import_queries;
+mod link_store;
 mod migrate;
 mod pragmas;
 mod queries;
@@ -24,6 +25,7 @@ mod sales_queries;
 mod stock_queries;
 mod store;
 mod sync_store;
+pub use sync_store::SyncStatusRecord;
 
 pub use error::StoreError;
 pub use migrate::{MIGRATOR, MigrationReport};

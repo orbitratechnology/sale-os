@@ -23,6 +23,15 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   STORE_BUSY: "The till is busy. Try again.",
   STORE_IO: "Sale OS cannot read or write its database. Check disk space and that the data folder is on this computer.",
   STORE_CORRUPT: "The local database looks damaged. Do not delete it; contact support to restore from a backup.",
+  AUTH_CREDENTIALS_INVALID: "That email or password is not right for the cloud account.",
+  AUTH_RATE_LIMITED: "Too many sign-in attempts. Wait a few minutes and try again.",
+  AUTH_REQUIRED: "Sign in to the cloud account first.",
+  SYNC_OFFLINE: "The cloud could not be reached. Check the internet connection and try again; sales continue on this till.",
+  SYNC_JOIN_NOT_ALLOWED: "This till already has live sales or products, so it cannot join another business. Create the cloud business from it instead.",
+  SYNC_BUSINESS_ID_TAKEN: "Another cloud account already has this business. Sign in with that account, or contact support.",
+  SYNC_REGISTER_IN_USE: "Another device is linked to this till in the cloud.",
+  SYNC_DEVICE_REVOKED: "This register was disconnected by the owner. Sales continue on this till.",
+  SYNC_UPGRADE_REQUIRED: "The cloud needs a newer version of Sale OS. Update the app; sales continue meanwhile.",
   STORE_SCHEMA_TOO_NEW: "This database was created by a newer version of Sale OS. Update the app to continue.",
 };
 

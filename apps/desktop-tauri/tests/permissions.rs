@@ -66,6 +66,17 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         // Ends the session too; not invoked mid-run (null args), checked in the IPC test below.
         ("auth_lock", Session, Value::Null),
         ("sync_retry_now", Session, Value::Null),
+        ("sync_status", Session, Value::Null),
+        (
+            "sync_link_start",
+            Perm(DeviceLink),
+            json!({"email": "owner@example.com", "password": "not a real password"}),
+        ),
+        (
+            "sync_link_complete",
+            Perm(DeviceLink),
+            json!({"mode": "create", "businessId": null, "replaceExisting": false}),
+        ),
         (
             "auth_change_pin",
             Session,

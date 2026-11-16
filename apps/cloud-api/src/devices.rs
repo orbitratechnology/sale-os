@@ -187,9 +187,14 @@ struct RegisterRequest {
     business_id: Uuid,
     register_id: Uuid,
     register_name: String,
-    register_code: String,
-    location_id: Uuid,
-    location_name: String,
+    /// Omitted, or taken by another register: the next free `Rnn` is assigned.
+    #[serde(default)]
+    register_code: Option<String>,
+    /// Omitted when joining a business: its first location.
+    #[serde(default)]
+    location_id: Option<Uuid>,
+    #[serde(default)]
+    location_name: Option<String>,
     installation_id: Uuid,
     app_version: String,
     os_info: Option<String>,
@@ -207,6 +212,11 @@ pub struct DeviceCredentials {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_in: i64,
+    /// Registration only: the register's code and location, which may have been assigned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub register_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_id: Option<Uuid>,
 }
 
 fn new_refresh_token() -> (String, Vec<u8>) {
@@ -247,11 +257,9 @@ async fn register_device(
     Json(req): Json<RegisterRequest>,
 ) -> Result<Response, Problem> {
     let pool = pool(&state)?;
-    let code_ok = (1..=6).contains(&req.register_code.len())
-        && req
-            .register_code
-            .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
+    let code_ok = req.register_code.as_deref().is_none_or(|c| {
+        (1..=6).contains(&c.len()) && c.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    });
     if !code_ok || req.register_name.trim().is_empty() || req.app_version.trim().is_empty() {
         return Err(Problem::validation(
             "registerCode (A-Z, 0-9, up to 6), registerName and appVersion are required",
@@ -265,16 +273,22 @@ async fn register_device(
     if !db::is_member(&mut tx, user.account_id).await.map_err(internal)? {
         return Err(not_found());
     }
-    db::ensure_register(
+    let location_name = req
+        .location_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .unwrap_or("Main");
+    let placed = db::ensure_register(
         &mut tx,
-        req.location_id,
-        req.location_name.trim(),
+        req.location_id.map(|l| (l, location_name)),
         req.register_id,
         req.register_name.trim(),
-        &req.register_code,
+        req.register_code.as_deref(),
     )
     .await
-    .map_err(internal)?;
+    .map_err(internal)?
+    .ok_or_else(|| Problem::validation("this business has no location yet: give locationId"))?;
     if let Some(previous) = db::active_device(&mut tx, req.register_id)
         .await
         .map_err(internal)?
@@ -316,6 +330,8 @@ async fn register_device(
             access_token: device_token(&state, req.business_id, req.register_id, device_id),
             refresh_token: refresh,
             expires_in: DEVICE_TOKEN_SECS,
+            register_code: Some(placed.code),
+            location_id: Some(placed.location_id),
         }),
     )
         .into_response())
@@ -348,6 +364,8 @@ async fn refresh(
             access_token: device_token(&state, business_id, register_id, device_id),
             refresh_token: next,
             expires_in: DEVICE_TOKEN_SECS,
+            register_code: None,
+            location_id: None,
         })),
         Rotation::Reused => {
             tracing::warn!("a spent refresh token was reused; the device is revoked");

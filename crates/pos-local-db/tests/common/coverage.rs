@@ -54,6 +54,10 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
     ("units", "seed data"),
     ("product_search", "search index (rebuilt from products)"),
     ("search_index_rows", "search index bookkeeping"),
+    (
+        "bootstrap_staging",
+        "a joining register's download, applied as a whole",
+    ),
     ("carts", "drafts (ADR-009)"),
     ("cart_lines", "drafts (ADR-009)"),
     ("scan_events_seen", "scan de-duplication window"),

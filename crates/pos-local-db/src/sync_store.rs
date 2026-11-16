@@ -365,11 +365,11 @@ async fn record_conflict(
 }
 
 /// This register, for applying pulled changes.
-struct Here {
-    register: uuid::Uuid,
-    ctx: WriteContext,
+pub(crate) struct Here {
+    pub(crate) register: uuid::Uuid,
+    pub(crate) ctx: WriteContext,
     /// Events up to here are acknowledged; later ones are edits the cloud has not seen.
-    ack: i64,
+    pub(crate) ack: i64,
 }
 
 impl Here {
@@ -402,7 +402,7 @@ impl Here {
 /// A master-data change: applied when newer than the local copy and the local copy has no
 /// unacknowledged edit (docs/backlog/04, inbound application rule); otherwise held or skipped.
 #[allow(clippy::too_many_arguments)]
-async fn apply_master(
+pub(crate) async fn apply_master(
     tx: &mut sqlx::SqliteConnection,
     here: &Here,
     aggregate_type: &str,
@@ -561,5 +561,54 @@ mod erased {
                 Err(_) => String::new(),
             }
         }
+    }
+}
+
+/// `sync_state` columns the status reads.
+type StatusRow = (String, i64, Option<i64>, Option<i64>, Option<String>, Option<i64>);
+
+/// What the sync status shows (E17-T08/T09).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyncStatusRecord {
+    pub link_state: String,
+    pub pending: u64,
+    pub last_push_ok_at: Option<i64>,
+    pub last_pull_ok_at: Option<i64>,
+    pub last_error_code: Option<String>,
+    pub clock_skew_ms: Option<i64>,
+    pub register_code: Option<String>,
+}
+
+impl SqliteStore {
+    pub async fn sync_status(&self) -> Result<SyncStatusRecord, QueryError> {
+        let r = self.db().readers();
+        let row: Option<StatusRow> = sqlx::query_as(
+            "SELECT link_state, last_ack_sequence, last_push_ok_at, last_pull_ok_at, last_error_code, server_clock_skew_ms
+               FROM sync_state WHERE id = 1",
+        )
+        .fetch_optional(r)
+        .await
+        .map_err(q)?;
+        let (link_state, ack, push, pull, error, skew) =
+            row.unwrap_or_else(|| ("unlinked".into(), 0, None, None, None, None));
+        let max: i64 = sqlx::query_scalar("SELECT coalesce(max(local_sequence), 0) FROM outbox_events")
+            .fetch_one(r)
+            .await
+            .map_err(q)?;
+        let code: Option<String> = sqlx::query_scalar(
+            "SELECT g.code FROM device_identity d JOIN registers g ON g.register_id = d.register_id WHERE d.id = 1",
+        )
+        .fetch_optional(r)
+        .await
+        .map_err(q)?;
+        Ok(SyncStatusRecord {
+            link_state,
+            pending: u64::try_from(max - ack).unwrap_or(0),
+            last_push_ok_at: push,
+            last_pull_ok_at: pull,
+            last_error_code: error,
+            clock_skew_ms: skew,
+            register_code: code,
+        })
     }
 }

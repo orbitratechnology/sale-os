@@ -144,6 +144,10 @@ export function App() {
           <SettingsScreen
             onBack={() => setScreen({ kind: "till" })}
             onChanged={loadPrefs}
+            onRelinked={() => {
+              setScreen({ kind: "till" });
+              refresh();
+            }}
           />
         );
       case "reports":

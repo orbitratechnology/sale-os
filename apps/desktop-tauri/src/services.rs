@@ -48,6 +48,9 @@ pub struct AppServices {
     pub(crate) file_dialog: Arc<dyn FileDialog>,
     /// The background push worker (E17-T03). `None` when the database failed to open.
     pub(crate) sync: Option<crate::sync_loop::SyncRunner>,
+    /// The cloud this app links to (`POS_CLOUD_URL`), and the link wizard (E17-T08). `None`
+    /// when no cloud is configured or the database failed to open.
+    pub(crate) cloud: Option<Cloud>,
     _log: Option<LogGuard>,
 }
 
@@ -107,6 +110,13 @@ pub(crate) struct Services {
     pub queries: SqliteStore,
     /// Issued manager approvals waiting to be used (E05-T04).
     pub approvals: Arc<Approvals>,
+}
+
+/// Linking (E17-T08): the wizard's service, the keychain, and the owner's cloud sign-in
+/// between `sync_link_start` and `sync_link_complete` (memory only).
+pub(crate) struct Cloud {
+    pub link: pos_application::link::LinkService,
+    pub owner: tokio::sync::Mutex<Option<pos_application::link::OwnerSession>>,
 }
 
 /// The unlocked session. Commands take the actor from here, never from IPC arguments
@@ -282,13 +292,61 @@ impl AppServices {
                 approvals,
             }
         });
-        let sync = store.as_ref().map(|s| {
-            crate::sync_loop::SyncRunner::start(
-                s.clone(),
-                Arc::new(crate::sync_loop::NotLinked),
-                clock.clone(),
-            )
-        });
+        // The cloud, when one is configured: one session (and keychain entry) for this app.
+        let wiring = std::env::var("POS_CLOUD_URL")
+            .ok()
+            .filter(|u| !u.trim().is_empty())
+            .and_then(
+                |url| match pos_sync_http::CloudClient::new(&url, env!("CARGO_PKG_VERSION")) {
+                    Ok(client) => Some(client),
+                    Err(e) => {
+                        tracing::error!(error = %e, "cloud client could not be created");
+                        None
+                    }
+                },
+            );
+        let credentials: Arc<dyn pos_application::link::CredentialStore> =
+            Arc::new(pos_sync_http::KeychainCredentials::new("refresh-token"));
+        let (sync, cloud) = match (store.as_ref(), wiring) {
+            (Some(s), Some(client)) => {
+                let session = Arc::new(pos_sync_http::DeviceSession::new(
+                    client.clone(),
+                    credentials.clone(),
+                ));
+                let runner = crate::sync_loop::SyncRunner::start(
+                    s.clone(),
+                    session.clone(),
+                    clock.clone(),
+                    Some(credentials.clone()),
+                );
+                let link = pos_application::link::LinkService {
+                    account: Arc::new(client),
+                    credentials,
+                    store: Arc::new(s.clone()),
+                    local: Arc::new(s.clone()),
+                    transport: session.clone(),
+                    seed: session,
+                    app_version: env!("CARGO_PKG_VERSION").into(),
+                };
+                (
+                    Some(runner),
+                    Some(Cloud {
+                        link,
+                        owner: tokio::sync::Mutex::new(None),
+                    }),
+                )
+            }
+            (Some(s), None) => (
+                Some(crate::sync_loop::SyncRunner::start(
+                    s.clone(),
+                    Arc::new(crate::sync_loop::NotLinked),
+                    clock.clone(),
+                    None,
+                )),
+                None,
+            ),
+            (None, _) => (None, None),
+        };
         Self {
             db,
             store,
@@ -296,6 +354,7 @@ impl AppServices {
             ids,
             data_dir: data_dir.to_path_buf(),
             sync,
+            cloud,
             app,
             session: RwLock::new(None),
             file_dialog: Arc::new(NoDialog),

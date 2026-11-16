@@ -101,32 +101,7 @@ async fn apply_in_transaction(
 
     run_ops(&mut tx, ctx, ws.ops(), &mut st, &mut applied).await?;
 
-    for e in ws.outbox() {
-        st.step()?;
-        let seq = allocate(&mut tx, ctx, "outbox_seq").await?;
-        st.step()?;
-        sqlx::query(
-            "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
-               schema_version, aggregate_type, aggregate_id, base_version, occurred_at, payload_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11)",
-        )
-        .bind(e.event_id.to_string())
-        .bind(ctx.business_id.to_string())
-        .bind(ctx.location_id.to_string())
-        .bind(ctx.register_id.to_string())
-        .bind(as_i64(seq)?)
-        .bind(e.event_type)
-        .bind(i64::from(e.schema_version))
-        .bind(e.aggregate.aggregate_type)
-        .bind(&e.aggregate.aggregate_id)
-        .bind(e.base_version.map(as_i64).transpose()?)
-        .bind(ctx.occurred_at.as_millis())
-        .bind(payload_with_numbers(e, &applied)?.to_string())
-        .execute(&mut *tx)
-        .await
-        .map_err(map_sqlx)?;
-        applied.outbox.push((e.event_id, seq));
-    }
+    write_outbox(&mut tx, ctx, ws.outbox(), &mut st, &mut applied).await?;
 
     for a in ws.audit() {
         st.step()?;
@@ -1437,6 +1412,45 @@ pub(crate) async fn run_ops(
             }
         }
     }
+    Ok(())
+}
+
+/// Appends outbox events, numbering them from the register's `outbox_seq` (also used by a
+/// join, whose new register announces itself).
+pub(crate) async fn write_outbox(
+    tx: &mut SqliteConnection,
+    ctx: &WriteContext,
+    drafts: &[pos_application::OutboxDraft],
+    st: &mut Statements,
+    applied: &mut AppliedWriteSet,
+) -> Result<(), WriteError> {
+    for e in drafts {
+        st.step()?;
+        let seq = allocate(tx, ctx, "outbox_seq").await?;
+        st.step()?;
+        sqlx::query(
+            "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
+               schema_version, aggregate_type, aggregate_id, base_version, occurred_at, payload_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11)",
+        )
+        .bind(e.event_id.to_string())
+        .bind(ctx.business_id.to_string())
+        .bind(ctx.location_id.to_string())
+        .bind(ctx.register_id.to_string())
+        .bind(as_i64(seq)?)
+        .bind(e.event_type)
+        .bind(i64::from(e.schema_version))
+        .bind(e.aggregate.aggregate_type)
+        .bind(&e.aggregate.aggregate_id)
+        .bind(e.base_version.map(as_i64).transpose()?)
+        .bind(ctx.occurred_at.as_millis())
+        .bind(payload_with_numbers(e, applied)?.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx)?;
+        applied.outbox.push((e.event_id, seq));
+    }
+
     Ok(())
 }
 

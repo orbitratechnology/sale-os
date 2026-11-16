@@ -94,36 +94,88 @@ pub async fn insert_owner(tx: &mut TenantTx<'_>, account_id: Uuid) -> Result<(),
 }
 
 /// Creates the location and the register if they do not exist yet (the desktop's ids).
+/// Where a register stands after registration: its location and its receipt-number code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlacedRegister {
+    pub location_id: Uuid,
+    pub code: String,
+}
+
+/// Makes sure the register (and its location) exist, and returns where it is.
+///
+/// - A register registered before keeps its location and code.
+/// - Without a location (a register joining a business it does not know yet), it goes to the
+///   business's first location; with one, that location is created if missing.
+/// - Without a code, or with one another register of the business already uses, it gets
+///   the next free `R01`, `R02`, ... so receipt numbers stay unique per business.
+///
+/// `Ok(None)`: no location was given and the business has none.
 pub async fn ensure_register(
     tx: &mut TenantTx<'_>,
-    location_id: Uuid,
-    location_name: &str,
+    location: Option<(Uuid, &str)>,
     register_id: Uuid,
     register_name: &str,
-    register_code: &str,
-) -> Result<(), sqlx::Error> {
+    register_code: Option<&str>,
+) -> Result<Option<PlacedRegister>, sqlx::Error> {
     let id = *tx.business_id().as_uuid();
-    sqlx::query(
-        "INSERT INTO locations (business_id, location_id, name, status, version, updated_at)
-         VALUES ($1, $2, $3, 'active', 0, now()) ON CONFLICT DO NOTHING",
-    )
-    .bind(id)
-    .bind(location_id)
-    .bind(location_name)
-    .execute(tx.conn())
-    .await?;
+    let existing: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT location_id, code FROM registers WHERE business_id = $1 AND register_id = $2")
+            .bind(id)
+            .bind(register_id)
+            .fetch_optional(tx.conn())
+            .await?;
+    if let Some((location_id, code)) = existing {
+        return Ok(Some(PlacedRegister { location_id, code }));
+    }
+    let location_id = match location {
+        Some((location_id, name)) => {
+            sqlx::query(
+                "INSERT INTO locations (business_id, location_id, name, status, version, updated_at)
+                 VALUES ($1, $2, $3, 'active', 0, now()) ON CONFLICT DO NOTHING",
+            )
+            .bind(id)
+            .bind(location_id)
+            .bind(name)
+            .execute(tx.conn())
+            .await?;
+            location_id
+        }
+        None => {
+            let first: Option<Uuid> = sqlx::query_scalar(
+                "SELECT location_id FROM locations WHERE business_id = $1 AND status = 'active' ORDER BY location_id LIMIT 1",
+            )
+            .bind(id)
+            .fetch_optional(tx.conn())
+            .await?;
+            match first {
+                Some(l) => l,
+                None => return Ok(None),
+            }
+        }
+    };
+    let taken: Vec<String> = sqlx::query_scalar("SELECT code FROM registers WHERE business_id = $1")
+        .bind(id)
+        .fetch_all(tx.conn())
+        .await?;
+    let code = match register_code {
+        Some(c) if !taken.iter().any(|t| t == c) => c.to_owned(),
+        _ => (1..)
+            .map(|n| format!("R{n:02}"))
+            .find(|c| !taken.contains(c))
+            .unwrap_or_else(|| "R99".into()),
+    };
     sqlx::query(
         "INSERT INTO registers (business_id, register_id, location_id, name, code, status, version, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', 0, now()) ON CONFLICT (business_id, register_id) DO NOTHING",
+         VALUES ($1, $2, $3, $4, $5, 'active', 0, now())",
     )
     .bind(id)
     .bind(register_id)
     .bind(location_id)
     .bind(register_name)
-    .bind(register_code)
+    .bind(&code)
     .execute(tx.conn())
     .await?;
-    Ok(())
+    Ok(Some(PlacedRegister { location_id, code }))
 }
 
 pub async fn active_device(tx: &mut TenantTx<'_>, register_id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {

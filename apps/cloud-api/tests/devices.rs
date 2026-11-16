@@ -438,3 +438,108 @@ async fn owners_reach_only_their_own_businesses_and_devices() {
         (StatusCode::UNAUTHORIZED, Some("SYNC_DEVICE_REVOKED"))
     );
 }
+
+#[tokio::test]
+async fn a_joining_register_gets_the_business_location_and_the_next_free_code() {
+    let Ok(url) = std::env::var("TEST_DATABASE_URL") else {
+        eprintln!("skipping: TEST_DATABASE_URL not set");
+        return;
+    };
+    let pool = pos_cloud_db::connect_lazy(&url).unwrap();
+    pos_cloud_db::migrate(&pool).await.unwrap();
+    let mut cfg = cloud_api::Config::for_tests();
+    cfg.trust_proxy = true;
+    let s = cloud_api::AppState::new(cfg, Some(pool));
+    let email = format!("owner-{}@example.com", Uuid::now_v7().simple());
+    let creds = serde_json::json!({"email": email, "password": "correct horse battery staple"});
+    let post = |path: &'static str, token: Option<String>, body: serde_json::Value| {
+        let s = s.clone();
+        async move {
+            let mut r = Request::post(path)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(
+                    "x-forwarded-for",
+                    format!("10.9.{}.1", Uuid::now_v7().as_bytes()[15]),
+                );
+            if let Some(t) = token {
+                r = r.header(header::AUTHORIZATION, format!("Bearer {t}"));
+            }
+            let res = cloud_api::router(s)
+                .oneshot(r.body(Body::from(body.to_string())).unwrap())
+                .await
+                .unwrap();
+            let code = res.status();
+            let bytes = res.into_body().collect().await.unwrap().to_bytes();
+            (
+                code,
+                serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default(),
+            )
+        }
+    };
+    post("/v1/auth/signup", None, creds.clone()).await;
+    let (_, login) = post("/v1/auth/login", None, creds).await;
+    let token = login["userAccessToken"].as_str().unwrap().to_owned();
+    let business = Uuid::now_v7();
+    post(
+        "/v1/businesses",
+        Some(token.clone()),
+        serde_json::json!({"businessId": business, "name": "Join Co",
+        "countryCode": "GB", "timezone": "Europe/London", "currencyCode": "GBP", "currencyExponent": 2,
+        "pricesIncludeTax": true}),
+    )
+    .await;
+    // A register joining a business with no location yet: refused.
+    let joiner = |register: Uuid, code: Option<&str>| {
+        serde_json::json!({"businessId": business, "registerId": register,
+        "registerName": "Till", "registerCode": code, "installationId": Uuid::now_v7(), "appVersion": "0.1.0"})
+    };
+    let (code, _) = post(
+        "/v1/devices/register",
+        Some(token.clone()),
+        joiner(Uuid::now_v7(), None),
+    )
+    .await;
+    assert_eq!(code, StatusCode::UNPROCESSABLE_ENTITY);
+    // The first register creates the location and keeps its own code.
+    let location = Uuid::now_v7();
+    let (code, first) = post(
+        "/v1/devices/register",
+        Some(token.clone()),
+        serde_json::json!({"businessId": business,
+        "registerId": Uuid::now_v7(), "registerName": "Till 1", "registerCode": "R01", "locationId": location,
+        "locationName": "Main", "installationId": Uuid::now_v7(), "appVersion": "0.1.0"}),
+    )
+    .await;
+    assert_eq!(code, StatusCode::CREATED, "{first}");
+    assert_eq!(
+        (first["registerCode"].as_str(), first["locationId"].as_str()),
+        (Some("R01"), Some(location.to_string().as_str()))
+    );
+    // Joiners: no location given, and a code that is taken or none: assigned.
+    let (_, second) = post(
+        "/v1/devices/register",
+        Some(token.clone()),
+        joiner(Uuid::now_v7(), Some("R01")),
+    )
+    .await;
+    assert_eq!(
+        (second["registerCode"].as_str(), second["locationId"].as_str()),
+        (Some("R02"), Some(location.to_string().as_str()))
+    );
+    let third_register = Uuid::now_v7();
+    let (_, third) = post(
+        "/v1/devices/register",
+        Some(token.clone()),
+        joiner(third_register, None),
+    )
+    .await;
+    assert_eq!(third["registerCode"], "R03");
+    // Registering that register again (a replacement device) keeps its code.
+    let mut again = joiner(third_register, Some("R09"));
+    again["replaceExisting"] = serde_json::json!(true);
+    let (code, again) = post("/v1/devices/register", Some(token), again).await;
+    assert_eq!(
+        (code, again["registerCode"].as_str()),
+        (StatusCode::CREATED, Some("R03"))
+    );
+}

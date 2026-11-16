@@ -26,6 +26,7 @@ pos-device-ports = { path = "crates/pos-device-ports" }
 pos-device-virtual = { path = "crates/pos-device-virtual" }
 pos-receipts = { path = "crates/pos-receipts" }
 pos-testkit = { path = "crates/pos-testkit" }
+pos-sync-http = { path = "crates/pos-sync-http" }
 
 # external
 anyhow = "1"

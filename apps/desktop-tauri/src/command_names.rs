@@ -83,4 +83,7 @@ pub const COMMANDS: &[&str] = &[
     "cash_session_z_get",
     "cash_session_z_print",
     "sync_retry_now",
+    "sync_status",
+    "sync_link_start",
+    "sync_link_complete",
 ];

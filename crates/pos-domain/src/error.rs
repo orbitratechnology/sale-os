@@ -47,6 +47,8 @@ pub enum ErrorCode {
     AuthRequired,
     SyncRegisterInUse,
     SyncBusinessIdTaken,
+    SyncOffline,
+    SyncJoinNotAllowed,
     NotFound,
     ConflictVersion,
     Internal,
@@ -101,6 +103,8 @@ impl ErrorCode {
             AuthRequired => "AUTH_REQUIRED",
             SyncRegisterInUse => "SYNC_REGISTER_IN_USE",
             SyncBusinessIdTaken => "SYNC_BUSINESS_ID_TAKEN",
+            SyncOffline => "SYNC_OFFLINE",
+            SyncJoinNotAllowed => "SYNC_JOIN_NOT_ALLOWED",
             NotFound => "NOT_FOUND",
             ConflictVersion => "CONFLICT_VERSION",
             Internal => "INTERNAL",
@@ -270,6 +274,14 @@ impl ErrorCode {
                 "Another cloud account already owns a business with this ID.",
                 "Explain; link to another business or contact support.",
             ),
+            SyncOffline => (
+                "The cloud could not be reached (no connection, a timeout, or a server error).",
+                "Check the connection and try again; local sales continue.",
+            ),
+            SyncJoinNotAllowed => (
+                "This register already has live sales or products, so it cannot join another business (joining replaces its data).",
+                "Explain; offer to create a cloud business from this register instead.",
+            ),
             NotFound => (
                 "No such cloud record for this account or device (also the answer for another business's records).",
                 "Refresh the list.",
@@ -369,7 +381,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 42);
+        assert_eq!(seen.len(), 44);
     }
 
     #[test]

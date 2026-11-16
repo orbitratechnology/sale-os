@@ -82,6 +82,8 @@ export interface FakeState {
   /** Tax configuration (E06-T05). */
   taxRates: TaxRateConfigDto[];
   taxCategories: TaxCategoryConfigDto[];
+  /** Sync and linking (E17-T08). */
+  cloud: { configured: boolean; linkState: string; registerCode: string; pending: number; mayJoin: boolean; signedIn: boolean };
 }
 
 export interface FakeSale {
@@ -190,6 +192,7 @@ function initialStateInner(preset: Preset): FakeState {
     categories: [],
     taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
     taxCategories: [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rateIds: [RATE], archived: false, version: 1 }],
+    cloud: { configured: true, linkState: "unlinked", registerCode: "R01", pending: 12, mayJoin: false, signedIn: false },
   };
 }
 
@@ -767,6 +770,48 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const answer = s.saveAs.length ? s.saveAs.shift() : name;
       if (answer == null) return null;
       return { path: `/home/user/Documents/${answer}`, fileName: answer, rows };
+    }
+    case "sync_status": {
+      needSession(s);
+      const c = s.cloud;
+      return {
+        linkState: c.linkState,
+        cloudConfigured: c.configured,
+        pending: c.pending,
+        lastPushOkAt: c.linkState === "linked" ? "2026-11-05T09:20:00.000Z" : null,
+        lastPullOkAt: c.linkState === "linked" ? "2026-11-05T09:20:01.000Z" : null,
+        lastErrorCode: c.linkState === "revoked" ? "SYNC_DEVICE_REVOKED" : null,
+        clockSkewWarning: false,
+        registerCode: c.registerCode,
+      };
+    }
+    case "sync_retry_now":
+      needSession(s);
+      s.cloud.pending = 0;
+      return null;
+    case "sync_link_start": {
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      if (a.password !== "correct horse battery staple") fail("AUTH_CREDENTIALS_INVALID");
+      s.cloud.signedIn = true;
+      return {
+        businesses: [{ businessId: "0190f0c2-0000-7000-8000-00000000b2b2", name: "Harbour Café" }],
+        mayJoin: s.cloud.mayJoin,
+        ownBusinessInCloud: false,
+      };
+    }
+    case "sync_link_complete": {
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      if (!s.cloud.signedIn) fail("AUTH_REQUIRED");
+      s.cloud.signedIn = false;
+      s.cloud.linkState = "linked";
+      if (a.mode === "join") {
+        s.cloud.registerCode = "R02";
+        s.cloud.pending = 1;
+        s.session = null;
+        return { path: "join", businessId: String(a.businessId), registerCode: "R02", signInAgain: true };
+      }
+      s.cloud.pending = 0;
+      return { path: "create", businessId: "0190f0c2-0000-7000-8000-00000000a1a1", registerCode: "R01", signInAgain: false };
     }
     case "settings_get":
     case "settings_update": {

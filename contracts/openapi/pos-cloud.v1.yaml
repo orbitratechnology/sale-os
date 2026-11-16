@@ -685,13 +685,19 @@ components:
         status: {type: string, enum: [active, suspended, deleted]}
     RegisterDevice:
       type: object
-      required: [businessId, registerId, registerName, registerCode, locationId, locationName, installationId, appVersion]
+      required: [businessId, registerId, registerName, installationId, appVersion]
       properties:
         businessId: {type: string, format: uuid}
         registerId: {type: string, format: uuid}
         registerName: {type: string}
-        registerCode: {type: string, pattern: "^[A-Z0-9]{1,6}$"}
-        locationId: {type: string, format: uuid}
+        registerCode:
+          type: string
+          pattern: "^[A-Z0-9]{1,6}$"
+          description: Omitted, or used by another register of the business, the next free Rnn is assigned (E17-T08).
+        locationId:
+          type: string
+          format: uuid
+          description: Omitted when joining an existing business, the register goes to its first location.
         locationName: {type: string}
         installationId: {type: string, format: uuid}
         appVersion: {type: string}
@@ -705,6 +711,8 @@ components:
         accessToken: {type: string, description: "EdDSA JWT, kind `device`, with businessId, registerId and deviceId claims."}
         refreshToken: {type: string, description: Opaque; keep it in the OS credential store.}
         expiresIn: {type: integer, description: Seconds (900).}
+        registerCode: {type: string, description: "Registration only: the register's code, which may have been assigned."}
+        locationId: {type: string, format: uuid, description: "Registration only: the register's location."}
     Device:
       type: object
       required: [deviceId, businessId, registerId, appVersion, status, registeredAt]
@@ -957,6 +965,8 @@ components:
             - AUTH_REQUIRED
             - SYNC_REGISTER_IN_USE
             - SYNC_BUSINESS_ID_TAKEN
+            - SYNC_OFFLINE
+            - SYNC_JOIN_NOT_ALLOWED
             - NOT_FOUND
             - CONFLICT_VERSION
             - INTERNAL

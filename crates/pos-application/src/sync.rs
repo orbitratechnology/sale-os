@@ -61,6 +61,21 @@ impl TransportError {
     }
 }
 
+/// A transport failure, as the link wizard reports it.
+pub fn link_error(e: &TransportError) -> crate::link::LinkError {
+    use crate::link::LinkError;
+    match e {
+        TransportError::Offline | TransportError::Timeout | TransportError::Server { .. } => {
+            LinkError::Offline
+        }
+        TransportError::UpgradeRequired { .. } => LinkError::UpgradeRequired,
+        TransportError::Unauthorized | TransportError::DeviceRevoked => {
+            LinkError::Other("the cloud refused this register's credentials".into())
+        }
+        TransportError::Decode(d) => LinkError::Other(format!("unreadable reply from the cloud: {d}")),
+    }
+}
+
 /// The cloud API, as the worker needs it (the HTTP adapter arrives with linking, E17-T08).
 #[async_trait::async_trait]
 pub trait SyncTransport: Send + Sync {

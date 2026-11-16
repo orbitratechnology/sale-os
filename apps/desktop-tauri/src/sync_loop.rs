@@ -5,6 +5,7 @@
 //! Pushing reads the outbox and writes sync bookkeeping; a pull is one short transaction per
 //! page; so a sale never waits long for it.
 
+use pos_application::link::CredentialStore;
 use pos_application::queries::QueryError;
 use pos_application::sync::{Next, OsRandom, SyncTransport, SyncWorker, TransportError};
 use pos_domain::Clock;
@@ -24,7 +25,12 @@ pub(crate) struct SyncRunner {
 
 impl SyncRunner {
     /// Starts the loop on the current runtime.
-    pub fn start(store: SqliteStore, transport: Arc<dyn SyncTransport>, clock: Arc<dyn Clock>) -> Self {
+    pub fn start(
+        store: SqliteStore,
+        transport: Arc<dyn SyncTransport>,
+        clock: Arc<dyn Clock>,
+        credentials: Option<Arc<dyn CredentialStore>>,
+    ) -> Self {
         let worker = Arc::new(SyncWorker::new(
             Arc::new(store.clone()),
             transport,
@@ -45,7 +51,7 @@ impl SyncRunner {
                 }
             }
         });
-        tokio::spawn(run(worker.clone(), wake.clone()));
+        tokio::spawn(run(worker.clone(), wake.clone(), store, credentials));
         Self { worker, wake }
     }
 
@@ -56,7 +62,12 @@ impl SyncRunner {
     }
 }
 
-async fn run(worker: Arc<SyncWorker>, wake: Arc<Notify>) {
+async fn run(
+    worker: Arc<SyncWorker>,
+    wake: Arc<Notify>,
+    store: SqliteStore,
+    credentials: Option<Arc<dyn CredentialStore>>,
+) {
     loop {
         let next = match cycle(&worker).await {
             Ok(next) => next,
@@ -71,6 +82,18 @@ async fn run(worker: Arc<SyncWorker>, wake: Arc<Notify>) {
             Next::RetryAfter(d) => Some(d),
             Next::Stopped(code) => {
                 tracing::warn!(code, "sync stopped until the register is relinked or updated");
+                if code == "SYNC_DEVICE_REVOKED" {
+                    // The owner disconnected this register: it keeps selling locally, stops
+                    // syncing, and forgets its credentials (E16-T04).
+                    if let Err(e) = pos_application::link::LinkStore::mark_revoked(&store).await {
+                        tracing::error!(error = %e, "could not record the revocation");
+                    }
+                    if let Some(c) = &credentials
+                        && let Err(e) = c.clear().await
+                    {
+                        tracing::error!(error = %e, "could not clear the device credentials");
+                    }
+                }
                 None
             }
         };

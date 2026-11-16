@@ -23,6 +23,7 @@ pos-local-db.workspace = true
 pos-observability.workspace = true
 pos-receipts.workspace = true
 pos-sync.workspace = true
+pos-sync-http.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 specta.workspace = true

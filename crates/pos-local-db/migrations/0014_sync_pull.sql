@@ -16,3 +16,11 @@ CREATE TABLE search_index_rows (
   search_rowid  INTEGER NOT NULL UNIQUE
 ) STRICT;
 INSERT INTO search_index_rows (variant_id, search_rowid) SELECT variant_id, rowid FROM product_search;
+
+-- Linking (E17-T08): a link under way (JSON `LinkProgress`), so it can resume after a lost
+-- connection; and a joining register's downloaded bootstrap, applied only once complete.
+ALTER TABLE sync_state ADD COLUMN link_progress TEXT CHECK (link_progress IS NULL OR json_valid(link_progress));
+CREATE TABLE bootstrap_staging (
+  position     INTEGER PRIMARY KEY,
+  entity_json  TEXT NOT NULL CHECK (json_valid(entity_json))
+) STRICT;

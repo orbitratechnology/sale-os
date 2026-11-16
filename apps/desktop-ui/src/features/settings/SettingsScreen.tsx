@@ -4,18 +4,29 @@ import type { SettingDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
 import { BusinessPanel } from "./BusinessPanel";
+import { CloudPanel } from "./CloudPanel";
 import { TaxesPanel } from "./TaxesPanel";
 
 /** The business and tax pages sit beside the registry groups; they are not registry settings. */
 const BUSINESS = "Business";
 const TAXES = "Taxes";
+const CLOUD = "Cloud";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
  * so this screen only draws the right control and sends the typed value back with the
  * version it showed. Each change is saved on its own and audited.
  */
-export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onChanged: () => void }) {
+export function SettingsScreen({
+  onBack,
+  onChanged,
+  onRelinked,
+}: {
+  onBack: () => void;
+  onChanged: () => void;
+  /** The till joined another business: its data and staff were replaced. */
+  onRelinked: () => void;
+}) {
   const [settings, setSettings] = useState<SettingDto[] | null>(null);
   const [group, setGroup] = useState<string | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
@@ -39,7 +50,7 @@ export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onCh
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES];
+  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, CLOUD];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -67,6 +78,10 @@ export function SettingsScreen({ onBack, onChanged }: { onBack: () => void; onCh
       ) : group === TAXES ? (
         <section className="card settings-list" aria-label={TAXES}>
           <TaxesPanel />
+        </section>
+      ) : group === CLOUD ? (
+        <section className="card settings-list" aria-label={CLOUD}>
+          <CloudPanel onRelinked={onRelinked} />
         </section>
       ) : (
         <section className="card settings-list" aria-label={group ?? "Settings"}>
