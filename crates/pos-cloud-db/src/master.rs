@@ -28,6 +28,49 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// The order a bootstrap snapshot lists them in: what others refer to comes first.
+    pub const BOOTSTRAP_ORDER: [Kind; 9] = [
+        Kind::Business,
+        Kind::Location,
+        Kind::Register,
+        Kind::TaxRate,
+        Kind::TaxCategory,
+        Kind::Category,
+        Kind::Setting,
+        Kind::Staff,
+        Kind::Product,
+    ];
+
+    /// The aggregate type in envelopes and the change feed.
+    pub fn aggregate_type(self) -> &'static str {
+        match self {
+            Kind::Business => "business",
+            Kind::Location => "location",
+            Kind::Register => "register",
+            Kind::Setting => "setting",
+            Kind::Staff => "staff_user",
+            Kind::TaxRate => "tax_rate",
+            Kind::TaxCategory => "tax_category",
+            Kind::Category => "category",
+            Kind::Product => "product",
+        }
+    }
+
+    /// The event type that carries it.
+    pub fn event_type(self) -> &'static str {
+        match self {
+            Kind::Business => "business.updated",
+            Kind::Location => "location.upserted",
+            Kind::Register => "register.upserted",
+            Kind::Setting => "setting.updated",
+            Kind::Staff => "staff.upserted",
+            Kind::TaxRate => "tax_rate.upserted",
+            Kind::TaxCategory => "tax_category.upserted",
+            Kind::Category => "category.upserted",
+            Kind::Product => "product.upserted",
+        }
+    }
+
     fn table(self) -> (&'static str, &'static str) {
         match self {
             Kind::Business => ("businesses", "business_id"),
@@ -99,6 +142,28 @@ pub async fn current(
     .fetch_optional(tx.conn())
     .await?;
     Ok(row.map(|(v, s)| (v, s.unwrap_or(Value::Null))))
+}
+
+/// Up to `limit` aggregates of `kind` with a snapshot, after id `after` in id order:
+/// `(id, version, snapshot)`. Rows the link flow created without a snapshot are skipped.
+pub async fn snapshot_page(
+    tx: &mut TenantTx<'_>,
+    kind: Kind,
+    after: &str,
+    limit: i64,
+) -> Result<Vec<(String, i64, Value)>, sqlx::Error> {
+    let b = biz(tx);
+    let (table, column) = kind.table();
+    sqlx::query_as(&format!(
+        "SELECT {column}::text, version, snapshot FROM {table}
+          WHERE business_id = $1 AND snapshot IS NOT NULL AND {column}::text > $2
+          ORDER BY {column}::text LIMIT $3"
+    ))
+    .bind(b)
+    .bind(after)
+    .bind(limit)
+    .fetch_all(tx.conn())
+    .await
 }
 
 /// The active product (other than `except`) that holds a barcode, if any.

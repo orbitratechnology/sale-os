@@ -221,6 +221,8 @@ pub async fn upsert(
     let server_seq = append_change(
         tx,
         &NewChange {
+            event_type: kind.event_type(),
+            schema_version: 1,
             aggregate_type,
             aggregate_id,
             version: Some(i64::try_from(new_version).unwrap_or(i64::MAX)),

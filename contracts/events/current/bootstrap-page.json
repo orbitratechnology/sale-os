@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "BootstrapEntity": {
+      "additionalProperties": false,
+      "description": "One master aggregate in a bootstrap snapshot.",
+      "properties": {
+        "aggregateId": {
+          "type": "string"
+        },
+        "aggregateType": {
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "snapshot": true,
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "aggregateType",
+        "aggregateId",
+        "eventType",
+        "schemaVersion",
+        "version",
+        "snapshot"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`GET /v1/sync/bootstrap?page=`.",
+  "properties": {
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/BootstrapEntity"
+      },
+      "type": "array"
+    },
+    "nextPage": {
+      "description": "The next page's token; absent on the last page.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "snapshotCursor": {
+      "description": "The feed position when the snapshot began: pull from here once every page is in.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "snapshotCursor",
+    "entities"
+  ],
+  "title": "BootstrapPage",
+  "type": "object"
+}

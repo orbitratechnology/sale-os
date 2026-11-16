@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "Change": {
+      "additionalProperties": false,
+      "description": "One row of the change feed.",
+      "properties": {
+        "aggregateId": {
+          "type": "string"
+        },
+        "aggregateType": {
+          "type": "string"
+        },
+        "eventType": {
+          "description": "The event type and version `snapshot` follows (parse it with `parse_payload`).",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChangeKind"
+        },
+        "originRegisterId": {
+          "description": "The register that made the change; absent when it was made in the cloud.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schemaVersion": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "serverSeq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "snapshot": true,
+        "version": {
+          "description": "Master data: the aggregate's version after this change.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "serverSeq",
+        "aggregateType",
+        "aggregateId",
+        "kind",
+        "eventType",
+        "schemaVersion",
+        "snapshot"
+      ],
+      "type": "object"
+    },
+    "ChangeKind": {
+      "enum": [
+        "upsert",
+        "archive",
+        "fact"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`GET /v1/sync/changes?cursor=&limit=`.",
+  "properties": {
+    "changes": {
+      "items": {
+        "$ref": "#/$defs/Change"
+      },
+      "type": "array"
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "nextCursor": {
+      "description": "Pass back as `cursor` next time (unchanged when there was nothing new).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "changes",
+    "nextCursor",
+    "hasMore"
+  ],
+  "title": "ChangesResponse",
+  "type": "object"
+}

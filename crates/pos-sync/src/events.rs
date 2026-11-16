@@ -794,6 +794,14 @@ pub fn protocol_schemas() -> Vec<(&'static str, serde_json::Value)> {
         ("push-request", schema_for!(crate::PushRequest).to_value()),
         ("push-response", schema_for!(crate::PushResponse).to_value()),
         ("ack-response", schema_for!(crate::AckResponse).to_value()),
+        (
+            "changes-response",
+            schema_for!(crate::pull::ChangesResponse).to_value(),
+        ),
+        (
+            "bootstrap-page",
+            schema_for!(crate::pull::BootstrapPage).to_value(),
+        ),
     ]
 }
 

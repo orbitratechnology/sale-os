@@ -136,6 +136,8 @@ async fn feed(
     append_change(
         tx,
         &NewChange {
+            event_type: &env.event_type,
+            schema_version: i32::try_from(env.schema_version).unwrap_or(1),
             aggregate_type,
             aggregate_id: &env.aggregate_id,
             version: None,

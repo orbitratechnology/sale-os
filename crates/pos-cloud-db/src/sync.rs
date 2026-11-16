@@ -117,6 +117,9 @@ pub async fn insert_inbox(tx: &mut TenantTx<'_>, e: &NewInboxEntry<'_>) -> Resul
 
 /// One row of the change feed.
 pub struct NewChange<'a> {
+    /// The event type and schema version the snapshot follows.
+    pub event_type: &'a str,
+    pub schema_version: i32,
     pub aggregate_type: &'a str,
     pub aggregate_id: &'a str,
     pub version: Option<i64>,
@@ -128,13 +131,24 @@ pub struct NewChange<'a> {
 }
 
 /// Appends to the change feed; returns its `server_seq`.
+///
+/// Visibility (E17-T07, option (a) of 05 C0003): appenders of one business take a
+/// transaction-scoped advisory lock *before* drawing the next `server_seq`, and keep it until
+/// they commit. So one business's rows commit in `server_seq` order, and a reader that has
+/// seen row `n` will never later find a row below `n` appear: pulling `server_seq > cursor`
+/// never skips a row.
 pub async fn append_change(tx: &mut TenantTx<'_>, c: &NewChange<'_>) -> Result<i64, sqlx::Error> {
+    let b = *tx.business_id().as_uuid();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('feed:' || $1::text, 0))")
+        .bind(b)
+        .execute(tx.conn())
+        .await?;
     sqlx::query_scalar(
         "INSERT INTO change_log (business_id, aggregate_type, aggregate_id, version, change_kind,
-                                 origin_register, origin_event_id, snapshot)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING server_seq",
+                                 origin_register, origin_event_id, snapshot, event_type, schema_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING server_seq",
     )
-    .bind(*tx.business_id().as_uuid())
+    .bind(b)
     .bind(c.aggregate_type)
     .bind(c.aggregate_id)
     .bind(c.version)
@@ -142,8 +156,52 @@ pub async fn append_change(tx: &mut TenantTx<'_>, c: &NewChange<'_>) -> Result<i
     .bind(c.origin_register)
     .bind(c.origin_event_id)
     .bind(c.snapshot)
+    .bind(c.event_type)
+    .bind(c.schema_version)
     .fetch_one(tx.conn())
     .await
+}
+
+/// One row of the feed, as a register pulls it.
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
+pub struct ChangeRow {
+    pub server_seq: i64,
+    pub aggregate_type: String,
+    pub aggregate_id: String,
+    pub version: Option<i64>,
+    pub change_kind: String,
+    pub origin_register: Option<Uuid>,
+    pub event_type: String,
+    pub schema_version: i32,
+    pub snapshot: serde_json::Value,
+}
+
+/// Up to `limit` rows after `after`, in order.
+pub async fn changes_after(
+    tx: &mut TenantTx<'_>,
+    after: i64,
+    limit: i64,
+) -> Result<Vec<ChangeRow>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT server_seq, aggregate_type, aggregate_id, version, change_kind, origin_register, event_type,
+                schema_version, snapshot
+           FROM change_log
+          WHERE business_id = $1 AND server_seq > $2 AND event_type IS NOT NULL
+          ORDER BY server_seq LIMIT $3",
+    )
+    .bind(*tx.business_id().as_uuid())
+    .bind(after)
+    .bind(limit)
+    .fetch_all(tx.conn())
+    .await
+}
+
+/// The feed's current end for this business (0 when empty).
+pub async fn feed_position(tx: &mut TenantTx<'_>) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT coalesce(max(server_seq), 0) FROM change_log WHERE business_id = $1")
+        .bind(*tx.business_id().as_uuid())
+        .fetch_one(tx.conn())
+        .await
 }
 
 /// How many feed rows came from one event (tests: exactly-once application).

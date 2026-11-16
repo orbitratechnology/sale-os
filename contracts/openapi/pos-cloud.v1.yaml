@@ -528,6 +528,97 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/sync/changes:
+    get:
+      operationId: getChanges
+      tags: [sync]
+      summary: The change feed after a cursor (E17-T07).
+      description: >-
+        Master-data changes and other registers' facts of the token's business, in feed order.
+        Rows commit in `serverSeq` order (appenders serialize per business), so pulling after the
+        last seen position never skips a row. `nextCursor` is unchanged when nothing is new.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, pattern: "^v1:[0-9]+$" }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+      responses:
+        "200":
+          description: The next changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangesResponse"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not a cursor this server issued."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/sync/bootstrap:
+    get:
+      operationId: getBootstrap
+      tags: [sync]
+      summary: Every master aggregate's current snapshot, paged (E17-T07).
+      description: >-
+        Pages list aggregates that others refer to first (business, locations, registers, tax
+        rates and categories, categories, settings, staff, products). Every page carries the
+        same `snapshotCursor`, the feed position when the first page was read; after the last
+        page, pull changes from it. `nextPage` resumes an interrupted bootstrap.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema: { type: string }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 2000 }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapPage"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not a page token this server issued."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 components:
   securitySchemes:
     userToken:
@@ -755,6 +846,56 @@ components:
         productId: { type: string, format: uuid }
         version: { type: integer, minimum: 1 }
         product: { type: object }
+    Change:
+      type: object
+      additionalProperties: false
+      required: [serverSeq, aggregateType, aggregateId, kind, eventType, schemaVersion, snapshot]
+      properties:
+        serverSeq: { type: integer }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        version: { type: integer, minimum: 1 }
+        kind: { type: string, enum: [upsert, archive, fact] }
+        originRegisterId:
+          type: string
+          format: uuid
+          description: Absent when the change was made in the cloud.
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        snapshot:
+          type: object
+          description: "The payload of `eventType` v`schemaVersion` (contracts/events/current)."
+    ChangesResponse:
+      type: object
+      additionalProperties: false
+      required: [changes, nextCursor, hasMore]
+      properties:
+        changes:
+          type: array
+          items: { $ref: "#/components/schemas/Change" }
+        nextCursor: { type: string }
+        hasMore: { type: boolean }
+    BootstrapEntity:
+      type: object
+      additionalProperties: false
+      required: [aggregateType, aggregateId, eventType, schemaVersion, version, snapshot]
+      properties:
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        version: { type: integer, minimum: 1 }
+        snapshot: { type: object }
+    BootstrapPage:
+      type: object
+      additionalProperties: false
+      required: [snapshotCursor, entities]
+      properties:
+        snapshotCursor: { type: string }
+        entities:
+          type: array
+          items: { $ref: "#/components/schemas/BootstrapEntity" }
+        nextPage: { type: string }
     Problem:
       type: object
       description: RFC 9457 problem details with a catalogued error code.

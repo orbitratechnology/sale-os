@@ -126,6 +126,9 @@ fn secured_operations() -> Vec<String> {
 async fn at12_http_every_secured_route_refuses_another_business() {
     let Some(s) = state().await else { return };
     let (a, b) = (tenant(&s, "A").await, tenant(&s, "B").await);
+    // B has data in the feed and snapshots that A's pulls must never show.
+    let (code, _) = push(&s, &b, &end_of_day(&b)).await;
+    assert_eq!(code, StatusCode::OK);
     // For each secured operation: A's call aimed at B. Adding a secured route to the
     // contract without a case here fails the test.
     let cases: BTreeMap<&str, (Method, String, Option<Value>)> = BTreeMap::from([
@@ -169,6 +172,15 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         ),
         // ...and the ack, which only ever describes the token's own register.
         ("GET /v1/sync/ack", (Method::GET, "/v1/sync/ack".into(), None)),
+        // Pulls: only ever the token's own business.
+        (
+            "GET /v1/sync/changes",
+            (Method::GET, "/v1/sync/changes".into(), None),
+        ),
+        (
+            "GET /v1/sync/bootstrap",
+            (Method::GET, "/v1/sync/bootstrap".into(), None),
+        ),
         // A product edit aimed at B's business.
         (
             "POST /v1/catalog/products",
@@ -215,8 +227,10 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         }
         // A's own listings still work and show A.
         if code == StatusCode::OK {
+            // A's own listings show A (A has pushed nothing, so its pulls are empty).
+            let pull = op.starts_with("GET /v1/sync/changes") || op.starts_with("GET /v1/sync/bootstrap");
             assert!(
-                text.contains(&a.business.to_string()) || text.contains(&a.register.to_string()),
+                pull || text.contains(&a.business.to_string()) || text.contains(&a.register.to_string()),
                 "{op}: {text}"
             );
         }

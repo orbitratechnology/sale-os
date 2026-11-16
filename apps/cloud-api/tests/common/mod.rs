@@ -203,6 +203,8 @@ impl EventApplier for TestFacts {
         let seq = append_change(
             tx,
             &NewChange {
+                event_type: "audit.recorded",
+                schema_version: 1,
                 aggregate_type: "audit",
                 aggregate_id: &env.aggregate_id,
                 version: None,

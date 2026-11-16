@@ -41,6 +41,7 @@ use std::sync::Arc;
 
 pub mod facts;
 pub mod master;
+pub mod pull;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -50,6 +51,8 @@ pub fn routes() -> Router<AppState> {
             post(push).layer(DefaultBodyLimit::max(MAX_PUSH_BYTES + 64 * 1024)),
         )
         .route("/sync/ack", get(ack))
+        .route("/sync/changes", get(pull::changes))
+        .route("/sync/bootstrap", get(pull::bootstrap))
 }
 
 // ---------- appliers ----------
