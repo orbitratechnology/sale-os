@@ -10,6 +10,7 @@
 use crate::queries::QueryError;
 use pos_domain::{Clock, Timestamp};
 use pos_sync::envelope::{MAX_PUSH_BYTES, MAX_PUSH_EVENTS};
+use pos_sync::pull::{BootstrapPage, ChangesResponse};
 use pos_sync::{EventEnvelope, EventResult, PushRequest, PushResponse, ResultStatus};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -64,6 +65,18 @@ impl TransportError {
 #[async_trait::async_trait]
 pub trait SyncTransport: Send + Sync {
     async fn push(&self, request: PushRequest) -> Result<PushResponse, TransportError>;
+
+    /// `GET /v1/sync/changes` (E17-T07). Test doubles that only push need not answer.
+    async fn changes(&self, cursor: Option<String>, limit: u32) -> Result<ChangesResponse, TransportError> {
+        let _ = (cursor, limit);
+        Err(TransportError::Offline)
+    }
+
+    /// `GET /v1/sync/bootstrap` (E17-T07).
+    async fn bootstrap(&self, page: Option<String>) -> Result<BootstrapPage, TransportError> {
+        let _ = page;
+        Err(TransportError::Offline)
+    }
 }
 
 /// Where the local side stands.
@@ -106,6 +119,237 @@ pub trait SyncStore: Send + Sync {
     async fn record_push(&self, record: &PushRecord) -> Result<(), QueryError>;
     /// Records a failed attempt (nothing else changes).
     async fn record_push_failure(&self, code: &str, at: Timestamp) -> Result<(), QueryError>;
+
+    /// Where the pull stands (E17-T07).
+    async fn pull_state(&self) -> Result<PullState, QueryError>;
+    /// Applies a page of the change feed and moves the cursor, in one transaction. Changes
+    /// already applied (by `serverSeq`) are skipped, so a page can be applied twice.
+    async fn apply_changes(&self, page: &ChangesResponse, at: Timestamp)
+    -> Result<InboundReport, QueryError>;
+    /// Applies a bootstrap page and records where to resume (or, after the last page, the
+    /// cursor to pull from), in one transaction.
+    async fn apply_bootstrap(&self, page: &BootstrapPage, at: Timestamp)
+    -> Result<InboundReport, QueryError>;
+}
+
+/// Where the pull stands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PullState {
+    pub linked: bool,
+    /// `None` before the first pull.
+    pub cursor: Option<String>,
+    /// Set while a bootstrap is under way: the next page to fetch.
+    pub bootstrap_page: Option<String>,
+}
+
+/// What a pulled page did (`inbound_changes.outcome`, docs/backlog/04 0013).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InboundReport {
+    pub applied: u32,
+    /// Not newer than what this register holds.
+    pub skipped_older: u32,
+    /// Made by this register.
+    pub skipped_own: u32,
+    /// The aggregate has an edit not yet acknowledged here: the push result settles it.
+    pub held: u32,
+    /// Already applied by an earlier pull.
+    pub already: u32,
+}
+
+impl InboundReport {
+    pub fn add(&mut self, o: InboundOutcome) {
+        match o {
+            InboundOutcome::Applied => self.applied += 1,
+            InboundOutcome::SkippedOlder => self.skipped_older += 1,
+            InboundOutcome::SkippedOwn => self.skipped_own += 1,
+            InboundOutcome::ConflictPending => self.held += 1,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum InboundOutcome {
+    Applied,
+    SkippedOlder,
+    SkippedOwn,
+    ConflictPending,
+}
+
+impl InboundOutcome {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Applied => "applied",
+            Self::SkippedOlder => "skipped_older",
+            Self::SkippedOwn => "skipped_own",
+            Self::ConflictPending => "conflict_pending",
+        }
+    }
+}
+
+/// Why a pulled snapshot cannot be applied here.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct InboundError(pub String);
+
+/// The local table and id column of a master aggregate type.
+pub fn master_table(aggregate_type: &str) -> Option<(&'static str, &'static str)> {
+    Some(match aggregate_type {
+        "business" => ("businesses", "business_id"),
+        "location" => ("locations", "location_id"),
+        "register" => ("registers", "register_id"),
+        "setting" => ("business_settings", "key"),
+        "staff_user" => ("staff_users", "user_id"),
+        "tax_rate" => ("tax_rates", "tax_rate_id"),
+        "tax_category" => ("tax_categories", "tax_category_id"),
+        "category" => ("categories", "category_id"),
+        "product" => ("products", "product_id"),
+        _ => return None,
+    })
+}
+
+/// A pulled master-data snapshot as the local write that applies it: the same `Put*` op a
+/// local edit uses, expecting the version held here (`None` if new), so a local edit made in
+/// the meantime makes it fail instead of being overwritten. The snapshot is checked against
+/// the contract first; it must belong to `business`.
+pub fn inbound_master(
+    event_type: &str,
+    schema_version: u32,
+    snapshot: &serde_json::Value,
+    local_version: Option<u64>,
+    business: pos_domain::BusinessId,
+) -> Result<crate::WriteOp, InboundError> {
+    use crate::WriteOp;
+    let bad = |e: &dyn std::fmt::Display| InboundError(format!("{event_type}: {e}"));
+    pos_sync::parse_payload(event_type, schema_version, snapshot).map_err(|e| bad(&e))?;
+    let (_, value) = pos_sync::upcast::to_current(event_type, schema_version, snapshot.clone());
+    fn de<T: serde::de::DeserializeOwned>(v: serde_json::Value) -> Result<T, serde_json::Error> {
+        serde_json::from_value(v)
+    }
+    let expected_version = local_version;
+    let (op, owner) = match event_type {
+        "business.updated" => {
+            let record: crate::records::BusinessRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutBusiness {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "location.upserted" => {
+            let record: crate::records::LocationRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutLocation {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "register.upserted" => {
+            let record: crate::records::RegisterRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutRegister {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "setting.updated" => {
+            let record: crate::records::SettingRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutSetting {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "staff.upserted" => {
+            let record: crate::records::StaffRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutStaff {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "tax_rate.upserted" => {
+            let record: crate::records::TaxRateRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutTaxRate {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "tax_category.upserted" => {
+            let record: crate::records::TaxCategoryRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutTaxCategory {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "category.upserted" => {
+            let record: crate::records::CategoryRecord = de(value).map_err(|e| bad(&e))?;
+            let owner = record.business_id;
+            (
+                WriteOp::PutCategory {
+                    record,
+                    expected_version,
+                },
+                owner,
+            )
+        }
+        "product.upserted" => {
+            let product: pos_domain::catalog::Product = de(value).map_err(|e| bad(&e))?;
+            (
+                WriteOp::PutProduct {
+                    product,
+                    business_id: business,
+                    expected_version,
+                },
+                business,
+            )
+        }
+        other => return Err(InboundError(format!("{other} is not master data"))),
+    };
+    if owner != business {
+        return Err(InboundError(format!("{event_type} is for another business")));
+    }
+    Ok(op)
+}
+
+/// The stock movements a pulled fact carries (a sale, a return or a stock document from
+/// another register); other facts move no stock.
+pub fn inbound_movements(
+    event_type: &str,
+    schema_version: u32,
+    snapshot: &serde_json::Value,
+) -> Result<Vec<pos_sync::events::StockMovementV1>, InboundError> {
+    use pos_sync::Payload;
+    let payload = pos_sync::parse_payload(event_type, schema_version, snapshot)
+        .map_err(|e| InboundError(format!("{event_type}: {e}")))?;
+    Ok(match payload {
+        Payload::SaleCompletedV1(s) => s.stock_movements,
+        Payload::ReturnCompletedV1(r) => r.stock_movements,
+        Payload::DocumentPostedV1(d) => d.stock_movements,
+        _ => Vec::new(),
+    })
 }
 
 /// Full-jitter exponential backoff: attempt `n` (0-based) sleeps a random time in
@@ -299,6 +543,92 @@ impl SyncWorker {
             ack_after: ack,
             next,
         })
+    }
+    /// Pulls the next page of the change feed and applies it (E17-T07).
+    pub async fn pull_once(&self) -> Result<PullReport, QueryError> {
+        let state = self.store.pull_state().await?;
+        if !state.linked || state.bootstrap_page.is_some() {
+            return Ok(PullReport::idle());
+        }
+        match self.transport.changes(state.cursor.clone(), PULL_LIMIT).await {
+            Err(e) => {
+                self.store.record_push_failure(e.code(), self.clock.now()).await?;
+                let next = if e.is_transient() {
+                    self.retry_later()
+                } else {
+                    Next::Stopped(e.code())
+                };
+                Ok(PullReport {
+                    next,
+                    ..PullReport::idle()
+                })
+            }
+            Ok(page) => {
+                let report = self.store.apply_changes(&page, self.clock.now()).await?;
+                Ok(PullReport {
+                    received: page.changes.len(),
+                    report,
+                    next: if page.has_more {
+                        Next::Immediately
+                    } else {
+                        Next::Idle
+                    },
+                })
+            }
+        }
+    }
+
+    /// Fetches and applies the next bootstrap page, resuming where an interrupted bootstrap
+    /// stopped. `Next::Idle` once the snapshot is complete (the cursor is then set).
+    pub async fn bootstrap_step(&self) -> Result<PullReport, QueryError> {
+        let state = self.store.pull_state().await?;
+        match self.transport.bootstrap(state.bootstrap_page.clone()).await {
+            Err(e) => {
+                self.store.record_push_failure(e.code(), self.clock.now()).await?;
+                let next = if e.is_transient() {
+                    self.retry_later()
+                } else {
+                    Next::Stopped(e.code())
+                };
+                Ok(PullReport {
+                    next,
+                    ..PullReport::idle()
+                })
+            }
+            Ok(page) => {
+                let report = self.store.apply_bootstrap(&page, self.clock.now()).await?;
+                Ok(PullReport {
+                    received: page.entities.len(),
+                    report,
+                    next: if page.next_page.is_some() {
+                        Next::Immediately
+                    } else {
+                        Next::Idle
+                    },
+                })
+            }
+        }
+    }
+}
+
+/// Changes per pull.
+pub const PULL_LIMIT: u32 = 500;
+
+/// What one pull or bootstrap page did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PullReport {
+    pub received: usize,
+    pub report: InboundReport,
+    pub next: Next,
+}
+
+impl PullReport {
+    fn idle() -> Self {
+        Self {
+            received: 0,
+            report: InboundReport::default(),
+            next: Next::Idle,
+        }
     }
 }
 

@@ -5,7 +5,7 @@ use pos_application::records::AggregateRef;
 use pos_application::{
     AppliedWriteSet, ChangeNotice, LocalStore, WriteContext, WriteError, WriteOp, WriteSet,
 };
-use sqlx::{Sqlite, SqlitePool, Transaction};
+use sqlx::{SqliteConnection, SqlitePool};
 use tokio::sync::broadcast;
 
 /// The SQLite write path. Cheap to clone; clones share the writer connection.
@@ -63,12 +63,20 @@ impl LocalStore for SqliteStore {
     }
 }
 
-struct Statements {
+pub(crate) struct Statements {
     next: usize,
     fail_at: Option<usize>,
 }
 
 impl Statements {
+    /// No fault injection: every statement runs.
+    pub(crate) fn unlimited() -> Self {
+        Self {
+            next: 0,
+            fail_at: None,
+        }
+    }
+
     fn step(&mut self) -> Result<(), WriteError> {
         let n = self.next;
         self.next += 1;
@@ -91,11 +99,81 @@ async fn apply_in_transaction(
     let ctx = ws.context();
     let mut applied = AppliedWriteSet::default();
 
-    for op in ws.ops() {
+    run_ops(&mut tx, ctx, ws.ops(), &mut st, &mut applied).await?;
+
+    for e in ws.outbox() {
+        st.step()?;
+        let seq = allocate(&mut tx, ctx, "outbox_seq").await?;
+        st.step()?;
+        sqlx::query(
+            "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
+               schema_version, aggregate_type, aggregate_id, base_version, occurred_at, payload_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11)",
+        )
+        .bind(e.event_id.to_string())
+        .bind(ctx.business_id.to_string())
+        .bind(ctx.location_id.to_string())
+        .bind(ctx.register_id.to_string())
+        .bind(as_i64(seq)?)
+        .bind(e.event_type)
+        .bind(i64::from(e.schema_version))
+        .bind(e.aggregate.aggregate_type)
+        .bind(&e.aggregate.aggregate_id)
+        .bind(e.base_version.map(as_i64).transpose()?)
+        .bind(ctx.occurred_at.as_millis())
+        .bind(payload_with_numbers(e, &applied)?.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx)?;
+        applied.outbox.push((e.event_id, seq));
+    }
+
+    for a in ws.audit() {
+        st.step()?;
+        sqlx::query(
+            "INSERT INTO audit_events (audit_id, business_id, register_id, actor_user_id, approver_user_id, action,
+               entity_type, entity_id, occurred_at, metadata_json, outbox_event_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(a.audit_id.to_string())
+        .bind(ctx.business_id.to_string())
+        .bind(ctx.register_id.to_string())
+        .bind(ctx.actor.map(|u| u.to_string()))
+        .bind(a.approver.map(|u| u.to_string()))
+        .bind(a.action.as_str())
+        .bind(a.entity_type)
+        .bind(&a.entity_id)
+        .bind(ctx.occurred_at.as_millis())
+        .bind(a.metadata.to_string())
+        .bind(a.outbox_event_id.map(|e| e.to_string()))
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx)?;
+    }
+
+    if cfg!(debug_assertions) && !ws.outbox().is_empty() {
+        check_outbox_invariant(&mut tx, ctx).await?;
+    }
+
+    st.step()?;
+    tx.commit().await.map_err(map_sqlx)?;
+    Ok(applied)
+}
+
+/// Runs write ops inside the caller's transaction: a write set's own, or inbound changes
+/// pulled from the cloud (E17-T07), which have no outbox events of their own.
+pub(crate) async fn run_ops(
+    tx: &mut SqliteConnection,
+    ctx: &WriteContext,
+    ops: &[WriteOp],
+    st: &mut Statements,
+    applied: &mut AppliedWriteSet,
+) -> Result<(), WriteError> {
+    for op in ops {
         match op {
             WriteOp::AllocateNumber { counter, slot } => {
                 st.step()?;
-                let n = allocate(&mut tx, ctx, counter.column_name()).await?;
+                let n = allocate(tx, ctx, counter.column_name()).await?;
                 applied.numbers.insert(*slot, n);
             }
             WriteOp::PutBusiness {
@@ -104,7 +182,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "businesses",
                     "business_id",
                     &r.business_id.to_string(),
@@ -152,7 +230,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "locations",
                     "location_id",
                     &r.location_id.to_string(),
@@ -186,7 +264,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "registers",
                     "register_id",
                     &r.register_id.to_string(),
@@ -252,7 +330,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "staff_users",
                     "user_id",
                     &r.user_id.to_string(),
@@ -290,7 +368,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "tax_rates",
                     "tax_rate_id",
                     &r.tax_rate_id.to_string(),
@@ -326,7 +404,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "categories",
                     "category_id",
                     &r.category_id.to_string(),
@@ -361,7 +439,7 @@ async fn apply_in_transaction(
             } => {
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "tax_categories",
                     "tax_category_id",
                     &r.tax_category_id.to_string(),
@@ -432,7 +510,7 @@ async fn apply_in_transaction(
                 let bid = business_id.to_string();
                 st.step()?;
                 check_version(
-                    &mut tx,
+                    tx,
                     "products",
                     "product_id",
                     &pid,
@@ -476,11 +554,23 @@ async fn apply_in_transaction(
                 .await
                 .map_err(map_sqlx)?;
                 st.step()?;
-                sqlx::query("DELETE FROM product_search WHERE variant_id IN (SELECT variant_id FROM product_variants WHERE product_id = ?)")
-                    .bind(&pid)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(map_sqlx)?;
+                sqlx::query(
+                    "DELETE FROM product_search WHERE rowid IN
+                       (SELECT r.search_rowid FROM search_index_rows r
+                          JOIN product_variants v ON v.variant_id = r.variant_id WHERE v.product_id = ?)",
+                )
+                .bind(&pid)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                st.step()?;
+                sqlx::query(
+                    "DELETE FROM search_index_rows WHERE variant_id IN (SELECT variant_id FROM product_variants WHERE product_id = ?)",
+                )
+                .bind(&pid)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
                 // Defaults move between variants: clear them first (one default per product).
                 st.step()?;
                 sqlx::query("UPDATE product_variants SET is_default = 0 WHERE product_id = ?")
@@ -567,6 +657,12 @@ async fn apply_in_transaction(
                         .execute(&mut *tx)
                         .await
                         .map_err(map_sqlx)?;
+                        st.step()?;
+                        sqlx::query("INSERT INTO search_index_rows (variant_id, search_rowid) VALUES (?, last_insert_rowid())")
+                            .bind(v.id.to_string())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(map_sqlx)?;
                     }
                 }
             }
@@ -757,7 +853,7 @@ async fn apply_in_transaction(
                     WriteError::Io("receipt number must be allocated before the sale".into())
                 })?;
                 st.step()?;
-                let session = crate::cash::open_session(&mut tx, &ctx.register_id.to_string())
+                let session = crate::cash::open_session(tx, &ctx.register_id.to_string())
                     .await
                     .map_err(map_sqlx)?;
                 if session.is_none() && *require_cash_session {
@@ -1056,9 +1152,7 @@ async fn apply_in_transaction(
                     return Err(WriteError::CashSessionNotOpen);
                 };
                 st.step()?;
-                let totals = crate::cash::session_totals(&mut tx, &id)
-                    .await
-                    .map_err(map_sqlx)?;
+                let totals = crate::cash::session_totals(tx, &id).await.map_err(map_sqlx)?;
                 let expected = totals
                     .expected_cash(pos_domain::Money::from_minor(float))
                     .map_err(|e| WriteError::Io(e.to_string()))?;
@@ -1095,7 +1189,7 @@ async fn apply_in_transaction(
                     WriteError::Io("the return number must be allocated before the return".into())
                 })?;
                 st.step()?;
-                let session = crate::cash::open_session(&mut tx, &ctx.register_id.to_string())
+                let session = crate::cash::open_session(tx, &ctx.register_id.to_string())
                     .await
                     .map_err(map_sqlx)?;
                 if session.is_none() && *require_cash_session {
@@ -1343,72 +1437,11 @@ async fn apply_in_transaction(
             }
         }
     }
-
-    for e in ws.outbox() {
-        st.step()?;
-        let seq = allocate(&mut tx, ctx, "outbox_seq").await?;
-        st.step()?;
-        sqlx::query(
-            "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
-               schema_version, aggregate_type, aggregate_id, base_version, occurred_at, payload_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?11)",
-        )
-        .bind(e.event_id.to_string())
-        .bind(ctx.business_id.to_string())
-        .bind(ctx.location_id.to_string())
-        .bind(ctx.register_id.to_string())
-        .bind(as_i64(seq)?)
-        .bind(e.event_type)
-        .bind(i64::from(e.schema_version))
-        .bind(e.aggregate.aggregate_type)
-        .bind(&e.aggregate.aggregate_id)
-        .bind(e.base_version.map(as_i64).transpose()?)
-        .bind(ctx.occurred_at.as_millis())
-        .bind(payload_with_numbers(e, &applied)?.to_string())
-        .execute(&mut *tx)
-        .await
-        .map_err(map_sqlx)?;
-        applied.outbox.push((e.event_id, seq));
-    }
-
-    for a in ws.audit() {
-        st.step()?;
-        sqlx::query(
-            "INSERT INTO audit_events (audit_id, business_id, register_id, actor_user_id, approver_user_id, action,
-               entity_type, entity_id, occurred_at, metadata_json, outbox_event_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(a.audit_id.to_string())
-        .bind(ctx.business_id.to_string())
-        .bind(ctx.register_id.to_string())
-        .bind(ctx.actor.map(|u| u.to_string()))
-        .bind(a.approver.map(|u| u.to_string()))
-        .bind(a.action.as_str())
-        .bind(a.entity_type)
-        .bind(&a.entity_id)
-        .bind(ctx.occurred_at.as_millis())
-        .bind(a.metadata.to_string())
-        .bind(a.outbox_event_id.map(|e| e.to_string()))
-        .execute(&mut *tx)
-        .await
-        .map_err(map_sqlx)?;
-    }
-
-    if cfg!(debug_assertions) && !ws.outbox().is_empty() {
-        check_outbox_invariant(&mut tx, ctx).await?;
-    }
-
-    st.step()?;
-    tx.commit().await.map_err(map_sqlx)?;
-    Ok(applied)
+    Ok(())
 }
 
 /// Allocates the next value of a register-local counter inside the transaction.
-async fn allocate(
-    tx: &mut Transaction<'_, Sqlite>,
-    ctx: &WriteContext,
-    name: &str,
-) -> Result<u64, WriteError> {
+async fn allocate(tx: &mut SqliteConnection, ctx: &WriteContext, name: &str) -> Result<u64, WriteError> {
     let v: i64 = sqlx::query_scalar(
         "INSERT INTO register_counters (register_id, name, value) VALUES (?, ?, 1)
          ON CONFLICT (register_id, name) DO UPDATE SET value = value + 1
@@ -1416,14 +1449,14 @@ async fn allocate(
     )
     .bind(ctx.register_id.to_string())
     .bind(name)
-    .fetch_one(&mut **tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(map_sqlx)?;
     u64::try_from(v).map_err(|_| WriteError::Corrupt(format!("negative counter {name}")))
 }
 
 async fn check_version(
-    tx: &mut Transaction<'_, Sqlite>,
+    tx: &mut SqliteConnection,
     table: &'static str,
     id_column: &'static str,
     id: &str,
@@ -1433,7 +1466,7 @@ async fn check_version(
     let sql = format!("SELECT version FROM {table} WHERE {id_column} = ?");
     let version: Option<i64> = sqlx::query_scalar(&sql)
         .bind(id)
-        .fetch_optional(&mut **tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(map_sqlx)?;
     ensure_version(version, expected, aggregate)
@@ -1455,16 +1488,13 @@ fn ensure_version(
     Ok(())
 }
 
-async fn check_outbox_invariant(
-    tx: &mut Transaction<'_, Sqlite>,
-    ctx: &WriteContext,
-) -> Result<(), WriteError> {
+async fn check_outbox_invariant(tx: &mut SqliteConnection, ctx: &WriteContext) -> Result<(), WriteError> {
     let (counter, max): (Option<i64>, Option<i64>) = sqlx::query_as(
         "SELECT (SELECT value FROM register_counters WHERE register_id = ?1 AND name = 'outbox_seq'),
                 (SELECT MAX(local_sequence) FROM outbox_events WHERE register_id = ?1)",
     )
     .bind(ctx.register_id.to_string())
-    .fetch_one(&mut **tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(map_sqlx)?;
     if counter != max {

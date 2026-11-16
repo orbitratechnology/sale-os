@@ -1,8 +1,11 @@
-//! Runs the push worker in the background (E17-T03): after every commit that adds to the
-//! outbox, every 30 seconds while there is pending work (which also notices connectivity
-//! coming back), after a backoff delay, and at once on `sync_retry_now`. It only reads the
-//! outbox and writes sync bookkeeping, so a sale never waits for it.
+//! Runs sync in the background: each cycle pushes the outbox (E17-T03), then pulls the
+//! change feed, or continues an unfinished bootstrap (E17-T07). It runs after every commit
+//! that adds to the outbox, every 30 seconds (which also notices connectivity coming back and
+//! picks up other registers' changes), after a backoff delay, and at once on `sync_retry_now`.
+//! Pushing reads the outbox and writes sync bookkeeping; a pull is one short transaction per
+//! page; so a sale never waits long for it.
 
+use pos_application::queries::QueryError;
 use pos_application::sync::{Next, OsRandom, SyncTransport, SyncWorker, TransportError};
 use pos_domain::Clock;
 use pos_local_db::SqliteStore;
@@ -55,8 +58,8 @@ impl SyncRunner {
 
 async fn run(worker: Arc<SyncWorker>, wake: Arc<Notify>) {
     loop {
-        let next = match worker.push_once().await {
-            Ok(report) => report.next,
+        let next = match cycle(&worker).await {
+            Ok(next) => next,
             Err(e) => {
                 tracing::warn!(error = %e, "sync push could not read or record the outbox");
                 Next::RetryAfter(TICK)
@@ -78,6 +81,26 @@ async fn run(worker: Arc<SyncWorker>, wake: Arc<Notify>) {
             None => wake.notified().await,
         }
     }
+}
+
+/// One push, then one pull (or bootstrap page); what to do next is the more urgent of the two.
+async fn cycle(worker: &SyncWorker) -> Result<Next, QueryError> {
+    let push = worker.push_once().await?.next;
+    if push == Next::Immediately {
+        return Ok(Next::Immediately);
+    }
+    let pull = if worker.store.pull_state().await?.bootstrap_page.is_some() {
+        worker.bootstrap_step().await?.next
+    } else {
+        worker.pull_once().await?.next
+    };
+    Ok(match (push, pull) {
+        (Next::Stopped(code), _) | (_, Next::Stopped(code)) => Next::Stopped(code),
+        (_, Next::Immediately) => Next::Immediately,
+        (Next::RetryAfter(a), Next::RetryAfter(b)) => Next::RetryAfter(a.min(b)),
+        (Next::RetryAfter(d), _) | (_, Next::RetryAfter(d)) => Next::RetryAfter(d),
+        _ => Next::Idle,
+    })
 }
 
 /// The transport until linking (E17-T08) provides the HTTP one. An unlinked register never

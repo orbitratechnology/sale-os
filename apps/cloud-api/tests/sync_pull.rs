@@ -209,3 +209,59 @@ async fn the_feed_never_skips_a_row_under_concurrent_writers() {
     );
     assert_eq!(seen, committed, "the reader saw exactly the committed rows");
 }
+
+/// E17-T07 acceptance bench, server side: serving a 50,000-product bootstrap in pages of
+/// 2,000. Run with `cargo test -p cloud-api --test sync_pull --release -- --ignored --nocapture`.
+#[tokio::test]
+#[ignore = "bench"]
+async fn bench_serving_a_fifty_thousand_product_bootstrap() {
+    let Some(s) = state_with(fact_appliers()).await else {
+        return;
+    };
+    let one = tenant(&s, "BigCatalogue").await;
+    let pool = s.db.clone().unwrap();
+    // 50,000 products with realistic snapshots, written directly (as the migration owner).
+    sqlx::query(
+        "INSERT INTO products (business_id, product_id, name, product_type, unit_code, tax_category_id, quick_select,
+                               status, version, snapshot)
+         SELECT $1, gen_random_uuid(), 'Product ' || n, 'stock', 'ea', gen_random_uuid(), false, 'active', 1,
+                jsonb_build_object('id', gen_random_uuid(), 'name', 'Product ' || n, 'description', null,
+                  'categoryId', null, 'productType', 'stock', 'unit', 'ea', 'taxCategoryId', gen_random_uuid(),
+                  'quickSelect', false, 'archived', false, 'version', 1,
+                  'variants', jsonb_build_array(jsonb_build_object('id', gen_random_uuid(), 'isDefault', true,
+                    'sku', 'SKU-' || n, 'options', '{}'::jsonb, 'price', 100 + n % 900, 'cost', null,
+                    'trackStock', true, 'lowStockThreshold', null, 'scanQty', 1000, 'archived', false,
+                    'barcodes', jsonb_build_array(jsonb_build_object('id', gen_random_uuid(),
+                      'value', lpad(n::text, 13, '2'), 'raw', lpad(n::text, 13, '2'), 'symbology', 'ean13',
+                      'qualifier', 'primary', 'packQty', 1000)))))
+           FROM generate_series(1, 50000) AS n",
+    )
+    .bind(one.business)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let started = std::time::Instant::now();
+    let (mut token, mut entities, mut bytes, mut pages) = (None::<String>, 0, 0, 0);
+    loop {
+        let path = match &token {
+            Some(t) => format!("/v1/sync/bootstrap?page={t}"),
+            None => "/v1/sync/bootstrap".to_owned(),
+        };
+        let (code, body) = call(&s, Method::GET, &path, Some(&one.device_token), None).await;
+        assert_eq!(code, StatusCode::OK);
+        bytes += body.len();
+        let page: BootstrapPage = serde_json::from_str(&body).unwrap();
+        entities += page.entities.len();
+        pages += 1;
+        token = page.next_page;
+        if token.is_none() {
+            break;
+        }
+    }
+    eprintln!(
+        "served {entities} aggregates in {pages} pages, {} kB, in {:?}",
+        bytes / 1000,
+        started.elapsed()
+    );
+    assert!(entities >= 50_000);
+}

@@ -213,6 +213,11 @@ the action available (PRD §5.1).
 | `POST /v1/catalog/products` | user | `{ product, expectedVersion } → ProductDto \| 409 CONFLICT_VERSION` | Present in the PRD. Implemented through the same applier as device events (origin = cloud). P1 UI. |
 | `GET /v1/reports/sales?from=&to=&groupBy=day\|register\|tender` | user or device | `→ { rows, asOf, completeness:{ registers:[{ registerId, lastAckAt, pendingKnown }] } }` | `completeness` drives the "fully synchronized vs last-synced" label (PRD §15) |
 
+**As built (E17-T07):**
+- **`Change`** also carries `eventType` and `schemaVersion`; `snapshot` is that event's payload.
+- **Bootstrap** answers `{ snapshotCursor, entities: [{ aggregateType, aggregateId, eventType, schemaVersion, version, snapshot }], nextPage? }`: one ordered list instead of a map per type. References come first (business, locations, registers, tax rates and categories, categories, settings, staff, products), and the page size is 2,000 by default.
+- **Cursors and tokens:** the cursor is `v1:<serverSeq>`. Page tokens are opaque, and a bad one gets `422`.
+
 ### Push contract
 
 **As built (E17-T04):** `ackSequence` is read after the batch, so it is always a committed

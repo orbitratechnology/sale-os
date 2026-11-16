@@ -2,7 +2,7 @@
 //! schema (docs/backlog/04-local-database.md) without knowing any SQL.
 
 use pos_domain::{BusinessId, Currency, LocationId, RegisterId, Timestamp};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Aggregate identity used to pair a record with its outbox event (ADR-008 validation).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -11,7 +11,7 @@ pub struct AggregateRef {
     pub aggregate_id: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BusinessRecord {
     pub business_id: BusinessId,
@@ -32,7 +32,7 @@ pub struct BusinessRecord {
     pub updated_at: Timestamp,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocationRecord {
     pub location_id: LocationId,
@@ -45,7 +45,7 @@ pub struct LocationRecord {
     pub updated_at: Timestamp,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterRecord {
     pub register_id: RegisterId,
@@ -61,7 +61,7 @@ pub struct RegisterRecord {
     pub updated_at: Timestamp,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingRecord {
     pub business_id: BusinessId,
@@ -106,7 +106,7 @@ impl SettingRecord {
 
 /// A staff member as stored and synced (ADR-013: the PIN hash syncs so a cashier can sign
 /// in on any register offline; it is an Argon2id PHC string, never the PIN).
-#[derive(Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StaffRecord {
     pub user_id: pos_domain::UserId,
@@ -173,7 +173,7 @@ impl SessionEnd {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxRateRecord {
     pub tax_rate_id: pos_domain::TaxRateId,
@@ -189,7 +189,7 @@ pub struct TaxRateRecord {
 }
 
 /// A product category (E06-T05): a tree at most 3 levels deep.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryRecord {
     pub category_id: pos_domain::CategoryId,
@@ -222,7 +222,7 @@ impl TaxRateRecord {
 }
 
 /// A tax category and the rates it applies (one aggregate: rate membership changes bump it).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxCategoryRecord {
     pub tax_category_id: pos_domain::TaxCategoryId,

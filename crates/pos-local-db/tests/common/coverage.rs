@@ -53,6 +53,7 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
     ("staff_sessions", "device-local sessions"),
     ("units", "seed data"),
     ("product_search", "search index (rebuilt from products)"),
+    ("search_index_rows", "search index bookkeeping"),
     ("carts", "drafts (ADR-009)"),
     ("cart_lines", "drafts (ADR-009)"),
     ("scan_events_seen", "scan de-duplication window"),

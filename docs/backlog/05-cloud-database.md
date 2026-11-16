@@ -187,6 +187,14 @@ ways of doing this:
 
 The default is (a). It is simple, and the throughput per business is low.
 
+**Decided (E17-T07): (a).** `append_change` takes `pg_advisory_xact_lock` on the business
+before it draws `server_seq`, and holds it to commit, so one business's feed rows commit in
+order. A property test (8 concurrent writers holding their transactions open for a moment,
+some rolling back, and a reader pulling continuously) sees exactly the committed rows, each
+once, in order; with the lock removed it fails every run. Migration `0008` adds
+`event_type` and `schema_version` to `change_log`, so a pulled snapshot can be parsed; a
+cash session's opening and closing share one aggregate type.
+
 ## C0004 master_data.sql
 
 These tables mirror the local catalogue with the cloud types. The primary key is
