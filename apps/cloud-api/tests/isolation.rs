@@ -6,13 +6,13 @@
 mod common;
 
 use axum::http::{Method, StatusCode};
-use common::{audit_event, call, push, tenant, test_appliers};
+use common::{audit_event, call, end_of_day, fact_appliers, push, tenant};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 async fn state() -> Option<cloud_api::AppState> {
-    common::state_with(test_appliers()).await
+    common::state_with(fact_appliers()).await
 }
 
 #[tokio::test]
@@ -20,9 +20,13 @@ async fn at12_sql_no_table_shows_another_business_rows() {
     let Some(s) = state().await else { return };
     let pool = s.db.clone().unwrap();
     let (a, b) = (tenant(&s, "A").await, tenant(&s, "B").await);
-    // B's register has pushed: inbox, ack and change-feed rows.
-    let (code, _) = push(&s, &b, &[audit_event(&b, 1, "ok")]).await;
+    // B's register has pushed a whole day (sales, returns, stock, the drawer, a flag) and an
+    // audit entry: rows in the inbox, the feed and every fact table.
+    let mut day = end_of_day(&b);
+    day.push(audit_event(&b, day.len() as u64 + 1, "auth.login_failed"));
+    let (code, body) = push(&s, &b, &day).await;
     assert_eq!(code, StatusCode::OK);
+    assert_eq!(body["ackSequence"], day.len(), "{body}");
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = 'public' AND c.relkind = 'r'

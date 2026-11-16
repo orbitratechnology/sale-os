@@ -597,4 +597,36 @@ async fn the_stage_2_end_of_day_reconciles() {
     ] {
         assert!(seen.contains(t), "{t} not exercised");
     }
+
+    // E17-T05: the day's outbox, as the register would push it, is the cloud's replay
+    // fixture (`cloud-api/tests/sync_facts.rs`). Regenerate with UPDATE_SYNC_FIXTURE=1; the
+    // committed one must describe the same day (same event types, in order, same totals).
+    let envelopes =
+        pos_application::sync::SyncStore::outbox_batch(&day.shop.store, 0, usize::MAX, usize::MAX)
+            .await
+            .unwrap();
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/sync/end_of_day.json");
+    if std::env::var_os("UPDATE_SYNC_FIXTURE").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, serde_json::to_string_pretty(&envelopes).unwrap() + "\n").unwrap();
+    }
+    let committed: Vec<pos_sync::EventEnvelope> =
+        serde_json::from_str(&std::fs::read_to_string(&path).expect("run with UPDATE_SYNC_FIXTURE=1"))
+            .unwrap();
+    let shape = |es: &[pos_sync::EventEnvelope]| -> Vec<(String, Option<i64>)> {
+        es.iter()
+            .map(|e| {
+                (
+                    e.event_type.clone(),
+                    e.payload.get("total").and_then(serde_json::Value::as_i64),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(
+        shape(&committed),
+        shape(&envelopes),
+        "tests/fixtures/sync/end_of_day.json is stale: run this test with UPDATE_SYNC_FIXTURE=1"
+    );
 }

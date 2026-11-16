@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 chrono.workspace = true
 pos-domain.workspace = true
+pos-sync.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sqlx = { workspace = true, features = ["postgres", "tls-rustls-ring-webpki", "uuid", "chrono", "json"] }
 thiserror.workspace = true

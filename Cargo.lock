@@ -3427,6 +3427,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "pos-domain",
+ "pos-sync",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",

@@ -13,6 +13,7 @@ pub mod compat;
 pub mod envelope;
 pub mod events;
 pub mod upcast;
+pub mod verify;
 
 pub use envelope::{AckResponse, EventEnvelope, EventResult, PushRequest, PushResponse, ResultStatus};
 pub use events::{CATALOGUE, Payload, PayloadError, parse_payload};

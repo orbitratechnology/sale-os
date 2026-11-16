@@ -231,6 +231,17 @@ fixes: reassign the barcode, or merge.
 
 ## C0005 facts.sql
 
+**As built (E17-T05, migration `0006_facts.sql`):** each fact keeps its whole payload in
+`snapshot`, beside the columns reports and stock need (sale lines, tenders, return lines,
+refunds and movements are rows of their own). A closing is its own fact,
+`cash_session_closings`, so no fact row is ever updated. `pos_app` may only insert into fact
+tables; it may update only `stock_balances` and `daily_sales_rollup`. A new `sync_flags` table
+holds what needs an owner's eye: `negative_stock` (a sellable balance pushed below zero) and
+`over_return` (more returned across registers than was sold). `tender_status_events` waits for
+`tender.status_changed` (E10-T04). Sandbox sales are stored, but stay out of the rollup and the
+change feed. Audit entries are stored, but not fanned out to other registers.
+
+
 These tables mirror the local `sales`, `sale_lines`, `tenders`, `tender_status_events`,
 `returns`, `return_lines`, `refunds`, `inventory_documents`, `stock_movements`,
 `cash_sessions` and `audit_events`, with these differences:

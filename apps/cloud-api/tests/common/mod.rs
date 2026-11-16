@@ -294,3 +294,188 @@ pub fn assert_matches_spec(name: &str, instance: &Value) {
         .collect();
     assert!(errors.is_empty(), "does not match {name}: {errors:?}\n{instance}");
 }
+
+// ---------- facts (E17-T05) ----------
+
+/// Accepts master-data events without storing anything, so fact tests can replay a whole
+/// register day before the master appliers exist (E17-T06).
+pub struct MasterNoop(&'static str);
+
+#[async_trait]
+impl EventApplier for MasterNoop {
+    fn event_type(&self) -> &'static str {
+        self.0
+    }
+    fn supported_versions(&self) -> RangeInclusive<u32> {
+        1..=1
+    }
+    async fn apply(
+        &self,
+        _tx: &mut TenantTx<'_>,
+        _me: &DevicePrincipal,
+        _env: &EventEnvelope,
+        _payload: &Payload,
+    ) -> Result<ApplyOutcome, ApplyError> {
+        Ok(ApplyOutcome::Applied {
+            server_seq: None,
+            new_version: None,
+        })
+    }
+}
+
+/// The production appliers, with master data accepted as a no-op.
+pub fn fact_appliers() -> Appliers {
+    pos_sync::CATALOGUE
+        .iter()
+        .filter(|(t, _)| pos_sync::events::is_master(t))
+        .fold(Appliers::standard(), |a, (t, _)| a.with(Arc::new(MasterNoop(t))))
+}
+
+/// The end-of-day scenario's outbox (`tests/fixtures/sync/end_of_day.json`, written by
+/// `pos-local-db/tests/end_of_day.rs`), moved to `t`'s business, register and location.
+pub fn end_of_day(t: &Tenant) -> Vec<EventEnvelope> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/sync/end_of_day.json"
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let original: Vec<EventEnvelope> = serde_json::from_str(&text).unwrap();
+    let first = &original[0];
+    let text = text
+        .replace(&first.business_id.to_string(), &t.business.to_string())
+        .replace(&first.register_id.to_string(), &t.register.to_string())
+        .replace(&first.location_id.to_string(), &t.location.to_string());
+    serde_json::from_str(&text).unwrap()
+}
+
+/// Another register (and device) of `t`'s business, at the same location.
+pub async fn second_register(s: &AppState, t: &Tenant) -> Tenant {
+    let register = Uuid::now_v7();
+    let (code, creds) = call(
+        s,
+        Method::POST,
+        "/v1/devices/register",
+        Some(&t.user_token),
+        Some(json!({"businessId": t.business, "registerId": register, "registerName": "Till 2", "registerCode": "R02",
+                    "locationId": t.location, "locationName": "Main", "installationId": Uuid::now_v7(),
+                    "appVersion": "0.1.0", "osInfo": null})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::CREATED, "{creds}");
+    let creds: Value = serde_json::from_str(&creds).unwrap();
+    Tenant {
+        register,
+        device: creds["deviceId"].as_str().unwrap().parse().unwrap(),
+        device_token: creds["accessToken"].as_str().unwrap().to_owned(),
+        refresh_token: creds["refreshToken"].as_str().unwrap().to_owned(),
+        ..t.clone()
+    }
+}
+
+fn fact(
+    t: &Tenant,
+    seq: u64,
+    event_type: &str,
+    aggregate_type: &str,
+    id: Uuid,
+    payload: Value,
+) -> EventEnvelope {
+    EventEnvelope {
+        event_id: Uuid::now_v7(),
+        business_id: t.business,
+        location_id: t.location,
+        register_id: t.register,
+        local_sequence: seq,
+        event_type: event_type.into(),
+        schema_version: 1,
+        aggregate_type: aggregate_type.into(),
+        aggregate_id: id.to_string(),
+        base_version: None,
+        occurred_at: "2026-11-05T09:14:03.120Z".into(),
+        payload,
+    }
+}
+
+fn movement(t: &Tenant, variant: Uuid, kind: &str, delta: i64, source: Value) -> Value {
+    json!({"id": Uuid::now_v7(), "variantId": variant, "locationId": t.location, "bucket": "sellable",
+           "movementType": kind, "delta": delta, "unitCost": null, "source": source, "actor": Uuid::now_v7(),
+           "occurredAt": 1_793_000_000_000_i64, "businessDate": "2026-11-05"})
+}
+
+fn cash(amount: i64) -> Value {
+    json!({"id": Uuid::now_v7(), "seq": 1, "kind": "cash", "amount": amount, "received": amount, "change": 0,
+           "external_reference": null, "status": "confirmed", "confirmation": "operator"})
+}
+
+/// A one-line sale (no tax) of `qty_milli` of `variant` at `total`, paid in cash. Returns the
+/// event, the sale id and its line id.
+pub fn sale_event(
+    t: &Tenant,
+    seq: u64,
+    variant: Uuid,
+    qty_milli: i64,
+    total: i64,
+    mode: &str,
+) -> (EventEnvelope, Uuid, Uuid) {
+    let (sale, line) = (Uuid::now_v7(), Uuid::now_v7());
+    let line_json = json!({"id": line, "lineNo": 1, "productId": Uuid::now_v7(), "variantId": variant, "name": "Cola",
+        "variantLabel": "", "sku": null, "productType": "stock", "unit": "ea", "trackStock": true,
+        "quantity": qty_milli, "unitPrice": total, "unitCost": null, "priceOverridden": false, "gross": total,
+        "discount": null, "lineDiscount": 0, "orderDiscountAlloc": 0, "tax": 0, "taxLines": [], "total": total});
+    let mut p = json!({"id": sale, "cartId": Uuid::now_v7(), "registerId": t.register, "locationId": t.location,
+        "cashier": Uuid::now_v7(), "approver": null, "mode": mode, "receiptSeq": seq,
+        "receiptNumber": format!("R-{seq}"), "occurredAt": 1_793_000_000_000_i64, "businessDate": "2026-11-05",
+        "timezone": "Europe/London", "currency": {"code": "GBP", "exponent": 2}, "pricesIncludeTax": true,
+        "orderDiscount": null, "subtotal": total, "lineDiscountTotal": 0, "orderDiscountTotal": 0, "taxTotal": 0,
+        "taxBreakdown": [], "rounding": 0, "total": total, "tenderedTotal": total, "change": 0});
+    p["lines"] = json!([line_json]);
+    p["tenders"] = json!([cash(total)]);
+    let source = json!({"type": "sale", "sale_id": sale, "line_id": line});
+    p["stockMovements"] = json!([movement(t, variant, "sale", -qty_milli, source)]);
+    (fact(t, seq, "sale.completed", "sale", sale, p), sale, line)
+}
+
+/// A return of `qty_milli` from a sale line, restocked, refunded in cash.
+pub fn return_event(
+    t: &Tenant,
+    seq: u64,
+    sale: Uuid,
+    line: Uuid,
+    variant: Uuid,
+    qty_milli: i64,
+    refund: i64,
+) -> EventEnvelope {
+    let (ret, ret_line) = (Uuid::now_v7(), Uuid::now_v7());
+    let line_json = json!({"id": ret_line, "saleLineId": line, "productId": Uuid::now_v7(), "variantId": variant,
+        "name": "Cola", "variantLabel": "", "unit": "ea", "trackStock": true, "quantity": qty_milli,
+        "disposition": "restock", "refund": refund, "tax": 0, "unitCost": null});
+    let mut p = json!({"id": ret, "originalSale": sale, "originalReceiptNumber": "R-1", "registerId": t.register,
+        "locationId": t.location, "actor": Uuid::now_v7(), "approver": null, "receiptSeq": seq,
+        "receiptNumber": format!("RT-{seq}"), "reason": "changed_mind", "note": null,
+        "occurredAt": 1_793_000_000_000_i64, "businessDate": "2026-11-05", "timezone": "Europe/London",
+        "currency": {"code": "GBP", "exponent": 2}, "subtotal": refund, "tax": 0, "total": refund});
+    p["lines"] = json!([line_json]);
+    p["refunds"] = json!([cash(refund)]);
+    let source = json!({"type": "return", "return_id": ret, "line_id": ret_line});
+    p["stockMovements"] = json!([movement(t, variant, "return_restock", qty_milli, source)]);
+    fact(t, seq, "return.completed", "return", ret, p)
+}
+
+/// A goods receipt adding `qty_milli` of `variant`.
+pub fn receipt_event(t: &Tenant, seq: u64, variant: Uuid, qty_milli: i64) -> EventEnvelope {
+    let doc = Uuid::now_v7();
+    let mut p = json!({"id": doc, "docType": "receipt", "documentSeq": seq, "documentNo": format!("GR-{seq}"),
+        "registerId": t.register, "locationId": t.location, "actor": Uuid::now_v7(), "reason": null,
+        "supplierName": null, "reference": null, "note": null, "occurredAt": 1_793_000_000_000_i64,
+        "businessDate": "2026-11-05"});
+    p["movements"] = json!([{"variantId": variant, "bucket": "sellable", "movementType": "receipt",
+                             "delta": qty_milli, "unitCost": null}]);
+    let source = json!({"type": "inventory_document", "document_id": doc});
+    p["stockMovements"] = json!([movement(t, variant, "receipt", qty_milli, source)]);
+    fact(t, seq, "inventory.document_posted", "inventory_document", doc, p)
+}
+
+/// A count for `t`'s business, as the migration owner: `sql` with `$1` = business id.
+pub async fn business_count(s: &AppState, t: &Tenant, sql: &str) -> i64 {
+    count(s, sql, t.business).await
+}

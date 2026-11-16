@@ -39,6 +39,8 @@ use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+pub mod facts;
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         // Room above the 2 MB contract limit, so an oversized push gets a problem, not a reset.
@@ -108,10 +110,11 @@ pub trait EventApplier: Send + Sync {
 pub struct Appliers(HashMap<&'static str, Arc<dyn EventApplier>>);
 
 impl Appliers {
-    /// The production set. Event types without an applier yet get `transient:
-    /// APPLIER_UNAVAILABLE`, so clients keep them and retry after a deploy.
+    /// The production set: the fact appliers (E17-T05). Event types without an applier yet
+    /// (master data until E17-T06) get `transient: APPLIER_UNAVAILABLE`, so clients keep them
+    /// and retry after a deploy.
     pub fn standard() -> Self {
-        Self::default()
+        facts::register(Self::default())
     }
 
     pub fn with(mut self, a: Arc<dyn EventApplier>) -> Self {

@@ -251,7 +251,7 @@ async fn a_conflict_is_recorded_with_the_server_snapshot() {
 
 #[tokio::test]
 async fn a_type_without_an_applier_is_transient() {
-    let Some(s) = state_with(Appliers::standard()).await else {
+    let Some(s) = state_with(Appliers::default()).await else {
         return;
     };
     let t = tenant(&s, "NoApplier").await;
