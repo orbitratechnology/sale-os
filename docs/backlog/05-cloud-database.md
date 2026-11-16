@@ -222,6 +222,16 @@ CREATE TABLE product_barcodes (business_id uuid, barcode_id uuid, variant_id uui
 CREATE UNIQUE INDEX ux_cloud_barcode ON product_barcodes(business_id, value_normalized) WHERE status = 'active';
 ```
 
+**As built (E17-T06, migration `0007_master_data.sql`):** every master row keeps its
+aggregate's last `snapshot` (added to `businesses`, `locations` and `registers` too), which is
+what a conflict returns and what bootstrap will serve. The business, location and register
+rows that linking creates start at **version 0**, with no snapshot. The register's own first
+events (base 0) then take them to version 1 instead of conflicting with themselves.
+`product_barcodes` carries `product_id` and is replaced as a set on each upsert, so
+`pos_app` may delete from it. Version checks and the barcode and SKU pre-checks run under a
+per-business advisory lock (`pg_advisory_xact_lock`), so concurrent edits from different
+registers apply one at a time.
+
 **Cross-register uniqueness collisions.** Two registers can each create the same barcode or
 SKU while offline. The second `product.upserted` that arrives then breaks `ux_cloud_barcode`.
 

@@ -297,38 +297,9 @@ pub fn assert_matches_spec(name: &str, instance: &Value) {
 
 // ---------- facts (E17-T05) ----------
 
-/// Accepts master-data events without storing anything, so fact tests can replay a whole
-/// register day before the master appliers exist (E17-T06).
-pub struct MasterNoop(&'static str);
-
-#[async_trait]
-impl EventApplier for MasterNoop {
-    fn event_type(&self) -> &'static str {
-        self.0
-    }
-    fn supported_versions(&self) -> RangeInclusive<u32> {
-        1..=1
-    }
-    async fn apply(
-        &self,
-        _tx: &mut TenantTx<'_>,
-        _me: &DevicePrincipal,
-        _env: &EventEnvelope,
-        _payload: &Payload,
-    ) -> Result<ApplyOutcome, ApplyError> {
-        Ok(ApplyOutcome::Applied {
-            server_seq: None,
-            new_version: None,
-        })
-    }
-}
-
-/// The production appliers, with master data accepted as a no-op.
+/// The production appliers (facts and master data).
 pub fn fact_appliers() -> Appliers {
-    pos_sync::CATALOGUE
-        .iter()
-        .filter(|(t, _)| pos_sync::events::is_master(t))
-        .fold(Appliers::standard(), |a, (t, _)| a.with(Arc::new(MasterNoop(t))))
+    Appliers::standard()
 }
 
 /// The end-of-day scenario's outbox (`tests/fixtures/sync/end_of_day.json`, written by
@@ -478,4 +449,53 @@ pub fn receipt_event(t: &Tenant, seq: u64, variant: Uuid, qty_milli: i64) -> Eve
 /// A count for `t`'s business, as the migration owner: `sql` with `$1` = business id.
 pub async fn business_count(s: &AppState, t: &Tenant, sql: &str) -> i64 {
     count(s, sql, t.business).await
+}
+
+// ---------- master data (E17-T06) ----------
+
+/// A product payload (`product.upserted` v1) at `base + 1`: one variant, optionally with a
+/// SKU and a barcode.
+pub fn product_payload(
+    id: Uuid,
+    variant: Uuid,
+    base: u64,
+    name: &str,
+    sku: Option<&str>,
+    barcode: Option<&str>,
+    archived: bool,
+) -> Value {
+    let barcodes: Vec<Value> = barcode
+        .map(|b| {
+            json!({"id": Uuid::now_v7(), "value": b, "raw": b, "symbology": "ean13", "qualifier": "primary",
+                   "packQty": 1000})
+        })
+        .into_iter()
+        .collect();
+    let v = json!({"id": variant, "isDefault": true, "sku": sku, "options": {}, "price": 120, "cost": null,
+                   "trackStock": true, "lowStockThreshold": null, "scanQty": 1000, "barcodes": barcodes,
+                   "archived": false});
+    let mut p = json!({"id": id, "name": name, "description": null, "categoryId": null, "productType": "stock",
+                       "unit": "ea", "taxCategoryId": Uuid::nil(), "quickSelect": false, "archived": archived,
+                       "version": base + 1});
+    p["variants"] = json!([v]);
+    p
+}
+
+/// `t`'s register edits a product from `base`.
+pub fn product_event(t: &Tenant, seq: u64, base: u64, payload: Value) -> EventEnvelope {
+    let id = payload["id"].as_str().unwrap().to_owned();
+    EventEnvelope {
+        event_id: Uuid::now_v7(),
+        business_id: t.business,
+        location_id: t.location,
+        register_id: t.register,
+        local_sequence: seq,
+        event_type: "product.upserted".into(),
+        schema_version: 1,
+        aggregate_type: "product".into(),
+        aggregate_id: id,
+        base_version: Some(base),
+        occurred_at: "2026-11-05T09:14:03.120Z".into(),
+        payload,
+    }
 }

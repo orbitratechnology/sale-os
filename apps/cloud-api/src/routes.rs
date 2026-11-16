@@ -17,7 +17,8 @@ pub(crate) fn router(state: AppState) -> Router {
     let v1 = v1
         .merge(crate::auth::routes())
         .merge(crate::devices::routes())
-        .merge(crate::sync::routes());
+        .merge(crate::sync::routes())
+        .merge(crate::catalog::routes());
     Router::new().nest("/v1", v1).with_state(state)
 }
 

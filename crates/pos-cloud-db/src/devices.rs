@@ -105,7 +105,7 @@ pub async fn ensure_register(
     let id = *tx.business_id().as_uuid();
     sqlx::query(
         "INSERT INTO locations (business_id, location_id, name, status, version, updated_at)
-         VALUES ($1, $2, $3, 'active', 1, now()) ON CONFLICT DO NOTHING",
+         VALUES ($1, $2, $3, 'active', 0, now()) ON CONFLICT DO NOTHING",
     )
     .bind(id)
     .bind(location_id)
@@ -114,7 +114,7 @@ pub async fn ensure_register(
     .await?;
     sqlx::query(
         "INSERT INTO registers (business_id, register_id, location_id, name, code, status, version, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', 1, now()) ON CONFLICT (business_id, register_id) DO NOTHING",
+         VALUES ($1, $2, $3, $4, $5, 'active', 0, now()) ON CONFLICT (business_id, register_id) DO NOTHING",
     )
     .bind(id)
     .bind(register_id)

@@ -24,6 +24,32 @@ async fn at12_sql_no_table_shows_another_business_rows() {
     // audit entry: rows in the inbox, the feed and every fact table.
     let mut day = end_of_day(&b);
     day.push(audit_event(&b, day.len() as u64 + 1, "auth.login_failed"));
+    let category = Uuid::now_v7();
+    day.push(pos_sync::EventEnvelope {
+        event_id: Uuid::now_v7(),
+        business_id: b.business,
+        location_id: b.location,
+        register_id: b.register,
+        local_sequence: day.len() as u64 + 1,
+        event_type: "category.upserted".into(),
+        schema_version: 1,
+        aggregate_type: "category".into(),
+        aggregate_id: category.to_string(),
+        base_version: Some(0),
+        occurred_at: "2026-11-05T09:14:03.120Z".into(),
+        payload: json!({"categoryId": category, "businessId": b.business, "parentId": null, "name": "Drinks",
+                        "sortOrder": 0, "archived": false, "version": 1, "createdAt": 1, "updatedAt": 1}),
+    });
+    let scanned = common::product_payload(
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+        0,
+        "Scanned",
+        Some("B-1"),
+        Some("4006381333931"),
+        false,
+    );
+    day.push(common::product_event(&b, day.len() as u64 + 1, 0, scanned));
     let (code, body) = push(&s, &b, &day).await;
     assert_eq!(code, StatusCode::OK);
     assert_eq!(body["ackSequence"], day.len(), "{body}");
@@ -143,6 +169,16 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         ),
         // ...and the ack, which only ever describes the token's own register.
         ("GET /v1/sync/ack", (Method::GET, "/v1/sync/ack".into(), None)),
+        // A product edit aimed at B's business.
+        (
+            "POST /v1/catalog/products",
+            (
+                Method::POST,
+                "/v1/catalog/products".into(),
+                Some(json!({"businessId": b.business, "expectedVersion": 0,
+                            "product": common::product_payload(Uuid::now_v7(), Uuid::now_v7(), 0, "Takeover", None, None, false)})),
+            ),
+        ),
     ]);
     let secured = secured_operations();
     let covered: Vec<String> = cases.keys().map(|k| (*k).to_owned()).collect();

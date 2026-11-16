@@ -25,6 +25,8 @@ tags:
     description: Businesses, device registration, token rotation and revocation (E16-T04).
   - name: sync
     description: Event push and acknowledgement (E17-T04).
+  - name: catalog
+    description: Catalogue edits made in the cloud (E17-T06).
 paths:
   /v1/health:
     get:
@@ -472,6 +474,60 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/catalog/products:
+    post:
+      operationId: saveProduct
+      tags: [catalog]
+      summary: Creates or edits a product from the cloud (E17-T06).
+      description: >-
+        The same rules as a register's `product.upserted`: the edit applies only on top of
+        `expectedVersion`, an active barcode or SKU must not belong to another product, and
+        the change reaches every register through the change feed with the cloud as origin.
+      security:
+        - userToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveProduct"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedProduct"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: not a business of this owner."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`CONFLICT_VERSION` (changed since it was loaded), `CATALOG_DUPLICATE_BARCODE` or `CATALOG_DUPLICATE_SKU`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not a valid product."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 components:
   securitySchemes:
     userToken:
@@ -678,6 +734,27 @@ components:
         registerId: { type: string, format: uuid }
         ackSequence: { type: integer, minimum: 0 }
         serverTime: { type: string, format: date-time }
+    SaveProduct:
+      type: object
+      additionalProperties: false
+      required: [businessId, product, expectedVersion]
+      properties:
+        businessId: { type: string, format: uuid }
+        expectedVersion:
+          type: integer
+          minimum: 0
+          description: The version the edit started from (0 to create).
+        product:
+          type: object
+          description: "The whole product as in `contracts/events/current/product.upserted.v1.json`, with `version = expectedVersion + 1`."
+    SavedProduct:
+      type: object
+      additionalProperties: false
+      required: [productId, version, product]
+      properties:
+        productId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        product: { type: object }
     Problem:
       type: object
       description: RFC 9457 problem details with a catalogued error code.

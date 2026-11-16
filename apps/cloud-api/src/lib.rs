@@ -1,6 +1,7 @@
 //! Cloud API library: configuration, state and router. `main.rs` is a thin CLI around it.
 
 pub mod auth;
+pub mod catalog;
 pub mod config;
 pub mod devices;
 mod problem;

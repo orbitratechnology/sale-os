@@ -119,7 +119,8 @@ async fn a_business_is_created_once_by_its_owner() {
         Some(business_body(id, "Corner Shop")),
     )
     .await;
-    assert_eq!((code, again["version"].as_i64()), (StatusCode::OK, Some(1)));
+    // Version 0 until the register pushes its own snapshot of the business (E17-T06).
+    assert_eq!((code, again["version"].as_i64()), (StatusCode::OK, Some(0)));
     // Another owner with that id: refused, nothing about it revealed.
     let (code, body) = call(
         &s,

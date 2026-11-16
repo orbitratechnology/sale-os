@@ -49,7 +49,7 @@ pub async fn business(tx: &mut TenantTx<'_>) -> Result<Option<BusinessRow>, sqlx
 pub async fn insert_business(tx: &mut TenantTx<'_>, b: &NewBusiness) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO businesses (business_id, name, country_code, timezone, currency_code, currency_exponent,
-           prices_include_tax) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+           prices_include_tax, version) VALUES ($1, $2, $3, $4, $5, $6, $7, 0)",
     )
     .bind(*b.business_id.as_uuid())
     .bind(&b.name)
@@ -67,7 +67,7 @@ pub async fn insert_location(tx: &mut TenantTx<'_>, id: LocationId, name: &str) 
     let business = *tx.business_id().as_uuid();
     sqlx::query(
         "INSERT INTO locations (business_id, location_id, name, status, version, updated_at)
-         VALUES ($1, $2, $3, 'active', 1, now())",
+         VALUES ($1, $2, $3, 'active', 0, now())",
     )
     .bind(business)
     .bind(*id.as_uuid())
@@ -87,7 +87,7 @@ pub async fn insert_register(
     let business = *tx.business_id().as_uuid();
     sqlx::query(
         "INSERT INTO registers (business_id, register_id, location_id, name, code, status, version, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 'active', 1, now())",
+         VALUES ($1, $2, $3, $4, $5, 'active', 0, now())",
     )
     .bind(business)
     .bind(*id.as_uuid())

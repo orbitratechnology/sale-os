@@ -40,6 +40,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 pub mod facts;
+pub mod master;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -110,11 +111,11 @@ pub trait EventApplier: Send + Sync {
 pub struct Appliers(HashMap<&'static str, Arc<dyn EventApplier>>);
 
 impl Appliers {
-    /// The production set: the fact appliers (E17-T05). Event types without an applier yet
-    /// (master data until E17-T06) get `transient: APPLIER_UNAVAILABLE`, so clients keep them
-    /// and retry after a deploy.
+    /// The production set: facts (E17-T05) and master data (E17-T06), every type in the
+    /// catalogue. A type without an applier (one added to the catalogue before its applier
+    /// is deployed) gets `transient: APPLIER_UNAVAILABLE`, so clients keep it and retry.
     pub fn standard() -> Self {
-        facts::register(Self::default())
+        master::register(facts::register(Self::default()))
     }
 
     pub fn with(mut self, a: Arc<dyn EventApplier>) -> Self {
@@ -266,7 +267,11 @@ async fn ingest_one(
                 Some(a) if a.supported_versions().contains(&version) => {
                     tx.savepoint().await?;
                     let o = a.apply(&mut tx, me, env, &payload).await;
-                    if matches!(o, Err(ApplyError::Rejected { .. })) {
+                    // A rejection or a conflict changes nothing: undo whatever the applier wrote.
+                    if matches!(
+                        o,
+                        Err(ApplyError::Rejected { .. }) | Ok(ApplyOutcome::Conflict { .. })
+                    ) {
                         tx.rollback_to_savepoint().await?;
                     }
                     tx.release_savepoint().await?;
