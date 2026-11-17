@@ -180,13 +180,24 @@ impl SqliteStore {
         &self,
         budget: std::time::Duration,
     ) -> Result<StartupStockCheck, QueryError> {
+        // The budget is checked before each step as well as by the timeout: tokio polls the
+        // check before looking at its deadline, and its timer rounds deadlines up to its tick
+        // (about 15.6 ms on Windows), so fast steps could otherwise run past a spent budget.
+        let start = std::time::Instant::now();
+        let spent = || start.elapsed() >= budget;
         let check = async {
+            if spent() {
+                return Ok(StartupStockCheck::Deferred);
+            }
             let quick: String = sqlx::query_scalar("PRAGMA quick_check")
                 .fetch_one(self.db().readers())
                 .await
                 .map_err(q)?;
             if quick != "ok" {
                 return Ok(StartupStockCheck::IntegrityProblem(quick));
+            }
+            if spent() {
+                return Ok(StartupStockCheck::Deferred);
             }
             let drift = self.stock_drift().await?;
             Ok(if drift.is_empty() {
