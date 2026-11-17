@@ -362,8 +362,35 @@ async fn record_conflict(
     .bind(&id)
     .execute(&mut **tx)
     .await
-    .map(|_| ())
-    .map_err(q)
+    .map_err(q)?;
+    // One open conflict per aggregate: a later local edit that conflicted too supersedes the
+    // earlier one (its payload already carries everything the earlier edit did).
+    sqlx::query(
+        "UPDATE sync_conflicts SET status = 'superseded'
+          WHERE status = 'open' AND outbox_event_id <> ?1
+            AND (aggregate_type, aggregate_id) = (SELECT aggregate_type, aggregate_id FROM outbox_events WHERE event_id = ?1)",
+    )
+    .bind(&id)
+    .execute(&mut **tx)
+    .await
+    .map_err(q)?;
+    // The aggregate shows it (ADR-011): `sync_status = conflict` until resolved.
+    let (agg_type, agg_id): (String, String) =
+        sqlx::query_as("SELECT aggregate_type, aggregate_id FROM outbox_events WHERE event_id = ?")
+            .bind(&id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(q)?;
+    if let Some((table, column)) = master_table(&agg_type) {
+        sqlx::query(&format!(
+            "UPDATE {table} SET sync_status = 'conflict' WHERE {column} = ?"
+        ))
+        .bind(agg_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(q)?;
+    }
+    Ok(())
 }
 
 /// This register, for applying pulled changes.

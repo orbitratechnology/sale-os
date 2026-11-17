@@ -273,6 +273,14 @@ export const commands = {
 	 *  a sale.
 	 */
 	saleSyncState: (saleId: SaleId) => typedError<SaleSyncDto, IpcError_Serialize>(__TAURI_INVOKE("sale_sync_state", { saleId })),
+	/**  Open conflicts with what differs (E18-T02, ConflictResolve). */
+	syncConflictsList: () => typedError<ConflictDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("sync_conflicts_list")),
+	/**
+	 *  Resolves a conflict (E18-T02, ConflictResolve). A version conflict takes a choice per
+	 *  differing field; a barcode or SKU conflict takes `identifiers`: `remove` (from this
+	 *  product) or `move` (to this product, from the one holding it).
+	 */
+	syncConflictResolve: (conflictId: string, choices: FieldChoiceDto_Deserialize[], identifiers: string | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_conflict_resolve", { conflictId, choices, identifiers })),
 };
 
 /* Types */
@@ -800,6 +808,42 @@ export type CompletedSaleDto = {
 	autoPrint: boolean,
 };
 
+export type ConflictDto = ConflictDto_Serialize | ConflictDto_Deserialize;
+
+export type ConflictDto_Deserialize = {
+	conflictId: string,
+	aggregateType: string,
+	aggregateId: string,
+	title: string,
+	/**  `VERSION`, `BARCODE_TAKEN` or `SKU_TAKEN`. */
+	reason: string,
+	localBaseVersion: number,
+	serverVersion: number,
+	createdAt: string,
+	/**  Version conflicts: each differing field. */
+	fields: FieldDiffDto[],
+	/**  Barcode or SKU conflicts: the values another product holds in the cloud, and its name. */
+	taken: string[],
+	heldBy?: string | null,
+};
+
+export type ConflictDto_Serialize = {
+	conflictId: string,
+	aggregateType: string,
+	aggregateId: string,
+	title: string,
+	/**  `VERSION`, `BARCODE_TAKEN` or `SKU_TAKEN`. */
+	reason: string,
+	localBaseVersion: number,
+	serverVersion: number,
+	createdAt: string,
+	/**  Version conflicts: each differing field. */
+	fields: FieldDiffDto[],
+	/**  Barcode or SKU conflicts: the values another product holds in the cloud, and its name. */
+	taken: string[],
+	heldBy: string | null,
+};
+
 export type ConflictSummaryDto = {
 	conflictId: string,
 	aggregateType: string,
@@ -989,6 +1033,32 @@ export type ExportResultDto = {
 	path: string,
 	fileName: string,
 	rows: number,
+};
+
+export type FieldChoiceDto = FieldChoiceDto_Serialize | FieldChoiceDto_Deserialize;
+
+export type FieldChoiceDto_Deserialize = {
+	field: string,
+	/**  `local`, `server` or `custom`. */
+	keep: string,
+	/**  `custom`: the value as JSON text. */
+	valueJson?: string | null,
+};
+
+export type FieldChoiceDto_Serialize = {
+	field: string,
+	/**  `local`, `server` or `custom`. */
+	keep: string,
+	/**  `custom`: the value as JSON text. */
+	valueJson: string | null,
+};
+
+export type FieldDiffDto = {
+	field: string,
+	label: string,
+	/**  JSON text of each side's value. */
+	localJson: string,
+	serverJson: string,
 };
 
 export type ImportCommitDto = {
@@ -1292,6 +1362,11 @@ export type ProductRowDto_Deserialize = {
 	onHandMilli?: string | null,
 	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
 	negativeStock: boolean,
+	/**
+	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
+	 *  using the local values.
+	 */
+	syncConflict: boolean,
 };
 
 export type ProductRowDto_Serialize = {
@@ -1310,6 +1385,11 @@ export type ProductRowDto_Serialize = {
 	onHandMilli: string | null,
 	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
 	negativeStock: boolean,
+	/**
+	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
+	 *  using the local values.
+	 */
+	syncConflict: boolean,
 };
 
 export type ProductStatusDto = "active" | "archived" | "all";

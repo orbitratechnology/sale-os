@@ -503,6 +503,9 @@ pub struct ProductRowDto {
     pub on_hand_milli: Option<String>,
     /// A tracked variant is below zero: show the red "Negative stock" flag (INV-008).
     pub negative_stock: bool,
+    /// Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
+    /// using the local values.
+    pub sync_conflict: bool,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -533,6 +536,7 @@ impl ProductPageDto {
                     quick_select: r.quick_select,
                     on_hand_milli: r.on_hand.map(qty),
                     negative_stock: r.negative_stock,
+                    sync_conflict: r.sync_conflict,
                 })
             })
             .collect::<Result<_, IpcError>>()?;

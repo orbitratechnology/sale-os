@@ -410,3 +410,136 @@ pub async fn sale_sync_state(
         state: pos_application::sync::sale_sync(&link, status.as_deref()).into(),
     })
 }
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldDiffDto {
+    pub field: String,
+    pub label: String,
+    /// JSON text of each side's value.
+    pub local_json: String,
+    pub server_json: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictDto {
+    pub conflict_id: String,
+    pub aggregate_type: String,
+    pub aggregate_id: String,
+    pub title: String,
+    /// `VERSION`, `BARCODE_TAKEN` or `SKU_TAKEN`.
+    pub reason: String,
+    pub local_base_version: u32,
+    pub server_version: u32,
+    pub created_at: String,
+    /// Version conflicts: each differing field.
+    pub fields: Vec<FieldDiffDto>,
+    /// Barcode or SKU conflicts: the values another product holds in the cloud, and its name.
+    pub taken: Vec<String>,
+    pub held_by: Option<String>,
+}
+
+/// Open conflicts with what differs (E18-T02, ConflictResolve).
+#[tauri::command]
+#[specta::specta]
+pub async fn sync_conflicts_list(services: State<'_, AppServices>) -> Result<Vec<ConflictDto>, IpcError> {
+    let ctx = services.context().await?;
+    let list = services.app()?.conflicts.list(&ctx).await.map_err(err)?;
+    let text = |v: &serde_json::Value| serde_json::to_string(v).unwrap_or_default();
+    Ok(list
+        .into_iter()
+        .map(|c| {
+            let r = c.record;
+            let held_by =
+                (r.reason != "VERSION").then(|| r.server["name"].as_str().unwrap_or_default().to_owned());
+            ConflictDto {
+                conflict_id: r.conflict_id,
+                aggregate_type: r.aggregate_type,
+                aggregate_id: r.aggregate_id,
+                title: c.title,
+                reason: r.reason,
+                local_base_version: u32::try_from(r.local_base_version).unwrap_or(u32::MAX),
+                server_version: u32::try_from(r.server_version).unwrap_or(u32::MAX),
+                created_at: r.created_at.to_rfc3339(),
+                fields: c
+                    .fields
+                    .iter()
+                    .map(|f| FieldDiffDto {
+                        field: f.field.clone(),
+                        label: f.label.clone(),
+                        local_json: text(&f.local),
+                        server_json: text(&f.server),
+                    })
+                    .collect(),
+                taken: c.taken,
+                held_by,
+            }
+        })
+        .collect())
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldChoiceDto {
+    pub field: String,
+    /// `local`, `server` or `custom`.
+    pub keep: String,
+    /// `custom`: the value as JSON text.
+    pub value_json: Option<String>,
+}
+
+/// Resolves a conflict (E18-T02, ConflictResolve). A version conflict takes a choice per
+/// differing field; a barcode or SKU conflict takes `identifiers`: `remove` (from this
+/// product) or `move` (to this product, from the one holding it).
+#[tauri::command]
+#[specta::specta]
+pub async fn sync_conflict_resolve(
+    services: State<'_, AppServices>,
+    conflict_id: String,
+    choices: Vec<FieldChoiceDto>,
+    identifiers: Option<String>,
+) -> Result<(), IpcError> {
+    use pos_application::conflict::{Choice, FieldChoice};
+    let ctx = services.context().await?;
+    let conflicts = &services.app()?.conflicts;
+    match identifiers.as_deref() {
+        Some(mode @ ("remove" | "move")) => conflicts
+            .resolve_identifiers(&ctx, &conflict_id, mode == "move")
+            .await
+            .map_err(err),
+        Some(_) => Err(IpcError::coded(
+            ErrorCode::ValidationFailed,
+            "identifiers is remove or move",
+        )),
+        None => {
+            let mut parsed = Vec::with_capacity(choices.len());
+            for c in choices {
+                let choice = match c.keep.as_str() {
+                    "local" => Choice::Local,
+                    "server" => Choice::Server,
+                    "custom" => Choice::Custom(
+                        serde_json::from_str(c.value_json.as_deref().unwrap_or("null")).map_err(|_| {
+                            IpcError::coded(ErrorCode::ValidationFailed, "a custom value is not valid")
+                        })?,
+                    ),
+                    _ => {
+                        return Err(IpcError::coded(
+                            ErrorCode::ValidationFailed,
+                            "keep is local, server or custom",
+                        ));
+                    }
+                };
+                parsed.push(FieldChoice {
+                    field: c.field,
+                    choice,
+                });
+            }
+            conflicts.resolve(&ctx, &conflict_id, parsed).await.map_err(err)
+        }
+    }?;
+    if let Some(sync) = &services.sync {
+        sync.retry_now();
+    }
+    Ok(())
+}

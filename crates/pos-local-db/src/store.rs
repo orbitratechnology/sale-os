@@ -1398,6 +1398,28 @@ pub(crate) async fn run_ops(
                 .await
                 .map_err(map_sqlx)?;
             }
+            WriteOp::ResolveConflict {
+                conflict_id,
+                resolution,
+            } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE sync_conflicts SET status = 'resolved', resolution_json = ?, resolved_by = ?, resolved_at = ?
+                     WHERE conflict_id = ? AND status = 'open'",
+                )
+                .bind(resolution.to_string())
+                .bind(ctx.actor.map(|u| u.to_string()))
+                .bind(ctx.occurred_at.as_millis())
+                .bind(conflict_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::Io(format!(
+                        "conflict {conflict_id} is no longer open"
+                    )));
+                }
+            }
             WriteOp::EndSession { session_id, reason } => {
                 st.step()?;
                 sqlx::query(

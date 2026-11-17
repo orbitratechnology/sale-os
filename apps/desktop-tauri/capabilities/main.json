@@ -93,6 +93,8 @@
     "allow-sync-link-complete",
     "allow-sync-repair-queue",
     "allow-sync-repair-action",
-    "allow-sale-sync-state"
+    "allow-sale-sync-state",
+    "allow-sync-conflicts-list",
+    "allow-sync-conflict-resolve"
   ]
 }

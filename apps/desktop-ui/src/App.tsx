@@ -21,6 +21,7 @@ import { ReportsScreen } from "./features/reports/ReportsScreen";
 import { AuditScreen } from "./features/audit/AuditScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
 import { SettingsScreen } from "./features/settings/SettingsScreen";
+import { ConflictsScreen } from "./features/sync/ConflictsScreen";
 import { ScanPreferences } from "./features/scan/preferences";
 import type {
   ScanDetectorConfig,
@@ -136,6 +137,13 @@ export function App() {
             workspace={workspace}
             session={state.session}
             {...(screen.receipt ? { initialReceipt: screen.receipt } : {})}
+            onBack={() => setScreen({ kind: "till" })}
+          />
+        );
+      case "conflicts":
+        return (
+          <ConflictsScreen
+            currencyExponent={workspace.currencyExponent}
             onBack={() => setScreen({ kind: "till" })}
           />
         );
@@ -267,6 +275,11 @@ export function App() {
                 ? () => setScreen({ kind: "settings" })
                 : null
             }
+            onConflicts={
+              state.session.role === "cashier"
+                ? null
+                : () => setScreen({ kind: "conflicts" })
+            }
             onCreateProduct={(barcode) =>
               setScreen({
                 kind: "editor",
@@ -298,6 +311,7 @@ type Screen =
   | { kind: "reports" }
   | { kind: "audit" }
   | { kind: "settings" }
+  | { kind: "conflicts" }
   | {
       kind: "editor";
       productId: string | null;

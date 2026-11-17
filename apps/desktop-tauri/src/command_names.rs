@@ -89,4 +89,6 @@ pub const COMMANDS: &[&str] = &[
     "sync_repair_queue",
     "sync_repair_action",
     "sale_sync_state",
+    "sync_conflicts_list",
+    "sync_conflict_resolve",
 ];

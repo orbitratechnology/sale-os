@@ -169,6 +169,12 @@ export function ProductList({
                 <>
                   {formatMilli(r.onHandMilli)}
                   {r.negativeStock && <span className="stock-flag"> Negative stock</span>}
+                  {r.syncConflict && (
+                    <span className="stock-flag" title="Changed here and in the cloud: this till uses its own values until resolved">
+                      {" "}
+                      Sync conflict
+                    </span>
+                  )}
                 </>
               )}
             </span>

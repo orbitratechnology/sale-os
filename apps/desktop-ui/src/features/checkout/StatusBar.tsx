@@ -16,12 +16,15 @@ export function StatusBar({
   session,
   scannerReady,
   drawer,
+  onConflicts = null,
 }: {
   workspace: Workspace;
   session: Session;
   scannerReady: boolean;
   /** The cash drawer (E15-T02); `null` while loading. */
   drawer: CashState | null;
+  /** Opens the conflicts screen (managers and owners) when there are conflicts. */
+  onConflicts?: (() => void) | null;
 }) {
   const [sync, setSync] = useState<SyncStatusDto | null>(null);
   useEffect(() => {
@@ -61,6 +64,11 @@ export function StatusBar({
       <span data-testid="sync-status" data-state={sync?.indicator ?? "not_linked"}>
         {sync ? indicatorText(sync) : "Not linked · saved on this computer"}
       </span>
+      {sync && sync.conflicts > 0 && onConflicts && (
+        <button type="button" className="secondary small" onClick={onConflicts}>
+          Resolve conflicts
+        </button>
+      )}
     </footer>
   );
 }

@@ -461,7 +461,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         const total = s.bigCatalog;
         const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => {
           const n = offset + i;
-          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false };
+          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false, syncConflict: false };
         });
         return { rows, total };
       }
@@ -482,6 +482,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           barcodeCount: p.variants.reduce((n, v) => n + v.barcodes.length, 0), trackStock: p.variants.some((v) => v.trackStock), quickSelect: p.quickSelect,
           onHandMilli: p.variants.some((v) => v.trackStock) ? (FAKE_STOCK[p.name] ?? 0n).toString() : null,
           negativeStock: (FAKE_STOCK[p.name] ?? 0n) < 0n,
+          syncConflict: s.cloud.conflicts > 0 && p.name === "Cola 330ml",
         };
       });
       return { rows, total: all.length };
@@ -835,6 +836,26 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       }
       const name = s.saveAs.shift() ?? null;
       return { payloadJson: null, savedFileName: name };
+    }
+    case "sync_conflicts_list": {
+      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
+      if (s.cloud.conflicts === 0) return [];
+      return [
+        {
+          conflictId: "c1", aggregateType: "product", aggregateId: "p1", title: "Cola 330ml", reason: "VERSION",
+          localBaseVersion: 1, serverVersion: 2, createdAt: "2026-11-05T09:20:00.000Z",
+          fields: [
+            { field: "name", label: "Name", localJson: '"Cola 330ml"', serverJson: '"Cola Classic"' },
+            { field: "variants/v1/price", label: "Price", localJson: "150", serverJson: "130" },
+          ],
+          taken: [], heldBy: null,
+        },
+      ];
+    }
+    case "sync_conflict_resolve": {
+      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
+      s.cloud.conflicts = 0;
+      return null;
     }
     case "sale_sync_state": {
       needSession(s);

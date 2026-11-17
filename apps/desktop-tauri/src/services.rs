@@ -104,6 +104,8 @@ pub(crate) struct Services {
     pub exports: ExportService,
     pub imports: ImportService,
     pub audit: AuditService,
+    /// Sync conflicts (E18).
+    pub conflicts: pos_application::conflict::ConflictService,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
     pub prints: PrintService,
@@ -287,6 +289,10 @@ impl AppServices {
                     receipts: a,
                     printer,
                     timeout: DEFAULT_PRINT_TIMEOUT,
+                },
+                conflicts: pos_application::conflict::ConflictService {
+                    store: Arc::new(s.clone()),
+                    conflicts: Arc::new(s.clone()),
                 },
                 queries: s.clone(),
                 approvals,

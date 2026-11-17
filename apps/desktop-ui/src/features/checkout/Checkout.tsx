@@ -60,6 +60,7 @@ export function Checkout({
   onReports,
   onWentLive,
   onSettings,
+  onConflicts,
   onCreateProduct,
 }: {
   workspace: Workspace;
@@ -78,6 +79,8 @@ export function Checkout({
   onWentLive: (() => void) | null;
   /** Owner only: the settings screen. */
   onSettings: (() => void) | null;
+  /** Managers and owners: the sync conflicts screen (E18). `null` for cashiers. */
+  onConflicts: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
   onCreateProduct: (barcode: string) => void;
 }) {
@@ -377,7 +380,7 @@ export function Checkout({
         <Notice c={c} onSearch={(text) => search.current?.focus(text)} onCreate={canEditCatalog ? onCreateProduct : null} />
       </aside>
 
-      <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} drawer={drawer} />
+      <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} drawer={drawer} onConflicts={onConflicts} />
 
       {modal === "pay" && cart && (
         <PaymentPanel

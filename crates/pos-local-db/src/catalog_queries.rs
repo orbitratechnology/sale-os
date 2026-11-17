@@ -327,7 +327,8 @@ impl CatalogQueries for SqliteStore {
                  WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1 AND b.bucket = 'sellable'),
                EXISTS (SELECT 1 FROM stock_balances b JOIN product_variants v ON v.variant_id = b.variant_id
                  WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1 AND b.bucket = 'sellable'
-                   AND b.on_hand_milli < 0)
+                   AND b.on_hand_milli < 0),
+               p.sync_status = 'conflict'
              FROM products p",
         );
         filtered(&mut b, filter, fts);
@@ -348,6 +349,7 @@ impl CatalogQueries for SqliteStore {
             i64,
             bool,
             i64,
+            bool,
             bool,
         );
         let rows: Vec<Row> = b
@@ -372,6 +374,7 @@ impl CatalogQueries for SqliteStore {
                     track,
                     on_hand,
                     negative,
+                    conflict,
                 )| {
                     Ok(ProductRow {
                         product_id: id.parse().map_err(q)?,
@@ -387,6 +390,7 @@ impl CatalogQueries for SqliteStore {
                         quick_select: quick,
                         on_hand: track.then(|| pos_domain::Quantity::from_milli(on_hand)),
                         negative_stock: negative,
+                        sync_conflict: conflict,
                     })
                 },
             )

@@ -181,3 +181,66 @@ describe("sync status and repair queue (E17-T09)", () => {
     ]);
   });
 });
+
+describe("sync conflicts (E18-T02)", () => {
+  it("a manager resolves a conflict field by field, with a custom price in pounds", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=signIn`);
+    await page.evaluate(() => {
+      window.__fake.cloud.linkState = "linked";
+      window.__fake.cloud.pending = 1;
+      window.__fake.cloud.conflicts = 1;
+    });
+    await page.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    // The till keeps working; the product list badges the product, and the status bar
+    // points to the conflict.
+    await page.keyboard.press("F6");
+    await page.getByRole("heading", { name: "Products" }).waitFor();
+    await page.getByRole("table", { name: "Products" }).getByText("Sync conflict").waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByTestId("sync-status").getByText(/Attention needed \(1 conflict\)/).waitFor();
+    await page.getByRole("button", { name: "Resolve conflicts" }).click();
+    const conflict = page.getByRole("region", { name: "Conflict: Cola 330ml" });
+    await conflict.getByRole("cell", { name: "1.50" }).waitFor();
+    await conflict.getByRole("cell", { name: "1.30" }).waitFor();
+    // Name: keep the cloud's. Price: something else, typed as money.
+    await conflict.getByRole("group", { name: "Keep for Name" }).getByLabel("Cloud").check();
+    await conflict.getByRole("group", { name: "Keep for Price" }).getByLabel("Other").check();
+    await conflict.getByLabel("New Price").fill("1.40");
+    await conflict.getByRole("button", { name: "Resolve" }).click();
+    await page.getByText("Cola 330ml: resolved. It is being sent to the cloud.").waitFor();
+    await page.getByText("No conflicts.", { exact: false }).waitFor();
+    expect(await calls(page, "sync_conflict_resolve")).toEqual([
+      {
+        conflictId: "c1",
+        choices: [
+          { field: "name", keep: "server", valueJson: null },
+          { field: "variants/v1/price", keep: "custom", valueJson: "140" },
+        ],
+        identifiers: null,
+      },
+    ]);
+  });
+
+  it("a cashier is not offered conflicts", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    await page.goto(`${base}/app-harness.html?preset=signIn`);
+    await page.evaluate(() => {
+      window.__fake.cloud.linkState = "linked";
+      window.__fake.cloud.conflicts = 1;
+    });
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByTestId("sync-status").getByText(/Attention needed/).waitFor();
+    expect(await page.getByRole("button", { name: "Resolve conflicts" }).count()).toBe(0);
+  });
+});

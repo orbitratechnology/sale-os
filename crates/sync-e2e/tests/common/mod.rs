@@ -307,3 +307,46 @@ impl Register {
         self.link.start(&self.owner, email, password).await.unwrap().0
     }
 }
+
+impl Register {
+    /// After a join: act as the joined business's owner on this register (their staff
+    /// record came with the bootstrap).
+    pub async fn become_joined_owner(&mut self) {
+        async fn one(pool: &sqlx::SqlitePool, sql: &'static str) -> String {
+            sqlx::query_scalar::<_, String>(sql)
+                .fetch_one(pool)
+                .await
+                .unwrap()
+        }
+        let pool = self.store.db().readers().clone();
+        let business = one(&pool, "SELECT business_id FROM device_identity").await;
+        let register = one(&pool, "SELECT register_id FROM device_identity").await;
+        let location = one(
+            &pool,
+            "SELECT r.location_id FROM registers r JOIN device_identity d ON d.register_id = r.register_id",
+        )
+        .await;
+        let owner = one(
+            &pool,
+            "SELECT user_id FROM staff_users WHERE role = 'owner' LIMIT 1",
+        )
+        .await;
+        self.owner.register = pos_application::context::RegisterContext {
+            business_id: business.parse().unwrap(),
+            location_id: location.parse().unwrap(),
+            register_id: register.parse().unwrap(),
+        };
+        self.owner.actor = Some(Actor {
+            user_id: owner.parse().unwrap(),
+            role: Role::Owner,
+            session_id: SessionId::generate(&UuidV7Generator),
+        });
+    }
+
+    pub fn conflicts(&self) -> pos_application::conflict::ConflictService {
+        pos_application::conflict::ConflictService {
+            store: Arc::new(self.store.clone()),
+            conflicts: Arc::new(self.store.clone()),
+        }
+    }
+}

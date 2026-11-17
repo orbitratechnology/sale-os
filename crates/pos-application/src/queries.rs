@@ -147,6 +147,9 @@ pub struct ProductRow {
     pub on_hand: Option<pos_domain::Quantity>,
     /// Some tracked variant is below zero (INV-008): shown as a red "Negative stock" flag.
     pub negative_stock: bool,
+    /// An edit here conflicts with the cloud's version (E18): the local values are used
+    /// until it is resolved.
+    pub sync_conflict: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

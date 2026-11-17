@@ -221,6 +221,12 @@ pub enum WriteOp {
         session_id: SessionId,
         reason: SessionEnd,
     },
+    /// Marks an open sync conflict resolved, with the choices made (E18-T02; local only: the
+    /// resolution travels as the aggregate's new event). Fails if it is no longer open.
+    ResolveConflict {
+        conflict_id: String,
+        resolution: serde_json::Value,
+    },
 }
 
 /// How an op relates to sync.
@@ -313,7 +319,8 @@ impl WriteOp {
             | WriteOp::PutImportJob(_)
             | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
-            | WriteOp::EndSession { .. } => SyncKind::LocalOnly,
+            | WriteOp::EndSession { .. }
+            | WriteOp::ResolveConflict { .. } => SyncKind::LocalOnly,
         }
     }
 }
@@ -535,6 +542,7 @@ impl WriteSet {
             ops: Vec::new(),
             outbox: Vec::new(),
             audit: Vec::new(),
+            resolving: BTreeSet::new(),
         }
     }
     pub fn context(&self) -> &WriteContext {
@@ -557,6 +565,8 @@ pub struct WriteSetBuilder {
     ops: Vec<WriteOp>,
     outbox: Vec<OutboxDraft>,
     audit: Vec<AuditEntry>,
+    /// Aggregates whose new version follows the cloud's, not the local one (E18-T02).
+    resolving: BTreeSet<AggregateRef>,
 }
 
 impl WriteSetBuilder {
@@ -792,6 +802,24 @@ impl WriteSetBuilder {
         self.outbox.push(draft);
         self
     }
+    /// Any op (e.g. one built from a snapshot by `sync::inbound_master`).
+    pub fn push(mut self, op: WriteOp) -> Self {
+        self.ops.push(op);
+        self
+    }
+    /// A conflict resolution (E18-T02): `aggregate`'s new version is the cloud's version + 1,
+    /// which its event names as the base, whatever the local version was.
+    pub fn resolving(mut self, aggregate: AggregateRef) -> Self {
+        self.resolving.insert(aggregate);
+        self
+    }
+    pub fn resolve_conflict(mut self, conflict_id: String, resolution: serde_json::Value) -> Self {
+        self.ops.push(WriteOp::ResolveConflict {
+            conflict_id,
+            resolution,
+        });
+        self
+    }
     pub fn audit(mut self, entry: AuditEntry) -> Self {
         self.audit.push(entry);
         self
@@ -849,6 +877,20 @@ impl WriteSetBuilder {
                     expected,
                 } => (aggregate, version, expected),
             };
+            if self.resolving.contains(&aggregate) {
+                let Some(event) = by_aggregate.get(&aggregate) else {
+                    return Err(WriteSetError::MissingOutbox(aggregate));
+                };
+                let base = event.base_version.unwrap_or(0);
+                if event.base_version.is_none() || version != base + 1 {
+                    return Err(WriteSetError::VersionNotIncremented {
+                        aggregate,
+                        expected: base + 1,
+                        actual: version,
+                    });
+                }
+                continue;
+            }
             let required = expected.unwrap_or(0) + 1;
             if version != required {
                 return Err(WriteSetError::VersionNotIncremented {
@@ -908,7 +950,8 @@ impl WriteSetBuilder {
             | WriteOp::PutImportJob(_)
             | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
-            | WriteOp::EndSession { .. } => return Ok(()),
+            | WriteOp::EndSession { .. }
+            | WriteOp::ResolveConflict { .. } => return Ok(()),
         };
         if found != self.context.business_id {
             return Err(WriteSetError::ForeignBusiness {

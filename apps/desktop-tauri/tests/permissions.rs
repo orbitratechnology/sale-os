@@ -84,6 +84,12 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"action": "view_payload", "eventId": UNKNOWN_ID}),
         ),
         ("sale_sync_state", Session, json!({"saleId": UNKNOWN_ID})),
+        ("sync_conflicts_list", Perm(ConflictResolve), json!({})),
+        (
+            "sync_conflict_resolve",
+            Perm(ConflictResolve),
+            json!({"conflictId": UNKNOWN_ID, "choices": [], "identifiers": null}),
+        ),
         (
             "auth_change_pin",
             Session,

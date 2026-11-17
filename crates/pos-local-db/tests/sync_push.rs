@@ -703,3 +703,72 @@ async fn the_repair_queue_lists_refused_events_and_conflicts_and_sales_show_thei
         .unwrap();
     assert_eq!(mark(r.shop.store.sale_sync(&sale).await.unwrap()), "synced");
 }
+
+/// E18-T01: a conflicted aggregate is marked `conflict`, and a later local edit that conflicts
+/// too supersedes the first conflict: one open conflict per aggregate, with the newest edit.
+#[tokio::test]
+async fn a_second_conflicting_edit_supersedes_the_first() {
+    let r = rig().await;
+    let config = pos_application::config::ConfigService {
+        store: Arc::new(r.shop.store.clone()),
+        config: Arc::new(r.shop.store.clone()),
+    };
+    let drinks = config
+        .save_category(&r.shop.owner, None, "Drinks", None, None)
+        .await
+        .unwrap();
+    drain(&r.worker).await;
+    let first = r.shop.store.push_state().await.unwrap().max_sequence + 1;
+    let v2 = config
+        .save_category(
+            &r.shop.owner,
+            Some(drinks.category_id),
+            "Cold drinks",
+            None,
+            Some(drinks.version),
+        )
+        .await
+        .unwrap();
+    config
+        .save_category(
+            &r.shop.owner,
+            Some(drinks.category_id),
+            "Soft drinks",
+            None,
+            Some(v2.version),
+        )
+        .await
+        .unwrap();
+    {
+        let mut s = r.server.s.lock().unwrap();
+        s.conflict.insert(first);
+        s.conflict.insert(first + 1);
+    }
+    drain(&r.worker).await;
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT status, json_extract(local_payload_json, '$.name') FROM sync_conflicts ORDER BY created_at, rowid",
+    )
+    .fetch_all(r.shop.store.db().readers())
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        [
+            ("superseded".into(), "Cold drinks".into()),
+            ("open".into(), "Soft drinks".into())
+        ]
+    );
+    let status: String = sqlx::query_scalar("SELECT sync_status FROM categories WHERE category_id = ?")
+        .bind(drinks.category_id.to_string())
+        .fetch_one(r.shop.store.db().readers())
+        .await
+        .unwrap();
+    assert_eq!(status, "conflict");
+    // The till keeps using its own value.
+    let name: String = sqlx::query_scalar("SELECT name FROM categories WHERE category_id = ?")
+        .bind(drinks.category_id.to_string())
+        .fetch_one(r.shop.store.db().readers())
+        .await
+        .unwrap();
+    assert_eq!(name, "Soft drinks");
+}
