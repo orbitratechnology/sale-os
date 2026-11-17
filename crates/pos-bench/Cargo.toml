@@ -1,0 +1,29 @@
+[package]
+name = "pos-bench"
+description = "Performance suite on a full-size register database (E19-T01): PRD §14 targets at p95."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pos-bench"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+pos-application.workspace = true
+pos-domain.workspace = true
+pos-local-db.workspace = true
+pos-sync.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+uuid.workspace = true
+
+[lints]
+workspace = true

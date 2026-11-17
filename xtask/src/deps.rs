@@ -44,6 +44,10 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
     ),
     ("xtask", &[]),
     ("sync-e2e", &[]),
+    (
+        "pos-bench",
+        &["pos-domain", "pos-application", "pos-local-db", "pos-sync"],
+    ),
 ];
 
 /// External crates that must never appear in a crate's normal dependency tree.

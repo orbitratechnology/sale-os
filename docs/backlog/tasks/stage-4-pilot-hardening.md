@@ -42,7 +42,7 @@ Windows hardware (D-05):
   | 30-day sales report | < 1 s |
   | Sales list page | < 300 ms |
 
-- [ ] A regression job reruns a reduced suite on CI weekly and alerts on a regression above 20%.
+- [x] A regression job reruns a reduced suite on CI weekly and alerts on a regression above 20%.
 
 ### E19-T02 · Crash and power-loss campaign
 - **Size** M · **Deps** E02-T04, E09-T08, E12-T02, E17-T03 · **PRD** §14 (Crash recovery), §14.1, §16.3

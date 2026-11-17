@@ -3797,6 +3797,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pos-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "pos-application",
+ "pos-domain",
+ "pos-local-db",
+ "pos-sync",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "pos-cloud-db"
 version = "0.1.0"
 dependencies = [

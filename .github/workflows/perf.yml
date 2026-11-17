@@ -1,0 +1,53 @@
+name: Performance (weekly)
+
+# E19-T01: the reduced performance suite (5,000 variants, 50,000 sale lines, 1,000 samples per
+# measure) compared with the last good run on the same runner type. A median more than 20%
+# slower (and by at least 0.5 ms) fails the run, which alerts whoever owns the schedule.
+# (p95 moves by up to 40% between identical runs on a shared runner, so it is not alerted on.)
+# The full suite (`--scale full`) is run by hand on the D-05 reference machine and published
+# to docs/perf/.
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  perf:
+    name: Reduced performance suite against the last good run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Last good run
+        uses: actions/cache/restore@v4
+        with:
+          path: perf-baseline
+          key: perf-baseline-${{ github.run_id }}
+          restore-keys: perf-baseline-
+      - run: cargo build --release --locked -p pos-bench
+      - name: Measure and compare
+        run: |
+          target/release/pos-bench --scale small --json perf-now.json --markdown perf-now.md \
+            --baseline perf-baseline/run.json --max-regression 20
+      - name: Summary
+        if: always()
+        run: test -f perf-now.md && cat perf-now.md >> "$GITHUB_STEP_SUMMARY" || true
+      # Only a run without a regression becomes the new baseline.
+      - name: Keep as the baseline
+        run: mkdir -p perf-baseline && cp perf-now.json perf-baseline/run.json
+      - uses: actions/cache/save@v4
+        with:
+          path: perf-baseline
+          key: perf-baseline-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf
+          path: perf-now.*
