@@ -86,4 +86,7 @@ pub const COMMANDS: &[&str] = &[
     "sync_status",
     "sync_link_start",
     "sync_link_complete",
+    "sync_repair_queue",
+    "sync_repair_action",
+    "sale_sync_state",
 ];

@@ -1,9 +1,15 @@
-import type { Session, Workspace } from "../../ipc";
-import type { CashStateDto_Serialize as CashState } from "../../ipc/bindings";
+import { useEffect, useState } from "react";
+import { commands, type Session, type Workspace } from "../../ipc";
+import type { CashStateDto_Serialize as CashState, SyncStatusDto } from "../../ipc/bindings";
+import { indicatorText } from "../sync/syncText";
+
+/** How often the status bar asks Rust where sync stands. */
+const SYNC_POLL_MS = 10_000;
 
 /**
  * Always visible, never modal (E09-T06): who is signed in, which till, sandbox or live,
- * scanner and sync state. Sync is "Not linked" until Stage 3.
+ * scanner and sync state (E17-T09: Not linked, Synced, Sync pending, Offline, Attention
+ * needed, Device revoked, Update required).
  */
 export function StatusBar({
   workspace,
@@ -17,6 +23,20 @@ export function StatusBar({
   /** The cash drawer (E15-T02); `null` while loading. */
   drawer: CashState | null;
 }) {
+  const [sync, setSync] = useState<SyncStatusDto | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      void commands.syncStatus().then((res) => {
+        if (live && res.status === "ok") setSync(res.data);
+      });
+    load();
+    const timer = window.setInterval(load, SYNC_POLL_MS);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
   return (
     <footer className="statusbar" aria-label="Status">
       <span>
@@ -38,7 +58,9 @@ export function StatusBar({
           )}
         </span>
       )}
-      <span>Not linked · saved on this computer</span>
+      <span data-testid="sync-status" data-state={sync?.indicator ?? "not_linked"}>
+        {sync ? indicatorText(sync) : "Not linked · saved on this computer"}
+      </span>
     </footer>
   );
 }

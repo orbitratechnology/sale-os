@@ -77,6 +77,13 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(DeviceLink),
             json!({"mode": "create", "businessId": null, "replaceExisting": false}),
         ),
+        ("sync_repair_queue", Perm(SyncManage), json!({})),
+        (
+            "sync_repair_action",
+            Perm(SyncManage),
+            json!({"action": "view_payload", "eventId": UNKNOWN_ID}),
+        ),
+        ("sale_sync_state", Session, json!({"saleId": UNKNOWN_ID})),
         (
             "auth_change_pin",
             Session,

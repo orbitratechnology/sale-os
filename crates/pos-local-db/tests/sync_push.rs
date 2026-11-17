@@ -619,3 +619,87 @@ async fn bench_commit_latency_while_pushing() {
         );
     }
 }
+
+/// E17-T09: what the sync page and the sale screens read after the cloud answered.
+#[tokio::test]
+async fn the_repair_queue_lists_refused_events_and_conflicts_and_sales_show_their_mark() {
+    let r = rig().await;
+    let base = r.shop.store.push_state().await.unwrap().max_sequence;
+    add_events(&r.shop.store, 4).await;
+    {
+        let mut s = r.server.s.lock().unwrap();
+        s.conflict.insert(base + 1);
+        s.reject.insert(base + 2);
+        s.unsupported.insert(base + 4);
+    }
+    drain(&r.worker).await;
+    let status = r.shop.store.sync_status().await.unwrap();
+    assert_eq!((status.rejected, status.blocked, status.conflicts), (1, 1, 1));
+    assert_eq!(
+        status.last_error_code.as_deref(),
+        Some("EVENT_VERSION_UNSUPPORTED")
+    );
+    let indicator = pos_application::sync::indicator(
+        &status.link_state,
+        status.pending,
+        status.rejected + status.blocked + status.conflicts,
+        status.last_error_code.as_deref(),
+    );
+    assert_eq!(indicator, pos_application::sync::SyncIndicator::Attention);
+    let (events, conflicts) = r.shop.store.repair_queue().await.unwrap();
+    let summary: Vec<(i64, &str, Option<&str>, Option<&str>)> = events
+        .iter()
+        .map(|e| {
+            (
+                e.local_sequence,
+                e.kind.as_str(),
+                e.code.as_deref(),
+                e.detail.as_deref(),
+            )
+        })
+        .collect();
+    let seq = |n: u64| i64::try_from(base + n).unwrap();
+    assert_eq!(
+        summary,
+        [
+            (seq(2), "rejected", Some("EVENT_INVALID"), Some("bad")),
+            (seq(4), "blocked", Some("EVENT_VERSION_UNSUPPORTED"), None),
+        ]
+    );
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].server_version, 7);
+    // The event as it was sent, for the owner and for support.
+    let event = r
+        .shop
+        .store
+        .outbox_event(&events[0].event_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event["eventType"], "audit.recorded");
+    assert_eq!(event["status"], "rejected");
+    assert_eq!(event["serverResult"]["code"], "EVENT_INVALID");
+
+    // A sale's mark follows its event.
+    let sale = Uuid::now_v7().to_string();
+    sqlx::query(
+        "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
+                schema_version, aggregate_type, aggregate_id, occurred_at, payload_json, created_at)
+         SELECT ?, r.business_id, r.location_id, r.register_id, (SELECT max(local_sequence) + 1 FROM outbox_events),
+                'sale.completed', 1, 'sale', ?, 1, '{}', 1
+           FROM device_identity d JOIN registers r ON r.register_id = d.register_id",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind(&sale)
+    .execute(r.shop.store.db().writer())
+    .await
+    .unwrap();
+    let mark = |s: (String, Option<String>)| pos_application::sync::sale_sync(&s.0, s.1.as_deref());
+    assert_eq!(mark(r.shop.store.sale_sync(&sale).await.unwrap()), "pending");
+    sqlx::query("UPDATE outbox_events SET status = 'applied' WHERE aggregate_id = ?")
+        .bind(&sale)
+        .execute(r.shop.store.db().writer())
+        .await
+        .unwrap();
+    assert_eq!(mark(r.shop.store.sale_sync(&sale).await.unwrap()), "synced");
+}

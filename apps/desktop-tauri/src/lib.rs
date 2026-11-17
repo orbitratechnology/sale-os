@@ -113,6 +113,9 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sync_commands::sync_status,
         sync_commands::sync_link_start,
         sync_commands::sync_link_complete,
+        sync_commands::sync_repair_queue,
+        sync_commands::sync_repair_action,
+        sync_commands::sale_sync_state,
     ])
 }
 

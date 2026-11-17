@@ -264,6 +264,15 @@ export const commands = {
 	 *  connection resumes when this is called again.
 	 */
 	syncLinkComplete: (mode: LinkMode, businessId: string | null, replaceExisting: boolean) => typedError<LinkResultDto, IpcError_Serialize>(__TAURI_INVOKE("sync_link_complete", { mode, businessId, replaceExisting })),
+	/**  Events the cloud refused and open conflicts (E17-T09, owner). */
+	syncRepairQueue: () => typedError<RepairQueueDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sync_repair_queue")),
+	/**  Repair-queue actions (E17-T09, owner): view an event's payload, or export a support file. */
+	syncRepairAction: (action: RepairAction, eventId: string | null) => typedError<RepairActionResultDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sync_repair_action", { action, eventId })),
+	/**
+	 *  Whether a sale has reached the cloud (AT-13). Any signed-in user: the till shows it after
+	 *  a sale.
+	 */
+	saleSyncState: (saleId: SaleId) => typedError<SaleSyncDto, IpcError_Serialize>(__TAURI_INVOKE("sale_sync_state", { saleId })),
 };
 
 /* Types */
@@ -789,6 +798,15 @@ export type CompletedSaleDto = {
 	negativeStockItems: number,
 	/**  Print the receipt right away (`receipt.auto_print`). */
 	autoPrint: boolean,
+};
+
+export type ConflictSummaryDto = {
+	conflictId: string,
+	aggregateType: string,
+	aggregateId: string,
+	localBaseVersion: number,
+	serverVersion: number,
+	createdAt: string,
 };
 
 export type CreateWorkspaceInput = CreateWorkspaceInput_Serialize | CreateWorkspaceInput_Deserialize;
@@ -1318,6 +1336,78 @@ export type ReceiptLineDto = {
 	bold: boolean,
 };
 
+export type RepairAction = 
+/**  The event as it was sent (PIN hashes removed). */
+"view_payload" | 
+/**  A file for support: the status, the queue and the refused events. */
+"export_support";
+
+export type RepairActionResultDto = RepairActionResultDto_Serialize | RepairActionResultDto_Deserialize;
+
+export type RepairActionResultDto_Deserialize = {
+	/**  `view_payload`: the event, pretty-printed JSON. */
+	payloadJson?: string | null,
+	/**  `export_support`: the saved file's name, or `None` if the save was cancelled. */
+	savedFileName?: string | null,
+};
+
+export type RepairActionResultDto_Serialize = {
+	/**  `view_payload`: the event, pretty-printed JSON. */
+	payloadJson: string | null,
+	/**  `export_support`: the saved file's name, or `None` if the save was cancelled. */
+	savedFileName: string | null,
+};
+
+export type RepairEventDto = RepairEventDto_Serialize | RepairEventDto_Deserialize;
+
+export type RepairEventDto_Deserialize = {
+	eventId: string,
+	localSequence: number,
+	eventType: string,
+	aggregateType: string,
+	aggregateId: string,
+	/**  The reason code (`EVENT_INVALID`, `SNAPSHOT_MISMATCH`, `EVENT_VERSION_UNSUPPORTED`...). */
+	code?: string | null,
+	/**  The cloud's own words, for support. */
+	detail?: string | null,
+	/**
+	 *  `rejected` (set aside; later events went on) or `blocked` (holds up the rest until the
+	 *  cloud accepts it, e.g. after an update).
+	 */
+	kind: string,
+	occurredAt: string,
+};
+
+export type RepairEventDto_Serialize = {
+	eventId: string,
+	localSequence: number,
+	eventType: string,
+	aggregateType: string,
+	aggregateId: string,
+	/**  The reason code (`EVENT_INVALID`, `SNAPSHOT_MISMATCH`, `EVENT_VERSION_UNSUPPORTED`...). */
+	code: string | null,
+	/**  The cloud's own words, for support. */
+	detail: string | null,
+	/**
+	 *  `rejected` (set aside; later events went on) or `blocked` (holds up the rest until the
+	 *  cloud accepts it, e.g. after an update).
+	 */
+	kind: string,
+	occurredAt: string,
+};
+
+export type RepairQueueDto = RepairQueueDto_Serialize | RepairQueueDto_Deserialize;
+
+export type RepairQueueDto_Deserialize = {
+	events: RepairEventDto_Deserialize[],
+	conflicts: ConflictSummaryDto[],
+};
+
+export type RepairQueueDto_Serialize = {
+	events: RepairEventDto_Serialize[],
+	conflicts: ConflictSummaryDto[],
+};
+
 /**  Where the numbers come from (PRD §15): `"device"` until the cloud link (Stage 3). */
 export type ReportScopeDto = {
 	scope: string,
@@ -1484,6 +1574,14 @@ export type SaleRowDto = {
 	itemCountMilli: string,
 	tenders: TenderKind[],
 	refundedMinor: string,
+};
+
+export type SaleSyncDto = {
+	/**
+	 *  `local` (no cloud link), `pending` (saved on this device, waiting), `synced`, or
+	 *  `attention` (the cloud refused it; see the repair queue).
+	 */
+	state: string,
 };
 
 export type SaleTenderDto = SaleTenderDto_Serialize | SaleTenderDto_Deserialize;
@@ -1760,6 +1858,15 @@ export type SyncStatusDto_Deserialize = {
 	/**  The cloud's clock and this computer's differ by more than 10 minutes (ADR-006). */
 	clockSkewWarning: boolean,
 	registerCode?: string | null,
+	/**
+	 *  The status bar's state: `not_linked`, `synced`, `pending`, `offline`, `attention`,
+	 *  `revoked` or `update_required` (E17-T09).
+	 */
+	indicator: string,
+	/**  Events the cloud refused (the repair queue), including ones holding up the rest. */
+	rejected: number,
+	/**  Open conflicts. */
+	conflicts: number,
 };
 
 export type SyncStatusDto_Serialize = {
@@ -1776,6 +1883,15 @@ export type SyncStatusDto_Serialize = {
 	/**  The cloud's clock and this computer's differ by more than 10 minutes (ADR-006). */
 	clockSkewWarning: boolean,
 	registerCode: string | null,
+	/**
+	 *  The status bar's state: `not_linked`, `synced`, `pending`, `offline`, `attention`,
+	 *  `revoked` or `update_required` (E17-T09).
+	 */
+	indicator: string,
+	/**  Events the cloud refused (the repair queue), including ones holding up the rest. */
+	rejected: number,
+	/**  Open conflicts. */
+	conflicts: number,
 };
 
 export type TaxCategoryConfigDto = {

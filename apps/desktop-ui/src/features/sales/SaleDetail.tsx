@@ -7,6 +7,7 @@ import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 import { REASON_LABEL, TENDER_LABEL } from "./labels";
+import { SaleSyncMark } from "../sync/SaleSyncMark";
 
 /**
  * One completed sale as recorded (E12-T03): lines, discounts, tax, tenders with who
@@ -67,6 +68,9 @@ export function SaleDetail({
           {sale.localTime} · served by {sale.cashierName}
           {sale.approverName ? ` · approved by ${sale.approverName}` : ""}
           {sale.mode === "sandbox" ? " · SANDBOX" : ""}
+        </p>
+        <p className="small" data-testid="sale-sync">
+          <SaleSyncMark saleId={sale.saleId} />
         </p>
         <table className="sales-table" aria-label="Lines">
           <thead>

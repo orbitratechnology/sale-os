@@ -40,7 +40,7 @@ async function cloudPage(before?: (page: Page) => Promise<void>): Promise<Page> 
   await page.getByRole("region", { name: "Cart lines" }).waitFor();
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("tab", { name: "Cloud" }).click();
-  await page.getByRole("heading", { name: "Cloud" }).waitFor();
+  await page.getByRole("heading", { name: "Cloud", exact: true }).waitFor();
   return page;
 }
 
@@ -106,5 +106,78 @@ describe("cloud link (E17-T08)", () => {
     });
     await page.getByRole("alert").filter({ hasText: "This register was disconnected by the owner" }).waitFor();
     await page.getByRole("form", { name: "Cloud sign-in" }).waitFor();
+  });
+});
+
+describe("sync status and repair queue (E17-T09)", () => {
+  it("the status bar shows each sync state", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    await page.clock.install();
+    await page.goto(`${base}/app-harness.html?preset=checkout`);
+    const bar = page.getByTestId("sync-status");
+    await bar.waitFor();
+    expect(await bar.textContent()).toBe("Not linked · saved on this computer");
+    const states: [() => void, RegExp][] = [
+      [() => ((window.__fake.cloud.linkState = "linked"), (window.__fake.cloud.pending = 3)), /^Sync pending \(3\)$/],
+      [() => (window.__fake.cloud.pending = 0), /^Synced \(last at \d\d:\d\d\)$/],
+      [() => (window.__fake.cloud.conflicts = 2), /^Attention needed \(2 conflicts\)$/],
+      [() => (window.__fake.cloud.linkState = "revoked"), /^Device revoked/],
+    ];
+    for (const [set, text] of states) {
+      await page.evaluate(set);
+      // The bar asks Rust again every 10 s.
+      await page.clock.fastForward(10_000);
+      await expect.poll(async () => (await bar.textContent()) ?? "").toMatch(text);
+    }
+  });
+
+  it("a completed sale says sync pending until the cloud has it, then synced (AT-13)", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    await page.goto(`${base}/app-harness.html?preset=checkout`);
+    await page.evaluate(() => {
+      window.__fake.cloud.linkState = "linked";
+    });
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.type("4006381333931", { delay: 5 });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 1);
+    await page.keyboard.press("F9");
+    await page.getByRole("dialog", { name: "Payment" }).waitFor();
+    await page.keyboard.press("Enter");
+    const saved = page.getByRole("dialog", { name: "Sale completed" }).getByTestId("saved");
+    await saved.getByText("Saved on this device · Sync pending").waitFor();
+    // The cloud applies it: the next check says so.
+    await page.evaluate(() => {
+      const asked = window.__ipc.find((c) => c.cmd === "sale_sync_state");
+      if (asked) window.__fake.cloud.synced.add(String(asked.args.saleId));
+    });
+    await saved.getByText("Synced").waitFor({ timeout: 10_000 });
+  });
+
+  it("the owner sees refused events with their reason, the payload, and exports a support file", async () => {
+    const page = await cloudPage(async (p) => {
+      await p.evaluate(() => {
+        const c = window.__fake.cloud;
+        c.linkState = "linked";
+        c.pending = 0;
+        c.conflicts = 1;
+        c.refused = [{ eventId: "e1", localSequence: 41, eventType: "sale.completed", code: "SNAPSHOT_MISMATCH", kind: "rejected" }];
+        window.__fake.saveAs = ["support.json"];
+      });
+    });
+    const refused = page.getByRole("region", { name: "Refused by the cloud" });
+    await refused.getByText("SNAPSHOT_MISMATCH").waitFor();
+    await refused.getByText(/totals of this record and they did not add up/).waitFor();
+    await refused.getByRole("button", { name: "View what was sent" }).click();
+    const sent = await page.getByLabel("What was sent for #41").textContent();
+    expect(sent).toContain("[REDACTED]");
+    await page.getByRole("region", { name: "Conflicts" }).getByText(/edited here from version 3, the cloud is at 4/).waitFor();
+    await page.getByRole("button", { name: "Export for support" }).click();
+    await page.getByText("Saved support.json. Send it to support.").waitFor();
+    expect(await calls(page, "sync_repair_action")).toEqual([
+      { action: "view_payload", eventId: "e1" },
+      { action: "export_support", eventId: null },
+    ]);
   });
 });

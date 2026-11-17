@@ -6,6 +6,7 @@ import { formatMoney } from "../../lib/money";
 import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
+import { SaleSyncMark } from "../sync/SaleSyncMark";
 
 interface Tender {
   kind: TenderKind;
@@ -123,8 +124,8 @@ export function PaymentPanel({
           <p>
             Receipt <strong className="mono">{done.receiptNumber}</strong> · total {money(done.totalMinor)}
           </p>
-          <p className="small" data-testid="saved">
-            Saved on this device · {done.syncPending ? "Not linked: will sync when the cloud is linked" : "Synced"}
+          <p className="small" data-testid="saved" aria-live="polite">
+            <SaleSyncMark saleId={done.saleId} />
             {done.mode === "sandbox" ? " · SANDBOX" : ""}
           </p>
           {done.negativeStockItems > 0 && (

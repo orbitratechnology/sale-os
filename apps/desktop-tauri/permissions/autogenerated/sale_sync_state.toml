@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sale-sync-state"
+description = "Enables the sale_sync_state command without any pre-configured scope."
+commands.allow = ["sale_sync_state"]
+
+[[permission]]
+identifier = "deny-sale-sync-state"
+description = "Denies the sale_sync_state command without any pre-configured scope."
+commands.deny = ["sale_sync_state"]

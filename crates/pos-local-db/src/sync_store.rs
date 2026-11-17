@@ -245,7 +245,9 @@ impl SyncStore for SqliteStore {
         }
         sqlx::query(
             "INSERT INTO sync_state (id, last_pull_cursor, last_pull_ok_at) VALUES (1, ?1, ?2)
-             ON CONFLICT (id) DO UPDATE SET last_pull_cursor = ?1, last_pull_ok_at = ?2",
+             ON CONFLICT (id) DO UPDATE SET last_pull_cursor = ?1, last_pull_ok_at = ?2,
+               last_error_code = CASE WHEN last_error_code IN ('OFFLINE', 'TIMEOUT', 'SERVER_ERROR', 'DECODE_ERROR',
+                 'AUTH_REQUIRED') THEN NULL ELSE last_error_code END",
         )
         .bind(&page.next_cursor)
         .bind(at.as_millis())
@@ -577,9 +579,154 @@ pub struct SyncStatusRecord {
     pub last_error_code: Option<String>,
     pub clock_skew_ms: Option<i64>,
     pub register_code: Option<String>,
+    /// Events the cloud refused (acknowledged: the repair queue).
+    pub rejected: u64,
+    /// Events the cloud refused that hold up the rest (an unsupported version, a reused id).
+    pub blocked: u64,
+    /// Open conflicts (E18).
+    pub conflicts: u64,
 }
 
+/// One event in the repair queue.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepairEvent {
+    pub event_id: String,
+    pub local_sequence: i64,
+    pub event_type: String,
+    pub aggregate_type: String,
+    pub aggregate_id: String,
+    pub code: Option<String>,
+    /// The cloud's own words, if it gave any.
+    pub detail: Option<String>,
+    /// `rejected` (acknowledged) or `blocked` (still pending: it holds up the rest).
+    pub kind: String,
+    pub occurred_at: i64,
+}
+
+/// One open conflict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConflictSummary {
+    pub conflict_id: String,
+    pub aggregate_type: String,
+    pub aggregate_id: String,
+    pub local_base_version: i64,
+    pub server_version: i64,
+    pub created_at: i64,
+}
+
+/// Pending events the cloud refused without acknowledging them.
+const BLOCKED_COUNT: &str = "SELECT count(*) FROM outbox_events
+   WHERE status = 'pending' AND last_error_code IN ('EVENT_VERSION_UNSUPPORTED', 'EVENT_ID_REUSED')";
+
 impl SqliteStore {
+    /// Rejected and blocked events, oldest first, and open conflicts (E17-T09).
+    pub async fn repair_queue(&self) -> Result<(Vec<RepairEvent>, Vec<ConflictSummary>), QueryError> {
+        let r = self.db().readers();
+        let rows = sqlx::query(
+            "SELECT event_id, local_sequence, event_type, aggregate_type, aggregate_id, last_error_code,
+                    json_extract(server_result_json, '$.detail'), status, occurred_at
+               FROM outbox_events
+              WHERE status = 'rejected'
+                 OR (status = 'pending' AND last_error_code IN ('EVENT_VERSION_UNSUPPORTED', 'EVENT_ID_REUSED'))
+              ORDER BY local_sequence LIMIT 500",
+        )
+        .fetch_all(r)
+        .await
+        .map_err(q)?;
+        let mut events = Vec::with_capacity(rows.len());
+        for row in rows {
+            let status: String = row.try_get(7).map_err(q)?;
+            events.push(RepairEvent {
+                event_id: row.try_get(0).map_err(q)?,
+                local_sequence: row.try_get(1).map_err(q)?,
+                event_type: row.try_get(2).map_err(q)?,
+                aggregate_type: row.try_get(3).map_err(q)?,
+                aggregate_id: row.try_get(4).map_err(q)?,
+                code: row.try_get(5).map_err(q)?,
+                detail: row.try_get(6).map_err(q)?,
+                kind: if status == "rejected" {
+                    "rejected".into()
+                } else {
+                    "blocked".into()
+                },
+                occurred_at: row.try_get(8).map_err(q)?,
+            });
+        }
+        let conflicts = sqlx::query_as::<_, (String, String, String, i64, i64, i64)>(
+            "SELECT conflict_id, aggregate_type, aggregate_id, local_base_version, server_version, created_at
+               FROM sync_conflicts WHERE status = 'open' ORDER BY created_at LIMIT 500",
+        )
+        .fetch_all(r)
+        .await
+        .map_err(q)?
+        .into_iter()
+        .map(
+            |(conflict_id, aggregate_type, aggregate_id, local_base_version, server_version, created_at)| {
+                ConflictSummary {
+                    conflict_id,
+                    aggregate_type,
+                    aggregate_id,
+                    local_base_version,
+                    server_version,
+                    created_at,
+                }
+            },
+        )
+        .collect();
+        Ok((events, conflicts))
+    }
+
+    /// An outbox event as it was (or will be) sent: its envelope fields and payload.
+    pub async fn outbox_event(&self, event_id: &str) -> Result<Option<serde_json::Value>, QueryError> {
+        let row = sqlx::query(
+            "SELECT event_id, local_sequence, event_type, schema_version, aggregate_type, aggregate_id, base_version,
+                    occurred_at, payload_json, status, server_result_json
+               FROM outbox_events WHERE event_id = ?",
+        )
+        .bind(event_id)
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        let Some(row) = row else { return Ok(None) };
+        let json = |i: usize| -> Result<serde_json::Value, QueryError> {
+            let t: Option<String> = row.try_get(i).map_err(q)?;
+            t.map(|t| serde_json::from_str(&t))
+                .transpose()
+                .map(|v| v.unwrap_or(serde_json::Value::Null))
+                .map_err(q)
+        };
+        Ok(Some(serde_json::json!({
+            "eventId": row.try_get::<String, _>(0).map_err(q)?,
+            "localSequence": row.try_get::<i64, _>(1).map_err(q)?,
+            "eventType": row.try_get::<String, _>(2).map_err(q)?,
+            "schemaVersion": row.try_get::<i64, _>(3).map_err(q)?,
+            "aggregateType": row.try_get::<String, _>(4).map_err(q)?,
+            "aggregateId": row.try_get::<String, _>(5).map_err(q)?,
+            "baseVersion": row.try_get::<Option<i64>, _>(6).map_err(q)?,
+            "occurredAt": Timestamp::from_millis(row.try_get(7).map_err(q)?).to_rfc3339(),
+            "payload": json(8)?,
+            "status": row.try_get::<String, _>(9).map_err(q)?,
+            "serverResult": json(10)?,
+        })))
+    }
+
+    /// The link state and the outbox status of a sale's event (AT-13).
+    pub async fn sale_sync(&self, sale_id: &str) -> Result<(String, Option<String>), QueryError> {
+        let r = self.db().readers();
+        let link: Option<String> = sqlx::query_scalar("SELECT link_state FROM sync_state WHERE id = 1")
+            .fetch_optional(r)
+            .await
+            .map_err(q)?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM outbox_events WHERE aggregate_type = 'sale' AND aggregate_id = ? ORDER BY local_sequence LIMIT 1",
+        )
+        .bind(sale_id)
+        .fetch_optional(r)
+        .await
+        .map_err(q)?;
+        Ok((link.unwrap_or_else(|| "unlinked".into()), status))
+    }
+
     pub async fn sync_status(&self) -> Result<SyncStatusRecord, QueryError> {
         let r = self.db().readers();
         let row: Option<StatusRow> = sqlx::query_as(
@@ -601,8 +748,24 @@ impl SqliteStore {
         .fetch_optional(r)
         .await
         .map_err(q)?;
+        let count = |sql: &'static str| async move {
+            sqlx::query_scalar::<_, i64>(sql)
+                .fetch_one(r)
+                .await
+                .map(|n| u64::try_from(n).unwrap_or(0))
+        };
+        let rejected = count("SELECT count(*) FROM outbox_events WHERE status = 'rejected'")
+            .await
+            .map_err(q)?;
+        let blocked = count(BLOCKED_COUNT).await.map_err(q)?;
+        let conflicts = count("SELECT count(*) FROM sync_conflicts WHERE status = 'open'")
+            .await
+            .map_err(q)?;
         Ok(SyncStatusRecord {
             link_state,
+            rejected,
+            blocked,
+            conflicts,
             pending: u64::try_from(max - ack).unwrap_or(0),
             last_push_ok_at: push,
             last_pull_ok_at: pull,

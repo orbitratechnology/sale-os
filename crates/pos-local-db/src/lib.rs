@@ -25,7 +25,7 @@ mod sales_queries;
 mod stock_queries;
 mod store;
 mod sync_store;
-pub use sync_store::SyncStatusRecord;
+pub use sync_store::{ConflictSummary, RepairEvent, SyncStatusRecord};
 
 pub use error::StoreError;
 pub use migrate::{MIGRATOR, MigrationReport};

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
-import type { LinkOptionsDto, SyncStatusDto } from "../../ipc/bindings";
+import type { LinkOptionsDto, RepairQueueDto, SyncStatusDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { indicatorText, refusalText } from "../sync/syncText";
 
 function when(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString() : "not yet";
@@ -23,13 +24,34 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
   const [joining, setJoining] = useState<{ businessId: string; name: string } | null>(null);
   const [replace, setReplace] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [queue, setQueue] = useState<RepairQueueDto | null>(null);
+  const [payload, setPayload] = useState<{ eventId: string; json: string } | null>(null);
+  const [exported, setExported] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void commands.syncStatus().then((res) => {
       if (res.status !== "ok") return setError(res.error);
       setStatus(res.data);
+      if (res.data.rejected + res.data.conflicts > 0) {
+        void commands.syncRepairQueue().then((q) => {
+          if (q.status === "ok") setQueue(q.data);
+        });
+      } else setQueue(null);
     });
   }, []);
+
+  async function viewPayload(eventId: string) {
+    if (payload?.eventId === eventId) return setPayload(null);
+    const res = await commands.syncRepairAction("view_payload", eventId);
+    if (res.status !== "ok") return setError(res.error);
+    setPayload({ eventId, json: res.data.payloadJson ?? "" });
+  }
+
+  async function exportSupport() {
+    const res = await commands.syncRepairAction("export_support", null);
+    if (res.status !== "ok") return setError(res.error);
+    setExported(res.data.savedFileName ? `Saved ${res.data.savedFileName}. Send it to support.` : null);
+  }
   useEffect(load, [load]);
 
   async function signIn(e: FormEvent) {
@@ -90,7 +112,11 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
       {linked ? (
         <dl className="cloud-status">
           <dt>Status</dt>
-          <dd>Linked{status.registerCode ? ` as ${status.registerCode}` : ""}</dd>
+          <dd>Linked{status.registerCode ? ` as ${status.registerCode}` : ""} · {indicatorText(status)}</dd>
+          <dt>Conflicts</dt>
+          <dd>{status.conflicts === 0 ? "None" : status.conflicts}</dd>
+          <dt>Refused by the cloud</dt>
+          <dd>{status.rejected === 0 ? "None" : status.rejected}</dd>
           <dt>Waiting to send</dt>
           <dd>{status.pending === 0 ? "Nothing" : `${status.pending} change${status.pending === 1 ? "" : "s"}`}</dd>
           <dt>Last sent</dt>
@@ -103,9 +129,55 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         <p role="alert">This computer's clock is more than 10 minutes off. Correct the date and time.</p>
       )}
       {linked && (
-        <button type="button" onClick={() => void commands.syncRetryNow().then(load)}>
-          Send now
-        </button>
+        <p>
+          <button type="button" onClick={() => void commands.syncRetryNow().then(load)}>
+            Send now
+          </button>{" "}
+          <button type="button" className="secondary" onClick={() => void exportSupport()}>
+            Export for support
+          </button>
+        </p>
+      )}
+      {exported && <p role="status">{exported}</p>}
+      {queue && queue.events.length > 0 && (
+        <section aria-label="Refused by the cloud">
+          <h3>Refused by the cloud</h3>
+          <ul className="repair-queue">
+            {queue.events.map((e) => (
+              <li key={e.eventId}>
+                <p>
+                  <strong>{e.eventType}</strong> #{e.localSequence} · <span className="mono">{e.code ?? "unknown"}</span>
+                  {e.kind === "blocked" ? " · holding up later changes" : ""}
+                </p>
+                <p>{refusalText(e.code)}</p>
+                <button type="button" className="secondary" onClick={() => void viewPayload(e.eventId)}>
+                  {payload?.eventId === e.eventId ? "Hide what was sent" : "View what was sent"}
+                </button>
+                {payload?.eventId === e.eventId && (
+                  <pre className="payload" aria-label={`What was sent for #${e.localSequence}`}>
+                    {payload.json}
+                  </pre>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {queue && queue.conflicts.length > 0 && (
+        <section aria-label="Conflicts">
+          <h3>Conflicts</h3>
+          <p>
+            These were changed here and in the cloud at the same time. The cloud kept its version; settling them comes
+            with the conflict screen.
+          </p>
+          <ul>
+            {queue.conflicts.map((c) => (
+              <li key={c.conflictId}>
+                {c.aggregateType} · edited here from version {c.localBaseVersion}, the cloud is at {c.serverVersion}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       {error && (
         <p role="alert" className="field-error">

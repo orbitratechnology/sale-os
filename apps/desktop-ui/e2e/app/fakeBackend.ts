@@ -83,7 +83,19 @@ export interface FakeState {
   taxRates: TaxRateConfigDto[];
   taxCategories: TaxCategoryConfigDto[];
   /** Sync and linking (E17-T08). */
-  cloud: { configured: boolean; linkState: string; registerCode: string; pending: number; mayJoin: boolean; signedIn: boolean };
+  cloud: {
+    configured: boolean;
+    linkState: string;
+    registerCode: string;
+    pending: number;
+    mayJoin: boolean;
+    signedIn: boolean;
+    /** Refused events and conflicts shown on the sync page (E17-T09). */
+    refused: { eventId: string; localSequence: number; eventType: string; code: string; kind: string }[];
+    conflicts: number;
+    /** Sales the cloud has applied (AT-13): sale id → applied. */
+    synced: Set<string>;
+  };
 }
 
 export interface FakeSale {
@@ -192,7 +204,7 @@ function initialStateInner(preset: Preset): FakeState {
     categories: [],
     taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
     taxCategories: [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rateIds: [RATE], archived: false, version: 1 }],
-    cloud: { configured: true, linkState: "unlinked", registerCode: "R01", pending: 12, mayJoin: false, signedIn: false },
+    cloud: { configured: true, linkState: "unlinked", registerCode: "R01", pending: 12, mayJoin: false, signedIn: false, refused: [], conflicts: 0, synced: new Set() },
   };
 }
 
@@ -783,7 +795,51 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         lastErrorCode: c.linkState === "revoked" ? "SYNC_DEVICE_REVOKED" : null,
         clockSkewWarning: false,
         registerCode: c.registerCode,
+        indicator:
+          c.linkState === "revoked"
+            ? "revoked"
+            : c.linkState !== "linked"
+              ? "not_linked"
+              : c.refused.length + c.conflicts > 0
+                ? "attention"
+                : c.pending > 0
+                  ? "pending"
+                  : "synced",
+        rejected: c.refused.length,
+        conflicts: c.conflicts,
       };
+    }
+    case "sync_repair_queue":
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      return {
+        events: s.cloud.refused.map((e) => ({
+          ...e,
+          aggregateType: "sale",
+          aggregateId: e.eventId,
+          detail: null,
+          occurredAt: "2026-11-05T09:14:03.120Z",
+        })),
+        conflicts: Array.from({ length: s.cloud.conflicts }, (_, i) => ({
+          conflictId: `c${i}`,
+          aggregateType: "product",
+          aggregateId: `p${i}`,
+          localBaseVersion: 3,
+          serverVersion: 4,
+          createdAt: "2026-11-05T09:20:00.000Z",
+        })),
+      };
+    case "sync_repair_action": {
+      if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+      if (a.action === "view_payload") {
+        return { payloadJson: JSON.stringify({ eventId: a.eventId, payload: { pinHash: "[REDACTED]" } }, null, 2), savedFileName: null };
+      }
+      const name = s.saveAs.shift() ?? null;
+      return { payloadJson: null, savedFileName: name };
+    }
+    case "sale_sync_state": {
+      needSession(s);
+      const linked = s.cloud.linkState === "linked";
+      return { state: s.cloud.synced.has(String(a.saleId)) ? "synced" : linked ? "pending" : "local" };
     }
     case "sync_retry_now":
       needSession(s);

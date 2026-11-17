@@ -660,6 +660,102 @@ impl Random for OsRandom {
     }
 }
 
+/// The one-line sync state the status bar shows (E17-T09, PRD §5.1).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SyncIndicator {
+    NotLinked,
+    /// Everything acknowledged.
+    Synced,
+    /// Events waiting, and nothing wrong.
+    Pending,
+    /// Events waiting and the cloud cannot be reached.
+    Offline,
+    /// Conflicts or rejected events need a person.
+    Attention,
+    /// The owner disconnected this register.
+    Revoked,
+    /// The cloud needs a newer app.
+    UpdateRequired,
+}
+
+impl SyncIndicator {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotLinked => "not_linked",
+            Self::Synced => "synced",
+            Self::Pending => "pending",
+            Self::Offline => "offline",
+            Self::Attention => "attention",
+            Self::Revoked => "revoked",
+            Self::UpdateRequired => "update_required",
+        }
+    }
+}
+
+/// What the status bar says, from the stored sync state.
+pub fn indicator(
+    link_state: &str,
+    pending: u64,
+    needs_attention: u64,
+    last_error_code: Option<&str>,
+) -> SyncIndicator {
+    match link_state {
+        "revoked" => return SyncIndicator::Revoked,
+        "linked" => {}
+        _ => return SyncIndicator::NotLinked,
+    }
+    match last_error_code {
+        Some("SYNC_UPGRADE_REQUIRED") => return SyncIndicator::UpdateRequired,
+        Some("SYNC_DEVICE_REVOKED") => return SyncIndicator::Revoked,
+        _ => {}
+    }
+    if needs_attention > 0 {
+        return SyncIndicator::Attention;
+    }
+    let unreachable = matches!(
+        last_error_code,
+        Some("OFFLINE" | "TIMEOUT" | "SERVER_ERROR" | "DECODE_ERROR" | "AUTH_REQUIRED" | "SERVER_BUSY")
+    );
+    match (pending, unreachable) {
+        (0, _) => SyncIndicator::Synced,
+        (_, true) => SyncIndicator::Offline,
+        (_, false) => SyncIndicator::Pending,
+    }
+}
+
+/// A sale's mark (AT-13): `local` (no cloud link), `pending` (saved here, waiting),
+/// `synced` (the cloud has it) or `attention` (the cloud refused it).
+pub fn sale_sync(link_state: &str, outbox_status: Option<&str>) -> &'static str {
+    match outbox_status {
+        Some("applied" | "duplicate") => "synced",
+        Some("rejected" | "conflict") => "attention",
+        _ if link_state == "linked" => "pending",
+        _ => "local",
+    }
+}
+
+/// An event payload as it may be shown or sent to support: PIN hashes removed (the hash is
+/// not the PIN, but it is never anyone else's business).
+pub fn redact_payload(mut v: serde_json::Value) -> serde_json::Value {
+    fn walk(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(m) => {
+                for (k, x) in m.iter_mut() {
+                    if k == "pinHash" {
+                        *x = serde_json::Value::String("[REDACTED]".into());
+                    } else {
+                        walk(x);
+                    }
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(walk),
+            _ => {}
+        }
+    }
+    walk(&mut v);
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -710,6 +806,43 @@ mod tests {
             }
             .is_transient()
         );
+    }
+
+    #[test]
+    fn the_status_bar_states() {
+        use SyncIndicator::*;
+        assert_eq!(indicator("unlinked", 5, 0, None), NotLinked);
+        assert_eq!(indicator("linking", 5, 0, None), NotLinked);
+        assert_eq!(indicator("revoked", 5, 0, None), Revoked);
+        assert_eq!(indicator("linked", 0, 0, None), Synced);
+        assert_eq!(indicator("linked", 3, 0, None), Pending);
+        assert_eq!(indicator("linked", 3, 0, Some("TIMEOUT")), Offline);
+        assert_eq!(indicator("linked", 0, 0, Some("OFFLINE")), Synced);
+        assert_eq!(indicator("linked", 3, 1, Some("OFFLINE")), Attention);
+        assert_eq!(
+            indicator("linked", 3, 1, Some("SYNC_UPGRADE_REQUIRED")),
+            UpdateRequired
+        );
+        assert_eq!(indicator("linked", 3, 0, Some("SYNC_DEVICE_REVOKED")), Revoked);
+    }
+
+    #[test]
+    fn a_sale_is_marked_by_its_event() {
+        assert_eq!(sale_sync("unlinked", Some("pending")), "local");
+        assert_eq!(sale_sync("linked", Some("pending")), "pending");
+        assert_eq!(sale_sync("linked", Some("in_flight")), "pending");
+        assert_eq!(sale_sync("linked", Some("applied")), "synced");
+        assert_eq!(sale_sync("revoked", Some("duplicate")), "synced");
+        assert_eq!(sale_sync("linked", Some("rejected")), "attention");
+    }
+
+    #[test]
+    fn pin_hashes_never_leave_in_a_payload() {
+        let v = serde_json::json!({"userId": "u", "pinHash": "$argon2id$...", "nested": [{"pinHash": "x", "name": "y"}]});
+        let r = redact_payload(v);
+        assert_eq!(r["pinHash"], "[REDACTED]");
+        assert_eq!(r["nested"][0]["pinHash"], "[REDACTED]");
+        assert_eq!(r["nested"][0]["name"], "y");
     }
 
     #[test]

@@ -90,6 +90,9 @@
     "allow-sync-retry-now",
     "allow-sync-status",
     "allow-sync-link-start",
-    "allow-sync-link-complete"
+    "allow-sync-link-complete",
+    "allow-sync-repair-queue",
+    "allow-sync-repair-action",
+    "allow-sale-sync-state"
   ]
 }
