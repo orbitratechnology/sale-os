@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Corner Shop",
+    "addressLines": [
+      "1 High Street",
+      "Leeds LS1 1AA"
+    ],
+    "phone": "0113 496 0000",
+    "taxRegistrationNo": "GB123456789",
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "R01-000003",
+    "localTime": "2026-11-07 14:03",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Olu"
+  },
+  "currencyExponent": 2,
+  "lines": [
+    {
+      "name": "Kettle",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 2000,
+      "gross": 2000,
+      "discountLabel": "10%",
+      "discount": 200,
+      "priceOverridden": false
+    },
+    {
+      "name": "Mug",
+      "variantLabel": "",
+      "quantity": "2",
+      "unitPrice": 700,
+      "gross": 1400,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": true
+    }
+  ],
+  "totals": {
+    "subtotal": 3400,
+    "lineDiscounts": 200,
+    "orderDiscount": 100,
+    "orderDiscountLabel": "",
+    "tax": [
+      {
+        "name": "VAT 20%",
+        "amount": 517
+      }
+    ],
+    "pricesIncludeTax": true,
+    "rounding": 0,
+    "total": 3100
+  },
+  "tenders": [
+    {
+      "label": "Cash",
+      "amount": 3100,
+      "received": 5000,
+      "external": false,
+      "reference": null
+    }
+  ],
+  "change": 1900,
+  "footer": [
+    "Thank you!",
+    "Returns within 30 days with this receipt."
+  ],
+  "barcode": "R01-000003"
+}

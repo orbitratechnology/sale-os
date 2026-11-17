@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archived": {
+      "type": "boolean"
+    },
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "effectiveFrom": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "effectiveTo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "rate": {
+      "description": "Parts per million (200000 = 20%).",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "taxRateId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "taxRateId",
+    "businessId",
+    "name",
+    "rate",
+    "archived",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "tax_rate.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

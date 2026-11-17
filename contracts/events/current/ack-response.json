@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`GET /v1/sync/ack`: where the server's record of this register stands.",
+  "properties": {
+    "ackSequence": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "registerId": {
+      "description": "From the token, never a parameter.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "serverTime": {
+      "description": "RFC 3339.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "registerId",
+    "ackSequence",
+    "serverTime"
+  ],
+  "title": "AckResponse",
+  "type": "object"
+}

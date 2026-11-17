@@ -9,6 +9,18 @@ publish.workspace = true
 
 [dependencies]
 pos-domain.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+
+[[bin]]
+name = "event-schemas"
+path = "src/bin/event-schemas.rs"
 
 [lints]
 workspace = true

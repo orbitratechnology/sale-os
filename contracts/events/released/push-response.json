@@ -1,0 +1,127 @@
+{
+  "$defs": {
+    "EventResult": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "conflict: why (e.g. `VERSION`, `BARCODE_TAKEN`); rejected/transient: the code.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eventId": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "expectedSequence": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "localSequence": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "serverSeq": {
+          "description": "Position in the server's change log (applied and duplicate).",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "serverSnapshot": true,
+        "serverVersion": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ResultStatus"
+        }
+      },
+      "required": [
+        "eventId",
+        "localSequence",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ResultStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "applied"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "duplicate",
+          "description": "Already applied earlier: the original outcome is returned again.",
+          "type": "string"
+        },
+        {
+          "const": "conflict",
+          "description": "A master-data edit based on an old version: nothing changed on the server.",
+          "type": "string"
+        },
+        {
+          "const": "rejected",
+          "description": "Permanently refused (`code`); the client keeps the event in its repair queue.",
+          "type": "string"
+        },
+        {
+          "const": "out_of_order",
+          "description": "Not the next expected sequence (`expectedSequence`): the batch stopped here.",
+          "type": "string"
+        },
+        {
+          "const": "transient",
+          "description": "Could not be applied now (`code`, e.g. ORIGINAL_SALE_PENDING); retry later.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "ackSequence": {
+      "description": "The highest local sequence the server has handled for this register. The client\nnever moves its own ack past this (E17-T03).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/EventResult"
+      },
+      "type": "array"
+    },
+    "serverTime": {
+      "description": "RFC 3339, for the client's clock-skew check (ADR-006).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ackSequence",
+    "serverTime",
+    "results"
+  ],
+  "title": "PushResponse",
+  "type": "object"
+}

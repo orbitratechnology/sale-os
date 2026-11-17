@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "kind": "cash_session",
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Corner Shop",
+    "addressLines": [
+      "1 High Street",
+      "Leeds LS1 1AA"
+    ],
+    "phone": "0113 496 0000",
+    "taxRegistrationNo": "GB123456789",
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "R01-Z-0007",
+    "localTime": "2026-01-01 17:30",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Mia"
+  },
+  "currencyExponent": 2,
+  "lines": [],
+  "totals": {
+    "subtotal": 0,
+    "lineDiscounts": 0,
+    "orderDiscount": 0,
+    "orderDiscountLabel": null,
+    "tax": [],
+    "pricesIncludeTax": true,
+    "rounding": 0,
+    "total": 0
+  },
+  "tenders": [],
+  "change": 0,
+  "footer": [],
+  "barcode": "R01-Z-0007",
+  "z": {
+    "openedLocal": "2026-01-01 08:58",
+    "openedBy": "Olu",
+    "openingFloat": 10000,
+    "totals": {
+      "salesCount": 12,
+      "salesTotal": 12345,
+      "taxTotal": 2057,
+      "discountTotal": 300,
+      "roundingTotal": 2,
+      "tenders": [
+        {
+          "kind": "card_external",
+          "count": 4,
+          "amount": 4345
+        },
+        {
+          "kind": "cash",
+          "count": 9,
+          "amount": 8000
+        }
+      ],
+      "returnsCount": 2,
+      "refundsTotal": 650,
+      "refunds": [
+        {
+          "kind": "card_external",
+          "count": 1,
+          "amount": 400
+        },
+        {
+          "kind": "cash",
+          "count": 1,
+          "amount": 250
+        }
+      ]
+    },
+    "expected": 17750,
+    "counted": 17700,
+    "variance": -50,
+    "note": "50p coin found under the drawer after the count"
+  }
+}

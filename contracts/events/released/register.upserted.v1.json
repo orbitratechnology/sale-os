@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "locationId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "receiptPrefix": {
+      "type": "string"
+    },
+    "registerId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "retired": {
+      "type": "boolean"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "registerId",
+    "businessId",
+    "locationId",
+    "name",
+    "code",
+    "receiptPrefix",
+    "retired",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "register.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

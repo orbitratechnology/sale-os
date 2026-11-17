@@ -78,6 +78,8 @@ id_type!(
     EventId,
     ScanEventId,
     ConflictId,
+    ApprovalId,
+    ImportJobId,
 );
 
 #[cfg(test)]

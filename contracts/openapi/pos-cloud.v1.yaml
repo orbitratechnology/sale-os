@@ -5,8 +5,8 @@ info:
   summary: Device sync, owner accounts and consolidated reports for Sale OS registers.
   description: |
     Source of truth for the cloud REST contract (docs/backlog/07-contracts.md §3).
-    Stage 0 covers the unauthenticated service endpoints. Auth, sync and reports are added
-    by E16-T03..T06 and E17. Errors use RFC 9457 problem+json carrying a catalogued `code`
+    Covers the service endpoints and owner sign-up / sign-in (E16-T03). Devices, sync and
+    reports are added by E16-T04..T06 and E17. Errors use RFC 9457 problem+json carrying a catalogued `code`
     (docs/errors.md).
   contact:
     name: Sale OS engineering
@@ -19,6 +19,16 @@ servers:
 tags:
   - name: service
     description: Health and version policy.
+  - name: auth
+    description: Owner accounts (E16-T03).
+  - name: devices
+    description: Businesses, device registration, token rotation and revocation (E16-T04).
+  - name: sync
+    description: Event push and acknowledgement (E17-T04).
+  - name: catalog
+    description: Catalogue edits made in the cloud (E17-T06).
+  - name: reports
+    description: Consolidated reports across every register (E14-T05).
 paths:
   /v1/health:
     get:
@@ -64,7 +74,636 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/auth/signup:
+    post:
+      operationId: signup
+      tags: [auth]
+      summary: Creates an owner account (rate-limited per client address, 5 a minute).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "201":
+          description: The account was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignupResponse"
+        "409":
+          description: "`AUTH_EMAIL_TAKEN`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not an email, or the password is shorter than 10 characters or too common."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: "`AUTH_RATE_LIMITED`; `Retry-After` gives the seconds to wait."
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Signs an owner in; returns a 15-minute user token (EdDSA JWT).
+      description: |
+        A wrong password and an unknown email give the same status, body and (on average)
+        time. Rate-limited per client address and per email: 5 a minute, then blocks of
+        1, 2, 4… minutes (at most an hour).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: "`AUTH_CREDENTIALS_INVALID`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          description: "`AUTH_RATE_LIMITED`; `Retry-After` gives the seconds to wait."
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/businesses:
+    post:
+      operationId: createBusiness
+      tags: [devices]
+      summary: Creates the cloud business for a till's workspace (client-generated id).
+      description: Idempotent for the same owner and id (200 with the existing business).
+      security:
+        - userToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBusiness"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "200":
+          description: Already created by this owner.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`SYNC_BUSINESS_ID_TAKEN`: another account owns this id."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    get:
+      operationId: listBusinesses
+      tags: [devices]
+      summary: The businesses the owner belongs to (the "join existing" path, D-10).
+      security:
+        - userToken: []
+      responses:
+        "200":
+          description: The owner's businesses.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Business"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/devices/register:
+    post:
+      operationId: registerDevice
+      tags: [devices]
+      summary: Links this installation to a register of the owner's business.
+      description: |
+        Creates the location and register if the cloud does not have them yet. A device already
+        active on the register is revoked only with `replaceExisting: true` (the owner confirmed);
+        otherwise `409 SYNC_REGISTER_IN_USE`. Another owner's business, or none: `404 NOT_FOUND`.
+      security:
+        - userToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDevice"
+      responses:
+        "201":
+          description: Linked. The refresh token is shown once; only its hash is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCredentials"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`SYNC_REGISTER_IN_USE`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/auth/device/refresh:
+    post:
+      operationId: refreshDevice
+      tags: [devices]
+      summary: Rotates the device's refresh token and issues a new 15-minute access token.
+      description: Reusing a spent refresh token revokes the device (`401 SYNC_DEVICE_REVOKED`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+                  writeOnly: true
+      responses:
+        "200":
+          description: New tokens; the old refresh token is spent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCredentials"
+        "401":
+          description: "`SYNC_DEVICE_REVOKED` (revoked, or a spent token reused) or `AUTH_REQUIRED` (unknown or expired: link again)."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      summary: The devices of the owner's businesses.
+      security:
+        - userToken: []
+      responses:
+        "200":
+          description: Devices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      tags: [devices]
+      summary: Disconnects a device at once (its next request gets `401 SYNC_DEVICE_REVOKED`).
+      security:
+        - userToken: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Revoked.
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: no such device among the owner's businesses."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/sync/events:
+    post:
+      operationId: pushEvents
+      tags: [sync]
+      summary: Pushes a register's outbox events (E17-T04, ADR-010).
+      description: >-
+        Events are applied in `localSequence` order, each in its own transaction under a lock on
+        the register's sync row, and are acknowledged only once committed. A repeated event gets
+        `duplicate` with its first outcome (`originalStatus`); the same `eventId` with another
+        envelope gets `rejected: EVENT_ID_REUSED`. A gap gives `out_of_order` with
+        `expectedSequence`; an unknown type or newer `schemaVersion` gives
+        `rejected: EVENT_VERSION_UNSUPPORTED` without being acknowledged; a `transient` result
+        stops the batch. `ackSequence` is the highest sequence the server has committed.
+      security:
+        - deviceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushRequest"
+      responses:
+        "200":
+          description: Per-event results, in order, up to where the batch stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushResponse"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: "`PERMISSION_DENIED`: the request or an event names another register or business."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          description: "`VALIDATION_FAILED`: more than 200 events or 2 MB."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/sync/ack:
+    get:
+      operationId: getAck
+      tags: [sync]
+      summary: The highest local sequence the server has committed for the token's register.
+      security:
+        - deviceToken: []
+      responses:
+        "200":
+          description: The ack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AckResponse"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/catalog/products:
+    post:
+      operationId: saveProduct
+      tags: [catalog]
+      summary: Creates or edits a product from the cloud (E17-T06).
+      description: >-
+        The same rules as a register's `product.upserted`: the edit applies only on top of
+        `expectedVersion`, an active barcode or SKU must not belong to another product, and
+        the change reaches every register through the change feed with the cloud as origin.
+      security:
+        - userToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveProduct"
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedProduct"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: not a business of this owner."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`CONFLICT_VERSION` (changed since it was loaded), `CATALOG_DUPLICATE_BARCODE` or `CATALOG_DUPLICATE_SKU`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not a valid product."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/sync/changes:
+    get:
+      operationId: getChanges
+      tags: [sync]
+      summary: The change feed after a cursor (E17-T07).
+      description: >-
+        Master-data changes and other registers' facts of the token's business, in feed order.
+        Rows commit in `serverSeq` order (appenders serialize per business), so pulling after the
+        last seen position never skips a row. `nextCursor` is unchanged when nothing is new.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, pattern: "^v1:[0-9]+$" }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+        - name: unsent
+          in: query
+          required: false
+          description: >-
+            How many of its events the register still holds that the cloud has not accepted
+            (pending or refused), after its last push. Recorded for the consolidated report's
+            completeness (E14-T05).
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The next changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangesResponse"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not a cursor this server issued."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/reports/sales:
+    get:
+      operationId: getSalesReport
+      tags: [reports]
+      summary: Sales across every register, by day, register or tender (E14-T05).
+      description: >-
+        Live sales and returns the cloud has received, in minor units. `completeness` says per
+        register whether the cloud can vouch for having all of it: a register is `current` when
+        it confirmed its state within 5 minutes of `asOf` and then held nothing unaccepted
+        (PRD §15). A register reads its own business; an account names one it belongs to.
+      security:
+        - deviceToken: []
+        - userToken: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          description: Inclusive; at most 366 days after `from`.
+          schema: { type: string, format: date }
+        - name: groupBy
+          in: query
+          required: true
+          schema: { type: string, enum: [day, register, tender] }
+        - name: businessId
+          in: query
+          required: false
+          description: Required with an account token; with a device token it must be the device's own.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesReport"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: not a business this caller belongs to."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: a bad date or range, or no `businessId` with an account token."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/sync/bootstrap:
+    get:
+      operationId: getBootstrap
+      tags: [sync]
+      summary: Every master aggregate's current snapshot, paged (E17-T07).
+      description: >-
+        Pages list aggregates that others refer to first (business, locations, registers, tax
+        rates and categories, categories, settings, staff, products). Every page carries the
+        same `snapshotCursor`, the feed position when the first page was read; after the last
+        page, pull changes from it. `nextPage` resumes an interrupted bootstrap.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema: { type: string }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 2000 }
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BootstrapPage"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: not a page token this server issued."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 components:
+  securitySchemes:
+    userToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Owner token from /v1/auth/login (kind `user`, 15 minutes)."
+    deviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Device token (kind `device`, 15 minutes); the device must still be active."
   schemas:
     HealthResponse:
       type: object
@@ -93,6 +732,301 @@ components:
         updateUrl:
           type: string
           format: uri
+    NewBusiness:
+      type: object
+      required: [businessId, name, countryCode, timezone, currencyCode, currencyExponent, pricesIncludeTax]
+      properties:
+        businessId: {type: string, format: uuid}
+        name: {type: string, minLength: 1, maxLength: 80}
+        countryCode: {type: string, pattern: "^[A-Z]{2}$"}
+        timezone: {type: string, maxLength: 64}
+        currencyCode: {type: string, pattern: "^[A-Z]{3}$"}
+        currencyExponent: {type: integer, minimum: 0, maximum: 4}
+        pricesIncludeTax: {type: boolean}
+    Business:
+      type: object
+      required: [businessId, name, countryCode, timezone, currencyCode, currencyExponent, pricesIncludeTax, version, status]
+      properties:
+        businessId: {type: string, format: uuid}
+        name: {type: string}
+        countryCode: {type: string}
+        timezone: {type: string}
+        currencyCode: {type: string}
+        currencyExponent: {type: integer}
+        pricesIncludeTax: {type: boolean}
+        version: {type: integer}
+        status: {type: string, enum: [active, suspended, deleted]}
+    RegisterDevice:
+      type: object
+      required: [businessId, registerId, registerName, installationId, appVersion]
+      properties:
+        businessId: {type: string, format: uuid}
+        registerId: {type: string, format: uuid}
+        registerName: {type: string}
+        registerCode:
+          type: string
+          pattern: "^[A-Z0-9]{1,6}$"
+          description: Omitted, or used by another register of the business, the next free Rnn is assigned (E17-T08).
+        locationId:
+          type: string
+          format: uuid
+          description: Omitted when joining an existing business, the register goes to its first location.
+        locationName: {type: string}
+        installationId: {type: string, format: uuid}
+        appVersion: {type: string}
+        osInfo: {type: [string, "null"]}
+        replaceExisting: {type: boolean, default: false}
+    DeviceCredentials:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        deviceId: {type: string, format: uuid, description: Present on registration.}
+        accessToken: {type: string, description: "EdDSA JWT, kind `device`, with businessId, registerId and deviceId claims."}
+        refreshToken: {type: string, description: Opaque; keep it in the OS credential store.}
+        expiresIn: {type: integer, description: Seconds (900).}
+        registerCode: {type: string, description: "Registration only: the register's code, which may have been assigned."}
+        locationId: {type: string, format: uuid, description: "Registration only: the register's location."}
+    Device:
+      type: object
+      required: [deviceId, businessId, registerId, appVersion, status, registeredAt]
+      properties:
+        deviceId: {type: string, format: uuid}
+        businessId: {type: string, format: uuid}
+        registerId: {type: string, format: uuid}
+        appVersion: {type: string}
+        osInfo: {type: [string, "null"]}
+        status: {type: string, enum: [active, revoked]}
+        registeredAt: {type: string, format: date-time}
+        lastSeenAt: {type: [string, "null"], format: date-time}
+        revokedAt: {type: [string, "null"], format: date-time}
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          writeOnly: true
+    SignupResponse:
+      type: object
+      required: [accountId]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+    LoginResponse:
+      type: object
+      required: [userAccessToken, expiresIn]
+      properties:
+        userAccessToken:
+          type: string
+          description: EdDSA JWT; claims `sub` (account), `kind` = `user`, `iss`, `iat`, `exp`.
+        expiresIn:
+          type: integer
+          description: Seconds (900).
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      description: PRD §11.3. The payload follows `contracts/events/current/<eventType>.v<schemaVersion>.json`.
+      required: [eventId, businessId, locationId, registerId, localSequence, eventType, schemaVersion, aggregateType, aggregateId, occurredAt, payload]
+      properties:
+        eventId: { type: string, format: uuid }
+        businessId: { type: string, format: uuid }
+        locationId: { type: string, format: uuid }
+        registerId: { type: string, format: uuid }
+        localSequence: { type: integer, minimum: 1 }
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        baseVersion:
+          type: [integer, "null"]
+          minimum: 0
+          description: Master data only (ADR-011).
+        occurredAt: { type: string, format: date-time }
+        payload: { type: object }
+    PushRequest:
+      type: object
+      additionalProperties: false
+      required: [registerId, events]
+      properties:
+        registerId:
+          type: string
+          format: uuid
+          description: Must be the token's register (else 403).
+        events:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/EventEnvelope"
+    ResultStatus:
+      type: string
+      enum: [applied, duplicate, conflict, rejected, out_of_order, transient]
+    EventResult:
+      type: object
+      additionalProperties: false
+      required: [eventId, localSequence, status]
+      properties:
+        eventId: { type: string, format: uuid }
+        localSequence: { type: integer, minimum: 0 }
+        status: { $ref: "#/components/schemas/ResultStatus" }
+        serverSeq: { type: integer }
+        serverVersion: { type: integer, minimum: 0 }
+        serverSnapshot: {}
+        code:
+          type: string
+          description: "conflict: VERSION, BARCODE_TAKEN, SKU_TAKEN; rejected: EVENT_ID_REUSED, EVENT_VERSION_UNSUPPORTED, EVENT_INVALID, SNAPSHOT_MISMATCH; transient: ORIGINAL_SALE_PENDING, APPLIER_UNAVAILABLE, SERVER_BUSY."
+        detail: { type: string }
+        expectedSequence: { type: integer, minimum: 1 }
+        originalStatus: { $ref: "#/components/schemas/ResultStatus" }
+    PushResponse:
+      type: object
+      additionalProperties: false
+      required: [ackSequence, serverTime, results]
+      properties:
+        ackSequence:
+          type: integer
+          minimum: 0
+          description: The client never moves its own ack past this.
+        serverTime: { type: string, format: date-time }
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventResult"
+    AckResponse:
+      type: object
+      additionalProperties: false
+      required: [registerId, ackSequence, serverTime]
+      properties:
+        registerId: { type: string, format: uuid }
+        ackSequence: { type: integer, minimum: 0 }
+        serverTime: { type: string, format: date-time }
+    SaveProduct:
+      type: object
+      additionalProperties: false
+      required: [businessId, product, expectedVersion]
+      properties:
+        businessId: { type: string, format: uuid }
+        expectedVersion:
+          type: integer
+          minimum: 0
+          description: The version the edit started from (0 to create).
+        product:
+          type: object
+          description: "The whole product as in `contracts/events/current/product.upserted.v1.json`, with `version = expectedVersion + 1`."
+    SavedProduct:
+      type: object
+      additionalProperties: false
+      required: [productId, version, product]
+      properties:
+        productId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        product: { type: object }
+    Change:
+      type: object
+      additionalProperties: false
+      required: [serverSeq, aggregateType, aggregateId, kind, eventType, schemaVersion, snapshot]
+      properties:
+        serverSeq: { type: integer }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        version: { type: integer, minimum: 1 }
+        kind: { type: string, enum: [upsert, archive, fact] }
+        originRegisterId:
+          type: string
+          format: uuid
+          description: Absent when the change was made in the cloud.
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        snapshot:
+          type: object
+          description: "The payload of `eventType` v`schemaVersion` (contracts/events/current)."
+    ChangesResponse:
+      type: object
+      additionalProperties: false
+      required: [changes, nextCursor, hasMore]
+      properties:
+        changes:
+          type: array
+          items: { $ref: "#/components/schemas/Change" }
+        nextCursor: { type: string }
+        hasMore: { type: boolean }
+    SalesReportRow:
+      type: object
+      additionalProperties: false
+      required: [key, label, salesCount, grossMinor, taxMinor, discountMinor, returnsCount, refundsMinor, netMinor]
+      properties:
+        key: { type: string, description: "The date, the register id, or the tender kind." }
+        label: { type: string }
+        salesCount: { type: integer, minimum: 0 }
+        grossMinor: { type: integer }
+        taxMinor: { type: integer }
+        discountMinor: { type: integer }
+        returnsCount: { type: integer, minimum: 0 }
+        refundsMinor: { type: integer }
+        netMinor: { type: integer }
+    RegisterCompleteness:
+      type: object
+      additionalProperties: false
+      required: [registerId, code, name, pendingKnown, current]
+      properties:
+        registerId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        lastAckAt:
+          type: string
+          format: date-time
+          description: The last accepted push or report of what it holds; absent when never.
+        pendingKnown: { type: boolean, description: "It last said it holds events the cloud has not accepted." }
+        current: { type: boolean }
+    SalesReport:
+      type: object
+      additionalProperties: false
+      required: [groupBy, from, to, currencyCode, currencyExponent, rows, asOf, completeness]
+      properties:
+        groupBy: { type: string, enum: [day, register, tender] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        currencyCode: { type: string, pattern: "^[A-Z]{3}$" }
+        currencyExponent: { type: integer, minimum: 0, maximum: 4 }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/SalesReportRow" }
+        asOf: { type: string, format: date-time }
+        completeness:
+          type: object
+          additionalProperties: false
+          required: [registers]
+          properties:
+            registers:
+              type: array
+              items: { $ref: "#/components/schemas/RegisterCompleteness" }
+    BootstrapEntity:
+      type: object
+      additionalProperties: false
+      required: [aggregateType, aggregateId, eventType, schemaVersion, version, snapshot]
+      properties:
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        version: { type: integer, minimum: 1 }
+        snapshot: { type: object }
+    BootstrapPage:
+      type: object
+      additionalProperties: false
+      required: [snapshotCursor, entities]
+      properties:
+        snapshotCursor: { type: string }
+        entities:
+          type: array
+          items: { $ref: "#/components/schemas/BootstrapEntity" }
+        nextPage: { type: string }
     Problem:
       type: object
       description: RFC 9457 problem details with a catalogued error code.
@@ -148,5 +1082,14 @@ components:
             - SYNC_DEVICE_REVOKED
             - SYNC_UPGRADE_REQUIRED
             - SYNC_OUT_OF_ORDER
+            - AUTH_CREDENTIALS_INVALID
+            - AUTH_EMAIL_TAKEN
+            - AUTH_RATE_LIMITED
+            - AUTH_REQUIRED
+            - SYNC_REGISTER_IN_USE
+            - SYNC_BUSINESS_ID_TAKEN
+            - SYNC_OFFLINE
+            - SYNC_JOIN_NOT_ALLOWED
+            - NOT_FOUND
             - CONFLICT_VERSION
             - INTERNAL

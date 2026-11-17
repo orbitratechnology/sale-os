@@ -101,7 +101,7 @@ which uses a real Postgres and a real `cloud-api` and covers AT-06, AT-07 and AT
   - `schemars` generation.
   - An `xtask schema-compat` that diffs against the last released schemas and fails on breaking changes made without a version bump.
   - Upcaster registry.
-  - Migration `0011_sync.sql`.
+  - Migration `0013_sync.sql`.
 - **Acceptance:**
   - [ ] Every outbox event written in Stages 1–2 validates against its generated JSON Schema (a test replays the E15-T03 scenario outbox).
   - [ ] Removing a field without bumping `schemaVersion` fails `schema-compat`.
@@ -175,7 +175,7 @@ which uses a real Postgres and a real `cloud-api` and covers AT-06, AT-07 and AT
 - **Scope:**
   - A spike, then the decision on the change_log visibility approach ([05 C0003](../05-cloud-database.md#c0003-sync_inbox_changelogsql)).
   - `GET /bootstrap` (paged snapshot plus starting cursor) and `GET /changes`.
-  - The client pull loop and the inbound applier per the rule in [04 0011](../04-local-database.md#0011_syncsql).
+  - The client pull loop and the inbound applier per the rule in [04 0013](../04-local-database.md#0013_syncsql).
   - Facts from other registers update local balances and the cloud-scope reports.
 - **Acceptance:**
   - [ ] Bootstrapping a new register into a business with 50k variants completes in under 3 min on a 20 Mbps link, and is resumable after interruption (a page token).
@@ -236,6 +236,6 @@ which uses a real Postgres and a real `cloud-api` and covers AT-06, AT-07 and AT
 ### E14-T05 · Consolidated cloud reports
 - **Size** M · **Deps** E17-T05 · **PRD** REP-008 (P1, minimal version pulled in for §10.1 and §15 labelling)
 - **Acceptance:**
-  - [ ] `GET /v1/reports/sales` returns rollups by day, register and tender, with `completeness` per register.
-  - [ ] Desktop reports offer the scope "All registers (cloud)" when online, with the label "Last synced HH:MM — N registers have unsynced data", or "Fully synchronized" when every register's ack is current within 5 min (PRD §15).
-  - [ ] Offline, the cloud scope shows the last cached result labelled **stale** (§11.6).
+  - [x] `GET /v1/reports/sales` returns rollups by day, register and tender, with `completeness` per register.
+  - [x] Desktop reports offer the scope "All registers (cloud)" when online, with the label "Last synced HH:MM — N registers have unsynced data", or "Fully synchronized" when every register's ack is current within 5 min (PRD §15).
+  - [x] Offline, the cloud scope shows the last cached result labelled **stale** (§11.6).

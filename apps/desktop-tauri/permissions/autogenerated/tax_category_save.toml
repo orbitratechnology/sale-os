@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tax-category-save"
+description = "Enables the tax_category_save command without any pre-configured scope."
+commands.allow = ["tax_category_save"]
+
+[[permission]]
+identifier = "deny-tax-category-save"
+description = "Denies the tax_category_save command without any pre-configured scope."
+commands.deny = ["tax_category_save"]

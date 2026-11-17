@@ -29,11 +29,13 @@ Migration order and owner tasks:
 | 0004 | `0004_carts.sql` | E09-T01 | 1 |
 | 0005 | `0005_inventory.sql` | E11-T01 | 2 |
 | 0006 | `0006_sales_tenders.sql` | E09-T08 / E10-T01 | 2 |
-| 0007 | `0007_returns.sql` | E12-T01 | 2 |
-| 0008 | `0008_receipts_printing.sql` | E13-T02 / E13-T06 | 2 |
-| 0009 | `0009_cash_sessions.sql` | E15-T02 | 2 |
-| 0010 | `0010_import.sql` | E06-T07 | 1 |
-| 0011 | `0011_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
+| 0007 | `0007_receipts_printing.sql` | E13-T02 / E13-T06 | 2 |
+| 0008 | `0008_returns.sql` | E12-T01 | 2 |
+| 0009 | `0009_sales_history.sql` | E12-T03 (history indexes) | 2 |
+| 0010 | `0010_cash_sessions.sql` | E15-T02 | 2 |
+| 0011 | `0011_inventory_documents_final.sql` | E11-T03 (immutability triggers) | 2 |
+| 0012 | `0012_import.sql` | E06-T07 | 1 |
+| 0013 | `0013_sync.sql` | E17-T01 (`outbox_events` itself ships in 0001) | 3 |
 
 > Stage 0 ships a **throwaway** spike schema in a separate `spike/` directory. It is deleted
 > before Stage 1. The real migrations start at 0001 and are never edited after they merge.
@@ -577,7 +579,7 @@ Invariants checked by `LocalStore::apply` in debug builds, and by property tests
 
 ---
 
-## 0007_returns.sql
+## 0008_returns.sql
 
 ```sql
 CREATE TABLE returns (
@@ -644,7 +646,10 @@ The cloud detects this (`E17-T05`) and raises `return.over_returned` on the repa
 
 ---
 
-## 0008_receipts_printing.sql
+## 0007_receipts_printing.sql
+
+> Numbering: receipts landed before returns (E13 ahead of E12), so receipts are `0007` and
+> returns `0008`. Section order below is unchanged.
 
 ```sql
 CREATE TABLE receipts (
@@ -687,35 +692,44 @@ CREATE TABLE print_job_events (
 
 ---
 
-## 0009_cash_sessions.sql (DER-001)
+## 0009_sales_history.sql (E12-T03)
+
+Indexes only. History pages are newest first and keyed on `(business_date, occurred_at,
+sale_id)`, so each page is a range scan of an index whatever the size of the history.
 
 ```sql
-CREATE TABLE cash_sessions (
-  cash_session_id      TEXT PRIMARY KEY,
-  business_id          TEXT NOT NULL,
-  register_id          TEXT NOT NULL REFERENCES registers(register_id),
-  opened_by            TEXT NOT NULL,
-  opened_at            INTEGER NOT NULL,
-  opening_float_minor  INTEGER NOT NULL CHECK (opening_float_minor >= 0),
-  closed_by            TEXT,
-  closed_at            INTEGER,
-  expected_cash_minor  INTEGER,       -- float + cash sales − cash refunds (computed at close)
-  counted_cash_minor   INTEGER,
-  variance_minor       INTEGER,
-  business_date        TEXT NOT NULL, -- date the session opened
-  status               TEXT NOT NULL CHECK (status IN ('open','closed')),
-  note                 TEXT
-) STRICT;
-CREATE UNIQUE INDEX ux_one_open_session ON cash_sessions(register_id) WHERE status = 'open';
+CREATE INDEX ix_sales_history ON sales(business_date, occurred_at, sale_id);
+CREATE INDEX ix_sales_cashier_history ON sales(cashier_user_id, business_date, occurred_at, sale_id);
+CREATE INDEX ix_returns_original_sale ON returns(original_sale_id);
 ```
 
+## 0010_cash_sessions.sql (DER-001)
+
+As shipped (see the migration for the full text): `cash_sessions` with `session_seq` and
+`session_number` (`R01-Z-0001`, printed on the Z summary), the opening fields, and the close
+fields (`closed_by`, `closed_at`, `expected_cash_minor`, `counted_cash_minor`,
+`variance_minor`, `totals_json`, `note`) that a `CHECK` requires together once closed. One
+open session per register (`ux_one_open_session`). Triggers: a closed session is final, the
+opening fields never change, and nothing is deleted. `returns` gains `cash_session_id`;
+sales already had it. Both are set inside the sale's or return's own transaction from the
+register's open session.
+
+Expected cash = opening float + cash applied to sales (handed over less change) − cash
+refunds. The closing transaction recomputes the session totals and refuses to close
+(`CashSessionChanged`) if they differ from the ones the operator was shown.
+
 A cash session is a fact in two parts: `cash_session.opened` and `cash_session.closed` are
-separate outbox events. Closing a session updates `closed_*` once. A trigger forbids any
-update after `status = 'closed'`.
+separate outbox events. The Z summary is stored as a receipt (`source_type = 'cash_session'`)
+in the closing transaction.
 
 ---
 
-## 0010_import.sql (CAT-008)
+## 0011_inventory_documents_final.sql (E11-T03)
+
+Triggers only: `inventory_documents` rows are never updated or deleted (the movements were
+already append-only). A wrong document is corrected by posting a new one.
+
+## 0012_import.sql (CAT-008)
 
 ```sql
 CREATE TABLE import_jobs (
@@ -747,7 +761,7 @@ CREATE TABLE import_rows (
 
 ---
 
-## 0011_sync.sql (Stage 3)
+## 0013_sync.sql (Stage 3)
 
 ```sql
 CREATE TABLE sync_conflicts (                          -- SYN-010, AT-07

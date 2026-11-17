@@ -1,16 +1,23 @@
 //! Desktop shell. Commands here are thin adapters: deserialize, call an application
 //! service, map errors (ADR-012). Business rules live in `pos-domain` / `pos-application`.
 
+mod app_commands;
+mod cash_commands;
 mod command_names;
 mod commands;
-mod demo;
+mod config_commands;
+mod dto;
 mod error;
+mod import_commands;
+mod report_commands;
+mod sale_commands;
 mod services;
+mod sync_commands;
+mod sync_loop;
 
 pub use command_names::COMMANDS;
-pub use demo::DEMO_BARCODE;
-pub use error::IpcError;
-pub use services::AppServices;
+pub use error::{ErrorDetails, IpcError};
+pub use services::{AppServices, FileDialog};
 
 use pos_observability::LogConfig;
 use std::path::Path;
@@ -24,10 +31,94 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
         commands::app_info,
         commands::dev_money_add,
-        demo::dev_demo_setup,
-        demo::dev_demo_cart,
-        demo::dev_demo_scan,
-        demo::dev_demo_complete_sale,
+        app_commands::app_bootstrap_state,
+        app_commands::setup_create_workspace,
+        app_commands::auth_list_users,
+        app_commands::auth_login,
+        app_commands::auth_logout,
+        app_commands::auth_change_pin,
+        app_commands::auth_request_approval,
+        app_commands::staff_list,
+        app_commands::staff_create,
+        app_commands::staff_update,
+        app_commands::staff_deactivate,
+        app_commands::staff_reset_pin,
+        app_commands::register_go_live,
+        app_commands::settings_get,
+        app_commands::settings_update,
+        app_commands::app_preferences,
+        app_commands::auth_lock,
+        sale_commands::tax_list,
+        config_commands::categories_list,
+        config_commands::category_save,
+        config_commands::category_archive,
+        config_commands::tax_config_get,
+        config_commands::tax_rate_save,
+        config_commands::tax_rate_archive,
+        config_commands::tax_category_save,
+        config_commands::business_profile_get,
+        config_commands::business_profile_update,
+        import_commands::import_products_open,
+        import_commands::import_products_validate,
+        import_commands::import_products_commit,
+        import_commands::import_products_error_report,
+        import_commands::import_products_cancel,
+        sale_commands::product_list,
+        sale_commands::product_get,
+        sale_commands::product_create,
+        sale_commands::product_update,
+        sale_commands::product_archive,
+        sale_commands::catalog_lookup_code,
+        sale_commands::catalog_search,
+        sale_commands::scan_submit,
+        sale_commands::cart_current,
+        sale_commands::cart_add_variant,
+        sale_commands::cart_set_quantity,
+        sale_commands::cart_remove_line,
+        sale_commands::cart_set_line_discount,
+        sale_commands::cart_set_order_discount,
+        sale_commands::cart_override_price,
+        sale_commands::cart_clear,
+        sale_commands::cart_void,
+        sale_commands::checkout_complete,
+        sale_commands::receipt_get,
+        sale_commands::receipt_print,
+        sale_commands::print_job_retry,
+        sale_commands::print_job_resolve,
+        sale_commands::return_find,
+        sale_commands::return_preview,
+        sale_commands::return_create,
+        sale_commands::return_receipt_get,
+        sale_commands::return_receipt_print,
+        sale_commands::receipt_export_pdf,
+        sale_commands::sales_list,
+        sale_commands::sales_get,
+        sale_commands::inventory_post_document,
+        sale_commands::stock_verify,
+        sale_commands::stock_overview,
+        sale_commands::stock_history,
+        sale_commands::stock_rebuild,
+        report_commands::reports_sales_summary,
+        report_commands::reports_tender_mix,
+        report_commands::reports_top_products,
+        report_commands::reports_stock,
+        report_commands::reports_cloud_sales,
+        report_commands::export_csv,
+        report_commands::audit_list,
+        cash_commands::cash_session_current,
+        cash_commands::cash_session_open,
+        cash_commands::cash_session_close,
+        cash_commands::cash_session_z_get,
+        cash_commands::cash_session_z_print,
+        sync_commands::sync_retry_now,
+        sync_commands::sync_status,
+        sync_commands::sync_link_start,
+        sync_commands::sync_link_complete,
+        sync_commands::sync_repair_queue,
+        sync_commands::sync_repair_action,
+        sync_commands::sale_sync_state,
+        sync_commands::sync_conflicts_list,
+        sync_commands::sync_conflict_resolve,
     ])
 }
 
@@ -45,6 +136,8 @@ pub fn export_bindings(path: &Path) -> Result<(), String> {
 pub fn run() {
     let builder = specta_builder::<tauri::Wry>();
     tauri::Builder::default()
+        // Rust-side only: no `dialog:*` permission is granted to the WebView.
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
@@ -60,7 +153,8 @@ pub fn run() {
             .map_err(|e| eprintln!("logging unavailable: {e}"))
             .ok();
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
-            let services = tauri::async_runtime::block_on(AppServices::start(&dir, log));
+            let services = tauri::async_runtime::block_on(AppServices::start(&dir, log))
+                .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())));
             app.manage(services);
             Ok(())
         })
@@ -70,4 +164,44 @@ pub fn run() {
             eprintln!("Sale OS failed to start: {e}");
             std::process::exit(1);
         });
+}
+
+/// The system "Open" and "Save as" dialogs, opened from Rust over the main window.
+struct NativeFileDialog(tauri::AppHandle);
+
+impl services::FileDialog for NativeFileDialog {
+    fn ask(
+        &self,
+        suggested_name: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut dialog = self
+            .0
+            .dialog()
+            .file()
+            .set_file_name(suggested_name)
+            .add_filter(filter.0, filter.1);
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.save_file(move |chosen| {
+            let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
+        });
+        rx
+    }
+
+    fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut dialog = self.0.dialog().file().add_filter(filter.0, filter.1);
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.pick_file(move |chosen| {
+            let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
+        });
+        rx
+    }
 }

@@ -42,5 +42,14 @@ to the action below.
 | `SYNC_DEVICE_REVOKED` |  | The owner disconnected this register from the cloud. | Explain; local sales continue. |
 | `SYNC_UPGRADE_REQUIRED` |  | The cloud requires a newer app (`details.minVersion`). | Prompt to update; local sales continue. |
 | `SYNC_OUT_OF_ORDER` | yes | The server expected a different event sequence (REST only). | Resend automatically. |
+| `AUTH_CREDENTIALS_INVALID` |  | Cloud sign-in failed: the email or the password is wrong (never says which). | Let the owner retry or reset the password. |
+| `AUTH_EMAIL_TAKEN` |  | A cloud account with this email already exists. | Offer to sign in instead. |
+| `AUTH_RATE_LIMITED` |  | Too many cloud sign-in attempts. The `Retry-After` header says when to try again. | Show when to try again. |
+| `AUTH_REQUIRED` |  | The cloud request has no valid token (missing, expired or wrong kind). | Sign in to the cloud again. |
+| `SYNC_REGISTER_IN_USE` |  | Another device is linked to this register; linking this one disconnects it. | Ask the owner to confirm replacing the other device. |
+| `SYNC_BUSINESS_ID_TAKEN` |  | Another cloud account already owns a business with this ID. | Explain; link to another business or contact support. |
+| `SYNC_OFFLINE` |  | The cloud could not be reached (no connection, a timeout, or a server error). | Check the connection and try again; local sales continue. |
+| `SYNC_JOIN_NOT_ALLOWED` |  | This register already has live sales or products, so it cannot join another business (joining replaces its data). | Explain; offer to create a cloud business from this register instead. |
+| `NOT_FOUND` |  | No such cloud record for this account or device (also the answer for another business's records). | Refresh the list. |
 | `CONFLICT_VERSION` |  | Someone else changed this record first. | Open the conflict view. |
 | `INTERNAL` |  | A bug. The correlation ID matches a log line. | Offer the diagnostics bundle. |

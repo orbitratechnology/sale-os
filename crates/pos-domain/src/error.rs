@@ -41,6 +41,15 @@ pub enum ErrorCode {
     SyncDeviceRevoked,
     SyncUpgradeRequired,
     SyncOutOfOrder,
+    AuthCredentialsInvalid,
+    AuthEmailTaken,
+    AuthRateLimited,
+    AuthRequired,
+    SyncRegisterInUse,
+    SyncBusinessIdTaken,
+    SyncOffline,
+    SyncJoinNotAllowed,
+    NotFound,
     ConflictVersion,
     Internal,
 }
@@ -88,6 +97,15 @@ impl ErrorCode {
             SyncDeviceRevoked => "SYNC_DEVICE_REVOKED",
             SyncUpgradeRequired => "SYNC_UPGRADE_REQUIRED",
             SyncOutOfOrder => "SYNC_OUT_OF_ORDER",
+            AuthCredentialsInvalid => "AUTH_CREDENTIALS_INVALID",
+            AuthEmailTaken => "AUTH_EMAIL_TAKEN",
+            AuthRateLimited => "AUTH_RATE_LIMITED",
+            AuthRequired => "AUTH_REQUIRED",
+            SyncRegisterInUse => "SYNC_REGISTER_IN_USE",
+            SyncBusinessIdTaken => "SYNC_BUSINESS_ID_TAKEN",
+            SyncOffline => "SYNC_OFFLINE",
+            SyncJoinNotAllowed => "SYNC_JOIN_NOT_ALLOWED",
+            NotFound => "NOT_FOUND",
             ConflictVersion => "CONFLICT_VERSION",
             Internal => "INTERNAL",
         }
@@ -232,6 +250,42 @@ impl ErrorCode {
                 "The server expected a different event sequence (REST only).",
                 "Resend automatically.",
             ),
+            AuthCredentialsInvalid => (
+                "Cloud sign-in failed: the email or the password is wrong (never says which).",
+                "Let the owner retry or reset the password.",
+            ),
+            AuthEmailTaken => (
+                "A cloud account with this email already exists.",
+                "Offer to sign in instead.",
+            ),
+            AuthRateLimited => (
+                "Too many cloud sign-in attempts. The `Retry-After` header says when to try again.",
+                "Show when to try again.",
+            ),
+            AuthRequired => (
+                "The cloud request has no valid token (missing, expired or wrong kind).",
+                "Sign in to the cloud again.",
+            ),
+            SyncRegisterInUse => (
+                "Another device is linked to this register; linking this one disconnects it.",
+                "Ask the owner to confirm replacing the other device.",
+            ),
+            SyncBusinessIdTaken => (
+                "Another cloud account already owns a business with this ID.",
+                "Explain; link to another business or contact support.",
+            ),
+            SyncOffline => (
+                "The cloud could not be reached (no connection, a timeout, or a server error).",
+                "Check the connection and try again; local sales continue.",
+            ),
+            SyncJoinNotAllowed => (
+                "This register already has live sales or products, so it cannot join another business (joining replaces its data).",
+                "Explain; offer to create a cloud business from this register instead.",
+            ),
+            NotFound => (
+                "No such cloud record for this account or device (also the answer for another business's records).",
+                "Refresh the list.",
+            ),
             ConflictVersion => (
                 "Someone else changed this record first.",
                 "Open the conflict view.",
@@ -327,7 +381,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 35);
+        assert_eq!(seen.len(), 44);
     }
 
     #[test]

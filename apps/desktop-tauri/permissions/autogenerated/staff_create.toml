@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-staff-create"
+description = "Enables the staff_create command without any pre-configured scope."
+commands.allow = ["staff_create"]
+
+[[permission]]
+identifier = "deny-staff-create"
+description = "Denies the staff_create command without any pre-configured scope."
+commands.deny = ["staff_create"]

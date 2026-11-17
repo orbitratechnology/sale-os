@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "BarcodeQualifier": {
+      "enum": [
+        "primary",
+        "alias",
+        "pack"
+      ],
+      "type": "string"
+    },
+    "BarcodeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "packQty": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "qualifier": {
+          "$ref": "#/$defs/BarcodeQualifier"
+        },
+        "raw": {
+          "type": "string"
+        },
+        "symbology": {
+          "$ref": "#/$defs/Symbology"
+        },
+        "value": {
+          "description": "Normalized: the lookup key, unique among active products.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "value",
+        "raw",
+        "symbology",
+        "qualifier",
+        "packQty"
+      ],
+      "type": "object"
+    },
+    "ProductType": {
+      "enum": [
+        "stock",
+        "non_stock",
+        "service"
+      ],
+      "type": "string"
+    },
+    "Symbology": {
+      "enum": [
+        "ean13",
+        "ean8",
+        "upc_a",
+        "upc_e",
+        "code128",
+        "code39",
+        "itf14",
+        "qr",
+        "data_matrix",
+        "internal",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Unit": {
+      "enum": [
+        "ea",
+        "kg",
+        "g",
+        "l",
+        "ml",
+        "m",
+        "cm",
+        "box",
+        "pack"
+      ],
+      "type": "string"
+    },
+    "VariantV1": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "type": "boolean"
+        },
+        "barcodes": {
+          "items": {
+            "$ref": "#/$defs/BarcodeV1"
+          },
+          "type": "array"
+        },
+        "cost": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lowStockThreshold": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "options": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "price": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "scanQty": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "sku": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trackStock": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "isDefault",
+        "options",
+        "price",
+        "trackStock",
+        "scanQty",
+        "barcodes",
+        "archived"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The whole product aggregate. An archive is an upsert with `archived: true`.",
+  "properties": {
+    "archived": {
+      "type": "boolean"
+    },
+    "categoryId": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "productType": {
+      "$ref": "#/$defs/ProductType"
+    },
+    "quickSelect": {
+      "type": "boolean"
+    },
+    "taxCategoryId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "unit": {
+      "$ref": "#/$defs/Unit"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/VariantV1"
+      },
+      "type": "array"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "productType",
+    "unit",
+    "taxCategoryId",
+    "quickSelect",
+    "archived",
+    "variants",
+    "version"
+  ],
+  "title": "product.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

@@ -5,15 +5,34 @@
 //! - One writer connection (all business writes are serialised) plus a small pool of
 //!   read-only connections for search and reports.
 
+mod audit_queries;
+mod cart_queries;
+mod cash;
+mod cash_queries;
+mod catalog_queries;
+mod cloud_report_cache;
+mod config_queries;
+mod conflict_queries;
 mod error;
+mod export_queries;
+mod import_queries;
+mod link_store;
 mod migrate;
 mod pragmas;
-pub mod spike;
+mod queries;
+mod receipt_queries;
+mod report_queries;
+mod return_queries;
+mod sales_queries;
+mod stock_queries;
 mod store;
+mod sync_store;
+pub use sync_store::{ConflictSummary, RepairEvent, SyncStatusRecord};
 
 pub use error::StoreError;
 pub use migrate::{MIGRATOR, MigrationReport};
 pub use pragmas::PragmaReport;
+pub use stock_queries::StartupStockCheck;
 pub use store::SqliteStore;
 
 use sqlx::migrate::Migrator;

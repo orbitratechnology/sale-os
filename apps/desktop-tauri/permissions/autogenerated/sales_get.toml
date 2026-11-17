@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sales-get"
+description = "Enables the sales_get command without any pre-configured scope."
+commands.allow = ["sales_get"]
+
+[[permission]]
+identifier = "deny-sales-get"
+description = "Denies the sales_get command without any pre-configured scope."
+commands.deny = ["sales_get"]

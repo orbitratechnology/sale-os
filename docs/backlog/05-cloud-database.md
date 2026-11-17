@@ -4,6 +4,13 @@ Migrations live in `crates/pos-cloud-db/migrations/`. They are applied by
 `cloud-api migrate`, which runs as the **owner** role. The service itself connects as
 `pos_app`, a role that does not own the tables and does not have `BYPASSRLS` (ADR-016).
 
+**As built (E16-T02):** migration `0002` creates `pos_app` (NOLOGIN). The service's login role
+is granted membership in it (`GRANT pos_app TO <login role>`), and `TenantTx::begin` runs
+`SET LOCAL ROLE pos_app` before `set_config('app.business_id', …, true)`, so row-level
+security applies even if the service were misconfigured to log in as the owner. The file
+numbers are sqlx's (`0002_identity_tenancy.sql` = C0001, `0003_rls_policies.sql` = C0007);
+`0001_service_meta.sql` came from E16-T01.
+
 Migration order:
 
 | # | File | Task |
@@ -162,6 +169,10 @@ CREATE TABLE change_log (
 CREATE INDEX ix_change_log_business_seq ON change_log(business_id, server_seq);
 ```
 
+**As built (E17-T04, migration `0005`):** `change_log.aggregate_id` is `text`, because a
+setting's id is its key. `event_inbox` and `register_sync_state` have foreign keys to
+`registers`. The application role may only insert into `event_inbox` and `change_log`.
+
 **Cursor semantics.** The pull cursor is the opaque string `"v1:<server_seq>"`.
 `server_seq` comes from a `bigserial`, so it can have gaps but never goes backwards. Rows are
 written in the same transaction as the change they describe.
@@ -175,6 +186,14 @@ ways of doing this:
 - (b) `pg_snapshot_xmin` visibility filtering.
 
 The default is (a). It is simple, and the throughput per business is low.
+
+**Decided (E17-T07): (a).** `append_change` takes `pg_advisory_xact_lock` on the business
+before it draws `server_seq`, and holds it to commit, so one business's feed rows commit in
+order. A property test (8 concurrent writers holding their transactions open for a moment,
+some rolling back, and a reader pulling continuously) sees exactly the committed rows, each
+once, in order; with the lock removed it fails every run. Migration `0008` adds
+`event_type` and `schema_version` to `change_log`, so a pulled snapshot can be parsed; a
+cash session's opening and closing share one aggregate type.
 
 ## C0004 master_data.sql
 
@@ -211,6 +230,16 @@ CREATE TABLE product_barcodes (business_id uuid, barcode_id uuid, variant_id uui
 CREATE UNIQUE INDEX ux_cloud_barcode ON product_barcodes(business_id, value_normalized) WHERE status = 'active';
 ```
 
+**As built (E17-T06, migration `0007_master_data.sql`):** every master row keeps its
+aggregate's last `snapshot` (added to `businesses`, `locations` and `registers` too), which is
+what a conflict returns and what bootstrap will serve. The business, location and register
+rows that linking creates start at **version 0**, with no snapshot. The register's own first
+events (base 0) then take them to version 1 instead of conflicting with themselves.
+`product_barcodes` carries `product_id` and is replaced as a set on each upsert, so
+`pos_app` may delete from it. Version checks and the barcode and SKU pre-checks run under a
+per-business advisory lock (`pg_advisory_xact_lock`), so concurrent edits from different
+registers apply one at a time.
+
 **Cross-register uniqueness collisions.** Two registers can each create the same barcode or
 SKU while offline. The second `product.upserted` that arrives then breaks `ux_cloud_barcode`.
 
@@ -219,6 +248,17 @@ The applier catches the unique violation and returns `conflict` with the reason
 fixes: reassign the barcode, or merge.
 
 ## C0005 facts.sql
+
+**As built (E17-T05, migration `0006_facts.sql`):** each fact keeps its whole payload in
+`snapshot`, beside the columns reports and stock need (sale lines, tenders, return lines,
+refunds and movements are rows of their own). A closing is its own fact,
+`cash_session_closings`, so no fact row is ever updated. `pos_app` may only insert into fact
+tables; it may update only `stock_balances` and `daily_sales_rollup`. A new `sync_flags` table
+holds what needs an owner's eye: `negative_stock` (a sellable balance pushed below zero) and
+`over_return` (more returned across registers than was sold). `tender_status_events` waits for
+`tender.status_changed` (E10-T04). Sandbox sales are stored, but stay out of the rollup and the
+change feed. Audit entries are stored, but not fanned out to other registers.
+
 
 These tables mirror the local `sales`, `sale_lines`, `tenders`, `tender_status_events`,
 `returns`, `return_lines`, `refunds`, `inventory_documents`, `stock_movements`,

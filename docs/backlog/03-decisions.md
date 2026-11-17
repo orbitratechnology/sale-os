@@ -176,7 +176,7 @@ campaign in `E19-T02`.
 
 ### ADR-013 Authentication and credentials
 
-- **Staff PIN:** 4–8 digits, hashed with Argon2id (`m=19 MiB, t=2, p=1`) with a per-user salt.
+- **Staff PIN:** 4–8 digits, hashed with Argon2id (`m=64 MiB, t=3, p=1`) with a per-user salt. The originally proposed `m=19 MiB, t=2` measured only about 18 ms per verification on current hardware (E05-T02), below the 50 ms floor, so the cost was raised: about 135 ms measured. Stored hashes record their parameters, so the cost can be raised again later without breaking existing PINs. A 4–8 digit PIN cannot resist an offline attack on a stolen database whatever the cost; database encryption is evaluated in E19-T05.
   After 5 failures the account is locked for 30 s. The lockout doubles on each further failure,
   up to 15 min. Throttle state is device-local.
 - **Staff PIN hashes sync** to the other registers of the same business, so a cashier can sign
@@ -191,14 +191,23 @@ campaign in `E19-T02`.
 - The refresh token is stored in the **OS credential store** (Windows Credential Manager, via
   the `keyring` crate). It is never stored in SQLite, config files or the WebView.
 
+- *As built (E16-T03):* JWTs are signed with Ed25519 through `ed25519-dalek` directly (no
+  JWT library: `jsonwebtoken`'s pure-Rust backend pulls in `rsa`, which has an open RustSec
+  advisory). Verification accepts only `alg: EdDSA`, checks the issuer, the token kind
+  (`user` / `device`) and the expiry.
+
 ### ADR-014 Receipt rendering
 
 - There is one canonical `ReceiptDocument`: a JSON-serializable model built from a sale or
   return snapshot.
 - Renderers:
   - **HTML preview:** a React component that reads the same JSON.
-  - **PDF:** rendered in Rust with `printpdf` and an **embedded Noto Sans** font, so glyph
-    coverage does not depend on the OS.
+  - **PDF:** rendered in Rust with an **embedded Noto Sans** font family, so glyph
+    coverage does not depend on the OS. *Implemented (E13-T04) with `krilla` instead of
+    `printpdf`*: it subsets fonts and writes ToUnicode maps (small, searchable PDFs), and
+    each run is shaped with `rustybuzz`, so Arabic joins and Devanagari forms conjuncts.
+    Fallback fonts cover Arabic, Devanagari, Chinese/Japanese (GB 2312 + JIS X 0208) and
+    Korean (KS X 1001 Hangul); see `crates/pos-receipts/fonts/README.md`.
   - **ESC/POS:** a byte encoder with a capability profile.
 - The PDF and ESC/POS renderers have separate golden test suites (PRD §12.4).
 

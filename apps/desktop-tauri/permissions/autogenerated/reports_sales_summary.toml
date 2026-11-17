@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reports-sales-summary"
+description = "Enables the reports_sales_summary command without any pre-configured scope."
+commands.allow = ["reports_sales_summary"]
+
+[[permission]]
+identifier = "deny-reports-sales-summary"
+description = "Denies the reports_sales_summary command without any pre-configured scope."
+commands.deny = ["reports_sales_summary"]

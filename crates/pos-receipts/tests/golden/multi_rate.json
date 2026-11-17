@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Corner Shop",
+    "addressLines": [
+      "1 High Street",
+      "Leeds LS1 1AA"
+    ],
+    "phone": "0113 496 0000",
+    "taxRegistrationNo": "GB123456789",
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "R01-000004",
+    "localTime": "2026-11-07 14:03",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Olu"
+  },
+  "currencyExponent": 2,
+  "lines": [
+    {
+      "name": "Cheese",
+      "variantLabel": "",
+      "quantity": "0.333 kg",
+      "unitPrice": 1249,
+      "gross": 416,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "Bread",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 300,
+      "gross": 300,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    }
+  ],
+  "totals": {
+    "subtotal": 716,
+    "lineDiscounts": 0,
+    "orderDiscount": 0,
+    "orderDiscountLabel": null,
+    "tax": [
+      {
+        "name": "State 6%",
+        "amount": 25
+      },
+      {
+        "name": "City 2%",
+        "amount": 8
+      }
+    ],
+    "pricesIncludeTax": false,
+    "rounding": 0,
+    "total": 749
+  },
+  "tenders": [
+    {
+      "label": "Cash",
+      "amount": 749,
+      "received": 1000,
+      "external": false,
+      "reference": null
+    }
+  ],
+  "change": 251,
+  "footer": [
+    "Thank you!",
+    "Returns within 30 days with this receipt."
+  ],
+  "barcode": "R01-000004"
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archived": {
+      "type": "boolean"
+    },
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "categoryId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "name": {
+      "type": "string"
+    },
+    "parentId": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sortOrder": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "categoryId",
+    "businessId",
+    "name",
+    "sortOrder",
+    "archived",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "category.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

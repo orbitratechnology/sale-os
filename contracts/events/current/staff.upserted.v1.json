@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "Role": {
+      "enum": [
+        "owner",
+        "manager",
+        "cashier"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active": {
+      "type": "boolean"
+    },
+    "businessId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "mustChangePin": {
+      "type": "boolean"
+    },
+    "pinHash": {
+      "description": "Argon2id PHC string; the PIN itself never leaves the device.",
+      "type": "string"
+    },
+    "pinUpdatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "role": {
+      "$ref": "#/$defs/Role"
+    },
+    "updatedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "userId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "version": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "userId",
+    "businessId",
+    "displayName",
+    "role",
+    "pinHash",
+    "pinUpdatedAt",
+    "mustChangePin",
+    "active",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "staff.upserted v1",
+  "type": "object",
+  "x-schema-version": 1
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A standalone audit entry (login failures, lockouts, approvals, reprints, exports...).",
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "auditId": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "entityId": {
+      "type": "string"
+    },
+    "entityType": {
+      "type": "string"
+    },
+    "metadata": true
+  },
+  "required": [
+    "auditId",
+    "action",
+    "entityType",
+    "entityId",
+    "metadata"
+  ],
+  "title": "audit.recorded v1",
+  "type": "object",
+  "x-schema-version": 1
+}

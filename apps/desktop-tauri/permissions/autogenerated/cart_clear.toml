@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-clear"
+description = "Enables the cart_clear command without any pre-configured scope."
+commands.allow = ["cart_clear"]
+
+[[permission]]
+identifier = "deny-cart-clear"
+description = "Denies the cart_clear command without any pre-configured scope."
+commands.deny = ["cart_clear"]

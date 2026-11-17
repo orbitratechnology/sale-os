@@ -1,0 +1,23 @@
+name,variant,sku,barcode,price,cost,unit,tax_category,track_stock,low_stock_threshold
+Cola 330ml,,COLA330,4006381333931,1.20,0.55,ea,Standard,yes,24
+Cola Zero 330ml,,COLAZ330,5000112546415,1.20,0.55,ea,Standard,yes,24
+Sparkling Water 500ml,,WATER500,5000112637922,0.95,0.30,ea,Standard,yes,12
+Orange Juice 1L,,OJ1L,5010477348678,2.10,1.10,ea,Standard,yes,6
+Ready Salted Crisps,,CRISP-RS,5000159407236,0.85,0.35,ea,Standard,yes,20
+Cheese & Onion Crisps,,CRISP-CO,5000159461122,0.85,0.35,ea,Standard,yes,20
+Milk Chocolate Bar,,CHOC-MILK,7622210449283,0.99,0.45,ea,Standard,yes,30
+Mints,,MINTS,50173570,0.65,0.20,ea,Standard,yes,30
+Whole Milk 1L,,MILK1L,5000128104692,1.15,0.70,ea,Standard,yes,10
+White Bread,,BREAD-W,5010044000213,1.40,0.60,ea,Standard,yes,8
+Free Range Eggs (6),,EGGS6,5000169094716,2.25,1.30,ea,Standard,yes,6
+Bananas,,BANANA,,1.10,0.45,kg,Standard,yes,2.5
+Apples,,APPLE,,2.40,1.00,kg,Standard,yes,2
+Cheddar Cheese,,CHEDDAR,,9.50,5.20,kg,Standard,yes,1
+Teabags (80),,TEA80,5000208020212,3.20,1.80,ea,Standard,yes,6
+Instant Coffee 100g,,COFFEE100,7613036258162,4.75,2.90,ea,Standard,yes,4
+Newspaper,,NEWS,,1.50,,ea,Standard,no,
+T-shirt,S,TSHIRT-S,,9.99,4.00,ea,Standard,yes,3
+T-shirt,M,TSHIRT-M,,9.99,4.00,ea,Standard,yes,3
+T-shirt,L,TSHIRT-L,,9.99,4.00,ea,Standard,yes,3
+Batteries AA (4),,BATT-AA4,5000394023479,4.99,2.10,ea,Standard,yes,5
+Lighter,,LIGHTER,,1.00,0.30,ea,Standard,yes,10

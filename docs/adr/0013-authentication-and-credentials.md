@@ -12,7 +12,7 @@ money, and hardware independence. This ADR records the engineering choice the ba
 
 ## Decision
 
-- **Staff PIN:** 4–8 digits, hashed with Argon2id (`m=19 MiB, t=2, p=1`) with a per-user salt.
+- **Staff PIN:** 4–8 digits, hashed with Argon2id (`m=64 MiB, t=3, p=1`) with a per-user salt. The originally proposed `m=19 MiB, t=2` measured only about 18 ms per verification on current hardware (E05-T02), below the 50 ms floor, so the cost was raised: about 135 ms measured. Stored hashes record their parameters, so the cost can be raised again later without breaking existing PINs. A 4–8 digit PIN cannot resist an offline attack on a stolen database whatever the cost; database encryption is evaluated in E19-T05.
   After 5 failures the account is locked for 30 s. The lockout doubles on each further failure,
   up to 15 min. Throttle state is device-local.
 - **Staff PIN hashes sync** to the other registers of the same business, so a cashier can sign

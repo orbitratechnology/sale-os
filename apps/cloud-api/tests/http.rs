@@ -6,7 +6,6 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use cloud_api::{AppState, Config, router};
 use http_body_util::BodyExt;
-use std::sync::Arc;
 use tower::ServiceExt;
 
 async fn call(state: AppState, req: Request<Body>) -> (StatusCode, serde_json::Value, String) {
@@ -26,10 +25,7 @@ async fn call(state: AppState, req: Request<Body>) -> (StatusCode, serde_json::V
 }
 
 fn state(config: Config) -> AppState {
-    AppState {
-        config: Arc::new(config),
-        db: None,
-    }
+    AppState::new(config, None)
 }
 
 fn get(uri: &str) -> Request<Body> {
@@ -57,14 +53,7 @@ async fn health_reports_unavailable_database_as_503() {
     let mut cfg = Config::for_tests();
     cfg.database_url = Some("postgres://nobody@127.0.0.1:1/none".into());
     let db = Some(pos_cloud_db::connect_lazy(cfg.database_url.as_deref().unwrap()).unwrap());
-    let (status, body, _) = call(
-        AppState {
-            config: Arc::new(cfg),
-            db,
-        },
-        get("/v1/health"),
-    )
-    .await;
+    let (status, body, _) = call(AppState::new(cfg, db), get("/v1/health")).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["database"], "unavailable");
 }
@@ -132,14 +121,7 @@ async fn migrates_and_reports_healthy_with_postgres() {
     assert_eq!(family, "sale-os-cloud");
     let mut cfg = Config::for_tests();
     cfg.database_url = Some(url);
-    let (status, body, _) = call(
-        AppState {
-            config: Arc::new(cfg),
-            db: Some(pool),
-        },
-        get("/v1/health"),
-    )
-    .await;
+    let (status, body, _) = call(AppState::new(cfg, Some(pool)), get("/v1/health")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["database"], "ok");
 }

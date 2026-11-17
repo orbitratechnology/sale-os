@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "kind": "return",
+  "originalReceipt": "R01-000001",
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Corner Shop",
+    "addressLines": [
+      "1 High Street",
+      "Leeds LS1 1AA"
+    ],
+    "phone": "0113 496 0000",
+    "taxRegistrationNo": "GB123456789",
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "R01-R-000001",
+    "localTime": "2026-11-07 14:03",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Olu"
+  },
+  "currencyExponent": 2,
+  "lines": [
+    {
+      "name": "Tea",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 333,
+      "gross": 333,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    }
+  ],
+  "totals": {
+    "subtotal": 333,
+    "lineDiscounts": 0,
+    "orderDiscount": 0,
+    "orderDiscountLabel": null,
+    "tax": [
+      {
+        "name": "Tax refunded",
+        "amount": 56
+      }
+    ],
+    "pricesIncludeTax": true,
+    "rounding": 0,
+    "total": 333
+  },
+  "tenders": [
+    {
+      "label": "Cash",
+      "amount": 333,
+      "received": null,
+      "external": false,
+      "reference": null
+    }
+  ],
+  "change": 0,
+  "footer": [
+    "Thank you!",
+    "Returns within 30 days with this receipt."
+  ],
+  "barcode": "R01-R-000001"
+}

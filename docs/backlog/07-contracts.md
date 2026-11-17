@@ -28,7 +28,10 @@ There are three contract surfaces. Each has one source of truth and is checked i
   - `stock://changed`
 - Tauri **capabilities**: the main window may call only the commands below, plus
   `core:event` and `core:window` basics. The `fs`, `shell`, `http` and `sql` plugins are
-  **not** enabled. File saving (PDF/CSV) uses `dialog:save` and the write happens in Rust.
+  **not** enabled. File saving (PDF) opens the system "Save as" dialog **from Rust**
+  (`tauri-plugin-dialog`, no `dialog:*` permission granted to the WebView) and Rust writes
+  the file, so the WebView never names a path. CSV exports, the import's file and its error
+  report use the same dialogs.
 
 ### 1.2 Role → permission matrix (enforced by `role_grants`; covered by test E05-T03)
 
@@ -66,6 +69,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `auth_unlock` | none | `{ pin } → SessionDto` (the same user, or a manager who takes over) | E05-T05 |
 | `auth_request_approval` | session | `{ approverUserId, pin, scope } → { approvalTokenId, expiresAt }` | E05-T04 |
 | `staff_list` / `staff_create` / `staff_update` / `staff_deactivate` / `staff_reset_pin` | StaffManage | … | E05-T01 |
+| `categories_list` / `category_save` / `category_archive` | CatalogView / CatalogEdit | Tree at most 3 levels, no cycles (`VALIDATION_FAILED`, `details.field = parent`); archiving needs no active subcategories; versioned | E06-T05 |
+| `tax_config_get` / `tax_rate_save` / `tax_rate_archive` / `tax_category_save` | SettingsEdit (owner) | Rates with `from` (inclusive) / `to` (exclusive) business dates; same-name active rates may not overlap; a used rate cannot be archived (`details.value` lists the categories); exactly one default category (setting a new default moves the flag) | E06-T05 |
 | `settings_get` / `settings_update` | session / SettingsEdit | `{ key, value, baseVersion }` | E04-T03 |
 | `business_get` / `business_update` | session / SettingsEdit | | E04-T03 |
 | `tax_list` / `tax_rate_upsert` / `tax_category_upsert` | CatalogView / SettingsEdit | | E06-T05 |
@@ -77,32 +82,41 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `catalog_lookup_code` | CatalogView | `{ code } → { kind:'barcode'\|'sku', variant } \| null` | E06-T04 |
 | `catalog_search` | CatalogView | `{ query, limit } → [SearchHit]` | E06-T04 |
 | `catalog_quick_select` | CatalogView | `→ [SellableVariantDto]` | E09-T04 |
-| `import_parse` | CatalogImport | `{ filePath (from dialog) } → { jobId, headers, sampleRows }` | E06-T07 |
-| `import_set_mapping` / `import_validate` | CatalogImport | `→ { valid, errors, duplicates, preview }` | E06-T07 |
-| `import_commit` | CatalogImport | `{ jobId, onDuplicate } → { created, updated, skipped }` | E06-T07 |
-| `import_error_report` | CatalogImport | `{ jobId, saveTo } → ()` | E06-T07 |
+| `import_products_open` | CatalogImport | `→ { jobId, fileName, encoding, delimiter, header, sample, totalRows, mapping } \| null`: Rust opens the system "Open" dialog and reads the file (the WebView never names a path); null when cancelled | E06-T07 |
+| `import_products_validate` | CatalogImport | `{ jobId, mapping: [{ column, index }], onDuplicate: skip\|update\|error } → { totalRows, validRows, errorRows, duplicateRows, skippedRows, productsToCreate, productsToUpdate, problems: [{ line, status, messages }] }` (first 200 problems); repeatable until committed | E06-T07 |
+| `import_products_commit` | CatalogImport | `{ jobId } → { productsCreated, productsUpdated, rowsCommitted }`; 500 products per transaction, each with one `catalog.import_committed` audit row; run again to resume | E06-T07 |
+| `import_products_error_report` | CatalogImport | `{ jobId } → { path, fileName } \| null`: the rows not imported with an `error` column, saved through the system dialog | E06-T07 |
+| `import_products_cancel` | CatalogImport | `{ jobId } → ()` before committing | E06-T07 |
 | `scan_submit` | SaleComplete | `{ scanEventId, raw, source, symbologyHint? } → ScanOutcome` (`Added{line} \| Incremented{line} \| NotFound{code} \| Duplicate \| Invalid{reason}`) | E07-T02 |
 | `cart_current` | session | `→ CartView` (cart and `PricedCart`) | E09-T01 |
 | `cart_add_variant` | SaleComplete | `{ variantId, qty?, via } → CartView` | E09-T01 |
 | `cart_set_quantity` / `cart_remove_line` | SaleComplete | `→ CartView` | E09-T01 |
-| `cart_set_line_discount` / `cart_set_order_discount` | CartLineDiscount / CartOrderDiscount (+ approval) | `→ CartView` | E08-T02 |
-| `cart_override_price` | PriceOverride (+ approval) | `→ CartView` | E08-T02 |
+| `cart_set_line_discount` / `cart_set_order_discount` | CartLineDiscount / CartOrderDiscount (+ approval) | `{ …, discount (with `reason` above the limit), approvalTokenId? } → CartView` | E08-T02 |
+| `cart_override_price` | PriceOverride (+ approval) | `{ lineId, unitPriceMinor, reason, approvalTokenId? } → CartView` | E08-T02 |
 | `cart_clear` | CartClear | `{ revision } → CartView` | E09-T01 |
 | `cart_void` | CartVoid | `{ reason, revision } → ()` | E12-T04 |
 | `cart_recovery_state` / `cart_discard_recovered` | session | `→ { recovered: CartView? }` | E09-T02 |
 | `checkout_complete` | SaleComplete (+ ExternalTenderRecord when needed) | `{ cartId, revision, tenders:[TenderInput] } → CompletedSaleDto` | E09-T08 |
-| `sales_list` / `sales_get` / `sales_find_by_receipt` | SalesView | | E12-T03 |
+| `sales_list` / `sales_get` | SalesView | `{ filter: { from?, to?, receipt?, cashierUserId?, tender? }, after?, limit? } → { rows, next? }`; `{ saleId } → SaleDetailDto`. Finding by receipt number is the `receipt` filter (full number or its digits), and `return_find` for returns, so there is no separate `sales_find_by_receipt` | E12-T03 |
 | `return_preview` | ReturnCreate | `{ saleId, lines } → ReturnPlanDto` | E12-T01 |
 | `return_create` | ReturnCreate (+ approval) | `ReturnRequest → ReturnDto` | E12-T02 |
 | `inventory_overview` / `inventory_history` | InventoryView | | E11-T05 |
 | `inventory_post_document` | InventoryReceive (opening/receipt) / InventoryAdjust (adjustment/write_off) | `InventoryDocumentDraft → DocumentDto` | E11-T02/T03 |
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
+| `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
+| `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
+| `settings_get` / `settings_update` | SettingsEdit (owner) | `→ [{ key, group, label, help, kind, valueJson, defaultJson, version }]`; `{ key, valueJson, baseVersion } → setting` (unknown key or wrong type: `VALIDATION_FAILED`; stale version: `CONFLICT_VERSION`). Registry and defaults: docs/settings.md (generated) | E04-T03 |
+| `business_profile_get` / `business_profile_update` | SettingsEdit (owner) | `→ BusinessProfileDto` (name, legal name, tax registration no., address lines, phone, email, this till's name; country, time zone, currency and tax mode read-only); `{ input, businessVersion, registerVersion } → BusinessProfileDto`. Only what changed is written; `business.updated` (audit metadata: the names of the changed fields) and `register.upserted` (audit `register.updated` from/to). Invalid input: `VALIDATION_FAILED` with `details.field` (and `details.value` = the maximum length) | E04-T03 |
+| `app_preferences` / `auth_lock` | session | Scanner suffix and key gap, idle-lock seconds; `auth_lock` ends the session for inactivity (`auth.session_locked`) | E04-T03 |
+| `audit_list` | AuditView (owner) | `{ filter: { action? (exact, or a group ending in `.`), userId? (actor or approver), from?, to? (business dates) }, before?, limit? } → { rows: [{ localTime, action, actorName, approverName, entityType, entityId, entityLabel, metadata }], next }` | E15-T01 |
+| `stock_verify` | InventoryView | `→ [{ variantId, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
+| `stock_rebuild` | SettingsEdit (owner) | `→` the drift that was repaired; audited `inventory.projection_rebuilt` | E11-T06 |
 | `receipt_get_document` | SalesView | `{ source, id } → ReceiptDocument` | E13-T03 |
-| `receipt_export_pdf` | SalesView | `{ receiptId, saveTo } → ()` | E13-T04 |
+| `receipt_export_pdf` | SalesView | `{ saleId \| returnId, paper: receipt\|a4 } → { path, fileName } \| null` (null: the user cancelled the save dialog); audited `receipt.exported_pdf` | E13-T04 |
 | `receipt_print` / `receipt_reprint` | SalesView / ReceiptReprint | `{ receiptId } → PrintJobDto` | E13-T06 |
 | `print_jobs_active` / `print_job_resolve_unknown` | session | `{ jobId, outcome:'printed'\|'not_printed' } → ()` | E13-T06 |
-| `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range, scope:'device'\|'cloud' } → … + { scope, asOf }` | E14 |
-| `export_csv` | ReportsExport / CatalogExport | `{ dataset, range?, saveTo } → { rows }` | E14-T04 |
+| `reports_sales_summary` / `reports_tender_mix` / `reports_top_products` / `reports_stock` | ReportsView | `{ range: { from, to } }` (+ `by`, `limit` for top products; `lowOnly` for stock) → … + `scope: { scope: 'device', asOfMs }`. The `scope: 'cloud'` argument arrives with Stage 3. Definitions: docs/reporting-definitions.md | E14 |
+| `export_csv` | ReportsExport / CatalogExport (products, stock) | `{ dataset, range? } → { path, fileName, rows } \| null`: Rust asks where to save with the system dialog and writes the file (null: cancelled; nothing saved or audited); audited `report.exported` with the saved file's name | E14-T04 |
 | `audit_list` | AuditView | | E15-T01 |
 | `sync_status` | session | `→ SyncStatusDto { linkState, pending, rejected, conflicts, lastPushOkAt, lastPullOkAt, lastError?, clockSkewWarning }` | E17-T09 |
 | `sync_link_start` / `sync_link_complete` | DeviceLink | Owner email + password → link result | E17-T08 |
@@ -187,7 +201,7 @@ the action available (PRD §5.1).
 | `POST /v1/auth/login` | none | `{ email, password } → { userAccessToken, expiresIn }` | |
 | `POST /v1/businesses` | user | `{ businessId, name, countryCode, timezone, currencyCode, currencyExponent, pricesIncludeTax } → 201 BusinessDto` | Client-generated ID. Idempotent when the same owner sends the same ID. `409` when another account owns that ID. |
 | `GET /v1/businesses` | user | `→ [BusinessDto]` | For the "join existing" path (D-10) |
-| `POST /v1/devices/register` | user | `{ businessId, registerId, locationId, installationId, appVersion, osInfo } → { deviceId, accessToken, refreshToken, expiresIn }` | The user must be an owner of the business. Revokes any previous active device on this register (after confirmation in the UI). |
+| `POST /v1/devices/register` | user | `{ businessId, registerId, registerName, registerCode, locationId, locationName, installationId, appVersion, osInfo, replaceExisting } → { deviceId, accessToken, refreshToken, expiresIn }` | The user must be an owner of the business (else `404 NOT_FOUND`, the same as no such business). Creates the location and register if missing. A device already active on the register: `409 SYNC_REGISTER_IN_USE` unless `replaceExisting` (the owner confirmed), which revokes it. |
 | `POST /v1/auth/device/refresh` | refresh token | `{ refreshToken } → { accessToken, refreshToken, expiresIn }` | Rotation. Reuse ⇒ the device is revoked (`401 SYNC_DEVICE_REVOKED`). |
 | `POST /v1/devices/{deviceId}/revoke` | user | `→ 204` | |
 | `GET /v1/devices` | user | `→ [DeviceDto]` | |
@@ -197,9 +211,20 @@ the action available (PRD §5.1).
 | `GET /v1/sync/ack` | device | `→ { registerId, ackSequence, serverTime }` | `registerId` comes from the token. The query parameter in the PRD is dropped as redundant. |
 | `GET /v1/catalog/products?query=&page=` | user | `→ Paged<ProductDto>` | Admin read-only in the MVP |
 | `POST /v1/catalog/products` | user | `{ product, expectedVersion } → ProductDto \| 409 CONFLICT_VERSION` | Present in the PRD. Implemented through the same applier as device events (origin = cloud). P1 UI. |
-| `GET /v1/reports/sales?from=&to=&groupBy=day\|register\|tender` | user or device | `→ { rows, asOf, completeness:{ registers:[{ registerId, lastAckAt, pendingKnown }] } }` | `completeness` drives the "fully synchronized vs last-synced" label (PRD §15) |
+| `GET /v1/reports/sales?from=&to=&groupBy=day\|register\|tender` | user or device | `→ { groupBy, from, to, currencyCode, currencyExponent, rows, asOf, completeness:{ registers:[{ registerId, code, name, lastAckAt, pendingKnown, current }] } }` (device: its own business; user: `businessId` required, member only, else 404) | `completeness` drives the "fully synchronized vs last-synced" label (PRD §15). `current`: heard from within 5 min with nothing unsent, from the `unsent` count each register sends with `GET /v1/sync/changes` (E14-T05) |
+
+**As built (E17-T07):**
+- **`Change`** also carries `eventType` and `schemaVersion`; `snapshot` is that event's payload.
+- **Bootstrap** answers `{ snapshotCursor, entities: [{ aggregateType, aggregateId, eventType, schemaVersion, version, snapshot }], nextPage? }`: one ordered list instead of a map per type. References come first (business, locations, registers, tax rates and categories, categories, settings, staff, products), and the page size is 2,000 by default.
+- **Cursors and tokens:** the cursor is `v1:<serverSeq>`. Page tokens are opaque, and a bad one gets `422`.
 
 ### Push contract
+
+**As built (E17-T04):** `ackSequence` is read after the batch, so it is always a committed
+position. A `duplicate` repeats the first outcome's fields and adds `originalStatus`
+(`applied`, `conflict` or `rejected`). `rejected: EVENT_VERSION_UNSUPPORTED` and
+`rejected: EVENT_ID_REUSED` are neither recorded nor acknowledged, and stop the batch; every
+other rejection is recorded and acknowledged. Result codes are listed in `pos_sync::codes`.
 
 ```json
 // POST /v1/sync/events
@@ -237,6 +262,19 @@ the action available (PRD §5.1).
 
 `eventId, businessId, locationId, registerId, localSequence, eventType, schemaVersion,
 aggregateType, aggregateId, baseVersion?, occurredAt, payload` (PRD §11.3).
+
+**As built (E17-T01):** the envelope, the push request and response, and every payload are
+typed in `pos-sync` (`envelope`, `events`). Their JSON Schemas are generated into
+`contracts/events/current/` (`cargo xtask gen-schemas`); the last released set is in
+`contracts/events/released/`, and `cargo xtask schema-compat` (CI) fails on a breaking change
+made without a new `schemaVersion` (a field removed or newly required, a type or an enum's
+values changed). `occurredAt` is RFC 3339 UTC with milliseconds. Inside payloads, amounts are
+integer minor units, quantities milli-units, rates ppm and timestamps epoch milliseconds.
+Field names are camelCase, except these nested names that are snake_case in v1:
+`taxLines[].tax_rate_id` / `taxBreakdown[].tax_rate_id`, `tenders[].external_reference`
+(and refunds), `discount.authorized_by`, and the stock-movement `source` (`type`,
+`sale_id`, `line_id`, `return_id`, `document_id`). A result status `transient` (with `code`,
+e.g. `ORIGINAL_SALE_PENDING`) is added beside the five listed below.
 
 ### Versioning rules (E17-T01)
 
@@ -291,12 +329,13 @@ Server-side validation for facts (they are `rejected` if any check fails):
 ```text
 auth.login, auth.login_failed, auth.locked_out, auth.logout, auth.session_locked, auth.approval_granted,
 staff.created, staff.updated, staff.deactivated, staff.pin_reset,
-settings.updated, business.updated, register.updated, mode.changed,
-catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed,
+settings.updated, business.created, business.updated, location.upserted, register.updated, mode.changed,
+catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed, catalog.category_saved,
+tax.config_updated,
 cart.cleared, cart.voided, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
 sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded,
-inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged,
+inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
 cash_session.opened, cash_session.closed,
 report.exported, data.exported, backup.created, backup.restored,

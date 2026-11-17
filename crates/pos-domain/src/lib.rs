@@ -6,16 +6,29 @@
 //! - every fallible operation returns an error that maps to a catalogued [`ErrorCode`].
 #![deny(clippy::float_arithmetic)]
 
+pub mod access;
+pub mod cart;
+pub mod cash;
+pub mod catalog;
 pub mod error;
+pub mod geo;
 pub mod ids;
+pub mod inventory;
 pub mod money;
 pub mod numbering;
+pub mod pricing;
 pub mod quantity;
 pub mod rate;
+pub mod returns;
 pub mod rounding;
+pub mod sale;
 pub mod secret;
+pub mod settlement;
+pub mod staff;
+pub mod stock_docs;
 pub mod time;
 
+pub use access::{ApprovalScope, Permission, Role, approvable, role_has};
 pub use error::{ArithmeticError, ErrorCode, HasErrorCode};
 pub use ids::*;
 pub use money::{Currency, CurrencyCode, Money, NumberFormat};

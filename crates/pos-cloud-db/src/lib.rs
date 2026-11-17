@@ -1,7 +1,18 @@
 //! Cloud PostgreSQL access (docs/backlog/05-cloud-database.md).
 //!
-//! Stage 0 provides the connection helper and migration runner. Tenancy (`TenantTx`, RLS)
-//! arrives in E16-T02.
+//! The connection helper, the migration runner, tenant-scoped transactions ([`TenantTx`],
+//! row-level security; E16-T02) and the repositories that use them.
+
+pub mod accounts;
+pub mod devices;
+pub mod facts;
+pub mod master;
+pub mod repo;
+pub mod reports;
+pub mod sync;
+pub mod tenant;
+
+pub use tenant::{AccountTx, Principal, TenantTx};
 
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgPool, PgPoolOptions};

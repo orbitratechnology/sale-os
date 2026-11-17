@@ -11,6 +11,8 @@ publish.workspace = true
 async-trait.workspace = true
 pos-application.workspace = true
 pos-domain.workspace = true
+pos-sync.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
@@ -24,7 +26,12 @@ name = "crash-harness"
 path = "src/bin/crash-harness.rs"
 
 [dev-dependencies]
+jsonschema.workspace = true
+pos-device-ports.workspace = true
+pos-device-virtual.workspace = true
+pos-receipts.workspace = true
 pos-testkit.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 

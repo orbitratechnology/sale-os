@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-product-get"
+description = "Enables the product_get command without any pre-configured scope."
+commands.allow = ["product_get"]
+
+[[permission]]
+identifier = "deny-product-get"
+description = "Denies the product_get command without any pre-configured scope."
+commands.deny = ["product_get"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-current"
+description = "Enables the cart_current command without any pre-configured scope."
+commands.allow = ["cart_current"]
+
+[[permission]]
+identifier = "deny-cart-current"
+description = "Denies the cart_current command without any pre-configured scope."
+commands.deny = ["cart_current"]

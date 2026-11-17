@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-repair-queue"
+description = "Enables the sync_repair_queue command without any pre-configured scope."
+commands.allow = ["sync_repair_queue"]
+
+[[permission]]
+identifier = "deny-sync-repair-queue"
+description = "Denies the sync_repair_queue command without any pre-configured scope."
+commands.deny = ["sync_repair_queue"]

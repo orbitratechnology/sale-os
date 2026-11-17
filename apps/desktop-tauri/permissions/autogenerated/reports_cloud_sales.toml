@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reports-cloud-sales"
+description = "Enables the reports_cloud_sales command without any pre-configured scope."
+commands.allow = ["reports_cloud_sales"]
+
+[[permission]]
+identifier = "deny-reports-cloud-sales"
+description = "Denies the reports_cloud_sales command without any pre-configured scope."
+commands.deny = ["reports_cloud_sales"]

@@ -1,0 +1,295 @@
+//! E16-T05 / AT-12: one business can never read or change another's data, at the SQL level
+//! (every table with `business_id`) and the HTTP level (every secured route in the OpenAPI
+//! contract, called with business A's token and business B's ids). PostgreSQL required
+//! (`TEST_DATABASE_URL`); skipped without it.
+
+mod common;
+
+use axum::http::{Method, StatusCode};
+use common::{audit_event, call, end_of_day, fact_appliers, push, tenant};
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use uuid::Uuid;
+
+async fn state() -> Option<cloud_api::AppState> {
+    common::state_with(fact_appliers()).await
+}
+
+#[tokio::test]
+async fn at12_sql_no_table_shows_another_business_rows() {
+    let Some(s) = state().await else { return };
+    let pool = s.db.clone().unwrap();
+    let (a, b) = (tenant(&s, "A").await, tenant(&s, "B").await);
+    // B's register has pushed a whole day (sales, returns, stock, the drawer, a flag) and an
+    // audit entry: rows in the inbox, the feed and every fact table.
+    let mut day = end_of_day(&b);
+    day.push(audit_event(&b, day.len() as u64 + 1, "auth.login_failed"));
+    let category = Uuid::now_v7();
+    day.push(pos_sync::EventEnvelope {
+        event_id: Uuid::now_v7(),
+        business_id: b.business,
+        location_id: b.location,
+        register_id: b.register,
+        local_sequence: day.len() as u64 + 1,
+        event_type: "category.upserted".into(),
+        schema_version: 1,
+        aggregate_type: "category".into(),
+        aggregate_id: category.to_string(),
+        base_version: Some(0),
+        occurred_at: "2026-11-05T09:14:03.120Z".into(),
+        payload: json!({"categoryId": category, "businessId": b.business, "parentId": null, "name": "Drinks",
+                        "sortOrder": 0, "archived": false, "version": 1, "createdAt": 1, "updatedAt": 1}),
+    });
+    let scanned = common::product_payload(
+        Uuid::now_v7(),
+        Uuid::now_v7(),
+        0,
+        "Scanned",
+        Some("B-1"),
+        Some("4006381333931"),
+        false,
+    );
+    day.push(common::product_event(&b, day.len() as u64 + 1, 0, scanned));
+    let (code, body) = push(&s, &b, &day).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(body["ackSequence"], day.len(), "{body}");
+    let tables: Vec<String> = sqlx::query_scalar(
+        "SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public' AND c.relkind = 'r'
+            AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'business_id' AND NOT a.attisdropped)
+          ORDER BY 1",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(tables.len() >= 6, "{tables:?}");
+    for table in &tables {
+        // B has rows here (seen without RLS, as the migration owner)...
+        let b_rows: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE business_id = $1"))
+            .bind(b.business)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(b_rows > 0, "the fixture should give B rows in {table}");
+        // ...and A's transaction sees none of them, by id or in total.
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SET LOCAL ROLE pos_app")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("SELECT set_config('app.business_id', $1, true)")
+            .bind(a.business.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let seen: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE business_id = $1"))
+            .bind(b.business)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(seen, 0, "{table}: A sees B's rows");
+        let foreign: i64 =
+            sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE business_id <> $1"))
+                .bind(a.business)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(foreign, 0, "{table}: A sees another business's rows");
+        tx.rollback().await.unwrap();
+    }
+}
+
+/// Every operation in the contract that needs a token, as `METHOD path`.
+fn secured_operations() -> Vec<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../contracts/openapi/pos-cloud.v1.yaml"
+    );
+    let spec: Value = serde_yaml_ng::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut out = Vec::new();
+    for (p, ops) in spec["paths"].as_object().unwrap() {
+        for (m, op) in ops.as_object().unwrap() {
+            let open = op
+                .get("security")
+                .and_then(Value::as_array)
+                .is_some_and(|s| s.is_empty());
+            if !open {
+                out.push(format!("{} {p}", m.to_uppercase()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[tokio::test]
+async fn at12_http_every_secured_route_refuses_another_business() {
+    let Some(s) = state().await else { return };
+    let (a, b) = (tenant(&s, "A").await, tenant(&s, "B").await);
+    // B has data in the feed and snapshots that A's pulls must never show.
+    let (code, _) = push(&s, &b, &end_of_day(&b)).await;
+    assert_eq!(code, StatusCode::OK);
+    // For each secured operation: A's call aimed at B. Adding a secured route to the
+    // contract without a case here fails the test.
+    let cases: BTreeMap<&str, (Method, String, Option<Value>)> = BTreeMap::from([
+        (
+            "POST /v1/businesses",
+            (
+                Method::POST,
+                "/v1/businesses".into(),
+                Some(
+                    json!({"businessId": b.business, "name": "Takeover", "countryCode": "GB", "timezone": "Europe/London",
+                            "currencyCode": "GBP", "currencyExponent": 2, "pricesIncludeTax": true}),
+                ),
+            ),
+        ),
+        ("GET /v1/businesses", (Method::GET, "/v1/businesses".into(), None)),
+        (
+            "POST /v1/devices/register",
+            (
+                Method::POST,
+                "/v1/devices/register".into(),
+                Some(
+                    json!({"businessId": b.business, "registerId": b.register, "registerName": "Till 1",
+                            "registerCode": "R01", "locationId": b.location, "locationName": "Main",
+                            "installationId": Uuid::now_v7(), "appVersion": "0.1.0", "replaceExisting": true}),
+                ),
+            ),
+        ),
+        ("GET /v1/devices", (Method::GET, "/v1/devices".into(), None)),
+        (
+            "POST /v1/devices/{deviceId}/revoke",
+            (Method::POST, format!("/v1/devices/{}/revoke", b.device), None),
+        ),
+        // Device routes (called with A's device token): push into B's register...
+        (
+            "POST /v1/sync/events",
+            (
+                Method::POST,
+                "/v1/sync/events".into(),
+                Some(json!({"registerId": b.register, "events": [audit_event(&b, 1, "ok")]})),
+            ),
+        ),
+        // ...and the ack, which only ever describes the token's own register.
+        ("GET /v1/sync/ack", (Method::GET, "/v1/sync/ack".into(), None)),
+        // Pulls: only ever the token's own business.
+        (
+            "GET /v1/sync/changes",
+            (Method::GET, "/v1/sync/changes".into(), None),
+        ),
+        (
+            "GET /v1/sync/bootstrap",
+            (Method::GET, "/v1/sync/bootstrap".into(), None),
+        ),
+        // A product edit aimed at B's business.
+        (
+            "POST /v1/catalog/products",
+            (
+                Method::POST,
+                "/v1/catalog/products".into(),
+                Some(json!({"businessId": b.business, "expectedVersion": 0,
+                            "product": common::product_payload(Uuid::now_v7(), Uuid::now_v7(), 0, "Takeover", None, None, false)})),
+            ),
+        ),
+        // B's consolidated report, asked for by A's owner (A's register is tried below).
+        (
+            "GET /v1/reports/sales",
+            (
+                Method::GET,
+                format!(
+                    "/v1/reports/sales?from=2026-01-01&to=2026-01-31&groupBy=register&businessId={}",
+                    b.business
+                ),
+                None,
+            ),
+        ),
+    ]);
+    let secured = secured_operations();
+    let covered: Vec<String> = cases.keys().map(|k| (*k).to_owned()).collect();
+    assert_eq!(secured, covered, "every secured route needs an AT-12 case");
+
+    let b_secrets = [
+        b.business.to_string(),
+        b.name.clone(),
+        b.register.to_string(),
+        b.device.to_string(),
+    ];
+    for (op, (method, path, body)) in cases {
+        let token = if path.starts_with("/v1/sync/") {
+            &a.device_token
+        } else {
+            &a.user_token
+        };
+        let (code, text) = call(&s, method, &path, Some(token), body).await;
+        assert!(
+            [
+                StatusCode::NOT_FOUND,
+                StatusCode::FORBIDDEN,
+                StatusCode::CONFLICT,
+                StatusCode::OK
+            ]
+            .contains(&code),
+            "{op}: {code} {text}"
+        );
+        for secret in &b_secrets {
+            assert!(
+                !text.contains(secret.as_str()),
+                "{op} returned B's {secret}: {text}"
+            );
+        }
+        // A's own listings still work and show A.
+        if code == StatusCode::OK {
+            // A's own listings show A (A has pushed nothing, so its pulls are empty).
+            let pull = op.starts_with("GET /v1/sync/changes") || op.starts_with("GET /v1/sync/bootstrap");
+            assert!(
+                pull || text.contains(&a.business.to_string()) || text.contains(&a.register.to_string()),
+                "{op}: {text}"
+            );
+        }
+    }
+    // A's register asking for B's report: not found either; for its own, none of B's figures.
+    let q = |biz: Option<Uuid>| {
+        let mut p = "/v1/reports/sales?from=2026-01-01&to=2026-01-31&groupBy=register".to_owned();
+        if let Some(b) = biz {
+            p.push_str(&format!("&businessId={b}"));
+        }
+        p
+    };
+    let (code, text) = call(&s, Method::GET, &q(Some(b.business)), Some(&a.device_token), None).await;
+    assert_eq!(code, StatusCode::NOT_FOUND, "{text}");
+    let (code, text) = call(&s, Method::GET, &q(None), Some(&a.device_token), None).await;
+    assert_eq!(code, StatusCode::OK, "{text}");
+    assert!(text.contains("\"rows\":[]"), "{text}");
+    assert!(b_secrets.iter().all(|x| !text.contains(x.as_str())), "{text}");
+    // B's device and tokens are untouched by all of that.
+    let (code, devices) = call(&s, Method::GET, "/v1/devices", Some(&b.user_token), None).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(devices.contains("\"status\":\"active\""), "{devices}");
+    let (code, _) = call(
+        &s,
+        Method::POST,
+        "/v1/auth/device/refresh",
+        None,
+        Some(json!({"refreshToken": b.refresh_token})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    // A device token is never accepted where an owner is needed.
+    let (code, _) = call(&s, Method::GET, "/v1/businesses", Some(&a.device_token), None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+}
+
+#[test]
+fn a_body_naming_another_business_or_register_is_forbidden() {
+    use cloud_api::devices::{DevicePrincipal, same_tenant};
+    let me = DevicePrincipal {
+        business_id: pos_domain::BusinessId::from_uuid(Uuid::now_v7()),
+        register_id: Uuid::now_v7(),
+        device_id: Uuid::now_v7(),
+    };
+    assert!(same_tenant(&me, Some(*me.business_id.as_uuid()), Some(me.register_id)).is_ok());
+    assert!(same_tenant(&me, None, None).is_ok());
+    let p = same_tenant(&me, Some(Uuid::now_v7()), Some(me.register_id)).unwrap_err();
+    assert_eq!((p.status, p.code.as_str()), (403, "PERMISSION_DENIED"));
+    assert!(same_tenant(&me, Some(*me.business_id.as_uuid()), Some(Uuid::now_v7())).is_err());
+}

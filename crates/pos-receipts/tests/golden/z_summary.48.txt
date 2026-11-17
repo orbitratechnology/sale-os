@@ -1,0 +1,35 @@
+                  Corner Shop
+                 1 High Street
+                 Leeds LS1 1AA
+               Tel 0113 496 0000
+              Tax no. GB123456789
+               *** Z SUMMARY ***
+------------------------------------------------
+Session R01-Z-0007                           R01
+Opened 2026-01-01 08:58
+  by Olu
+Closed 2026-01-01 17:30
+  by Mia
+------------------------------------------------
+Sales (12)                                123.45
+  incl. tax                                20.57
+  Discounts given                          -3.00
+  Cash rounding                             0.02
+Returns (2)                                -6.50
+Payments taken
+  Card (external) (4)                      43.45
+  Cash (9)                                 80.00
+Refunds paid
+  Card (external) (1)                      -4.00
+  Cash (1)                                 -2.50
+------------------------------------------------
+Opening float                             100.00
++ Cash from sales                          80.00
+- Cash refunds                             -2.50
+EXPECTED CASH                             177.50
+COUNTED CASH                              177.00
+VARIANCE (SHORT)                           -0.50
+Note: 50p coin found under the drawer after the
+count
+------------------------------------------------
+                   R01-Z-0007

@@ -15,10 +15,13 @@
 //! `occurred_at`) and allocates register-local numbers inside the transaction.
 
 use crate::audit::AuditEntry;
-use crate::records::{AggregateRef, BusinessRecord, LocationRecord, RegisterRecord, SettingRecord};
-use crate::spike::{SpikeCartAdd, SpikeProduct, SpikeSale};
+use crate::records::{
+    AggregateRef, BusinessRecord, DeviceIdentity, LocationRecord, RegisterRecord, SessionEnd, SettingRecord,
+    StaffRecord, TaxCategoryRecord, TaxRateRecord, ThrottleRecord,
+};
 use pos_domain::{
-    BusinessId, ErrorCode, EventId, HasErrorCode, IdGenerator, LocationId, RegisterId, Timestamp, UserId,
+    BusinessId, ErrorCode, EventId, HasErrorCode, IdGenerator, LocationId, RegisterId, SessionId, Timestamp,
+    UserId,
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,12 +84,149 @@ pub enum WriteOp {
         counter: Counter,
         slot: NumberSlot,
     },
-    /// STAGE 0 SPIKE (E00-T06): delete with the spike module.
-    SpikePutProduct(SpikeProduct),
-    /// STAGE 0 SPIKE (E00-T06): a local-only cart edit.
-    SpikeCartAdd(SpikeCartAdd),
-    /// STAGE 0 SPIKE (E00-T06): uses the receipt number allocated for `receipt_slot`.
-    SpikeCompleteSale(SpikeSale),
+    PutStaff {
+        record: StaffRecord,
+        expected_version: Option<u64>,
+    },
+    PutTaxRate {
+        record: TaxRateRecord,
+        expected_version: Option<u64>,
+    },
+    PutCategory {
+        record: crate::records::CategoryRecord,
+        expected_version: Option<u64>,
+    },
+    /// The whole product aggregate (product + variants + barcodes), ADR-019.
+    PutProduct {
+        product: pos_domain::catalog::Product,
+        business_id: BusinessId,
+        expected_version: Option<u64>,
+    },
+    PutTaxCategory {
+        record: TaxCategoryRecord,
+        expected_version: Option<u64>,
+    },
+    /// Binds this installation to its register, once (E04-T01). Local only.
+    SetDeviceIdentity(DeviceIdentity),
+    /// The whole draft cart (E09-T01). Local only, never synced (ADR-009).
+    /// `expected_revision` is the stored revision the change was based on, `None` for a cart
+    /// that was never saved. A stale write fails with `CartRevisionMismatch` instead of
+    /// overwriting a concurrent change (a lost scan).
+    PutCart {
+        cart: pos_domain::cart::Cart,
+        opened_by: UserId,
+        expected_revision: Option<u64>,
+    },
+    /// A completed sale (E09-T08): header, lines, tenders and their first status events. Its
+    /// receipt number comes from `receipt_slot`, allocated earlier in the same set.
+    ///
+    /// The sale joins the register's open cash session, looked up inside the transaction (so
+    /// a close cannot slip in between). With `require_cash_session` and no open session it
+    /// fails with `CashSessionRequired`.
+    InsertSale {
+        sale: pos_domain::sale::SaleSnapshot,
+        receipt_slot: NumberSlot,
+        require_cash_session: bool,
+    },
+    /// Stock movements (E11-T01), with the balance projection updated in the same
+    /// transaction. Part of the fact named by `aggregate` (e.g. the sale).
+    AppendMovements {
+        movements: Vec<pos_domain::inventory::StockMovement>,
+        aggregate: AggregateRef,
+    },
+    /// An immutable receipt document (E13-T02), stored as JSON. With `receipt_slot`, the
+    /// store fills `meta.receiptNumber` and `barcode` from the number a sale in the same set
+    /// was given.
+    InsertReceipt {
+        receipt_id: pos_domain::ReceiptId,
+        source_type: &'static str,
+        source_id: String,
+        content_version: u32,
+        document: serde_json::Value,
+        receipt_slot: Option<NumberSlot>,
+    },
+    /// A completed return (E12-T02): header, lines and refunds. Its number comes from
+    /// `number_slot` (the Return counter) and is reported like a receipt number, so the
+    /// event and the return receipt can carry it. RET-004 is checked again inside the
+    /// transaction: two returns of the last unit cannot both succeed.
+    /// Like a sale, it joins the open cash session (cash refunds leave that drawer).
+    InsertReturn {
+        ret: pos_domain::returns::ReturnSnapshot,
+        number_slot: NumberSlot,
+        require_cash_session: bool,
+    },
+    /// A posted inventory document's header (E11-T02/T03); its movements go in an
+    /// `AppendMovements` op in the same set. Its `{register}-IN-{seq:06}` number comes from
+    /// `number_slot` (the InventoryDocument counter) and is reported like a receipt number.
+    InsertInventoryDocument {
+        doc: pos_domain::stock_docs::DocumentSnapshot,
+        number_slot: NumberSlot,
+    },
+    /// Switches this installation's register mode (PRD §7.1 step 9), only if it is still
+    /// `from` (else `ModeChanged`). Local only: each sale records its own mode.
+    SetRegisterMode {
+        from: crate::records::RegisterMode,
+        to: crate::records::RegisterMode,
+    },
+    /// Recomputes every stock balance from the movements (E11-T06, INV-004). Local only:
+    /// balances are a projection; the movements are the record.
+    RebuildStockBalances,
+    /// Opens the register's cash session (E15-T02). Fails with `CashSessionAlreadyOpen` if
+    /// one is open. The store gives it the next `{register}-Z-{seq:04}` number, reported in
+    /// `receipt_numbers` under `number_slot`.
+    OpenCashSession {
+        session: pos_domain::cash::OpenedSession,
+        number_slot: NumberSlot,
+    },
+    /// Closes the session, once. The store recomputes the totals from the sales and returns
+    /// in it inside the transaction; if they differ from `closed.totals` (a sale landed in
+    /// between) it fails with `CashSessionChanged` and nothing is written.
+    CloseCashSession {
+        closed: pos_domain::cash::ClosedSession,
+    },
+    /// Creates or updates a print job and appends its state change to `print_job_events`
+    /// (E13-T06). Local only.
+    PutPrintJob {
+        job: crate::records::PrintJobRecord,
+        detail: serde_json::Value,
+    },
+    /// Closes the open cart a sale was made from. Fails with `CartRevisionMismatch` if the
+    /// cart changed since `expected_revision`.
+    CloseCart {
+        cart_id: pos_domain::CartId,
+        sale_id: pos_domain::SaleId,
+        expected_revision: u64,
+    },
+    /// Marks a scan delivery as processed (E07-T02, BAR-007). Fails with `ScanAlreadySeen`
+    /// if it was. The store keeps the last 500 per register.
+    RecordScanEvent {
+        scan_event_id: pos_domain::ScanEventId,
+    },
+    /// Creates or replaces an import job (E06-T07; local staging, never synced).
+    PutImportJob(crate::records::ImportJobRecord),
+    /// Creates or replaces rows of an import job.
+    PutImportRows {
+        job_id: pos_domain::ImportJobId,
+        rows: Vec<crate::records::ImportRowRecord>,
+    },
+    /// Device-local login throttle (never synced).
+    PutLoginThrottle(ThrottleRecord),
+    /// Device-local session start.
+    StartSession {
+        session_id: SessionId,
+        user_id: UserId,
+    },
+    /// Device-local session end (only if still open).
+    EndSession {
+        session_id: SessionId,
+        reason: SessionEnd,
+    },
+    /// Marks an open sync conflict resolved, with the choices made (E18-T02; local only: the
+    /// resolution travels as the aggregate's new event). Fails if it is no longer open.
+    ResolveConflict {
+        conflict_id: String,
+        resolution: serde_json::Value,
+    },
 }
 
 /// How an op relates to sync.
@@ -127,22 +267,101 @@ impl WriteOp {
                 record,
                 expected_version,
             } => master(record.aggregate(), record.version, *expected_version),
-            WriteOp::SpikePutProduct(p) => master(
-                AggregateRef {
-                    aggregate_type: "spike_product",
-                    aggregate_id: p.product_id.to_string(),
-                },
-                1,
-                None,
-            ),
-            WriteOp::SpikeCompleteSale(sale) => SyncKind::Fact {
-                aggregate: AggregateRef {
-                    aggregate_type: "sale",
-                    aggregate_id: sale.sale_id.to_string(),
-                },
+            WriteOp::PutStaff {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutTaxRate {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutCategory {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::PutProduct {
+                product,
+                expected_version,
+                ..
+            } => master(product_aggregate(product), product.version, *expected_version),
+            WriteOp::PutTaxCategory {
+                record,
+                expected_version,
+            } => master(record.aggregate(), record.version, *expected_version),
+            WriteOp::InsertSale { sale, .. } => SyncKind::Fact {
+                aggregate: sale_aggregate(sale.id),
             },
-            WriteOp::AllocateNumber { .. } | WriteOp::SpikeCartAdd(_) => SyncKind::LocalOnly,
+            WriteOp::InsertReturn { ret, .. } => SyncKind::Fact {
+                aggregate: return_aggregate(ret.id),
+            },
+            WriteOp::InsertInventoryDocument { doc, .. } => SyncKind::Fact {
+                aggregate: inventory_document_aggregate(doc.id),
+            },
+            WriteOp::OpenCashSession { session, .. } => SyncKind::Fact {
+                aggregate: cash_session_aggregate(session.id),
+            },
+            WriteOp::CloseCashSession { closed } => SyncKind::Fact {
+                aggregate: cash_session_aggregate(closed.id),
+            },
+            WriteOp::AppendMovements { aggregate, .. } => SyncKind::Fact {
+                aggregate: aggregate.clone(),
+            },
+            WriteOp::AllocateNumber { .. }
+            | WriteOp::RebuildStockBalances
+            | WriteOp::SetRegisterMode { .. }
+            | WriteOp::PutPrintJob { .. }
+            | WriteOp::CloseCart { .. }
+            | WriteOp::InsertReceipt { .. }
+            | WriteOp::PutLoginThrottle(_)
+            | WriteOp::SetDeviceIdentity(_)
+            | WriteOp::PutCart { .. }
+            | WriteOp::RecordScanEvent { .. }
+            | WriteOp::PutImportJob(_)
+            | WriteOp::PutImportRows { .. }
+            | WriteOp::StartSession { .. }
+            | WriteOp::EndSession { .. }
+            | WriteOp::ResolveConflict { .. } => SyncKind::LocalOnly,
         }
+    }
+}
+
+/// Aggregate identity of an inventory document.
+pub fn inventory_document_aggregate(id: pos_domain::InventoryDocumentId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "inventory_document",
+        aggregate_id: id.to_string(),
+    }
+}
+
+/// Aggregate identity of a cash session.
+pub fn cash_session_aggregate(id: pos_domain::CashSessionId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "cash_session",
+        aggregate_id: id.to_string(),
+    }
+}
+
+/// Aggregate identity of a return.
+pub fn return_aggregate(id: pos_domain::ReturnId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "return",
+        aggregate_id: id.to_string(),
+    }
+}
+
+/// Aggregate identity of a sale.
+pub fn sale_aggregate(id: pos_domain::SaleId) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "sale",
+        aggregate_id: id.to_string(),
+    }
+}
+
+/// Aggregate identity of a product.
+pub fn product_aggregate(p: &pos_domain::catalog::Product) -> AggregateRef {
+    AggregateRef {
+        aggregate_type: "product",
+        aggregate_id: p.id.to_string(),
     }
 }
 
@@ -156,9 +375,28 @@ pub struct OutboxDraft {
     /// Master data only (ADR-011): the version the edit was based on; 0 for a create.
     pub base_version: Option<u64>,
     pub payload: serde_json::Value,
+    /// Set when the payload needs a number allocated in the same transaction: the store
+    /// writes the sequence and the number into the payload from this slot, under
+    /// `number_keys` (`receiptSeq` / `receiptNumber` unless said otherwise).
+    pub receipt_slot: Option<NumberSlot>,
+    pub number_keys: (&'static str, &'static str),
 }
 
 impl OutboxDraft {
+    /// Asks the store to fill in the receipt number allocated for `slot` (E09-T08: the
+    /// number only exists inside the transaction, and the event must carry it).
+    pub fn with_receipt_number(mut self, slot: NumberSlot) -> Self {
+        self.receipt_slot = Some(slot);
+        self
+    }
+
+    /// Like [`Self::with_receipt_number`], under other keys (e.g. `documentSeq`/`documentNo`).
+    pub fn with_number(mut self, slot: NumberSlot, seq_key: &'static str, number_key: &'static str) -> Self {
+        self.receipt_slot = Some(slot);
+        self.number_keys = (seq_key, number_key);
+        self
+    }
+
     pub fn new(
         ids: &dyn IdGenerator,
         event_type: &'static str,
@@ -175,6 +413,8 @@ impl OutboxDraft {
             aggregate,
             base_version,
             payload,
+            receipt_slot: None,
+            number_keys: ("receiptSeq", "receiptNumber"),
         })
     }
 
@@ -206,6 +446,45 @@ impl OutboxDraft {
     }
     pub fn setting_updated(ids: &dyn IdGenerator, r: &SettingRecord) -> Result<Self, WriteSetError> {
         Self::master(ids, "setting.updated", r.aggregate(), r.version, r)
+    }
+    pub fn product_upserted(
+        ids: &dyn IdGenerator,
+        p: &pos_domain::catalog::Product,
+    ) -> Result<Self, WriteSetError> {
+        Self::master(ids, "product.upserted", product_aggregate(p), p.version, p)
+    }
+    pub fn category_upserted(
+        ids: &dyn IdGenerator,
+        r: &crate::records::CategoryRecord,
+    ) -> Result<Self, WriteSetError> {
+        Self::master(ids, "category.upserted", r.aggregate(), r.version, r)
+    }
+    pub fn tax_rate_upserted(ids: &dyn IdGenerator, r: &TaxRateRecord) -> Result<Self, WriteSetError> {
+        Self::master(ids, "tax_rate.upserted", r.aggregate(), r.version, r)
+    }
+    pub fn tax_category_upserted(
+        ids: &dyn IdGenerator,
+        r: &TaxCategoryRecord,
+    ) -> Result<Self, WriteSetError> {
+        Self::master(ids, "tax_category.upserted", r.aggregate(), r.version, r)
+    }
+    pub fn staff_upserted(ids: &dyn IdGenerator, r: &StaffRecord) -> Result<Self, WriteSetError> {
+        Self::master(ids, "staff.upserted", r.aggregate(), r.version, r)
+    }
+    /// A standalone audit entry that must reach the cloud (login failures, lockouts...).
+    pub fn audit_recorded(ids: &dyn IdGenerator, entry: &AuditEntry) -> Result<Self, WriteSetError> {
+        let aggregate = AggregateRef {
+            aggregate_type: "audit",
+            aggregate_id: entry.audit_id.to_string(),
+        };
+        let payload = serde_json::json!({
+            "auditId": entry.audit_id,
+            "action": entry.action,
+            "entityType": entry.entity_type,
+            "entityId": entry.entity_id,
+            "metadata": entry.metadata,
+        });
+        Self::new(ids, "audit.recorded", 1, aggregate, None, &payload)
     }
 }
 
@@ -263,6 +542,7 @@ impl WriteSet {
             ops: Vec::new(),
             outbox: Vec::new(),
             audit: Vec::new(),
+            resolving: BTreeSet::new(),
         }
     }
     pub fn context(&self) -> &WriteContext {
@@ -285,6 +565,8 @@ pub struct WriteSetBuilder {
     ops: Vec<WriteOp>,
     outbox: Vec<OutboxDraft>,
     audit: Vec<AuditEntry>,
+    /// Aggregates whose new version follows the cloud's, not the local one (E18-T02).
+    resolving: BTreeSet<AggregateRef>,
 }
 
 impl WriteSetBuilder {
@@ -320,23 +602,222 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::AllocateNumber { counter, slot });
         self
     }
-    /// STAGE 0 SPIKE (E00-T06).
-    pub fn spike_put_product(mut self, product: SpikeProduct) -> Self {
-        self.ops.push(WriteOp::SpikePutProduct(product));
+    pub fn put_staff(mut self, record: StaffRecord, expected_version: Option<u64>) -> Self {
+        self.ops.push(WriteOp::PutStaff {
+            record,
+            expected_version,
+        });
         self
     }
-    /// STAGE 0 SPIKE (E00-T06).
-    pub fn spike_cart_add(mut self, add: SpikeCartAdd) -> Self {
-        self.ops.push(WriteOp::SpikeCartAdd(add));
+    pub fn put_product(
+        mut self,
+        product: pos_domain::catalog::Product,
+        expected_version: Option<u64>,
+    ) -> Self {
+        let business_id = self.context.business_id;
+        self.ops.push(WriteOp::PutProduct {
+            product,
+            business_id,
+            expected_version,
+        });
         self
     }
-    /// STAGE 0 SPIKE (E00-T06).
-    pub fn spike_complete_sale(mut self, sale: SpikeSale) -> Self {
-        self.ops.push(WriteOp::SpikeCompleteSale(sale));
+    pub fn put_tax_rate(mut self, record: TaxRateRecord, expected_version: Option<u64>) -> Self {
+        self.ops.push(WriteOp::PutTaxRate {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn put_category(
+        mut self,
+        record: crate::records::CategoryRecord,
+        expected_version: Option<u64>,
+    ) -> Self {
+        self.ops.push(WriteOp::PutCategory {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn put_tax_category(mut self, record: TaxCategoryRecord, expected_version: Option<u64>) -> Self {
+        self.ops.push(WriteOp::PutTaxCategory {
+            record,
+            expected_version,
+        });
+        self
+    }
+    pub fn put_cart(
+        mut self,
+        cart: pos_domain::cart::Cart,
+        opened_by: UserId,
+        expected_revision: Option<u64>,
+    ) -> Self {
+        self.ops.push(WriteOp::PutCart {
+            cart,
+            opened_by,
+            expected_revision,
+        });
+        self
+    }
+    pub fn insert_sale(
+        mut self,
+        sale: pos_domain::sale::SaleSnapshot,
+        receipt_slot: NumberSlot,
+        require_cash_session: bool,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertSale {
+            sale,
+            receipt_slot,
+            require_cash_session,
+        });
+        self
+    }
+    pub fn insert_inventory_document(
+        mut self,
+        doc: pos_domain::stock_docs::DocumentSnapshot,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops
+            .push(WriteOp::InsertInventoryDocument { doc, number_slot });
+        self
+    }
+    pub fn set_register_mode(
+        mut self,
+        from: crate::records::RegisterMode,
+        to: crate::records::RegisterMode,
+    ) -> Self {
+        self.ops.push(WriteOp::SetRegisterMode { from, to });
+        self
+    }
+    pub fn rebuild_stock_balances(mut self) -> Self {
+        self.ops.push(WriteOp::RebuildStockBalances);
+        self
+    }
+    pub fn open_cash_session(
+        mut self,
+        session: pos_domain::cash::OpenedSession,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops.push(WriteOp::OpenCashSession { session, number_slot });
+        self
+    }
+    pub fn close_cash_session(mut self, closed: pos_domain::cash::ClosedSession) -> Self {
+        self.ops.push(WriteOp::CloseCashSession { closed });
+        self
+    }
+    pub fn append_movements(
+        mut self,
+        movements: Vec<pos_domain::inventory::StockMovement>,
+        aggregate: AggregateRef,
+    ) -> Self {
+        if !movements.is_empty() {
+            self.ops.push(WriteOp::AppendMovements { movements, aggregate });
+        }
+        self
+    }
+    pub fn insert_receipt(
+        mut self,
+        receipt_id: pos_domain::ReceiptId,
+        source: (&'static str, String),
+        content_version: u32,
+        document: serde_json::Value,
+        receipt_slot: Option<NumberSlot>,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertReceipt {
+            receipt_id,
+            source_type: source.0,
+            source_id: source.1,
+            content_version,
+            document,
+            receipt_slot,
+        });
+        self
+    }
+    pub fn put_print_job(mut self, job: crate::records::PrintJobRecord, detail: serde_json::Value) -> Self {
+        self.ops.push(WriteOp::PutPrintJob { job, detail });
+        self
+    }
+    pub fn insert_return(
+        mut self,
+        ret: pos_domain::returns::ReturnSnapshot,
+        number_slot: NumberSlot,
+        require_cash_session: bool,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertReturn {
+            ret,
+            number_slot,
+            require_cash_session,
+        });
+        self
+    }
+    pub fn close_cart(
+        mut self,
+        cart_id: pos_domain::CartId,
+        sale_id: pos_domain::SaleId,
+        expected_revision: u64,
+    ) -> Self {
+        self.ops.push(WriteOp::CloseCart {
+            cart_id,
+            sale_id,
+            expected_revision,
+        });
+        self
+    }
+    pub fn record_scan(mut self, scan_event_id: pos_domain::ScanEventId) -> Self {
+        self.ops.push(WriteOp::RecordScanEvent { scan_event_id });
+        self
+    }
+
+    pub fn put_import_job(mut self, job: crate::records::ImportJobRecord) -> Self {
+        self.ops.push(WriteOp::PutImportJob(job));
+        self
+    }
+
+    pub fn put_import_rows(
+        mut self,
+        job_id: pos_domain::ImportJobId,
+        rows: Vec<crate::records::ImportRowRecord>,
+    ) -> Self {
+        self.ops.push(WriteOp::PutImportRows { job_id, rows });
+        self
+    }
+    pub fn set_device_identity(mut self, identity: DeviceIdentity) -> Self {
+        self.ops.push(WriteOp::SetDeviceIdentity(identity));
+        self
+    }
+    pub fn put_login_throttle(mut self, record: ThrottleRecord) -> Self {
+        self.ops.push(WriteOp::PutLoginThrottle(record));
+        self
+    }
+    pub fn start_session(mut self, session_id: SessionId, user_id: UserId) -> Self {
+        self.ops.push(WriteOp::StartSession { session_id, user_id });
+        self
+    }
+    pub fn end_session(mut self, session_id: SessionId, reason: SessionEnd) -> Self {
+        self.ops.push(WriteOp::EndSession { session_id, reason });
         self
     }
     pub fn outbox(mut self, draft: OutboxDraft) -> Self {
         self.outbox.push(draft);
+        self
+    }
+    /// Any op (e.g. one built from a snapshot by `sync::inbound_master`).
+    pub fn push(mut self, op: WriteOp) -> Self {
+        self.ops.push(op);
+        self
+    }
+    /// A conflict resolution (E18-T02): `aggregate`'s new version is the cloud's version + 1,
+    /// which its event names as the base, whatever the local version was.
+    pub fn resolving(mut self, aggregate: AggregateRef) -> Self {
+        self.resolving.insert(aggregate);
+        self
+    }
+    pub fn resolve_conflict(mut self, conflict_id: String, resolution: serde_json::Value) -> Self {
+        self.ops.push(WriteOp::ResolveConflict {
+            conflict_id,
+            resolution,
+        });
         self
     }
     pub fn audit(mut self, entry: AuditEntry) -> Self {
@@ -396,6 +877,20 @@ impl WriteSetBuilder {
                     expected,
                 } => (aggregate, version, expected),
             };
+            if self.resolving.contains(&aggregate) {
+                let Some(event) = by_aggregate.get(&aggregate) else {
+                    return Err(WriteSetError::MissingOutbox(aggregate));
+                };
+                let base = event.base_version.unwrap_or(0);
+                if event.base_version.is_none() || version != base + 1 {
+                    return Err(WriteSetError::VersionNotIncremented {
+                        aggregate,
+                        expected: base + 1,
+                        actual: version,
+                    });
+                }
+                continue;
+            }
             let required = expected.unwrap_or(0) + 1;
             if version != required {
                 return Err(WriteSetError::VersionNotIncremented {
@@ -431,10 +926,32 @@ impl WriteSetBuilder {
             WriteOp::PutLocation { record, .. } => record.business_id,
             WriteOp::PutRegister { record, .. } => record.business_id,
             WriteOp::PutSetting { record, .. } => record.business_id,
+            WriteOp::PutStaff { record, .. } => record.business_id,
+            WriteOp::PutTaxRate { record, .. } => record.business_id,
+            WriteOp::PutCategory { record, .. } => record.business_id,
+            WriteOp::PutProduct { business_id, .. } => *business_id,
+            WriteOp::PutTaxCategory { record, .. } => record.business_id,
+            WriteOp::SetDeviceIdentity(d) => d.business_id,
             WriteOp::AllocateNumber { .. }
-            | WriteOp::SpikePutProduct(_)
-            | WriteOp::SpikeCartAdd(_)
-            | WriteOp::SpikeCompleteSale(_) => return Ok(()),
+            | WriteOp::InsertSale { .. }
+            | WriteOp::InsertReturn { .. }
+            | WriteOp::OpenCashSession { .. }
+            | WriteOp::CloseCashSession { .. }
+            | WriteOp::InsertInventoryDocument { .. }
+            | WriteOp::RebuildStockBalances
+            | WriteOp::SetRegisterMode { .. }
+            | WriteOp::PutPrintJob { .. }
+            | WriteOp::InsertReceipt { .. }
+            | WriteOp::AppendMovements { .. }
+            | WriteOp::CloseCart { .. }
+            | WriteOp::PutLoginThrottle(_)
+            | WriteOp::PutCart { .. }
+            | WriteOp::RecordScanEvent { .. }
+            | WriteOp::PutImportJob(_)
+            | WriteOp::PutImportRows { .. }
+            | WriteOp::StartSession { .. }
+            | WriteOp::EndSession { .. }
+            | WriteOp::ResolveConflict { .. } => return Ok(()),
         };
         if found != self.context.business_id {
             return Err(WriteSetError::ForeignBusiness {
@@ -451,6 +968,8 @@ impl WriteSetBuilder {
 pub struct AppliedWriteSet {
     /// Register-local numbers allocated for each requested slot.
     pub numbers: BTreeMap<NumberSlot, u64>,
+    /// Formatted receipt numbers (`{prefix}{register}-{seq:06}`) for slots a sale used.
+    pub receipt_numbers: BTreeMap<NumberSlot, String>,
     /// `(event_id, local_sequence)` for every outbox event, in insertion order.
     pub outbox: Vec<(EventId, u64)>,
 }
@@ -474,6 +993,27 @@ pub enum WriteError {
     Io(String),
     #[error("fault injected before statement {statement}")]
     FaultInjected { statement: usize },
+    #[error("the cart changed since revision {expected:?}")]
+    CartRevisionMismatch { expected: Option<u64> },
+    #[error("scan event already processed")]
+    ScanAlreadySeen,
+    /// RET-004, checked inside the transaction.
+    #[error("only {available_milli} milli-units of that line can still be returned")]
+    ReturnQtyExceeds {
+        line: pos_domain::SaleLineId,
+        available_milli: i64,
+    },
+    #[error("no cash session is open on this register")]
+    CashSessionRequired,
+    #[error("a cash session is already open on this register")]
+    CashSessionAlreadyOpen,
+    #[error("the cash session is not open on this register")]
+    CashSessionNotOpen,
+    /// A sale or return joined the session after its totals were read; read them again.
+    #[error("the cash session changed while it was being closed")]
+    CashSessionChanged,
+    #[error("the register mode changed meanwhile")]
+    ModeChanged,
 }
 
 impl HasErrorCode for WriteError {
@@ -484,6 +1024,15 @@ impl HasErrorCode for WriteError {
             WriteError::Busy => ErrorCode::StoreBusy,
             WriteError::Corrupt(_) => ErrorCode::StoreCorrupt,
             WriteError::Io(_) | WriteError::FaultInjected { .. } => ErrorCode::StoreIo,
+            WriteError::CartRevisionMismatch { .. } => ErrorCode::CartRevisionMismatch,
+            // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.
+            WriteError::ScanAlreadySeen => ErrorCode::ScanInvalid,
+            WriteError::ReturnQtyExceeds { .. } => ErrorCode::ReturnQtyExceeds,
+            WriteError::CashSessionRequired | WriteError::CashSessionNotOpen => {
+                ErrorCode::CashSessionRequired
+            }
+            WriteError::CashSessionAlreadyOpen => ErrorCode::CashSessionAlreadyOpen,
+            WriteError::CashSessionChanged | WriteError::ModeChanged => ErrorCode::ConflictVersion,
         }
     }
 }

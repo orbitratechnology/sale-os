@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-return-preview"
+description = "Enables the return_preview command without any pre-configured scope."
+commands.allow = ["return_preview"]
+
+[[permission]]
+identifier = "deny-return-preview"
+description = "Denies the return_preview command without any pre-configured scope."
+commands.deny = ["return_preview"]

@@ -8,86 +8,2283 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	/**  Version, build flavour and local database status. No session required. */
-	appInfo: () => typedError<AppInfo, IpcError>(__TAURI_INVOKE("app_info")),
+	appInfo: () => typedError<AppInfo_Serialize, IpcError_Serialize>(__TAURI_INVOKE("app_info")),
 	/**
 	 *  Stage 0 demo: adds two amounts with `pos-domain` (the same crate the cloud uses) and
 	 *  formats the result. Money crosses IPC as minor-unit strings.
 	 */
-	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
-	/**  Creates the demo workspace and product if missing. */
-	devDemoSetup: () => typedError<DemoProduct, IpcError>(__TAURI_INVOKE("dev_demo_setup")),
-	/**  Current demo cart. */
-	devDemoCart: () => typedError<DemoCart, IpcError>(__TAURI_INVOKE("dev_demo_cart")),
+	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError_Serialize>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
 	/**
-	 *  Adds the scanned product to the cart. `scan_event_id` is accepted for the E07-T02
-	 *  contract; duplicate-delivery handling arrives with that task.
+	 *  What the shell needs before anything else: set up yet? who is signed in? No session
+	 *  required.
 	 */
-	devDemoScan: (raw: string, scanEventId: string) => typedError<DemoCart, IpcError>(__TAURI_INVOKE("dev_demo_scan", { raw, scanEventId })),
-	/**  Completes a cash sale atomically, then prints to the virtual printer. */
-	devDemoCompleteSale: (cashReceivedMinor: string) => typedError<DemoSaleResult, IpcError>(__TAURI_INVOKE("dev_demo_complete_sale", { cashReceivedMinor })),
+	appBootstrapState: () => typedError<BootstrapState_Serialize, IpcError_Serialize>(__TAURI_INVOKE("app_bootstrap_state")),
+	/**
+	 *  First run (E04-T01). Refused once setup has completed. Does not sign anyone in: the UI
+	 *  signs the owner in with `auth_login`, so every session is a real, audited sign-in.
+	 */
+	setupCreateWorkspace: (input: CreateWorkspaceInput_Deserialize) => typedError<CreatedWorkspaceDto, IpcError_Serialize>(__TAURI_INVOKE("setup_create_workspace", { input })),
+	/**  Active staff for the PIN pad. No session required. */
+	authListUsers: () => typedError<SignInUser[], IpcError_Serialize>(__TAURI_INVOKE("auth_list_users")),
+	/**
+	 *  PIN sign-in with lockout (E05-T02). On success it replaces any current session; a failed
+	 *  attempt leaves the current session untouched.
+	 */
+	authLogin: (userId: UserId, pin: string) => typedError<SessionDto, IpcError_Serialize>(__TAURI_INVOKE("auth_login", { userId, pin })),
+	authLogout: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_logout")),
+	/**  Changes the signed-in user's own PIN (required after an owner reset). */
+	authChangePin: (currentPin: string, newPin: string) => typedError<SessionDto, IpcError_Serialize>(__TAURI_INVOKE("auth_change_pin", { currentPin, newPin })),
+	/**
+	 *  A manager approves `scope` with their PIN (E05-T04). Needs a signed-in requester; the
+	 *  approver must hold the permission and must be someone else.
+	 */
+	authRequestApproval: (approverUserId: UserId, pin: string, scope: ApprovalScope_Deserialize) => typedError<ApprovalTokenDto, IpcError_Serialize>(__TAURI_INVOKE("auth_request_approval", { approverUserId, pin, scope })),
+	staffList: () => typedError<StaffDto[], IpcError_Serialize>(__TAURI_INVOKE("staff_list")),
+	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_create", { input })),
+	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_update", { input })),
+	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
+	/**  Sets a temporary PIN; the user must change it at next sign-in. */
+	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
+	/**
+	 *  The owner switches this till from sandbox (practice) to live, confirming with their PIN
+	 *  (PRD §7.1 step 9). One way; refused while a cart has items or a drawer session is open.
+	 */
+	registerGoLive: (pinCode: string) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("register_go_live", { pinCode })),
+	/**  E04-T03 (owner): every setting with its type, current value and version. */
+	settingsGet: () => typedError<SettingDto[], IpcError_Serialize>(__TAURI_INVOKE("settings_get")),
+	/**
+	 *  E04-T03 (owner): changes one setting. `valueJson` must match the setting's type;
+	 *  `baseVersion` is the version shown (a newer change gives `CONFLICT_VERSION`).
+	 */
+	settingsUpdate: (key: string, valueJson: string, baseVersion: number) => typedError<SettingDto, IpcError_Serialize>(__TAURI_INVOKE("settings_update", { key, valueJson, baseVersion })),
+	/**  The till's own preferences (scanner, idle lock), for anyone signed in. */
+	appPreferences: () => typedError<PreferencesDto, IpcError_Serialize>(__TAURI_INVOKE("app_preferences")),
+	/**
+	 *  Locks the till after inactivity (`security.lock_timeout_secs`): ends the session like a
+	 *  sign-out, audited as `auth.session_locked`. The cart is kept.
+	 */
+	authLock: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_lock")),
+	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
+	/**  Every category, archived ones included (flagged). */
+	categoriesList: () => typedError<CategoryDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("categories_list")),
+	/**  Creates (`categoryId: null`) or renames / moves a category; at most 3 levels, no cycles. */
+	categorySave: (categoryId: CategoryId | null, name: string, parentId: CategoryId | null, baseVersion: number | null) => typedError<CategoryDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("category_save", { categoryId, name, parentId, baseVersion })),
+	/**  Archives a category without active subcategories. */
+	categoryArchive: (categoryId: CategoryId, baseVersion: number) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("category_archive", { categoryId, baseVersion })),
+	/**  (owner) Every tax rate with its dates, and every tax category with its rates. */
+	taxConfigGet: () => typedError<TaxConfigDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("tax_config_get")),
+	/**
+	 *  (owner) Creates or changes a tax rate. `from` inclusive, `to` exclusive (business dates);
+	 *  two active rates with the same name may not cover the same day.
+	 */
+	taxRateSave: (taxRateId: TaxRateId | null, name: string, ratePpm: number, from: string | null, to: string | null, baseVersion: number | null) => typedError<TaxRateConfigDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("tax_rate_save", { taxRateId, name, ratePpm, from, to, baseVersion })),
+	/**
+	 *  (owner) Archives a rate no active tax category uses; otherwise `VALIDATION_FAILED` with
+	 *  the categories in `details.value`.
+	 */
+	taxRateArchive: (taxRateId: TaxRateId, baseVersion: number) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("tax_rate_archive", { taxRateId, baseVersion })),
+	/**  (owner) Creates or changes a tax category; making it the default moves the flag. */
+	taxCategorySave: (taxCategoryId: TaxCategoryId | null, name: string, rateIds: TaxRateId[], isDefault: boolean, baseVersion: number | null) => typedError<TaxCategoryConfigDto, IpcError_Serialize>(__TAURI_INVOKE("tax_category_save", { taxCategoryId, name, rateIds, isDefault, baseVersion })),
+	/**  The business profile and this till's name (owner). */
+	businessProfileGet: () => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_get")),
+	/**
+	 *  Saves the profile with the versions it showed (`CONFLICT_VERSION` if either changed).
+	 *  Only what changed is written; `business.updated` / `register.updated` are audited.
+	 */
+	businessProfileUpdate: (input: BusinessProfileInputDto_Deserialize, businessVersion: number, registerVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_update", { input, businessVersion, registerVersion })),
+	/**
+	 *  Asks for a CSV file, reads it and stages it as an import job. `null` when the user
+	 *  cancels the dialog. The catalogue does not change.
+	 */
+	importProductsOpen: () => typedError<ImportPreviewDto | null, IpcError_Serialize>(__TAURI_INVOKE("import_products_open")),
+	/**  Checks every row with the chosen columns and duplicate policy. Repeatable until committed. */
+	importProductsValidate: (jobId: ImportJobId, mapping: MappingEntryDto[], onDuplicate: OnDuplicateDto) => typedError<ImportSummaryDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_validate", { jobId, mapping, onDuplicate })),
+	/**
+	 *  Creates and updates the products, 500 per transaction. After an interruption, run it
+	 *  again: rows already committed are not imported twice.
+	 */
+	importProductsCommit: (jobId: ImportJobId) => typedError<ImportCommitDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_commit", { jobId })),
+	/**  Saves the rows that were not imported (with an `error` column) where the user chooses. */
+	importProductsErrorReport: (jobId: ImportJobId) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("import_products_error_report", { jobId })),
+	/**  Abandons an import that has not started committing. */
+	importProductsCancel: (jobId: ImportJobId) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("import_products_cancel", { jobId })),
+	/**  The product list (E06-T06a): one page, by name, with summary columns. */
+	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
+	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
+	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create", { product })),
+	/**  `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`. */
+	productUpdate: (productId: ProductId, baseVersion: number, product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_update", { productId, baseVersion, product })),
+	productArchive: (productId: ProductId, baseVersion: number) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_archive", { productId, baseVersion })),
+	/**  Barcode first, then SKU (BAR-004). `null` when nothing matches. */
+	catalogLookupCode: (code: string) => typedError<CatalogHitDto_Serialize | null, IpcError_Serialize>(__TAURI_INVOKE("catalog_lookup_code", { code })),
+	catalogSearch: (query: string, limit: number) => typedError<CatalogHitDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("catalog_search", { query, limit })),
+	/**
+	 *  Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI
+	 *  per delivery: a repeated delivery is reported as `duplicate` and changes nothing.
+	 */
+	scanSubmit: (scanEventId: ScanEventId, raw: string, source: ScanSourceDto) => typedError<ScanOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scan_submit", { scanEventId, raw, source })),
+	/**  The open cart, priced (also after a restart: POS-011). */
+	cartCurrent: () => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_current")),
+	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
+	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
+	/**  Zero is refused: use `cart_remove_line`. */
+	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
+	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_remove_line", { lineId })),
+	/**
+	 *  `discount: null` removes it. Above the cashier limit: a reason, and for a cashier an
+	 *  approval (`APPROVAL_REQUIRED` carries the scope; retry with `approvalTokenId`).
+	 */
+	cartSetLineDiscount: (lineId: CartLineId, discount: DiscountDto_Deserialize | null, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_line_discount", { lineId, discount, approvalTokenId })),
+	/**  As `cart_set_line_discount`, for the whole order. */
+	cartSetOrderDiscount: (discount: DiscountDto_Deserialize | null, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_order_discount", { discount, approvalTokenId })),
+	/**  A new unit price for a line, with a reason. A cashier needs an approval. */
+	cartOverridePrice: (lineId: CartLineId, unitPriceMinor: string, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_override_price", { lineId, unitPriceMinor, reason, approvalTokenId })),
+	/**  POS-003: `revision` must be the one the cashier saw when confirming. */
+	cartClear: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_clear", { revision })),
+	/**
+	 *  Abandons the cart with a reason and returns the next (empty) one. A cashier needs an
+	 *  approval when the cart has lines.
+	 */
+	cartVoid: (revision: number, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason, approvalTokenId })),
+	/**
+	 *  Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
+	 *  stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
+	 */
+	checkoutComplete: (cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedSaleDto, IpcError_Serialize>(__TAURI_INVOKE("checkout_complete", { cartId, revision, tenders })),
+	/**
+	 *  A sale's receipt as stored at completion, rendered for 58 or 80 mm paper (E13-T03).
+	 *  `saleId: null` is the last sale on this till. `widthMm: null` uses the setting.
+	 */
+	receiptGet: (saleId: SaleId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("receipt_get", { saleId, widthMm })),
+	/**
+	 *  Prints a sale's receipt (the last sale's for `saleId: null`). The first copy is the
+	 *  original; later copies are reprints. Runs after the sale is committed: a printer problem
+	 *  never affects the sale.
+	 */
+	receiptPrint: (saleId: SaleId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("receipt_print", { saleId })),
+	/**  Tries a failed print job again (the printer refused it, so nothing was printed). */
+	printJobRetry: (jobId: PrintJobId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("print_job_retry", { jobId })),
+	/**
+	 *  The operator's answer to "did it print?" for a job with an unknown outcome. `printed:
+	 *  false` prints a new copy marked REPRINT.
+	 */
+	printJobResolve: (jobId: PrintJobId, printed: boolean) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("print_job_resolve", { jobId, printed })),
+	/**
+	 *  Finds a sale by the number on its receipt (typed, or scanned from the receipt's
+	 *  barcode), with what can still be returned per line.
+	 */
+	returnFind: (receiptNumber: string) => typedError<ReturnableSaleDto, IpcError_Serialize>(__TAURI_INVOKE("return_find", { receiptNumber })),
+	/**  What returning `lines` would refund. Nothing is written. */
+	returnPreview: (saleId: SaleId, lines: ReturnLineInputDto[]) => typedError<ReturnPlanDto, IpcError_Serialize>(__TAURI_INVOKE("return_preview", { saleId, lines })),
+	/**
+	 *  Makes the return (E12-T02): one transaction for the return, refunds, stock, refund
+	 *  receipt and audit. A cashier needs a manager's approval for this sale (APPROVAL_REQUIRED
+	 *  carries the scope) unless the shop turned that off.
+	 */
+	returnCreate: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null) => typedError<CompletedReturnDto, IpcError_Serialize>(__TAURI_INVOKE("return_create", { saleId, lines, reason, note, refunds, approvalTokenId })),
+	/**  A return's refund receipt as stored, rendered for 58 or 80 mm paper. */
+	returnReceiptGet: (returnId: ReturnId, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_get", { returnId, widthMm })),
+	/**  Prints a return's refund receipt (later copies are reprints). */
+	returnReceiptPrint: (returnId: ReturnId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_print", { returnId })),
+	/**
+	 *  Saves a sale's receipt (`saleId`) or a return's refund receipt (`returnId`) as a PDF
+	 *  (E13-T04, AT-08: no printer needed). Rust renders it, asks where to save it with the
+	 *  system dialog, and writes the file; the WebView never names a path. `null` when the
+	 *  user cancels the dialog. Audited as `receipt.exported_pdf`.
+	 */
+	receiptExportPdf: (saleId: SaleId | null, returnId: ReturnId | null, paper: PdfPaperDto) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("receipt_export_pdf", { saleId, returnId, paper })),
+	/**
+	 *  Completed sales on this device, newest first, a page at a time. `after` is the previous
+	 *  page's `next`; `limit` defaults to 50 (at most 200).
+	 */
+	salesList: (filter: SalesFilterDto_Deserialize, after: string | null, limit: number | null) => typedError<SalesPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_list", { filter, after, limit })),
+	/**  One completed sale as recorded: lines, discounts, tax, tenders and the returns made since. */
+	salesGet: (saleId: SaleId) => typedError<SaleDetailDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sales_get", { saleId })),
+	/**
+	 *  Posts an opening-stock, goods-received, adjustment or write-off document in one
+	 *  transaction. Receiving needs `InventoryReceive`; adjusting and writing off need
+	 *  `InventoryAdjust`. Posted documents cannot be edited: post a correcting one.
+	 */
+	inventoryPostDocument: (draft: DocumentDraftDto_Deserialize) => typedError<PostedDocumentDto, IpcError_Serialize>(__TAURI_INVOKE("inventory_post_document", { draft })),
+	/**  E11-T06: stock balances that differ from the sum of their movements (empty is healthy). */
+	stockVerify: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
+	/**
+	 *  E11-T05: stock on hand for every stock-tracked item (OK / Low / Negative), for anyone who
+	 *  can see inventory. `lowOnly` keeps low and negative items.
+	 */
+	stockOverview: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("stock_overview", { lowOnly })),
+	/**  E11-T05: one item's stock movements, newest first, with what caused each. */
+	stockHistory: (variantId: VariantId, limit: number) => typedError<StockHistoryDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_history", { variantId, limit })),
+	/**
+	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
+	 *  transaction, audited. Returns what was wrong before.
+	 */
+	stockRebuild: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
+	/**  Sales, discounts, tax, refunds and net sales per business day and for the range. */
+	reportsSalesSummary: (range: DateRangeDto) => typedError<SalesSummaryDto, IpcError_Serialize>(__TAURI_INVOKE("reports_sales_summary", { range })),
+	/**  Payments taken and refunded per tender type, split by who confirmed them. */
+	reportsTenderMix: (range: DateRangeDto) => typedError<TenderMixDto, IpcError_Serialize>(__TAURI_INVOKE("reports_tender_mix", { range })),
+	/**  The best sellers in the range, returns netted off. */
+	reportsTopProducts: (range: DateRangeDto, by: TopByDto, limit: number) => typedError<TopProductsDto, IpcError_Serialize>(__TAURI_INVOKE("reports_top_products", { range, by, limit })),
+	/**  Current stock from the recorded movements; `lowOnly` keeps low and negative items. */
+	reportsStock: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_stock", { lowOnly })),
+	/**
+	 *  Sales across every register, from the cloud (E14-T05). Offline, the figures last fetched
+	 *  for the same range and grouping, marked stale; `SYNC_OFFLINE` when there are none, and
+	 *  `SYNC_NOT_LINKED` before this register is linked.
+	 */
+	reportsCloudSales: (range: DateRangeDto, groupBy: CloudGroupByDto) => typedError<CloudSalesReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_cloud_sales", { range, groupBy })),
+	/**
+	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
+	 *  the system dialog and writes the file (the WebView never names a path), then audits it
+	 *  (`report.exported`). `null` when the user cancels: nothing is saved or recorded. Dated
+	 *  datasets need `range`.
+	 */
+	exportCsv: (dataset: ExportDatasetDto, range: DateRangeDto | null) => typedError<ExportResultDto | null, IpcError_Serialize>(__TAURI_INVOKE("export_csv", { dataset, range })),
+	/**  E15-T01 (owner): the audit log, newest first, filtered by action, user and dates. */
+	auditList: (filter: AuditFilterDto_Deserialize, before: string | null, limit: number | null) => typedError<AuditPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("audit_list", { filter, before, limit })),
+	/**  The register's drawer: the open session (if any) and whether sales need one. */
+	cashSessionCurrent: () => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_current")),
+	/**  Opens the drawer with a float (minor units). */
+	cashSessionOpen: (floatMinor: string) => typedError<CashStateDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_open", { floatMinor })),
+	/**
+	 *  Closes the drawer with the counted cash. Final. A cashier's count is blind: the reply
+	 *  has no expected cash or variance.
+	 */
+	cashSessionClose: (countedMinor: string, note: string | null) => typedError<ClosedCashDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_close", { countedMinor, note })),
+	/**  A closed session's Z summary as stored (`sessionId: null`: the last one on this till). */
+	cashSessionZGet: (sessionId: CashSessionId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_get", { sessionId, widthMm })),
+	/**  Prints a closed session's Z summary (later copies are reprints). */
+	cashSessionZPrint: (sessionId: CashSessionId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_print", { sessionId })),
+	/**  Pushes pending events now, with the retry delay reset (E17-T03). Any signed-in user. */
+	syncRetryNow: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_retry_now")),
+	/**  Where sync stands. Any signed-in user. */
+	syncStatus: () => typedError<SyncStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sync_status")),
+	/**
+	 *  The owner signs in to the cloud (owner only). The password is passed through once and
+	 *  never stored or logged; the sign-in is kept in memory for `sync_link_complete`.
+	 */
+	syncLinkStart: (email: string, password: string) => typedError<LinkOptionsDto, IpcError_Serialize>(__TAURI_INVOKE("sync_link_start", { email, password })),
+	/**
+	 *  Links this register (owner only), after `sync_link_start`. A link interrupted by a lost
+	 *  connection resumes when this is called again.
+	 */
+	syncLinkComplete: (mode: LinkMode, businessId: string | null, replaceExisting: boolean) => typedError<LinkResultDto, IpcError_Serialize>(__TAURI_INVOKE("sync_link_complete", { mode, businessId, replaceExisting })),
+	/**  Events the cloud refused and open conflicts (E17-T09, owner). */
+	syncRepairQueue: () => typedError<RepairQueueDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sync_repair_queue")),
+	/**  Repair-queue actions (E17-T09, owner): view an event's payload, or export a support file. */
+	syncRepairAction: (action: RepairAction, eventId: string | null) => typedError<RepairActionResultDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("sync_repair_action", { action, eventId })),
+	/**
+	 *  Whether a sale has reached the cloud (AT-13). Any signed-in user: the till shows it after
+	 *  a sale.
+	 */
+	saleSyncState: (saleId: SaleId) => typedError<SaleSyncDto, IpcError_Serialize>(__TAURI_INVOKE("sale_sync_state", { saleId })),
+	/**  Open conflicts with what differs (E18-T02, ConflictResolve). */
+	syncConflictsList: () => typedError<ConflictDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("sync_conflicts_list")),
+	/**
+	 *  Resolves a conflict (E18-T02, ConflictResolve). A version conflict takes a choice per
+	 *  differing field; a barcode or SKU conflict takes `identifiers`: `remove` (from this
+	 *  product) or `move` (to this product, from the one holding it).
+	 */
+	syncConflictResolve: (conflictId: string, choices: FieldChoiceDto_Deserialize[], identifiers: string | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_conflict_resolve", { conflictId, choices, identifiers })),
 };
 
 /* Types */
-export type AppInfo = {
+/**  `cart_add_variant`'s `via`: scans go through `scan_submit` instead. */
+export type AddViaDto = "search" | "quickSelect";
+
+export type AdjustReason = 
+/**  Sellable → damaged (kept, not sellable). */
+"damage" | 
+/**  − sellable. */
+"loss" | 
+/**  − sellable. */
+"theft" | 
+/**  ± sellable: the count differs from the record. */
+"count_correction" | 
+/**  − sellable. */
+"expired" | 
+/**  ± sellable; a note is required. */
+"other";
+
+export type AppInfo = AppInfo_Serialize | AppInfo_Deserialize;
+
+export type AppInfo_Deserialize = {
 	version: string,
 	debugBuild: boolean,
-	database: DatabaseStatus,
+	database: DatabaseStatus_Deserialize,
 };
 
-export type DatabaseStatus = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError };
+export type AppInfo_Serialize = {
+	version: string,
+	debugBuild: boolean,
+	database: DatabaseStatus_Serialize,
+};
 
-export type DemoCart = {
-	lines: DemoCartLine[],
+export type ApprovalId = string;
+
+/**
+ *  What a manager approval covers (E05-T04): one permission, on one entity (a cart, a sale),
+ *  up to a limit. A token for a 15% discount on cart A does not cover 20%, or cart B.
+ */
+export type ApprovalScope = ApprovalScope_Serialize | ApprovalScope_Deserialize;
+
+/**
+ *  What a manager approval covers (E05-T04): one permission, on one entity (a cart, a sale),
+ *  up to a limit. A token for a 15% discount on cart A does not cover 20%, or cart B.
+ */
+export type ApprovalScope_Deserialize = {
+	permission: Permission,
+	entityId: string,
+	/**  For discounts: the largest effective rate approved, in parts per million. */
+	maxPpm?: number | null,
+};
+
+/**
+ *  What a manager approval covers (E05-T04): one permission, on one entity (a cart, a sale),
+ *  up to a limit. A token for a 15% discount on cart A does not cover 20%, or cart B.
+ */
+export type ApprovalScope_Serialize = {
+	permission: Permission,
+	entityId: string,
+	/**  For discounts: the largest effective rate approved, in parts per million. */
+	maxPpm: number | null,
+};
+
+export type ApprovalTokenDto = {
+	/**  Pass with the command that needed approval. Single use. */
+	approvalTokenId: ApprovalId,
+	/**  Epoch ms as a decimal string. */
+	expiresAtMs: string,
+};
+
+export type AuditFilterDto = AuditFilterDto_Serialize | AuditFilterDto_Deserialize;
+
+export type AuditFilterDto_Deserialize = {
+	/**  An exact action (`sale.completed`) or a group ending in `.` (`cart.`). */
+	action?: string | null,
+	userId?: UserId | null,
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from?: string | null,
+	to?: string | null,
+};
+
+export type AuditFilterDto_Serialize = {
+	/**  An exact action (`sale.completed`) or a group ending in `.` (`cart.`). */
+	action: string | null,
+	userId: UserId | null,
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from: string | null,
+	to: string | null,
+};
+
+export type AuditPageDto = AuditPageDto_Serialize | AuditPageDto_Deserialize;
+
+export type AuditPageDto_Deserialize = {
+	rows: AuditRowDto_Deserialize[],
+	next?: string | null,
+};
+
+export type AuditPageDto_Serialize = {
+	rows: AuditRowDto_Serialize[],
+	next: string | null,
+};
+
+export type AuditRowDto = AuditRowDto_Serialize | AuditRowDto_Deserialize;
+
+export type AuditRowDto_Deserialize = {
+	auditId: string,
+	localTime: string,
+	action: string,
+	actorName?: string | null,
+	approverName?: string | null,
+	entityType: string,
+	entityId: string,
+	/**  A receipt, return, document or session number, a staff or product name. */
+	entityLabel?: string | null,
+	/**  The details as recorded (JSON). */
+	metadata: string,
+};
+
+export type AuditRowDto_Serialize = {
+	auditId: string,
+	localTime: string,
+	action: string,
+	actorName: string | null,
+	approverName: string | null,
+	entityType: string,
+	entityId: string,
+	/**  A receipt, return, document or session number, a staff or product name. */
+	entityLabel: string | null,
+	/**  The details as recorded (JSON). */
+	metadata: string,
+};
+
+export type BarcodeDto = {
+	/**  Canonical form, the lookup key. */
+	value: string,
+	/**  As entered or scanned. */
+	raw: string,
+	symbology: Symbology,
+	qualifier: BarcodeQualifier,
+	packQtyMilli: string,
+};
+
+export type BarcodeInputDto = BarcodeInputDto_Serialize | BarcodeInputDto_Deserialize;
+
+export type BarcodeInputDto_Deserialize = {
+	raw: string,
+	symbology?: Symbology | null,
+	qualifier: BarcodeQualifier,
+	/**  Required for a pack barcode; ignored otherwise. */
+	packQtyMilli?: string | null,
+};
+
+export type BarcodeInputDto_Serialize = {
+	raw: string,
+	symbology: Symbology | null,
+	qualifier: BarcodeQualifier,
+	/**  Required for a pack barcode; ignored otherwise. */
+	packQtyMilli: string | null,
+};
+
+export type BarcodeQualifier = "primary" | "alias" | 
+/**  A case or multipack code: one scan adds `pack_qty` units (e.g. 12). */
+"pack";
+
+export type BootstrapState = BootstrapState_Serialize | BootstrapState_Deserialize;
+
+export type BootstrapState_Deserialize = {
+	setupComplete: boolean,
+	workspace?: WorkspaceDto | null,
+	session?: SessionDto | null,
+};
+
+export type BootstrapState_Serialize = {
+	setupComplete: boolean,
+	workspace: WorkspaceDto | null,
+	session: SessionDto | null,
+};
+
+/**
+ *  The business details printed on receipts and this till's name. Country, time zone,
+ *  currency and tax mode are shown but fixed after setup.
+ */
+export type BusinessProfileDto = BusinessProfileDto_Serialize | BusinessProfileDto_Deserialize;
+
+/**
+ *  The business details printed on receipts and this till's name. Country, time zone,
+ *  currency and tax mode are shown but fixed after setup.
+ */
+export type BusinessProfileDto_Deserialize = {
+	name: string,
+	legalName?: string | null,
+	taxRegistrationNo?: string | null,
+	addressLines: string[],
+	phone?: string | null,
+	email?: string | null,
+	registerName: string,
+	registerCode: string,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	businessVersion: number,
+	registerVersion: number,
+};
+
+/**
+ *  The business details printed on receipts and this till's name. Country, time zone,
+ *  currency and tax mode are shown but fixed after setup.
+ */
+export type BusinessProfileDto_Serialize = {
+	name: string,
+	legalName: string | null,
+	taxRegistrationNo: string | null,
+	addressLines: string[],
+	phone: string | null,
+	email: string | null,
+	registerName: string,
+	registerCode: string,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	businessVersion: number,
+	registerVersion: number,
+};
+
+export type BusinessProfileInputDto = BusinessProfileInputDto_Serialize | BusinessProfileInputDto_Deserialize;
+
+export type BusinessProfileInputDto_Deserialize = {
+	name: string,
+	legalName?: string | null,
+	taxRegistrationNo?: string | null,
+	addressLines: string[],
+	phone?: string | null,
+	email?: string | null,
+	registerName: string,
+};
+
+export type BusinessProfileInputDto_Serialize = {
+	name: string,
+	legalName: string | null,
+	taxRegistrationNo: string | null,
+	addressLines: string[],
+	phone: string | null,
+	email: string | null,
+	registerName: string,
+};
+
+export type CartId = string;
+
+export type CartLineDto = CartLineDto_Serialize | CartLineDto_Deserialize;
+
+export type CartLineDto_Deserialize = {
+	lineId: CartLineId,
+	variantId: VariantId,
+	productId: ProductId,
+	name: string,
+	label: string,
+	sku?: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	/**  The unit price charged: the override if any, else the catalogue price. */
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	lineDiscount?: DiscountDto_Deserialize | null,
+	grossMinor: string,
+	/**  This line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
 	totalMinor: string,
-	totalFormatted: string,
-};
-
-export type DemoCartLine = {
-	name: string,
-	quantity: string,
-	lineTotalFormatted: string,
-};
-
-export type DemoProduct = {
-	name: string,
-	barcode: string,
-	priceFormatted: string,
-};
-
-export type DemoSaleResult = {
-	receiptNumber: string,
-	totalFormatted: string,
-	changeFormatted: string,
-	outboxSequence: number,
+	/**  `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`. */
+	addedVia: string,
 	/**
-	 *  Path of the virtual printer's ESC/POS capture, or why printing failed (a print
-	 *  failure never undoes a committed sale).
+	 *  E11-T04: set when the cart holds more of this item than is in stock: what is on hand
+	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
 	 */
-	print: string,
+	onlyInStockMilli?: string | null,
 };
+
+export type CartLineDto_Serialize = {
+	lineId: CartLineId,
+	variantId: VariantId,
+	productId: ProductId,
+	name: string,
+	label: string,
+	sku: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	/**  The unit price charged: the override if any, else the catalogue price. */
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	lineDiscount: DiscountDto_Serialize | null,
+	grossMinor: string,
+	/**  This line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	/**  `"scan"`, `"search"`, `"quick_select"` or `"manual_code"`. */
+	addedVia: string,
+	/**
+	 *  E11-T04: set when the cart holds more of this item than is in stock: what is on hand
+	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
+	 */
+	onlyInStockMilli: string | null,
+};
+
+export type CartLineId = string;
+
+export type CartViewDto = CartViewDto_Serialize | CartViewDto_Deserialize;
+
+export type CartViewDto_Deserialize = {
+	cartId: CartId,
+	/**  Send back with `cart_clear`, `cart_void` and checkout. */
+	revision: number,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	/**  Discounts above this rate need a reason, and a cashier needs an approval (E08-T02). */
+	discountLimitPpm: number,
+	lines: CartLineDto_Deserialize[],
+	orderDiscount?: DiscountDto_Deserialize | null,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	taxBreakdown: TaxLineDto[],
+	/**  What the customer pays, before cash rounding. */
+	totalMinor: string,
+	itemCountMilli: string,
+	/**  Lines whose catalogue price changed since they were added (POS-011). */
+	repricedLines: CartLineId[],
+};
+
+export type CartViewDto_Serialize = {
+	cartId: CartId,
+	/**  Send back with `cart_clear`, `cart_void` and checkout. */
+	revision: number,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	/**  Discounts above this rate need a reason, and a cashier needs an approval (E08-T02). */
+	discountLimitPpm: number,
+	lines: CartLineDto_Serialize[],
+	orderDiscount: DiscountDto_Serialize | null,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	taxBreakdown: TaxLineDto[],
+	/**  What the customer pays, before cash rounding. */
+	totalMinor: string,
+	itemCountMilli: string,
+	/**  Lines whose catalogue price changed since they were added (POS-011). */
+	repricedLines: CartLineId[],
+};
+
+export type CashSessionDto = CashSessionDto_Serialize | CashSessionDto_Deserialize;
+
+export type CashSessionDto_Deserialize = {
+	cashSessionId: CashSessionId,
+	/**  `R01-Z-0001`. */
+	number: string,
+	open: boolean,
+	openedByName: string,
+	openedLocal: string,
+	openingFloatMinor: string,
+	businessDate: string,
+	closedByName?: string | null,
+	closedLocal?: string | null,
+	currencyExponent: number,
+};
+
+export type CashSessionDto_Serialize = {
+	cashSessionId: CashSessionId,
+	/**  `R01-Z-0001`. */
+	number: string,
+	open: boolean,
+	openedByName: string,
+	openedLocal: string,
+	openingFloatMinor: string,
+	businessDate: string,
+	closedByName: string | null,
+	closedLocal: string | null,
+	currencyExponent: number,
+};
+
+export type CashSessionId = string;
+
+/**
+ *  The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+ *  not see the variance (a cashier's count is blind).
+ */
+export type CashStateDto = CashStateDto_Serialize | CashStateDto_Deserialize;
+
+/**
+ *  The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+ *  not see the variance (a cashier's count is blind).
+ */
+export type CashStateDto_Deserialize = {
+	session?: CashSessionDto_Deserialize | null,
+	/**  Sales need an open session right now (live mode with the setting on). */
+	required: boolean,
+	totals?: SessionTotalsDto | null,
+	expectedMinor?: string | null,
+};
+
+/**
+ *  The drawer as the till sees it. Totals and expected cash are `null` for a role that may
+ *  not see the variance (a cashier's count is blind).
+ */
+export type CashStateDto_Serialize = {
+	session: CashSessionDto_Serialize | null,
+	/**  Sales need an open session right now (live mode with the setting on). */
+	required: boolean,
+	totals: SessionTotalsDto | null,
+	expectedMinor: string | null,
+};
+
+export type CatalogHitDto = CatalogHitDto_Serialize | CatalogHitDto_Deserialize;
+
+export type CatalogHitDto_Deserialize = {
+	productId: ProductId,
+	variantId: VariantId,
+	name: string,
+	/**  Variant options, e.g. "M / Red"; empty for a simple product. */
+	label: string,
+	sku?: string | null,
+	priceMinor: string,
+	unit: Unit,
+	trackStock: boolean,
+	scanQtyMilli: string,
+	/**  `"barcode"`, `"sku"` or `"search"`. */
+	matchedBy: string,
+};
+
+export type CatalogHitDto_Serialize = {
+	productId: ProductId,
+	variantId: VariantId,
+	name: string,
+	/**  Variant options, e.g. "M / Red"; empty for a simple product. */
+	label: string,
+	sku: string | null,
+	priceMinor: string,
+	unit: Unit,
+	trackStock: boolean,
+	scanQtyMilli: string,
+	/**  `"barcode"`, `"sku"` or `"search"`. */
+	matchedBy: string,
+};
+
+export type CategoryDto = CategoryDto_Serialize | CategoryDto_Deserialize;
+
+export type CategoryDto_Deserialize = {
+	categoryId: CategoryId,
+	parentId?: CategoryId | null,
+	name: string,
+	archived: boolean,
+	version: number,
+};
+
+export type CategoryDto_Serialize = {
+	categoryId: CategoryId,
+	parentId: CategoryId | null,
+	name: string,
+	archived: boolean,
+	version: number,
+};
+
+export type CategoryId = string;
+
+export type ClosedCashDto = ClosedCashDto_Serialize | ClosedCashDto_Deserialize;
+
+export type ClosedCashDto_Deserialize = {
+	session: CashSessionDto_Deserialize,
+	countedMinor: string,
+	/**  `null` for a blind count. */
+	expectedMinor?: string | null,
+	varianceMinor?: string | null,
+	totals?: SessionTotalsDto | null,
+};
+
+export type ClosedCashDto_Serialize = {
+	session: CashSessionDto_Serialize,
+	countedMinor: string,
+	/**  `null` for a blind count. */
+	expectedMinor: string | null,
+	varianceMinor: string | null,
+	totals: SessionTotalsDto | null,
+};
+
+export type CloudBusinessDto = {
+	businessId: string,
+	name: string,
+};
+
+/**  How a consolidated report is grouped (E14-T05). */
+export type CloudGroupByDto = "day" | "register" | "tender";
+
+export type CloudRegisterDto = CloudRegisterDto_Serialize | CloudRegisterDto_Deserialize;
+
+export type CloudRegisterDto_Deserialize = {
+	code: string,
+	name: string,
+	/**  RFC 3339. */
+	lastAckAt?: string | null,
+	pendingKnown: boolean,
+	current: boolean,
+};
+
+export type CloudRegisterDto_Serialize = {
+	code: string,
+	name: string,
+	/**  RFC 3339. */
+	lastAckAt: string | null,
+	pendingKnown: boolean,
+	current: boolean,
+};
+
+export type CloudReportRowDto = {
+	/**  The date, the register's id or the tender kind. */
+	key: string,
+	label: string,
+	salesCount: number,
+	/**  What the sales came to (after discounts, with tax). */
+	salesMinor: string,
+	taxMinor: string,
+	discountMinor: string,
+	returnsCount: number,
+	refundsMinor: string,
+	netMinor: string,
+};
+
+/**
+ *  All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+ *  `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+ *  oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+ *  figures fetched at `fetchedAt`; `staleReason` says why).
+ */
+export type CloudSalesReportDto = CloudSalesReportDto_Serialize | CloudSalesReportDto_Deserialize;
+
+/**
+ *  All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+ *  `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+ *  oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+ *  figures fetched at `fetchedAt`; `staleReason` says why).
+ */
+export type CloudSalesReportDto_Deserialize = {
+	groupBy: string,
+	from: string,
+	to: string,
+	currencyExponent: number,
+	rows: CloudReportRowDto[],
+	total: CloudReportRowDto,
+	freshness: string,
+	unsyncedRegisters: number,
+	lastSyncedAt?: string | null,
+	staleReason?: string | null,
+	/**  RFC 3339: when the cloud made the report, and when this register fetched it. */
+	asOf: string,
+	fetchedAt: string,
+	registers: CloudRegisterDto_Deserialize[],
+};
+
+/**
+ *  All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+ *  `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+ *  oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+ *  figures fetched at `fetchedAt`; `staleReason` says why).
+ */
+export type CloudSalesReportDto_Serialize = {
+	groupBy: string,
+	from: string,
+	to: string,
+	currencyExponent: number,
+	rows: CloudReportRowDto[],
+	total: CloudReportRowDto,
+	freshness: string,
+	unsyncedRegisters: number,
+	lastSyncedAt: string | null,
+	staleReason: string | null,
+	/**  RFC 3339: when the cloud made the report, and when this register fetched it. */
+	asOf: string,
+	fetchedAt: string,
+	registers: CloudRegisterDto_Serialize[],
+};
+
+/**  What a column of the file means. */
+export type Column = "name" | "variant" | "parent_sku" | "sku" | "barcode" | "price" | "cost" | "unit" | "tax_category" | "category" | "track_stock" | "low_stock_threshold" | "scan_quantity" | "status";
+
+export type CompletedReturnDto = {
+	returnId: ReturnId,
+	returnNumber: string,
+	originalReceiptNumber: string,
+	totalMinor: string,
+	currencyExponent: number,
+	/**  Whether a manager approved it. */
+	approved: boolean,
+};
+
+export type CompletedSaleDto = {
+	saleId: SaleId,
+	receiptNumber: string,
+	totalMinor: string,
+	tenderedMinor: string,
+	changeMinor: string,
+	roundingMinor: string,
+	currencyExponent: number,
+	/**  `"sandbox"` or `"live"`. */
+	mode: string,
+	/**  The sale is in the outbox, waiting for the cloud link (Stage 3). */
+	syncPending: boolean,
+	/**  Items this sale took below zero stock (allowed and flagged). */
+	negativeStockItems: number,
+	/**  Print the receipt right away (`receipt.auto_print`). */
+	autoPrint: boolean,
+};
+
+export type ConflictDto = ConflictDto_Serialize | ConflictDto_Deserialize;
+
+export type ConflictDto_Deserialize = {
+	conflictId: string,
+	aggregateType: string,
+	aggregateId: string,
+	title: string,
+	/**  `VERSION`, `BARCODE_TAKEN` or `SKU_TAKEN`. */
+	reason: string,
+	localBaseVersion: number,
+	serverVersion: number,
+	createdAt: string,
+	/**  Version conflicts: each differing field. */
+	fields: FieldDiffDto[],
+	/**  Barcode or SKU conflicts: the values another product holds in the cloud, and its name. */
+	taken: string[],
+	heldBy?: string | null,
+};
+
+export type ConflictDto_Serialize = {
+	conflictId: string,
+	aggregateType: string,
+	aggregateId: string,
+	title: string,
+	/**  `VERSION`, `BARCODE_TAKEN` or `SKU_TAKEN`. */
+	reason: string,
+	localBaseVersion: number,
+	serverVersion: number,
+	createdAt: string,
+	/**  Version conflicts: each differing field. */
+	fields: FieldDiffDto[],
+	/**  Barcode or SKU conflicts: the values another product holds in the cloud, and its name. */
+	taken: string[],
+	heldBy: string | null,
+};
+
+export type ConflictSummaryDto = {
+	conflictId: string,
+	aggregateType: string,
+	aggregateId: string,
+	localBaseVersion: number,
+	serverVersion: number,
+	createdAt: string,
+};
+
+export type CreateWorkspaceInput = CreateWorkspaceInput_Serialize | CreateWorkspaceInput_Deserialize;
+
+export type CreateWorkspaceInput_Deserialize = {
+	businessName: string,
+	legalName?: string | null,
+	/**  Printed on receipts, one line each. */
+	addressLines: string[],
+	phone?: string | null,
+	email?: string | null,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	locationName: string,
+	registerName: string,
+	ownerName: string,
+	ownerPin: string,
+	taxRates: TaxRateInput[],
+};
+
+export type CreateWorkspaceInput_Serialize = {
+	businessName: string,
+	legalName: string | null,
+	/**  Printed on receipts, one line each. */
+	addressLines: string[],
+	phone: string | null,
+	email: string | null,
+	countryCode: string,
+	timezone: string,
+	currencyCode: string,
+	pricesIncludeTax: boolean,
+	locationName: string,
+	registerName: string,
+	ownerName: string,
+	ownerPin: string,
+	taxRates: TaxRateInput[],
+};
+
+export type CreatedWorkspaceDto = {
+	/**  Sign the owner in with this and the PIN they just chose. */
+	ownerUserId: UserId,
+	registerCode: string,
+};
+
+export type DatabaseStatus = DatabaseStatus_Serialize | DatabaseStatus_Deserialize;
+
+export type DatabaseStatus_Deserialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Deserialize };
+
+export type DatabaseStatus_Serialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Serialize };
+
+/**  Business dates, `YYYY-MM-DD`, inclusive. */
+export type DateRangeDto = {
+	from: string,
+	to: string,
+};
+
+export type DayFiguresDto = {
+	date: string,
+	figures: SalesFiguresDto,
+};
+
+export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;
+
+export type DiscountDto_Deserialize = { kind: "percent"; ratePpm: number; reason?: string | null } | { kind: "fixed"; amountMinor: string; reason?: string | null };
+
+export type DiscountDto_Serialize = { kind: "percent"; ratePpm: number; reason: string | null } | { kind: "fixed"; amountMinor: string; reason: string | null };
+
+/**  What happens to the returned goods (INV-009). */
+export type Disposition = 
+/**  Back on the shelf: +sellable. */
+"restock" | 
+/**  Kept but not sellable: +damaged. */
+"damaged" | 
+/**  Nothing comes back into stock (thrown away, or a service). */
+"no_stock_change";
+
+export type DocumentDraftDto = DocumentDraftDto_Serialize | DocumentDraftDto_Deserialize;
+
+export type DocumentDraftDto_Deserialize = {
+	docType: DocumentType,
+	reason?: AdjustReason | null,
+	supplierName?: string | null,
+	reference?: string | null,
+	note?: string | null,
+	lines: DocumentLineInputDto_Deserialize[],
+};
+
+export type DocumentDraftDto_Serialize = {
+	docType: DocumentType,
+	reason: AdjustReason | null,
+	supplierName: string | null,
+	reference: string | null,
+	note: string | null,
+	lines: DocumentLineInputDto_Serialize[],
+};
+
+export type DocumentLineInputDto = DocumentLineInputDto_Serialize | DocumentLineInputDto_Deserialize;
+
+export type DocumentLineInputDto_Deserialize = {
+	variantId: VariantId,
+	/**  Milli-units. Signed only for a count correction or "other" adjustment. */
+	quantityMilli: string,
+	unitCostMinor?: string | null,
+};
+
+export type DocumentLineInputDto_Serialize = {
+	variantId: VariantId,
+	/**  Milli-units. Signed only for a count correction or "other" adjustment. */
+	quantityMilli: string,
+	unitCostMinor: string | null,
+};
+
+export type DocumentType = 
+/**  First stock count when starting to use the till: + sellable. */
+"opening" | 
+/**  Goods received from a supplier: + sellable. */
+"receipt" | 
+/**  A correction with a reason; see [`AdjustReason`] for which way stock moves. */
+"adjustment" | 
+/**  Damaged stock thrown away: − damaged. */
+"write_off";
 
 /**
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
  *  The UI maps codes to actionable copy; `message` strings are for logs only.
  */
-export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "CONFLICT_VERSION" | "INTERNAL";
+export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "SYNC_OFFLINE" | "SYNC_JOIN_NOT_ALLOWED" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
+
+/**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
+export type ErrorDetails = ErrorDetails_Serialize | ErrorDetails_Deserialize;
+
+/**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
+export type ErrorDetails_Deserialize = {
+	/**  `AUTH_PIN_INVALID`: wrong PINs left before a temporary lock. */
+	remainingAttempts?: number | null,
+	/**  `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string. */
+	retryAtMs?: string | null,
+	/**  `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`). */
+	scope?: ApprovalScope_Deserialize | null,
+	/**
+	 *  Validation and duplicate errors: the input at fault, for an inline message
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 */
+	field?: string | null,
+	/**  The offending value when there is one (the SKU or barcode). */
+	value?: string | null,
+	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
+	ownerProductId?: ProductId | null,
+	/**  `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string. */
+	remainingMinor?: string | null,
+};
+
+/**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
+export type ErrorDetails_Serialize = {
+	/**  `AUTH_PIN_INVALID`: wrong PINs left before a temporary lock. */
+	remainingAttempts: number | null,
+	/**  `AUTH_LOCKED_OUT`: when sign-in is possible again, epoch ms as a decimal string. */
+	retryAtMs: string | null,
+	/**  `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`). */
+	scope: ApprovalScope_Serialize | null,
+	/**
+	 *  Validation and duplicate errors: the input at fault, for an inline message
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 */
+	field: string | null,
+	/**  The offending value when there is one (the SKU or barcode). */
+	value: string | null,
+	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
+	ownerProductId: ProductId | null,
+	/**  `TENDER_INSUFFICIENT`: what is still due, minor units as a decimal string. */
+	remainingMinor: string | null,
+};
+
+export type ExportDatasetDto = "transactions" | "tenders" | "returns" | "products" | "stock" | "sales_summary" | "tender_mix" | "top_products";
+
+export type ExportResultDto = {
+	/**  Where the file was saved. */
+	path: string,
+	fileName: string,
+	rows: number,
+};
+
+export type FieldChoiceDto = FieldChoiceDto_Serialize | FieldChoiceDto_Deserialize;
+
+export type FieldChoiceDto_Deserialize = {
+	field: string,
+	/**  `local`, `server` or `custom`. */
+	keep: string,
+	/**  `custom`: the value as JSON text. */
+	valueJson?: string | null,
+};
+
+export type FieldChoiceDto_Serialize = {
+	field: string,
+	/**  `local`, `server` or `custom`. */
+	keep: string,
+	/**  `custom`: the value as JSON text. */
+	valueJson: string | null,
+};
+
+export type FieldDiffDto = {
+	field: string,
+	label: string,
+	/**  JSON text of each side's value. */
+	localJson: string,
+	serverJson: string,
+};
+
+export type ImportCommitDto = {
+	productsCreated: number,
+	productsUpdated: number,
+	rowsCommitted: number,
+};
+
+export type ImportJobId = string;
+
+/**  The file as read: its columns, the first rows, and the suggested mapping. */
+export type ImportPreviewDto = {
+	jobId: ImportJobId,
+	fileName: string,
+	/**  `utf8`, `utf8_bom` or `windows1252`. */
+	encoding: string,
+	delimiter: string,
+	header: string[],
+	sample: string[][],
+	totalRows: number,
+	mapping: MappingEntryDto[],
+};
+
+/**  A row that will not be imported, and why (one message per problem). */
+export type ImportProblemDto = {
+	/**  Line of the file (the header is line 1). */
+	line: number,
+	/**  `error`, `duplicate_in_file` or `duplicate_existing`. */
+	status: string,
+	messages: string[],
+};
+
+export type ImportSummaryDto = {
+	totalRows: number,
+	validRows: number,
+	errorRows: number,
+	duplicateRows: number,
+	skippedRows: number,
+	productsToCreate: number,
+	productsToUpdate: number,
+	/**  The first 200 problems; the error report has them all. */
+	problems: ImportProblemDto[],
+};
+
+export type InventoryDocumentId = string;
 
 /**
  *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
  *  `message` is for logs; the UI maps `code` to actionable copy.
  */
-export type IpcError = {
+export type IpcError = IpcError_Serialize | IpcError_Deserialize;
+
+/**
+ *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
+ *  `message` is for logs; the UI maps `code` to actionable copy.
+ */
+export type IpcError_Deserialize = {
 	code: ErrorCode,
 	message: string,
 	retryable: boolean,
 	/**  Matches the log line written when the error was produced. */
 	correlationId: string,
+	/**
+	 *  Structured facts the UI needs for some codes (07-contracts §2). Boxed to keep
+	 *  `Result<_, IpcError>` small; the wire format is unaffected.
+	 */
+	details?: ErrorDetails_Deserialize | null,
+};
+
+/**
+ *  The error shape of every IPC command (docs/backlog/07-contracts.md §2).
+ *  `message` is for logs; the UI maps `code` to actionable copy.
+ */
+export type IpcError_Serialize = {
+	code: ErrorCode,
+	message: string,
+	retryable: boolean,
+	/**  Matches the log line written when the error was produced. */
+	correlationId: string,
+	/**
+	 *  Structured facts the UI needs for some codes (07-contracts §2). Boxed to keep
+	 *  `Result<_, IpcError>` small; the wire format is unaffected.
+	 */
+	details: ErrorDetails_Serialize | null,
+};
+
+export type LinkMode = 
+/**  Create the cloud business from this register. */
+"create" | 
+/**  Join an existing business (replaces this register's data). */
+"join";
+
+export type LinkOptionsDto = {
+	businesses: CloudBusinessDto[],
+	/**  Joining is only for a register with no live sales and no products (it replaces them). */
+	mayJoin: boolean,
+	/**  This register's business is already in the cloud (an earlier link to finish). */
+	ownBusinessInCloud: boolean,
+};
+
+export type LinkResultDto = {
+	/**  `create` or `join`. */
+	path: string,
+	businessId: string,
+	registerCode: string,
+	/**  Joined: this register's data was replaced, so everyone signs in again. */
+	signInAgain: boolean,
+};
+
+/**  The file column (0-based) chosen for a meaning. */
+export type MappingEntryDto = {
+	column: Column,
+	index: number,
 };
 
 export type MoneyAddResult = {
 	/**  Decimal string of minor units (ADR-001): never a JS number. */
 	sumMinor: string,
 	formatted: string,
+};
+
+export type MovementId = string;
+
+export type NewStaffInput = {
+	displayName: string,
+	role: Role,
+	pin: string,
+};
+
+export type OnDuplicateDto = "skip" | "update" | "error";
+
+/**  `receipt`: the receipt as printed, on the till's paper width; `a4`: an A4 page. */
+export type PdfPaperDto = "receipt" | "a4";
+
+export type Permission = "sale_complete" | "cart_line_discount" | "cart_order_discount" | "discount_above_threshold" | "price_override" | "cart_clear" | "cart_void" | "external_tender_record" | "sales_view" | "receipt_reprint" | "return_create" | "return_approve" | "catalog_view" | "catalog_edit" | "catalog_import" | "catalog_export" | "barcode_create_from_scan" | "inventory_view" | "inventory_receive" | "inventory_adjust" | "cash_session_open" | "cash_session_close" | "cash_session_view_variance" | "reports_view" | "reports_export" | "audit_view" | "settings_edit" | "staff_manage" | "device_link" | "sync_manage" | "conflict_resolve" | 
+/**  Simulators and dev panels; additionally restricted to debug builds by the shell. */
+"devtools_use";
+
+export type PlannedReturnLineDto = {
+	saleLineId: SaleLineId,
+	name: string,
+	quantityMilli: string,
+	refundMinor: string,
+	/**  What will happen to the goods (a service line is always `no_stock_change`). */
+	disposition: Disposition,
+};
+
+export type PostedDocumentDto = {
+	documentId: InventoryDocumentId,
+	/**  `R01-IN-000001`. */
+	documentNo: string,
+	docType: DocumentType,
+	/**  Stock movements written (a damage adjustment writes two per line). */
+	movementCount: number,
+};
+
+/**  What the till needs from the settings, for anyone signed in. */
+export type PreferencesDto = {
+	/**  `"Enter"`, `"Tab"` or `"none"`. */
+	scannerSuffix: string,
+	scannerMaxKeyGapMs: number,
+	/**  0: never lock. */
+	lockTimeoutSecs: number,
+};
+
+export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;
+
+export type PrintJobDto_Deserialize = {
+	jobId: PrintJobId,
+	/**
+	 *  `completed`, `failed` (the printer refused it; retry is safe) or `unknown` (no
+	 *  answer: ask the operator whether it printed).
+	 */
+	status: string,
+	reprint: boolean,
+	/**  For `failed`: `paper_out`, `cover_open`, `disconnected` or `rejected`. */
+	errorCode?: string | null,
+	attempts: number,
+};
+
+export type PrintJobDto_Serialize = {
+	jobId: PrintJobId,
+	/**
+	 *  `completed`, `failed` (the printer refused it; retry is safe) or `unknown` (no
+	 *  answer: ask the operator whether it printed).
+	 */
+	status: string,
+	reprint: boolean,
+	/**  For `failed`: `paper_out`, `cover_open`, `disconnected` or `rejected`. */
+	errorCode: string | null,
+	attempts: number,
+};
+
+export type PrintJobId = string;
+
+export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
+
+export type ProductDto_Deserialize = {
+	productId: ProductId,
+	name: string,
+	description?: string | null,
+	categoryId?: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	archived: boolean,
+	version: number,
+	variants: VariantDto_Deserialize[],
+};
+
+export type ProductDto_Serialize = {
+	productId: ProductId,
+	name: string,
+	description: string | null,
+	categoryId: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	archived: boolean,
+	version: number,
+	variants: VariantDto_Serialize[],
+};
+
+export type ProductFilterDto = ProductFilterDto_Serialize | ProductFilterDto_Deserialize;
+
+export type ProductFilterDto_Deserialize = {
+	/**  Name, SKU or barcode; empty for all. */
+	query: string,
+	status: ProductStatusDto,
+	trackStock?: boolean | null,
+	categoryId?: CategoryId | null,
+};
+
+export type ProductFilterDto_Serialize = {
+	/**  Name, SKU or barcode; empty for all. */
+	query: string,
+	status: ProductStatusDto,
+	trackStock: boolean | null,
+	categoryId: CategoryId | null,
+};
+
+export type ProductId = string;
+
+export type ProductInputDto = ProductInputDto_Serialize | ProductInputDto_Deserialize;
+
+export type ProductInputDto_Deserialize = {
+	name: string,
+	description?: string | null,
+	categoryId?: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	/**  The first variant becomes the default. */
+	variants: VariantInputDto_Deserialize[],
+};
+
+export type ProductInputDto_Serialize = {
+	name: string,
+	description: string | null,
+	categoryId: CategoryId | null,
+	productType: ProductType,
+	unit: Unit,
+	taxCategoryId: TaxCategoryId,
+	quickSelect: boolean,
+	/**  The first variant becomes the default. */
+	variants: VariantInputDto_Serialize[],
+};
+
+export type ProductPageDto = ProductPageDto_Serialize | ProductPageDto_Deserialize;
+
+export type ProductPageDto_Deserialize = {
+	rows: ProductRowDto_Deserialize[],
+	/**  Rows matching the filter, across all pages. */
+	total: number,
+};
+
+export type ProductPageDto_Serialize = {
+	rows: ProductRowDto_Serialize[],
+	/**  Rows matching the filter, across all pages. */
+	total: number,
+};
+
+export type ProductRowDto = ProductRowDto_Serialize | ProductRowDto_Deserialize;
+
+export type ProductRowDto_Deserialize = {
+	productId: ProductId,
+	name: string,
+	archived: boolean,
+	version: number,
+	variantCount: number,
+	sku?: string | null,
+	priceMinMinor: string,
+	priceMaxMinor: string,
+	barcodeCount: number,
+	trackStock: boolean,
+	quickSelect: boolean,
+	/**  Sellable on hand across tracked variants; `null` when nothing tracks stock. */
+	onHandMilli?: string | null,
+	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
+	negativeStock: boolean,
+	/**
+	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
+	 *  using the local values.
+	 */
+	syncConflict: boolean,
+};
+
+export type ProductRowDto_Serialize = {
+	productId: ProductId,
+	name: string,
+	archived: boolean,
+	version: number,
+	variantCount: number,
+	sku: string | null,
+	priceMinMinor: string,
+	priceMaxMinor: string,
+	barcodeCount: number,
+	trackStock: boolean,
+	quickSelect: boolean,
+	/**  Sellable on hand across tracked variants; `null` when nothing tracks stock. */
+	onHandMilli: string | null,
+	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
+	negativeStock: boolean,
+	/**
+	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
+	 *  using the local values.
+	 */
+	syncConflict: boolean,
+};
+
+export type ProductStatusDto = "active" | "archived" | "all";
+
+export type ProductType = 
+/**  Physical goods with tracked stock. */
+"stock" | 
+/**  Physical goods without stock tracking (e.g. loose bags). */
+"non_stock" | 
+/**  Services; never stock-tracked. */
+"service";
+
+export type ReceiptDto = {
+	receiptNumber: string,
+	/**  32 (58 mm paper) or 48 (80 mm). */
+	columns: number,
+	/**  Exactly what the printer prints, line by line. */
+	lines: ReceiptLineDto[],
+	sandbox: boolean,
+};
+
+export type ReceiptLineDto = {
+	text: string,
+	bold: boolean,
+};
+
+export type RepairAction = 
+/**  The event as it was sent (PIN hashes removed). */
+"view_payload" | 
+/**  A file for support: the status, the queue and the refused events. */
+"export_support";
+
+export type RepairActionResultDto = RepairActionResultDto_Serialize | RepairActionResultDto_Deserialize;
+
+export type RepairActionResultDto_Deserialize = {
+	/**  `view_payload`: the event, pretty-printed JSON. */
+	payloadJson?: string | null,
+	/**  `export_support`: the saved file's name, or `None` if the save was cancelled. */
+	savedFileName?: string | null,
+};
+
+export type RepairActionResultDto_Serialize = {
+	/**  `view_payload`: the event, pretty-printed JSON. */
+	payloadJson: string | null,
+	/**  `export_support`: the saved file's name, or `None` if the save was cancelled. */
+	savedFileName: string | null,
+};
+
+export type RepairEventDto = RepairEventDto_Serialize | RepairEventDto_Deserialize;
+
+export type RepairEventDto_Deserialize = {
+	eventId: string,
+	localSequence: number,
+	eventType: string,
+	aggregateType: string,
+	aggregateId: string,
+	/**  The reason code (`EVENT_INVALID`, `SNAPSHOT_MISMATCH`, `EVENT_VERSION_UNSUPPORTED`...). */
+	code?: string | null,
+	/**  The cloud's own words, for support. */
+	detail?: string | null,
+	/**
+	 *  `rejected` (set aside; later events went on) or `blocked` (holds up the rest until the
+	 *  cloud accepts it, e.g. after an update).
+	 */
+	kind: string,
+	occurredAt: string,
+};
+
+export type RepairEventDto_Serialize = {
+	eventId: string,
+	localSequence: number,
+	eventType: string,
+	aggregateType: string,
+	aggregateId: string,
+	/**  The reason code (`EVENT_INVALID`, `SNAPSHOT_MISMATCH`, `EVENT_VERSION_UNSUPPORTED`...). */
+	code: string | null,
+	/**  The cloud's own words, for support. */
+	detail: string | null,
+	/**
+	 *  `rejected` (set aside; later events went on) or `blocked` (holds up the rest until the
+	 *  cloud accepts it, e.g. after an update).
+	 */
+	kind: string,
+	occurredAt: string,
+};
+
+export type RepairQueueDto = RepairQueueDto_Serialize | RepairQueueDto_Deserialize;
+
+export type RepairQueueDto_Deserialize = {
+	events: RepairEventDto_Deserialize[],
+	conflicts: ConflictSummaryDto[],
+};
+
+export type RepairQueueDto_Serialize = {
+	events: RepairEventDto_Serialize[],
+	conflicts: ConflictSummaryDto[],
+};
+
+/**  Where the numbers come from (PRD §15): `"device"` until the cloud link (Stage 3). */
+export type ReportScopeDto = {
+	scope: string,
+	/**  Milliseconds since the epoch, as a string. */
+	asOfMs: string,
+};
+
+export type ReturnId = string;
+
+export type ReturnLineInputDto = {
+	saleLineId: SaleLineId,
+	quantityMilli: string,
+	disposition: Disposition,
+};
+
+/**  What a return would refund, before it is made. */
+export type ReturnPlanDto = {
+	subtotalMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	lines: PlannedReturnLineDto[],
+};
+
+export type ReturnReason = "changed_mind" | "defective" | "wrong_item" | "damaged_in_transit" | "other";
+
+export type ReturnableLineDto = {
+	saleLineId: SaleLineId,
+	lineNo: number,
+	name: string,
+	label: string,
+	unit: Unit,
+	/**  Whether returning it can put stock back (false for services). */
+	trackStock: boolean,
+	soldMilli: string,
+	returnedMilli: string,
+	availableMilli: string,
+	/**  What the customer paid for the whole line, after discounts. */
+	totalMinor: string,
+};
+
+/**  A sale found for a return: per line, what was sold and what can still come back. */
+export type ReturnableSaleDto = {
+	saleId: SaleId,
+	receiptNumber: string,
+	/**  `"sandbox"` or `"live"`. */
+	mode: string,
+	currencyExponent: number,
+	lines: ReturnableLineDto[],
+};
+
+export type Role = "owner" | "manager" | "cashier";
+
+export type SaleDetailDto = SaleDetailDto_Serialize | SaleDetailDto_Deserialize;
+
+export type SaleDetailDto_Deserialize = {
+	saleId: SaleId,
+	receiptNumber: string,
+	localTime: string,
+	businessDate: string,
+	cashierName: string,
+	approverName?: string | null,
+	mode: string,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	roundingMinor: string,
+	totalMinor: string,
+	tenderedMinor: string,
+	changeMinor: string,
+	taxBreakdown: TaxLineDto[],
+	lines: SaleDetailLineDto_Deserialize[],
+	tenders: SaleTenderDto_Deserialize[],
+	returns: SaleReturnDto[],
+};
+
+export type SaleDetailDto_Serialize = {
+	saleId: SaleId,
+	receiptNumber: string,
+	localTime: string,
+	businessDate: string,
+	cashierName: string,
+	approverName: string | null,
+	mode: string,
+	currencyCode: string,
+	currencyExponent: number,
+	taxMode: TaxMode,
+	subtotalMinor: string,
+	lineDiscountTotalMinor: string,
+	orderDiscountTotalMinor: string,
+	taxTotalMinor: string,
+	roundingMinor: string,
+	totalMinor: string,
+	tenderedMinor: string,
+	changeMinor: string,
+	taxBreakdown: TaxLineDto[],
+	lines: SaleDetailLineDto_Serialize[],
+	tenders: SaleTenderDto_Serialize[],
+	returns: SaleReturnDto[],
+};
+
+export type SaleDetailLineDto = SaleDetailLineDto_Serialize | SaleDetailLineDto_Deserialize;
+
+export type SaleDetailLineDto_Deserialize = {
+	lineNo: number,
+	name: string,
+	label: string,
+	sku?: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	grossMinor: string,
+	/**  The line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	returnedMilli: string,
+};
+
+export type SaleDetailLineDto_Serialize = {
+	lineNo: number,
+	name: string,
+	label: string,
+	sku: string | null,
+	unit: Unit,
+	quantityMilli: string,
+	unitPriceMinor: string,
+	priceOverridden: boolean,
+	grossMinor: string,
+	/**  The line's discount plus its share of the order discount. */
+	discountMinor: string,
+	taxMinor: string,
+	totalMinor: string,
+	returnedMilli: string,
+};
+
+export type SaleId = string;
+
+export type SaleLineId = string;
+
+export type SaleReturnDto = {
+	returnId: ReturnId,
+	returnNumber: string,
+	localTime: string,
+	reason: string,
+	totalMinor: string,
+	refunds: TenderKind[],
+};
+
+export type SaleRowDto = {
+	saleId: SaleId,
+	receiptNumber: string,
+	localTime: string,
+	businessDate: string,
+	cashierName: string,
+	/**  `"sandbox"` or `"live"`. */
+	mode: string,
+	currencyExponent: number,
+	totalMinor: string,
+	itemCountMilli: string,
+	tenders: TenderKind[],
+	refundedMinor: string,
+};
+
+export type SaleSyncDto = {
+	/**
+	 *  `local` (no cloud link), `pending` (saved on this device, waiting), `synced`, or
+	 *  `attention` (the cloud refused it; see the repair queue).
+	 */
+	state: string,
+};
+
+export type SaleTenderDto = SaleTenderDto_Serialize | SaleTenderDto_Deserialize;
+
+export type SaleTenderDto_Deserialize = {
+	kind: TenderKind,
+	amountMinor: string,
+	receivedMinor?: string | null,
+	changeMinor: string,
+	status: string,
+	/**  `"operator"`: recorded by staff. `"provider"`: confirmed by a payment integration. */
+	confirmationSource: string,
+	reference?: string | null,
+};
+
+export type SaleTenderDto_Serialize = {
+	kind: TenderKind,
+	amountMinor: string,
+	receivedMinor: string | null,
+	changeMinor: string,
+	status: string,
+	/**  `"operator"`: recorded by staff. `"provider"`: confirmed by a payment integration. */
+	confirmationSource: string,
+	reference: string | null,
+};
+
+export type SalesFiguresDto = {
+	salesCount: number,
+	grossMinor: string,
+	lineDiscountsMinor: string,
+	orderDiscountsMinor: string,
+	discountsMinor: string,
+	taxMinor: string,
+	roundingMinor: string,
+	salesTotalMinor: string,
+	returnsCount: number,
+	refundsMinor: string,
+	refundedTaxMinor: string,
+	netInclTaxMinor: string,
+	netExclTaxMinor: string,
+};
+
+export type SalesFilterDto = SalesFilterDto_Serialize | SalesFilterDto_Deserialize;
+
+export type SalesFilterDto_Deserialize = {
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from?: string | null,
+	to?: string | null,
+	/**  A receipt number, or just its digits. */
+	receipt?: string | null,
+	cashierUserId?: UserId | null,
+	tender?: TenderKind | null,
+};
+
+export type SalesFilterDto_Serialize = {
+	/**  Business dates, `YYYY-MM-DD`, inclusive. */
+	from: string | null,
+	to: string | null,
+	/**  A receipt number, or just its digits. */
+	receipt: string | null,
+	cashierUserId: UserId | null,
+	tender: TenderKind | null,
+};
+
+export type SalesPageDto = SalesPageDto_Serialize | SalesPageDto_Deserialize;
+
+export type SalesPageDto_Deserialize = {
+	rows: SaleRowDto[],
+	/**  Pass back as `after` for the next page; `null` on the last page. */
+	next?: string | null,
+};
+
+export type SalesPageDto_Serialize = {
+	rows: SaleRowDto[],
+	/**  Pass back as `after` for the next page; `null` on the last page. */
+	next: string | null,
+};
+
+export type SalesSummaryDto = {
+	days: DayFiguresDto[],
+	total: SalesFiguresDto,
+	/**  Gross is tax-inclusive when true. */
+	pricesIncludeTax: boolean,
+	currencyExponent: number,
+	scope: ReportScopeDto,
+};
+
+/**  A file saved where the user chose. */
+export type SavedFileDto = {
+	path: string,
+	fileName: string,
+};
+
+export type ScanEventId = string;
+
+export type ScanOutcomeDto = ScanOutcomeDto_Serialize | ScanOutcomeDto_Deserialize;
+
+export type ScanOutcomeDto_Deserialize = 
+/**  A new line. */
+{ outcome: "added"; cart: CartViewDto_Deserialize; lineId: CartLineId } | 
+/**  An existing line's quantity went up (BAR-005). */
+{ outcome: "incremented"; cart: CartViewDto_Deserialize; lineId: CartLineId } | 
+/**  This delivery was already processed; the cart is unchanged. */
+{ outcome: "duplicate"; cart: CartViewDto_Deserialize } | 
+/**  Nothing matches. The cart is unchanged (BAR-006). */
+{ outcome: "notFound"; code: string };
+
+export type ScanOutcomeDto_Serialize = 
+/**  A new line. */
+{ outcome: "added"; cart: CartViewDto_Serialize; lineId: CartLineId } | 
+/**  An existing line's quantity went up (BAR-005). */
+{ outcome: "incremented"; cart: CartViewDto_Serialize; lineId: CartLineId } | 
+/**  This delivery was already processed; the cart is unchanged. */
+{ outcome: "duplicate"; cart: CartViewDto_Serialize } | 
+/**  Nothing matches. The cart is unchanged (BAR-006). */
+{ outcome: "notFound"; code: string };
+
+/**  How a code reached `scan_submit`. */
+export type ScanSourceDto = "scanner" | "manual";
+
+export type SessionDto = {
+	userId: UserId,
+	displayName: string,
+	role: Role,
+	/**  The PIN was reset by an owner: ask for a new one before anything else. */
+	mustChangePin: boolean,
+};
+
+export type SessionTotalsDto = {
+	salesCount: number,
+	salesTotalMinor: string,
+	taxTotalMinor: string,
+	discountTotalMinor: string,
+	roundingTotalMinor: string,
+	/**  Amounts applied to sales by tender kind (cash net of change). */
+	tenders: TenderTotalDto[],
+	returnsCount: number,
+	refundsTotalMinor: string,
+	refunds: TenderTotalDto[],
+};
+
+export type SettingDto = {
+	key: string,
+	group: string,
+	label: string,
+	help: string,
+	kind: SettingKindDto,
+	/**  The current value as JSON text. */
+	valueJson: string,
+	defaultJson: string,
+	/**  Pass back as `baseVersion` when changing it. */
+	version: number,
+};
+
+export type SettingKindDto = { type: "bool" } | { type: "int"; min: number; max: number } | 
+/**  Parts per million (100000 = 10%). */
+{ type: "ppm" } | 
+/**  One of these JSON values. */
+{ type: "choice"; options: string[] } | { type: "lines"; maxLines: number; maxChars: number };
+
+/**  For the PIN pad: no PIN state, no versions. */
+export type SignInUser = {
+	userId: UserId,
+	displayName: string,
+	role: Role,
+};
+
+export type StaffDto = {
+	userId: UserId,
+	displayName: string,
+	role: Role,
+	active: boolean,
+	mustChangePin: boolean,
+	version: number,
+};
+
+export type StaffUpdateInput = StaffUpdateInput_Serialize | StaffUpdateInput_Deserialize;
+
+export type StaffUpdateInput_Deserialize = {
+	userId: UserId,
+	baseVersion: number,
+	displayName?: string | null,
+	role?: Role | null,
+};
+
+export type StaffUpdateInput_Serialize = {
+	userId: UserId,
+	baseVersion: number,
+	displayName: string | null,
+	role: Role | null,
+};
+
+export type StockDriftDto = {
+	variantId: VariantId,
+	bucket: string,
+	recordedMilli: string,
+	fromMovementsMilli: string,
+};
+
+export type StockHistoryDto = {
+	movementId: MovementId,
+	localTime: string,
+	movementType: string,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	deltaMilli: string,
+	/**  `sale`, `return` or `inventory_document`. */
+	sourceType: string,
+	sourceId: string,
+	/**  The receipt, return or document number. */
+	sourceNumber: string,
+	actorName: string,
+};
+
+export type StockReportDto = StockReportDto_Serialize | StockReportDto_Deserialize;
+
+export type StockReportDto_Deserialize = {
+	rows: StockRowDto_Deserialize[],
+	scope: ReportScopeDto,
+};
+
+export type StockReportDto_Serialize = {
+	rows: StockRowDto_Serialize[],
+	scope: ReportScopeDto,
+};
+
+export type StockRowDto = StockRowDto_Serialize | StockRowDto_Deserialize;
+
+export type StockRowDto_Deserialize = {
+	variantId: VariantId,
+	name: string,
+	label: string,
+	sku?: string | null,
+	unit: Unit,
+	sellableMilli: string,
+	damagedMilli: string,
+	lowStockThresholdMilli?: string | null,
+	/**  `"ok"`, `"low"` or `"negative"`. */
+	status: string,
+	lastMovementMs?: string | null,
+};
+
+export type StockRowDto_Serialize = {
+	variantId: VariantId,
+	name: string,
+	label: string,
+	sku: string | null,
+	unit: Unit,
+	sellableMilli: string,
+	damagedMilli: string,
+	lowStockThresholdMilli: string | null,
+	/**  `"ok"`, `"low"` or `"negative"`. */
+	status: string,
+	lastMovementMs: string | null,
+};
+
+export type Symbology = "ean13" | "ean8" | "upc_a" | "upc_e" | "code128" | "code39" | "itf14" | "qr" | "data_matrix" | 
+/**  The shop's own numbering, or a numeric code that failed its GTIN check digit. */
+"internal" | "unknown";
+
+export type SyncStatusDto = SyncStatusDto_Serialize | SyncStatusDto_Deserialize;
+
+export type SyncStatusDto_Deserialize = {
+	/**  `unlinked`, `linking`, `linked` or `revoked` (the owner disconnected this register). */
+	linkState: string,
+	/**  Whether this app has a cloud to link to. */
+	cloudConfigured: boolean,
+	/**  Events not yet acknowledged by the cloud. */
+	pending: number,
+	/**  RFC 3339. */
+	lastPushOkAt?: string | null,
+	lastPullOkAt?: string | null,
+	lastErrorCode?: string | null,
+	/**  The cloud's clock and this computer's differ by more than 10 minutes (ADR-006). */
+	clockSkewWarning: boolean,
+	registerCode?: string | null,
+	/**
+	 *  The status bar's state: `not_linked`, `synced`, `pending`, `offline`, `attention`,
+	 *  `revoked` or `update_required` (E17-T09).
+	 */
+	indicator: string,
+	/**  Events the cloud refused (the repair queue), including ones holding up the rest. */
+	rejected: number,
+	/**  Open conflicts. */
+	conflicts: number,
+};
+
+export type SyncStatusDto_Serialize = {
+	/**  `unlinked`, `linking`, `linked` or `revoked` (the owner disconnected this register). */
+	linkState: string,
+	/**  Whether this app has a cloud to link to. */
+	cloudConfigured: boolean,
+	/**  Events not yet acknowledged by the cloud. */
+	pending: number,
+	/**  RFC 3339. */
+	lastPushOkAt: string | null,
+	lastPullOkAt: string | null,
+	lastErrorCode: string | null,
+	/**  The cloud's clock and this computer's differ by more than 10 minutes (ADR-006). */
+	clockSkewWarning: boolean,
+	registerCode: string | null,
+	/**
+	 *  The status bar's state: `not_linked`, `synced`, `pending`, `offline`, `attention`,
+	 *  `revoked` or `update_required` (E17-T09).
+	 */
+	indicator: string,
+	/**  Events the cloud refused (the repair queue), including ones holding up the rest. */
+	rejected: number,
+	/**  Open conflicts. */
+	conflicts: number,
+};
+
+export type TaxCategoryConfigDto = {
+	taxCategoryId: TaxCategoryId,
+	name: string,
+	isDefault: boolean,
+	rateIds: TaxRateId[],
+	archived: boolean,
+	version: number,
+};
+
+export type TaxCategoryDto = {
+	taxCategoryId: TaxCategoryId,
+	name: string,
+	isDefault: boolean,
+	rates: TaxRateDto[],
+};
+
+export type TaxCategoryId = string;
+
+export type TaxConfigDto = TaxConfigDto_Serialize | TaxConfigDto_Deserialize;
+
+export type TaxConfigDto_Deserialize = {
+	rates: TaxRateConfigDto_Deserialize[],
+	categories: TaxCategoryConfigDto[],
+};
+
+export type TaxConfigDto_Serialize = {
+	rates: TaxRateConfigDto_Serialize[],
+	categories: TaxCategoryConfigDto[],
+};
+
+export type TaxLineDto = {
+	name: string,
+	ratePpm: number,
+	taxableMinor: string,
+	taxMinor: string,
+};
+
+export type TaxMode = 
+/**  Shelf prices include tax (common for VAT/GST retail). */
+"inclusive" | 
+/**  Tax is added on top of shelf prices. */
+"exclusive";
+
+export type TaxRateConfigDto = TaxRateConfigDto_Serialize | TaxRateConfigDto_Deserialize;
+
+export type TaxRateConfigDto_Deserialize = {
+	taxRateId: TaxRateId,
+	name: string,
+	ratePpm: number,
+	/**  Business date, inclusive; `null`: always. */
+	from?: string | null,
+	/**  Business date, exclusive; `null`: open. */
+	to?: string | null,
+	archived: boolean,
+	version: number,
+};
+
+export type TaxRateConfigDto_Serialize = {
+	taxRateId: TaxRateId,
+	name: string,
+	ratePpm: number,
+	/**  Business date, inclusive; `null`: always. */
+	from: string | null,
+	/**  Business date, exclusive; `null`: open. */
+	to: string | null,
+	archived: boolean,
+	version: number,
+};
+
+export type TaxRateDto = {
+	name: string,
+	ratePpm: number,
+};
+
+export type TaxRateId = string;
+
+export type TaxRateInput = {
+	name: string,
+	/**  Parts per million: 200000 = 20%. */
+	ratePpm: number,
+};
+
+export type TenderInputDto = TenderInputDto_Serialize | TenderInputDto_Deserialize;
+
+export type TenderInputDto_Deserialize = {
+	kind: TenderKind,
+	/**  Cash: what the customer handed over. Other tenders: the amount charged. */
+	amountMinor: string,
+	/**  External tenders: the terminal's approval code or a transfer reference. Never a card number. */
+	reference?: string | null,
+};
+
+export type TenderInputDto_Serialize = {
+	kind: TenderKind,
+	/**  Cash: what the customer handed over. Other tenders: the amount charged. */
+	amountMinor: string,
+	/**  External tenders: the terminal's approval code or a transfer reference. Never a card number. */
+	reference: string | null,
+};
+
+export type TenderKind = "cash" | "card_external" | "bank_transfer_external" | "qr_external" | "other_external";
+
+export type TenderMixDto = {
+	rows: TenderMixRowDto[],
+	scope: ReportScopeDto,
+};
+
+export type TenderMixRowDto = {
+	kind: TenderKind,
+	/**  `"operator"` (recorded by staff) or `"provider"` (confirmed by a payment integration). */
+	confirmationSource: string,
+	count: number,
+	takenMinor: string,
+	refundCount: number,
+	refundedMinor: string,
+	netMinor: string,
+};
+
+export type TenderTotalDto = {
+	kind: TenderKind,
+	count: number,
+	amountMinor: string,
+};
+
+export type TopByDto = "quantity" | "value";
+
+export type TopProductDto = {
+	variantId: VariantId,
+	name: string,
+	label: string,
+	quantityMilli: string,
+	valueMinor: string,
+};
+
+export type TopProductsDto = {
+	rows: TopProductDto[],
+	scope: ReportScopeDto,
+};
+
+export type Unit = "ea" | "kg" | "g" | "l" | "ml" | "m" | "cm" | "box" | "pack";
+
+export type UserId = string;
+
+export type VariantDto = VariantDto_Serialize | VariantDto_Deserialize;
+
+export type VariantDto_Deserialize = {
+	variantId: VariantId,
+	isDefault: boolean,
+	sku?: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor?: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli?: string | null,
+	scanQtyMilli: string,
+	barcodes: BarcodeDto[],
+	archived: boolean,
+};
+
+export type VariantDto_Serialize = {
+	variantId: VariantId,
+	isDefault: boolean,
+	sku: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli: string | null,
+	scanQtyMilli: string,
+	barcodes: BarcodeDto[],
+	archived: boolean,
+};
+
+export type VariantId = string;
+
+export type VariantInputDto = VariantInputDto_Serialize | VariantInputDto_Deserialize;
+
+export type VariantInputDto_Deserialize = {
+	/**  Set when editing an existing variant. */
+	variantId?: VariantId | null,
+	sku?: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor?: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli?: string | null,
+	/**  Defaults to one unit. */
+	scanQtyMilli?: string | null,
+	barcodes: BarcodeInputDto_Deserialize[],
+};
+
+export type VariantInputDto_Serialize = {
+	/**  Set when editing an existing variant. */
+	variantId: VariantId | null,
+	sku: string | null,
+	options: { [key in string]: string },
+	priceMinor: string,
+	costMinor: string | null,
+	trackStock: boolean,
+	lowStockThresholdMilli: string | null,
+	/**  Defaults to one unit. */
+	scanQtyMilli: string | null,
+	barcodes: BarcodeInputDto_Serialize[],
+};
+
+export type WorkspaceDto = {
+	businessName: string,
+	registerName: string,
+	registerCode: string,
+	currencyCode: string,
+	/**  Minor-unit digits of the currency, for parsing typed prices. */
+	currencyExponent: number,
+	/**  `"sandbox"` until the owner goes live (PRD §7.1). */
+	mode: string,
 };
 
 /* Tauri Specta runtime */

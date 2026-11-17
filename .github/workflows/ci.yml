@@ -46,11 +46,12 @@ jobs:
         run: |
           cargo xtask gen-bindings --check
           cargo xtask gen-schemas --check
+          cargo xtask schema-compat
       - name: requirement traceability
         run: cargo xtask trace
 
   cloud-postgres:
-    name: Cloud API against PostgreSQL
+    name: Cloud API and sync end to end against PostgreSQL
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -67,7 +68,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.97.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p cloud-api --locked
+      - run: cargo test -p cloud-api -p pos-cloud-db --locked
+      # Registers linked to the real API over HTTP (E17-T08), and the AT-06 smoke subset of
+      # the network fault matrix (E17-T10; the full matrix runs nightly).
+      - run: cargo test -p sync-e2e --locked
 
   cargo-deny:
     name: cargo-deny (licences, advisories, bans, sources)

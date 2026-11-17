@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useRef } from "react";
+import { ScanPreferences } from "./preferences";
 import { DEFAULT_SCAN_CONFIG, ScanDetector, type DetectedScan, type ScanDetectorConfig } from "./scanDetector";
 
 export interface CapturedScan extends DetectedScan {
@@ -8,6 +9,8 @@ export interface CapturedScan extends DetectedScan {
   /** True when the scan was typed into a `[data-scan-field]` input (its owner clears it). */
   inScanField: boolean;
 }
+
+const NUMPAD_COMMANDS = new Set(["NumpadAdd", "NumpadSubtract"]);
 
 function isEditable(el: Element | null): boolean {
   if (!el) return false;
@@ -24,16 +27,26 @@ function isEditable(el: Element | null): boolean {
  *   typed; a detected scan is delivered with `inScanField: true` and its terminator swallowed.
  * - **Any other text field** (search, forms) is left alone: human typing is never a scan.
  */
-export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Partial<ScanDetectorConfig> = {}): void {
+export function useScanCapture(
+  onScan: (scan: CapturedScan) => void,
+  config: Partial<ScanDetectorConfig> = {},
+  /**
+   * False while a dialog owns the keyboard (e.g. a manager typing a PIN on the approval
+   * pad): a fast-typed PIN would otherwise look exactly like a scan.
+   */
+  enabled = true,
+): void {
   const onScanRef = useRef(onScan);
   useEffect(() => {
     onScanRef.current = onScan;
   });
-  const merged: ScanDetectorConfig = { ...DEFAULT_SCAN_CONFIG, ...config };
+  const shop = useContext(ScanPreferences);
+  const merged: ScanDetectorConfig = { ...DEFAULT_SCAN_CONFIG, ...shop, ...config };
   // A stable key so the listener is rebuilt only when a setting actually changes.
   const configKey = JSON.stringify(merged);
 
   useEffect(() => {
+    if (!enabled) return;
     const cfg = JSON.parse(configKey) as ScanDetectorConfig;
     let inScanField = false;
     const detector = new ScanDetector(cfg, (scan) =>
@@ -43,6 +56,9 @@ export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Par
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+      // Numpad +/- are till commands (quantity), never scanner output: wedge scanners send
+      // main-row keys. Letting them through keeps them usable in scanner-ready mode.
+      if (NUMPAD_COMMANDS.has(e.code)) return;
       const target = e.target instanceof Element ? e.target : null;
       const field = target?.closest("[data-scan-field]") ?? null;
       const editable = isEditable(target);
@@ -65,5 +81,5 @@ export function useScanCapture(onScan: (scan: CapturedScan) => void, config: Par
       window.removeEventListener("keydown", onKeyDown, { capture: true });
       clearTimeout(idleTimer);
     };
-  }, [configKey]);
+  }, [configKey, enabled]);
 }

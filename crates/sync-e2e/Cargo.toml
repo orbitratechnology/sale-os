@@ -1,0 +1,30 @@
+[package]
+name = "sync-e2e"
+description = "End-to-end sync tests: real registers (SQLite) linked over HTTP to the real cloud API (PostgreSQL). Tests only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+axum.workspace = true
+cloud-api = { path = "../../apps/cloud-api" }
+pos-application.workspace = true
+pos-cloud-db.workspace = true
+pos-domain.workspace = true
+pos-local-db.workspace = true
+pos-sync.workspace = true
+pos-sync-http.workspace = true
+pos-testkit.workspace = true
+serde_json.workspace = true
+sqlx = { workspace = true, features = ["postgres", "sqlite"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+uuid.workspace = true
+async-trait.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-sync-link-complete"
+description = "Enables the sync_link_complete command without any pre-configured scope."
+commands.allow = ["sync_link_complete"]
+
+[[permission]]
+identifier = "deny-sync-link-complete"
+description = "Denies the sync_link_complete command without any pre-configured scope."
+commands.deny = ["sync_link_complete"]

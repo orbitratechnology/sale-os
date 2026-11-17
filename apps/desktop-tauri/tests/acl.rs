@@ -1,5 +1,5 @@
 //! E01-T03 acceptance: the WebView can call only the app's declared commands (plus event
-//! delivery). fs, shell, http, path and window APIs are refused by Tauri's ACL, and so is
+//! delivery). fs, shell, http, path, dialog and window APIs are refused by Tauri's ACL, and so is
 //! any command from a window that has no capability.
 
 use serde_json::{Value, json};
@@ -24,6 +24,9 @@ fn app_origin() -> tauri::Url {
 fn window(label: &str) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
     let commands = desktop_tauri_lib::specta_builder::<MockRuntime>();
     let app = mock_builder()
+        // Registered as in the app (Rust opens the save dialog), so the refusal below is the
+        // capability's doing, not a missing plugin.
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(commands.invoke_handler())
         .build(tauri::generate_context!())
         .expect("mock app builds");
@@ -85,6 +88,9 @@ fn plugin_and_core_apis_are_refused() {
             json!({"clientConfig": {"url": "https://example.com"}}),
         ),
         ("plugin:path|resolve_directory", json!({"directory": 1})),
+        // The dialog is opened from Rust only; the WebView cannot pick paths itself.
+        ("plugin:dialog|save", json!({"options": {}})),
+        ("plugin:dialog|open", json!({"options": {}})),
         ("plugin:window|close", json!({"label": "main"})),
         (
             "plugin:webview|create_webview_window",

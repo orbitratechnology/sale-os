@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scan-submit"
+description = "Enables the scan_submit command without any pre-configured scope."
+commands.allow = ["scan_submit"]
+
+[[permission]]
+identifier = "deny-scan-submit"
+description = "Denies the scan_submit command without any pre-configured scope."
+commands.deny = ["scan_submit"]

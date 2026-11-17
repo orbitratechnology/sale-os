@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-receipt-export-pdf"
+description = "Enables the receipt_export_pdf command without any pre-configured scope."
+commands.allow = ["receipt_export_pdf"]
+
+[[permission]]
+identifier = "deny-receipt-export-pdf"
+description = "Denies the receipt_export_pdf command without any pre-configured scope."
+commands.deny = ["receipt_export_pdf"]

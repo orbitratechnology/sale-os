@@ -7,7 +7,28 @@ all-features = false
 # Unmaintained crates deep in the Tauri/GTK tree are reported but do not block; known
 # vulnerabilities do. Exceptions need an issue link and an expiry review date.
 unmaintained = "workspace"
-ignore = []
+# Each entry: why it does not block, what removes it, and a review date. Revisit on that date or
+# when the named upgrade appears, whichever is first.
+ignore = [
+  # SQLite < 3.54 can return uninitialised page-cache memory when it opens a database together
+  # with a crafted `-wal` file of another page size (local, needs attacker-written files).
+  # Fixed in libsqlite3-sys >= 0.39, but sqlx-sqlite 0.8.6 and 0.9.0 (the latest) both require
+  # libsqlite3-sys < 0.38, so no sqlx release can take the fix yet (checked 2026-11-17).
+  # Exposure: the app only opens the database it created in its own data directory; anyone
+  # able to plant a `-wal` file there can already change the data. Backup restore (opening a
+  # file the user picks) must not ship until this is fixed.
+  # Remove when sqlx allows libsqlite3-sys >= 0.39. Review by 2027-02-01.
+  { id = "RUSTSEC-2026-0459", reason = "no sqlx release accepts the patched libsqlite3-sys; app opens only its own database; review 2027-02-01" },
+  # Unmaintained, not vulnerable. PDF receipts shape text with it, and krilla (the PDF writer,
+  # latest 0.8.2) depends on it too, so replacing our own use with harfrust would not remove
+  # it. Remove when krilla moves to harfrust. Review by 2027-02-01.
+  { id = "RUSTSEC-2026-0206", reason = "unmaintained, no known vulnerability; required by krilla 0.8; review 2027-02-01" },
+  # chrono and chrono-tz: unmaintained, not vulnerable. Used for dates, business-day time
+  # zones and Postgres timestamps across the workspace (and by sqlx); moving to jiff is its own
+  # piece of work. Review by 2027-02-01.
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no known vulnerability; migration to jiff to be planned; review 2027-02-01" },
+  { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, no known vulnerability; migration to jiff to be planned; review 2027-02-01" },
+]
 
 [licenses]
 confidence-threshold = 0.9
