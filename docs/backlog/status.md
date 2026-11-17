@@ -202,3 +202,10 @@ E17 (outbox push, pull, idempotent ingestion).
 **Known flaky:** `e2e/scanCapture.e2e.ts` "delivers 20 scans typed at 5 ms/key" failed once in a full
 run on a loaded machine and passed 3/3 on its own (2026-11-07). It types at 5 ms per key, so it is
 timing-sensitive; watch it in CI before loosening anything.
+
+**Security exceptions (`deny.toml`, review by 2027-02-01):** RUSTSEC-2026-0459 (SQLite CVE in the
+bundled `libsqlite3-sys`; no `sqlx` release, 0.8.6 or 0.9.0, accepts the fixed 0.39 yet; the app
+opens only its own database, and **backup restore must not ship until it is fixed**);
+RUSTSEC-2026-0206 (`rustybuzz` unmaintained, also required by `krilla` 0.8); RUSTSEC-2026-0543 and
+-0555 (`chrono`, `chrono-tz` unmaintained; a move to `jiff` is to be planned). None is a known
+vulnerability in how the app uses it.
