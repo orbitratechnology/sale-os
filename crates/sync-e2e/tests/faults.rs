@@ -113,8 +113,12 @@ async fn assert_exactly_once(cloud: &Cloud, r: &Register, business: uuid::Uuid) 
 }
 
 async fn scenario(fault: Action, every: usize) {
+    scenario_with(Schedule::new(fault, every)).await;
+}
+
+async fn scenario_with(schedule: Arc<Schedule>) {
+    let (fault, every) = (schedule.fault, schedule.every);
     let Some(cloud) = cloud().await else { return };
-    let schedule = Schedule::new(fault, every);
     let (r, business) = offline_register(&cloud, &schedule).await;
     let rounds = converge(&r.worker, &r.store).await;
     assert!(
@@ -163,7 +167,7 @@ async fn at06_service_unavailable() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "nightly matrix"]
 async fn at06_internal_server_errors() {
-    scenario(Action::ServerError, 3).await;
+    scenario(Action::ServerError, 2).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -174,8 +178,10 @@ async fn at06_slow_network() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "nightly matrix"]
-async fn at06_every_request_lost_once_in_a_while() {
-    scenario(Action::DropResponse, 1).await;
+async fn at06_a_run_of_lost_answers_then_recovery() {
+    // The first five answers are all lost (the server applied each push), then the network
+    // recovers: every retry is a duplicate, and nothing is applied twice.
+    scenario_with(Schedule::limited(Action::DropResponse, 1, 5)).await;
 }
 
 /// Sends each batch's second half before its first half: the cloud refuses the second half
@@ -233,13 +239,16 @@ async fn at06_flapping_connection() {
     let Some(cloud) = cloud().await else { return };
     let schedule = Schedule::new(Action::Pass, 1);
     let (r, business) = offline_register(&cloud, &schedule).await;
+    // Down when the register first tries, then up and down.
+    schedule.offline.store(true, Ordering::SeqCst);
     let flap = {
         let s = schedule.clone();
         tokio::spawn(async move {
             loop {
-                s.offline.store(true, Ordering::SeqCst);
                 tokio::time::sleep(Duration::from_millis(60)).await;
                 s.offline.store(false, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(90)).await;
+                s.offline.store(true, Ordering::SeqCst);
                 tokio::time::sleep(Duration::from_millis(90)).await;
             }
         })

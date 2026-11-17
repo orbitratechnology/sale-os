@@ -40,6 +40,8 @@ pub struct Schedule {
     pub faulted: AtomicUsize,
     /// Only requests whose path starts with this are faulted (`""`: all).
     pub only: Mutex<String>,
+    /// How many more times the fault may fire (then the network recovers).
+    pub budget: AtomicUsize,
 }
 
 impl Schedule {
@@ -51,7 +53,15 @@ impl Schedule {
             seen: AtomicUsize::new(0),
             faulted: AtomicUsize::new(0),
             only: Mutex::new(String::new()),
+            budget: AtomicUsize::new(usize::MAX),
         })
+    }
+
+    /// As [`new`](Self::new), but the fault fires at most `times` times.
+    pub fn limited(fault: Action, every: usize, times: usize) -> Arc<Self> {
+        let s = Self::new(fault, every);
+        s.budget.store(times, Ordering::SeqCst);
+        s
     }
 
     fn decide(&self, path: &str) -> Action {
@@ -63,7 +73,14 @@ impl Schedule {
             return Action::Pass;
         }
         let n = self.seen.fetch_add(1, Ordering::SeqCst) + 1;
-        if self.fault != Action::Pass && n.is_multiple_of(self.every) {
+        let due = self.fault != Action::Pass && n.is_multiple_of(self.every);
+        // Spend the budget only on requests the fault would hit.
+        if due
+            && self
+                .budget
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |b| b.checked_sub(1))
+                .is_ok()
+        {
             self.faulted.fetch_add(1, Ordering::SeqCst);
             self.fault
         } else {
