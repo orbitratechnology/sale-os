@@ -270,6 +270,24 @@ describe("checkout (E09-T03..T06)", () => {
     expect(await field.inputValue()).toBe("");
   });
 
+  it("a full disk: the sale is not saved, the cashier is told, the cart is kept (E19-T02)", async () => {
+    const page = await checkout();
+    await scan(page, "4006381333931");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 1);
+    await page.evaluate(() => (window.__fake.diskFull = true));
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Payment" });
+    await pay.waitFor();
+    await page.keyboard.press("Enter");
+    await pay.getByText(/Cannot save — disk full\. Nothing was saved and the cart is kept\./).waitFor();
+    expect(await page.getByRole("dialog", { name: "Sale completed" }).count()).toBe(0);
+    // Space is freed: the same cart completes.
+    await page.evaluate(() => (window.__fake.diskFull = false));
+    await pay.getByRole("button", { name: "Complete sale" }).click();
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    expect(await lines(page)).toEqual(["Cola 330ml x1"]);
+  });
+
   it("clear and void ask first; a cashier's void needs a manager", async () => {
     const page = await checkout();
     await scan(page, COLA);

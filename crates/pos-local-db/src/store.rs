@@ -1592,6 +1592,7 @@ fn map_sqlx(e: sqlx::Error) -> WriteError {
         match code & 0xff {
             5 | 6 => return WriteError::Busy,
             11 | 26 => return WriteError::Corrupt(db.message().to_owned()),
+            13 => return WriteError::DiskFull,
             _ => {}
         }
     }

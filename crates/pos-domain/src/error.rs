@@ -35,6 +35,7 @@ pub enum ErrorCode {
     PrintUnknownOutcome,
     StoreBusy,
     StoreIo,
+    StoreDiskFull,
     StoreCorrupt,
     StoreSchemaTooNew,
     SyncNotLinked,
@@ -91,6 +92,7 @@ impl ErrorCode {
             PrintUnknownOutcome => "PRINT_UNKNOWN_OUTCOME",
             StoreBusy => "STORE_BUSY",
             StoreIo => "STORE_IO",
+            StoreDiskFull => "STORE_DISK_FULL",
             StoreCorrupt => "STORE_CORRUPT",
             StoreSchemaTooNew => "STORE_SCHEMA_TOO_NEW",
             SyncNotLinked => "SYNC_NOT_LINKED",
@@ -225,6 +227,10 @@ impl ErrorCode {
             StoreIo => (
                 "The local database could not be read or written. Nothing was saved.",
                 "Show the error; offer diagnostics.",
+            ),
+            StoreDiskFull => (
+                "The disk holding the local database is full. Nothing was saved; what was open (the cart) is kept.",
+                "Show \"Cannot save — disk full\" and keep the cart; the owner frees space, then the cashier tries again.",
             ),
             StoreCorrupt => (
                 "The local database failed an integrity check.",

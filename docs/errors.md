@@ -36,6 +36,7 @@ to the action below.
 | `PRINT_UNKNOWN_OUTCOME` |  | The printer did not confirm the job. | Ask whether it printed; reprint only on request. |
 | `STORE_BUSY` | yes | The local database is briefly busy. Retryable. | Retry automatically up to 3 times, then show. |
 | `STORE_IO` |  | The local database could not be read or written. Nothing was saved. | Show the error; offer diagnostics. |
+| `STORE_DISK_FULL` |  | The disk holding the local database is full. Nothing was saved; what was open (the cart) is kept. | Show "Cannot save — disk full" and keep the cart; the owner frees space, then the cashier tries again. |
 | `STORE_CORRUPT` |  | The local database failed an integrity check. | Stop and guide the owner to restore a backup. |
 | `STORE_SCHEMA_TOO_NEW` |  | The database was written by a newer app version. It was not modified. | Ask the user to update the app. |
 | `SYNC_NOT_LINKED` |  | This register is not linked to a cloud account. | Open the link wizard. |

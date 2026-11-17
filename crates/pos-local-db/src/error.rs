@@ -18,6 +18,9 @@ pub enum StoreError {
     Busy,
     #[error("database integrity problem: {0}")]
     Corrupt(String),
+    /// SQLITE_FULL: no space left on the disk for the database.
+    #[error("the disk is full")]
+    DiskFull,
     #[error("{context}: {message}")]
     Io { context: &'static str, message: String },
 }
@@ -37,6 +40,7 @@ impl StoreError {
                 match code & 0xff {
                     5 | 6 => return StoreError::Busy,
                     11 | 26 => return StoreError::Corrupt(db.message().to_owned()),
+                    13 => return StoreError::DiskFull,
                     _ => {}
                 }
             }
@@ -54,6 +58,7 @@ impl HasErrorCode for StoreError {
             StoreError::SchemaTooNew { .. } => ErrorCode::StoreSchemaTooNew,
             StoreError::Busy => ErrorCode::StoreBusy,
             StoreError::Corrupt(_) => ErrorCode::StoreCorrupt,
+            StoreError::DiskFull => ErrorCode::StoreDiskFull,
         }
     }
 }

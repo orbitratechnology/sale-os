@@ -51,6 +51,8 @@ export interface FakeState {
   /** Completed sales with their lines, for returns. */
   sales: FakeSale[];
   /** The cash drawer (E15-T02). Totals are kept simply: cash net of change, and the count. */
+  /** E19-T02: the disk is full, so nothing can be saved. */
+  diskFull?: boolean;
   drawer: {
     required: boolean;
     seq: number;
@@ -538,6 +540,8 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       if (a.cartId !== s.cartId || a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
       if (s.lines.length === 0) fail("CART_EMPTY");
       if (s.drawer.required && !s.drawer.session) fail("CASH_SESSION_REQUIRED");
+      // Nothing is written: the cart stays as it was.
+      if (s.diskFull) fail("STORE_DISK_FULL");
       // The same rules as pos_domain::settlement::settle.
       const total = BigInt(view(s).totalMinor);
       let remaining = total;

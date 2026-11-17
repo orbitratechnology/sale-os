@@ -103,6 +103,24 @@ impl LocalDb {
         let writer = SqlitePoolOptions::new()
             .max_connections(1)
             .min_connections(1)
+            // E19-T02: on a full disk (or an I/O error) SQLite rolls the transaction back by
+            // itself; sqlx's own ROLLBACK then fails and it goes on counting a transaction
+            // that no longer exists, so every later BEGIN on this, the only writing
+            // connection, failed until the app restarted. A connection returned in that state
+            // is closed, and the pool opens a fresh one.
+            .after_release(|conn, _meta| {
+                Box::pin(async move {
+                    use sqlx::Connection;
+                    // Queued after the dropped transaction's rollback: by the time it answers,
+                    // that rollback has run.
+                    conn.ping().await?;
+                    let sound = !conn.is_in_transaction();
+                    if !sound {
+                        tracing::warn!("closing the database writer left inside a failed transaction");
+                    }
+                    Ok(sound)
+                })
+            })
             .connect_with(base.clone().create_if_missing(true))
             .await
             .map_err(StoreError::from_sqlx)?;

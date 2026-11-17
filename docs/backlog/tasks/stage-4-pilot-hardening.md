@@ -53,7 +53,7 @@ Windows hardware (D-05):
 - **Acceptance:**
   - [ ] Zero partial commits and zero integrity-check failures across all runs.
   - [ ] No sale reported as committed to the UI is lost after a VM power-off (validates `synchronous=FULL`).
-  - [ ] When the disk is full, the sale is not saved, the cashier sees a clear "Cannot save — disk full" message, and the cart is preserved.
+  - [x] When the disk is full, the sale is not saved, the cashier sees a clear "Cannot save — disk full" message, and the cart is preserved.
 
 ### E19-T03 · Local backup automation and restore
 - **Size** M · **Deps** E02-T02 · **PRD** §13, §18 (user deletes or damages local data), §20

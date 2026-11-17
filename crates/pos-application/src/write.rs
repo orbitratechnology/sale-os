@@ -989,6 +989,9 @@ pub enum WriteError {
     Busy,
     #[error("database integrity problem: {0}")]
     Corrupt(String),
+    /// SQLITE_FULL: no space left for the write; the transaction was rolled back.
+    #[error("the disk is full")]
+    DiskFull,
     #[error("database error: {0}")]
     Io(String),
     #[error("fault injected before statement {statement}")]
@@ -1023,6 +1026,7 @@ impl HasErrorCode for WriteError {
             WriteError::UniqueViolation { .. } => ErrorCode::ValidationFailed,
             WriteError::Busy => ErrorCode::StoreBusy,
             WriteError::Corrupt(_) => ErrorCode::StoreCorrupt,
+            WriteError::DiskFull => ErrorCode::StoreDiskFull,
             WriteError::Io(_) | WriteError::FaultInjected { .. } => ErrorCode::StoreIo,
             WriteError::CartRevisionMismatch { .. } => ErrorCode::CartRevisionMismatch,
             // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.

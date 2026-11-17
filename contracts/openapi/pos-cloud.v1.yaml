@@ -1345,6 +1345,7 @@ components:
             - PRINT_UNKNOWN_OUTCOME
             - STORE_BUSY
             - STORE_IO
+            - STORE_DISK_FULL
             - STORE_CORRUPT
             - STORE_SCHEMA_TOO_NEW
             - SYNC_NOT_LINKED
