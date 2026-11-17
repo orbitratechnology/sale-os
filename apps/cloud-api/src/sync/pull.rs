@@ -29,6 +29,9 @@ const PAGE_MAX: i64 = 5000;
 pub struct ChangesQuery {
     cursor: Option<String>,
     limit: Option<i64>,
+    /// How many of its events the register still holds that the cloud has not accepted
+    /// (E14-T05); recorded for the consolidated report's completeness.
+    unsent: Option<i64>,
 }
 
 fn principal(me: &DevicePrincipal) -> Principal {
@@ -52,6 +55,14 @@ pub async fn changes(
     let mut tx = TenantTx::begin(pool(&state)?, &principal(&me))
         .await
         .map_err(internal)?;
+    if let Some(n) = q.unsent {
+        if n < 0 {
+            return Err(Problem::validation("unsent is negative"));
+        }
+        pos_cloud_db::reports::record_unsent(&mut tx, me.register_id, n)
+            .await
+            .map_err(internal)?;
+    }
     let mut rows = changes_after(&mut tx, after, limit + 1).await.map_err(internal)?;
     tx.commit().await.map_err(internal)?;
     let has_more = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);

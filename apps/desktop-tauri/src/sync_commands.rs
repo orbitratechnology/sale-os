@@ -78,7 +78,7 @@ pub async fn sync_status(services: State<'_, AppServices>) -> Result<SyncStatusD
     })
 }
 
-fn cloud(services: &AppServices) -> Result<&crate::services::Cloud, IpcError> {
+pub(crate) fn cloud(services: &AppServices) -> Result<&crate::services::Cloud, IpcError> {
     services
         .cloud
         .as_ref()

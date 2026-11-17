@@ -10,6 +10,7 @@ pub mod cart;
 pub mod cash;
 pub mod catalog;
 pub mod checkout;
+pub mod cloud_reports;
 pub mod config;
 pub mod conflict;
 pub mod context;

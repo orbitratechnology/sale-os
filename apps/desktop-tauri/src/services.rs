@@ -118,6 +118,7 @@ pub(crate) struct Services {
 /// between `sync_link_start` and `sync_link_complete` (memory only).
 pub(crate) struct Cloud {
     pub link: pos_application::link::LinkService,
+    pub reports: pos_application::cloud_reports::CloudReportService,
     pub owner: tokio::sync::Mutex<Option<pos_application::link::OwnerSession>>,
 }
 
@@ -325,6 +326,12 @@ impl AppServices {
                     clock.clone(),
                     Some(credentials.clone()),
                 );
+                let reports = pos_application::cloud_reports::CloudReportService {
+                    transport: session.clone(),
+                    sync: Arc::new(s.clone()),
+                    cache: Arc::new(s.clone()),
+                    clock: clock.clone(),
+                };
                 let link = pos_application::link::LinkService {
                     account: Arc::new(client),
                     credentials,
@@ -338,6 +345,7 @@ impl AppServices {
                     Some(runner),
                     Some(Cloud {
                         link,
+                        reports,
                         owner: tokio::sync::Mutex::new(None),
                     }),
                 )

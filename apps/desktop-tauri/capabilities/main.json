@@ -80,6 +80,7 @@
     "allow-reports-tender-mix",
     "allow-reports-top-products",
     "allow-reports-stock",
+    "allow-reports-cloud-sales",
     "allow-export-csv",
     "allow-audit-list",
     "allow-cash-session-current",

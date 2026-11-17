@@ -1,7 +1,10 @@
 //! Device-local reports (E14). Definitions: docs/reporting-definitions.md.
 
 use crate::app_commands::err;
-use crate::dto::{DateRangeDto, SalesSummaryDto, StockReportDto, TenderMixDto, TopByDto, TopProductsDto};
+use crate::dto::{
+    CloudGroupByDto, CloudSalesReportDto, DateRangeDto, SalesSummaryDto, StockReportDto, TenderMixDto,
+    TopByDto, TopProductsDto,
+};
 use crate::{AppServices, IpcError};
 use tauri::State;
 
@@ -141,4 +144,27 @@ pub async fn audit_list(
         .await
         .map_err(err)?;
     Ok(crate::dto::AuditPageDto::from_page(page))
+}
+
+/// Sales across every register, from the cloud (E14-T05). Offline, the figures last fetched
+/// for the same range and grouping, marked stale; `SYNC_OFFLINE` when there are none, and
+/// `SYNC_NOT_LINKED` before this register is linked.
+#[tauri::command]
+#[specta::specta]
+pub async fn reports_cloud_sales(
+    services: State<'_, AppServices>,
+    range: DateRangeDto,
+    group_by: CloudGroupByDto,
+) -> Result<CloudSalesReportDto, IpcError> {
+    let ctx = services.context().await?;
+    // The role first, as every command: then whether there is a cloud at all.
+    ctx.authorize(pos_domain::Permission::ReportsView).map_err(err)?;
+    let (from, to) = range.parse()?;
+    let cloud = crate::sync_commands::cloud(&services)?;
+    let r = cloud
+        .reports
+        .sales(&ctx, from, to, group_by.into())
+        .await
+        .map_err(err)?;
+    Ok(CloudSalesReportDto::from_report(&r))
 }

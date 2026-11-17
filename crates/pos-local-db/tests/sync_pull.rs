@@ -489,7 +489,12 @@ impl SyncTransport for Feed {
     async fn push(&self, _r: PushRequest) -> Result<PushResponse, TransportError> {
         Err(TransportError::Offline)
     }
-    async fn changes(&self, cursor: Option<String>, _limit: u32) -> Result<ChangesResponse, TransportError> {
+    async fn changes(
+        &self,
+        cursor: Option<String>,
+        _limit: u32,
+        _unsent: Option<u64>,
+    ) -> Result<ChangesResponse, TransportError> {
         let after = cursor
             .as_deref()
             .and_then(pos_sync::pull::parse_cursor)

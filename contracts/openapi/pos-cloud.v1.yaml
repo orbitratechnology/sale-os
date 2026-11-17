@@ -27,6 +27,8 @@ tags:
     description: Event push and acknowledgement (E17-T04).
   - name: catalog
     description: Catalogue edits made in the cloud (E17-T06).
+  - name: reports
+    description: Consolidated reports across every register (E14-T05).
 paths:
   /v1/health:
     get:
@@ -548,6 +550,14 @@ paths:
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+        - name: unsent
+          in: query
+          required: false
+          description: >-
+            How many of its events the register still holds that the cloud has not accepted
+            (pending or refused), after its last push. Recorded for the consolidated report's
+            completeness (E14-T05).
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
           description: The next changes.
@@ -563,6 +573,69 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "422":
           description: "`VALIDATION_FAILED`: not a cursor this server issued."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /v1/reports/sales:
+    get:
+      operationId: getSalesReport
+      tags: [reports]
+      summary: Sales across every register, by day, register or tender (E14-T05).
+      description: >-
+        Live sales and returns the cloud has received, in minor units. `completeness` says per
+        register whether the cloud can vouch for having all of it: a register is `current` when
+        it confirmed its state within 5 minutes of `asOf` and then held nothing unaccepted
+        (PRD §15). A register reads its own business; an account names one it belongs to.
+      security:
+        - deviceToken: []
+        - userToken: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          description: Inclusive; at most 366 days after `from`.
+          schema: { type: string, format: date }
+        - name: groupBy
+          in: query
+          required: true
+          schema: { type: string, enum: [day, register, tender] }
+        - name: businessId
+          in: query
+          required: false
+          description: Required with an account token; with a device token it must be the device's own.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesReport"
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: not a business this caller belongs to."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: a bad date or range, or no `businessId` with an account token."
           content:
             application/problem+json:
               schema:
@@ -883,6 +956,56 @@ components:
           items: { $ref: "#/components/schemas/Change" }
         nextCursor: { type: string }
         hasMore: { type: boolean }
+    SalesReportRow:
+      type: object
+      additionalProperties: false
+      required: [key, label, salesCount, grossMinor, taxMinor, discountMinor, returnsCount, refundsMinor, netMinor]
+      properties:
+        key: { type: string, description: "The date, the register id, or the tender kind." }
+        label: { type: string }
+        salesCount: { type: integer, minimum: 0 }
+        grossMinor: { type: integer }
+        taxMinor: { type: integer }
+        discountMinor: { type: integer }
+        returnsCount: { type: integer, minimum: 0 }
+        refundsMinor: { type: integer }
+        netMinor: { type: integer }
+    RegisterCompleteness:
+      type: object
+      additionalProperties: false
+      required: [registerId, code, name, pendingKnown, current]
+      properties:
+        registerId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        lastAckAt:
+          type: string
+          format: date-time
+          description: The last accepted push or report of what it holds; absent when never.
+        pendingKnown: { type: boolean, description: "It last said it holds events the cloud has not accepted." }
+        current: { type: boolean }
+    SalesReport:
+      type: object
+      additionalProperties: false
+      required: [groupBy, from, to, currencyCode, currencyExponent, rows, asOf, completeness]
+      properties:
+        groupBy: { type: string, enum: [day, register, tender] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        currencyCode: { type: string, pattern: "^[A-Z]{3}$" }
+        currencyExponent: { type: integer, minimum: 0, maximum: 4 }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/SalesReportRow" }
+        asOf: { type: string, format: date-time }
+        completeness:
+          type: object
+          additionalProperties: false
+          required: [registers]
+          properties:
+            registers:
+              type: array
+              items: { $ref: "#/components/schemas/RegisterCompleteness" }
     BootstrapEntity:
       type: object
       additionalProperties: false

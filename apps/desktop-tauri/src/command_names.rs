@@ -75,6 +75,7 @@ pub const COMMANDS: &[&str] = &[
     "reports_tender_mix",
     "reports_top_products",
     "reports_stock",
+    "reports_cloud_sales",
     "export_csv",
     "audit_list",
     "cash_session_current",

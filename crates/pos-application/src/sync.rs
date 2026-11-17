@@ -11,6 +11,7 @@ use crate::queries::QueryError;
 use pos_domain::{Clock, Timestamp};
 use pos_sync::envelope::{MAX_PUSH_BYTES, MAX_PUSH_EVENTS};
 use pos_sync::pull::{BootstrapPage, ChangesResponse};
+use pos_sync::reports::{GroupBy, SalesReport};
 use pos_sync::{EventEnvelope, EventResult, PushRequest, PushResponse, ResultStatus};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -81,9 +82,27 @@ pub fn link_error(e: &TransportError) -> crate::link::LinkError {
 pub trait SyncTransport: Send + Sync {
     async fn push(&self, request: PushRequest) -> Result<PushResponse, TransportError>;
 
-    /// `GET /v1/sync/changes` (E17-T07). Test doubles that only push need not answer.
-    async fn changes(&self, cursor: Option<String>, limit: u32) -> Result<ChangesResponse, TransportError> {
-        let _ = (cursor, limit);
+    /// `GET /v1/sync/changes` (E17-T07). `unsent` tells the cloud how many of this
+    /// register's events it has not accepted yet (E14-T05). Test doubles that only push need
+    /// not answer.
+    async fn changes(
+        &self,
+        cursor: Option<String>,
+        limit: u32,
+        unsent: Option<u64>,
+    ) -> Result<ChangesResponse, TransportError> {
+        let _ = (cursor, limit, unsent);
+        Err(TransportError::Offline)
+    }
+
+    /// `GET /v1/reports/sales` (E14-T05).
+    async fn sales_report(
+        &self,
+        from: &str,
+        to: &str,
+        group_by: GroupBy,
+    ) -> Result<SalesReport, TransportError> {
+        let _ = (from, to, group_by);
         Err(TransportError::Offline)
     }
 
@@ -155,6 +174,8 @@ pub struct PullState {
     pub cursor: Option<String>,
     /// Set while a bootstrap is under way: the next page to fetch.
     pub bootstrap_page: Option<String>,
+    /// Outbox events the cloud has not accepted yet (pending, in flight or refused).
+    pub unsent: u64,
 }
 
 /// What a pulled page did (`inbound_changes.outcome`, docs/backlog/04 0013).
@@ -565,7 +586,11 @@ impl SyncWorker {
         if !state.linked || state.bootstrap_page.is_some() {
             return Ok(PullReport::idle());
         }
-        match self.transport.changes(state.cursor.clone(), PULL_LIMIT).await {
+        match self
+            .transport
+            .changes(state.cursor.clone(), PULL_LIMIT, Some(state.unsent))
+            .await
+        {
             Err(e) => {
                 self.store.record_push_failure(e.code(), self.clock.now()).await?;
                 let next = if e.is_transient() {

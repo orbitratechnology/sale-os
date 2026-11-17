@@ -244,3 +244,81 @@ describe("sync conflicts (E18-T02)", () => {
     expect(await page.getByRole("button", { name: "Resolve conflicts" }).count()).toBe(0);
   });
 });
+
+describe("consolidated reports (E14-T05)", () => {
+  async function reports(setup: () => void): Promise<Page> {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=signIn`);
+    await page.evaluate(setup);
+    await page.getByRole("button", { name: /Olu/ }).click();
+    await page.keyboard.type("1234");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByRole("button", { name: "Reports" }).click();
+    await page.getByRole("heading", { name: "Reports" }).waitFor();
+    return page;
+  }
+
+  it("a till that is not linked offers this register only", async () => {
+    const page = await reports(() => undefined);
+    await page.getByTestId("scope-badge").waitFor();
+    expect(await page.getByRole("group", { name: "Scope" }).count()).toBe(0);
+    expect(await calls(page, "reports_cloud_sales")).toEqual([]);
+  });
+
+  it("all registers, labelled with how complete they are, by day, register and payment", async () => {
+    const page = await reports(() => {
+      window.__fake.cloud.linkState = "linked";
+      window.__fake.cloud.pending = 0;
+    });
+    const scope = page.getByRole("group", { name: "Scope" });
+    await scope.getByRole("button", { name: "All registers (cloud)" }).click();
+    const label = page.getByTestId("cloud-label");
+    // The fake's times are on 5 November, so the date shows too.
+    await label.getByText(/^All registers \(cloud\) · Last synced .*09:05 — 1 register has unsynced data$/).waitFor();
+    expect(await page.getByTestId("cloud-total").innerText()).toContain("19.50");
+    // The device's tabs and exports are for this register only.
+    expect(await page.getByRole("tablist", { name: "Report" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Export this report (CSV)" }).count()).toBe(0);
+
+    await page.evaluate(() => (window.__fake.cloud.unsyncedRegisters = 0));
+    await page.getByRole("button", { name: "By register" }).click();
+    await label.getByText("All registers (cloud) · Fully synchronized").waitFor();
+    const rows = await page.getByTestId("cloud-row").allInnerTexts();
+    expect(rows.map((r) => r.split("\t")[0])).toEqual(["R01", "R02"]);
+    await page.getByRole("button", { name: "By payment" }).click();
+    await page.getByRole("rowheader", { name: "Card" }).waitFor();
+    const last = (await calls(page, "reports_cloud_sales")).at(-1);
+    expect(last?.groupBy).toBe("tender");
+
+    // Back to this register: its own report, as before.
+    await scope.getByRole("button", { name: "This register" }).click();
+    await page.getByRole("tablist", { name: "Report" }).waitFor();
+    await page.getByTestId("scope-badge").getByText(/This device only/).waitFor();
+  });
+
+  it("offline, the last figures fetched are shown marked stale", async () => {
+    const page = await reports(() => {
+      window.__fake.cloud.linkState = "linked";
+    });
+    await page.getByRole("button", { name: "All registers (cloud)" }).click();
+    await page.getByTestId("cloud-label").getByText(/Last synced .*09:05/).waitFor();
+    await page.getByRole("button", { name: "By register" }).click();
+    await page.getByTestId("cloud-row").first().waitFor();
+
+    await page.evaluate(() => (window.__fake.cloud.online = false));
+    await page.getByRole("button", { name: "By day" }).click();
+    const stale = page.getByRole("alert").filter({ hasText: "Stale" });
+    await stale.waitFor();
+    expect(await stale.innerText()).toMatch(/Stale: the cloud can't be reached\. Figures from .*09:30 \(Last synced .*09:05 — 1 register has unsynced data\)/);
+    expect(await page.getByTestId("cloud-row").count()).toBe(1);
+
+    // Nothing kept for this one.
+    await page.getByRole("button", { name: "By payment" }).click();
+    await page.getByRole("alert").filter({ hasNotText: "Stale" }).waitFor();
+    expect(await page.getByTestId("cloud-row").count()).toBe(0);
+  });
+});

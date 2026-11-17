@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type {
+  CloudGroupByDto,
+  CloudSalesReportDto,
   ExportDatasetDto,
   ExportResultDto,
   ReportScopeDto,
@@ -14,6 +16,7 @@ import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { TENDER_LABEL } from "../sales/labels";
 import { describeError } from "../shell/errors";
+import { CloudReport, GROUPS } from "./CloudReport";
 
 type Tab = "sales" | "payments" | "top" | "stock";
 const TABS: { value: Tab; label: string }[] = [
@@ -46,8 +49,9 @@ function presets(): { label: string; from: string; to: string }[] {
 
 /**
  * Reports (E14-T03). Every figure comes from Rust and is defined in
- * docs/reporting-definitions.md. Every report says where its numbers come from: in Stage 2
- * that is always this device only.
+ * docs/reporting-definitions.md. Every report says where its numbers come from: this device
+ * only, or, once linked, all registers from the cloud (E14-T05), labelled with how complete
+ * they are, or stale from the last fetch while the cloud is out of reach.
  */
 export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Workspace; onBack: () => void; onAudit: (() => void) | null }) {
   const [tab, setTab] = useState<Tab>("sales");
@@ -61,6 +65,10 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
   const [error, setError] = useState<IpcError | null>(null);
   const [saved, setSaved] = useState<ExportResultDto | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [linked, setLinked] = useState(false);
+  const [where, setWhere] = useState<"device" | "cloud">("device");
+  const [groupBy, setGroupBy] = useState<CloudGroupByDto>("day");
+  const [cloud, setCloud] = useState<CloudSalesReportDto | null>(null);
   const exp = sales?.currencyExponent ?? workspace.currencyExponent;
   const money = (m: string) => formatMoney(m, { exponent: exp });
 
@@ -75,6 +83,32 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
   }, [onBack]);
 
   useEffect(() => {
+    let live = true;
+    void commands.syncStatus().then((res) => {
+      if (live && res.status === "ok") setLinked(res.data.cloudConfigured && res.data.linkState === "linked");
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (where !== "cloud") return;
+    let live = true;
+    void commands.reportsCloudSales({ from: range.from, to: range.to }, groupBy).then((res) => {
+      if (!live) return;
+      if (res.status === "ok") {
+        setCloud(res.data);
+        setError(null);
+      } else setError(res.error);
+    });
+    return () => {
+      live = false;
+    };
+  }, [where, groupBy, range.from, range.to]);
+
+  useEffect(() => {
+    if (where === "cloud") return;
     let live = true;
     const r = { from: range.from, to: range.to };
     const done = <T,>(set: (v: T) => void) => (res: { status: "ok"; data: T } | { status: "error"; error: IpcError }) => {
@@ -91,7 +125,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
     return () => {
       live = false;
     };
-  }, [tab, range.from, range.to, topBy, lowOnly]);
+  }, [where, tab, range.from, range.to, topBy, lowOnly]);
 
   async function exportCsv(dataset: ExportDatasetDto) {
     setExporting(true);
@@ -124,6 +158,48 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           </button>
         </span>
       </header>
+      {linked && (
+        <div className="receipt-widths" role="group" aria-label="Scope">
+          {(
+            [
+              ["device", "This register"],
+              ["cloud", "All registers (cloud)"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={where === v}
+              className={where === v ? "" : "secondary"}
+              onClick={() => {
+                setError(null);
+                setCloud(null);
+                setWhere(v);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {where === "cloud" ? (
+        <div className="receipt-widths" role="group" aria-label="Group by">
+          {GROUPS.map((g) => (
+            <button
+              key={g.value}
+              type="button"
+              aria-pressed={groupBy === g.value}
+              className={groupBy === g.value ? "" : "secondary"}
+              onClick={() => {
+                setCloud(null);
+                setGroupBy(g.value);
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+      ) : (
       <div className="receipt-widths" role="tablist" aria-label="Report">
         {TABS.map((t) => (
           <button key={t.value} type="button" role="tab" aria-selected={tab === t.value} className={tab === t.value ? "" : "secondary"} onClick={() => setTab(t.value)}>
@@ -131,7 +207,8 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           </button>
         ))}
       </div>
-      {tab !== "stock" && (
+      )}
+      {(where === "cloud" || tab !== "stock") && (
         <form className="card sales-filters" aria-label="Dates" onSubmit={(e) => e.preventDefault()}>
           <div className="receipt-widths" role="group" aria-label="Period">
             {presets().map((p) => (
@@ -155,12 +232,14 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           </label>
         </form>
       )}
+      {where === "device" && (
       <div className="report-bar">
         <ScopeBadge scope={scope} />
         <button type="button" className="secondary" disabled={exporting} onClick={() => void exportCsv(tabDataset[tab])}>
           Export this report (CSV)
         </button>
       </div>
+      )}
       <div aria-live="polite">
         {saved && (
           <p role="status" className="small" data-testid="export-saved">
@@ -174,6 +253,12 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
         </p>
       )}
 
+      {where === "cloud" ? (
+        <section className="card" aria-label="All registers">
+          {cloud ? <CloudReport r={cloud} /> : !error && <p aria-busy="true">Asking the cloud…</p>}
+        </section>
+      ) : (
+      <>
       <section className="card report-exports" aria-label="Data exports">
         <span className="small">Export the records for these dates (CSV):</span>
         {(
@@ -274,6 +359,8 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           </>
         )}
       </section>
+      </>
+      )}
     </main>
   );
 }

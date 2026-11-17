@@ -10,6 +10,7 @@ mod cart_queries;
 mod cash;
 mod cash_queries;
 mod catalog_queries;
+mod cloud_report_cache;
 mod config_queries;
 mod conflict_queries;
 mod error;

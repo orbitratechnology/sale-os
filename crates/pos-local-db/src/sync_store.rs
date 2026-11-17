@@ -174,10 +174,17 @@ impl SyncStore for SqliteStore {
         .await
         .map_err(q)?;
         let (link, cursor, bootstrap_page) = row.unwrap_or_else(|| ("unlinked".into(), None, None));
+        let unsent: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM outbox_events WHERE status IN ('pending','in_flight','rejected')",
+        )
+        .fetch_one(self.db().readers())
+        .await
+        .map_err(q)?;
         Ok(PullState {
             linked: link == "linked",
             cursor,
             bootstrap_page,
+            unsent: u64::try_from(unsent).unwrap_or(0),
         })
     }
 

@@ -344,6 +344,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}, "by": "value", "limit": 10}),
         ),
         ("reports_stock", Perm(ReportsView), json!({"lowOnly": false})),
+        (
+            "reports_cloud_sales",
+            Perm(ReportsView),
+            json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}, "groupBy": "day"}),
+        ),
         // Products and stock need CatalogExport instead; the matrix gives both to the same roles.
         (
             "export_csv",

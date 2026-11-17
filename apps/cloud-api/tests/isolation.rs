@@ -191,6 +191,18 @@ async fn at12_http_every_secured_route_refuses_another_business() {
                             "product": common::product_payload(Uuid::now_v7(), Uuid::now_v7(), 0, "Takeover", None, None, false)})),
             ),
         ),
+        // B's consolidated report, asked for by A's owner (A's register is tried below).
+        (
+            "GET /v1/reports/sales",
+            (
+                Method::GET,
+                format!(
+                    "/v1/reports/sales?from=2026-01-01&to=2026-01-31&groupBy=register&businessId={}",
+                    b.business
+                ),
+                None,
+            ),
+        ),
     ]);
     let secured = secured_operations();
     let covered: Vec<String> = cases.keys().map(|k| (*k).to_owned()).collect();
@@ -235,6 +247,20 @@ async fn at12_http_every_secured_route_refuses_another_business() {
             );
         }
     }
+    // A's register asking for B's report: not found either; for its own, none of B's figures.
+    let q = |biz: Option<Uuid>| {
+        let mut p = "/v1/reports/sales?from=2026-01-01&to=2026-01-31&groupBy=register".to_owned();
+        if let Some(b) = biz {
+            p.push_str(&format!("&businessId={b}"));
+        }
+        p
+    };
+    let (code, text) = call(&s, Method::GET, &q(Some(b.business)), Some(&a.device_token), None).await;
+    assert_eq!(code, StatusCode::NOT_FOUND, "{text}");
+    let (code, text) = call(&s, Method::GET, &q(None), Some(&a.device_token), None).await;
+    assert_eq!(code, StatusCode::OK, "{text}");
+    assert!(text.contains("\"rows\":[]"), "{text}");
+    assert!(b_secrets.iter().all(|x| !text.contains(x.as_str())), "{text}");
     // B's device and tokens are untouched by all of that.
     let (code, devices) = call(&s, Method::GET, "/v1/devices", Some(&b.user_token), None).await;
     assert_eq!(code, StatusCode::OK);

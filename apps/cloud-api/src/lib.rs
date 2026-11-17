@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod config;
 pub mod devices;
 mod problem;
+pub mod reports;
 mod routes;
 pub mod sync;
 

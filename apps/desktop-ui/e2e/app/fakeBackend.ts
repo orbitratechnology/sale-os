@@ -95,6 +95,11 @@ export interface FakeState {
     conflicts: number;
     /** Sales the cloud has applied (AT-13): sale id → applied. */
     synced: Set<string>;
+    /** Consolidated reports (E14-T05): whether the cloud answers, how many registers are
+     * behind, and the reports kept from the last fetch (range and grouping → report). */
+    online: boolean;
+    unsyncedRegisters: number;
+    kept: Record<string, unknown>;
   };
 }
 
@@ -204,7 +209,7 @@ function initialStateInner(preset: Preset): FakeState {
     categories: [],
     taxRates: [{ taxRateId: RATE, name: "VAT 20%", ratePpm: 200000, from: null, to: null, archived: false, version: 1 }],
     taxCategories: [{ taxCategoryId: TAX, name: "Standard", isDefault: true, rateIds: [RATE], archived: false, version: 1 }],
-    cloud: { configured: true, linkState: "unlinked", registerCode: "R01", pending: 12, mayJoin: false, signedIn: false, refused: [], conflicts: 0, synced: new Set() },
+    cloud: { configured: true, linkState: "unlinked", registerCode: "R01", pending: 12, mayJoin: false, signedIn: false, refused: [], conflicts: 0, synced: new Set(), online: true, unsyncedRegisters: 1, kept: {} },
   };
 }
 
@@ -783,6 +788,51 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const answer = s.saveAs.length ? s.saveAs.shift() : name;
       if (answer == null) return null;
       return { path: `/home/user/Documents/${answer}`, fileName: answer, rows };
+    }
+    case "reports_cloud_sales": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const range = a.range as { from: string; to: string };
+      if (range.from > range.to) fail("VALIDATION_FAILED");
+      if (s.cloud.linkState !== "linked") fail("SYNC_NOT_LINKED");
+      const groupBy = String(a.groupBy);
+      const key = `${groupBy}:${range.from}:${range.to}`;
+      if (!s.cloud.online) {
+        const kept = s.cloud.kept[key] as Record<string, unknown> | undefined;
+        if (!kept) fail("SYNC_OFFLINE");
+        return { ...kept, freshness: "stale", staleReason: "SYNC_OFFLINE" };
+      }
+      const row = (key: string, label: string, n: number, sales: number, refunds: number) => ({
+        key, label, salesCount: n, salesMinor: String(sales), taxMinor: String(Math.floor(sales / 6)), discountMinor: "0",
+        returnsCount: refunds ? 1 : 0, refundsMinor: String(refunds), netMinor: String(sales - refunds),
+      });
+      const rows =
+        groupBy === "register"
+          ? [row("r1", "R01", 3, 1200, 100), row("r2", "R02", 2, 750, 0)]
+          : groupBy === "tender"
+            ? [{ ...row("cash", "cash", 4, 1500, 100), taxMinor: "0" }, { ...row("card_external", "card_external", 1, 450, 0), taxMinor: "0" }]
+            : [row(range.to, range.to, 5, 1950, 100)];
+      const total = rows.reduce(
+        (t, r) => ({
+          ...t, salesCount: t.salesCount + r.salesCount, salesMinor: String(Number(t.salesMinor) + Number(r.salesMinor)),
+          taxMinor: String(Number(t.taxMinor) + Number(r.taxMinor)), returnsCount: t.returnsCount + r.returnsCount,
+          refundsMinor: String(Number(t.refundsMinor) + Number(r.refundsMinor)), netMinor: String(Number(t.netMinor) + Number(r.netMinor)),
+        }),
+        row("total", "Total", 0, 0, 0),
+      );
+      const behind = s.cloud.unsyncedRegisters;
+      const report = {
+        groupBy, from: range.from, to: range.to, currencyExponent: 2, rows, total,
+        freshness: behind ? "partial" : "fully_synchronized", unsyncedRegisters: behind,
+        lastSyncedAt: behind ? new Date(2026, 10, 5, 9, 5).toISOString() : null, staleReason: null,
+        asOf: new Date(2026, 10, 5, 9, 30).toISOString(), fetchedAt: new Date(2026, 10, 5, 9, 30).toISOString(),
+        registers: [
+          { code: "R01", name: "Till 1", lastAckAt: new Date(2026, 10, 5, 9, 29).toISOString(), pendingKnown: false, current: true },
+          { code: "R02", name: "Till 2", lastAckAt: new Date(2026, 10, 5, 9, 5).toISOString(), pendingKnown: behind > 0, current: behind === 0 },
+        ],
+      };
+      s.cloud.kept[key] = report;
+      return report;
     }
     case "sync_status": {
       needSession(s);

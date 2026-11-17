@@ -6,6 +6,7 @@ use pos_application::link::{
 use pos_application::sync::TransportError;
 use pos_domain::Secret;
 use pos_sync::pull::{BootstrapPage, ChangesResponse};
+use pos_sync::reports::{GroupBy, SalesReport};
 use pos_sync::{PushRequest, PushResponse};
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
@@ -113,6 +114,7 @@ impl CloudClient {
         token: &Secret<String>,
         cursor: Option<&str>,
         limit: u32,
+        unsent: Option<u64>,
     ) -> Result<ChangesResponse, TransportError> {
         let mut r = self
             .request(Method::GET, "/v1/sync/changes", Some(token))
@@ -120,6 +122,28 @@ impl CloudClient {
         if let Some(c) = cursor {
             r = r.query(&[("cursor", c)]);
         }
+        if let Some(n) = unsent {
+            r = r.query(&[("unsent", n)]);
+        }
+        self.send(r).await.map(|(_, v)| v).map_err(transport)
+    }
+
+    /// `GET /v1/reports/sales` with the device's token (its own business).
+    pub async fn sales_report(
+        &self,
+        token: &Secret<String>,
+        from: &str,
+        to: &str,
+        group_by: GroupBy,
+    ) -> Result<SalesReport, TransportError> {
+        let by = match group_by {
+            GroupBy::Day => "day",
+            GroupBy::Register => "register",
+            GroupBy::Tender => "tender",
+        };
+        let r = self
+            .request(Method::GET, "/v1/reports/sales", Some(token))
+            .query(&[("from", from), ("to", to), ("groupBy", by)]);
         self.send(r).await.map(|(_, v)| v).map_err(transport)
     }
 

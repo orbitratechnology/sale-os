@@ -229,6 +229,12 @@ export const commands = {
 	/**  Current stock from the recorded movements; `lowOnly` keeps low and negative items. */
 	reportsStock: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_stock", { lowOnly })),
 	/**
+	 *  Sales across every register, from the cloud (E14-T05). Offline, the figures last fetched
+	 *  for the same range and grouping, marked stale; `SYNC_OFFLINE` when there are none, and
+	 *  `SYNC_NOT_LINKED` before this register is linked.
+	 */
+	reportsCloudSales: (range: DateRangeDto, groupBy: CloudGroupByDto) => typedError<CloudSalesReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_cloud_sales", { range, groupBy })),
+	/**
 	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
 	 *  the system dialog and writes the file (the WebView never names a path), then audits it
 	 *  (`report.exported`). `null` when the user cancels: nothing is saved or recorded. Dated
@@ -775,6 +781,97 @@ export type ClosedCashDto_Serialize = {
 export type CloudBusinessDto = {
 	businessId: string,
 	name: string,
+};
+
+/**  How a consolidated report is grouped (E14-T05). */
+export type CloudGroupByDto = "day" | "register" | "tender";
+
+export type CloudRegisterDto = CloudRegisterDto_Serialize | CloudRegisterDto_Deserialize;
+
+export type CloudRegisterDto_Deserialize = {
+	code: string,
+	name: string,
+	/**  RFC 3339. */
+	lastAckAt?: string | null,
+	pendingKnown: boolean,
+	current: boolean,
+};
+
+export type CloudRegisterDto_Serialize = {
+	code: string,
+	name: string,
+	/**  RFC 3339. */
+	lastAckAt: string | null,
+	pendingKnown: boolean,
+	current: boolean,
+};
+
+export type CloudReportRowDto = {
+	/**  The date, the register's id or the tender kind. */
+	key: string,
+	label: string,
+	salesCount: number,
+	/**  What the sales came to (after discounts, with tax). */
+	salesMinor: string,
+	taxMinor: string,
+	discountMinor: string,
+	returnsCount: number,
+	refundsMinor: string,
+	netMinor: string,
+};
+
+/**
+ *  All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+ *  `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+ *  oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+ *  figures fetched at `fetchedAt`; `staleReason` says why).
+ */
+export type CloudSalesReportDto = CloudSalesReportDto_Serialize | CloudSalesReportDto_Deserialize;
+
+/**
+ *  All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+ *  `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+ *  oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+ *  figures fetched at `fetchedAt`; `staleReason` says why).
+ */
+export type CloudSalesReportDto_Deserialize = {
+	groupBy: string,
+	from: string,
+	to: string,
+	currencyExponent: number,
+	rows: CloudReportRowDto[],
+	total: CloudReportRowDto,
+	freshness: string,
+	unsyncedRegisters: number,
+	lastSyncedAt?: string | null,
+	staleReason?: string | null,
+	/**  RFC 3339: when the cloud made the report, and when this register fetched it. */
+	asOf: string,
+	fetchedAt: string,
+	registers: CloudRegisterDto_Deserialize[],
+};
+
+/**
+ *  All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+ *  `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+ *  oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+ *  figures fetched at `fetchedAt`; `staleReason` says why).
+ */
+export type CloudSalesReportDto_Serialize = {
+	groupBy: string,
+	from: string,
+	to: string,
+	currencyExponent: number,
+	rows: CloudReportRowDto[],
+	total: CloudReportRowDto,
+	freshness: string,
+	unsyncedRegisters: number,
+	lastSyncedAt: string | null,
+	staleReason: string | null,
+	/**  RFC 3339: when the cloud made the report, and when this register fetched it. */
+	asOf: string,
+	fetchedAt: string,
+	registers: CloudRegisterDto_Serialize[],
 };
 
 /**  What a column of the file means. */

@@ -236,6 +236,6 @@ which uses a real Postgres and a real `cloud-api` and covers AT-06, AT-07 and AT
 ### E14-T05 · Consolidated cloud reports
 - **Size** M · **Deps** E17-T05 · **PRD** REP-008 (P1, minimal version pulled in for §10.1 and §15 labelling)
 - **Acceptance:**
-  - [ ] `GET /v1/reports/sales` returns rollups by day, register and tender, with `completeness` per register.
-  - [ ] Desktop reports offer the scope "All registers (cloud)" when online, with the label "Last synced HH:MM — N registers have unsynced data", or "Fully synchronized" when every register's ack is current within 5 min (PRD §15).
-  - [ ] Offline, the cloud scope shows the last cached result labelled **stale** (§11.6).
+  - [x] `GET /v1/reports/sales` returns rollups by day, register and tender, with `completeness` per register.
+  - [x] Desktop reports offer the scope "All registers (cloud)" when online, with the label "Last synced HH:MM — N registers have unsynced data", or "Fully synchronized" when every register's ack is current within 5 min (PRD §15).
+  - [x] Offline, the cloud scope shows the last cached result labelled **stale** (§11.6).

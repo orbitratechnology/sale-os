@@ -2287,3 +2287,149 @@ pub struct ImportCommitDto {
     pub products_updated: u32,
     pub rows_committed: u32,
 }
+
+/// How a consolidated report is grouped (E14-T05).
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudGroupByDto {
+    Day,
+    Register,
+    Tender,
+}
+
+impl From<CloudGroupByDto> for pos_sync::reports::GroupBy {
+    fn from(g: CloudGroupByDto) -> Self {
+        match g {
+            CloudGroupByDto::Day => Self::Day,
+            CloudGroupByDto::Register => Self::Register,
+            CloudGroupByDto::Tender => Self::Tender,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudReportRowDto {
+    /// The date, the register's id or the tender kind.
+    pub key: String,
+    pub label: String,
+    pub sales_count: u32,
+    /// What the sales came to (after discounts, with tax).
+    pub sales_minor: String,
+    pub tax_minor: String,
+    pub discount_minor: String,
+    pub returns_count: u32,
+    pub refunds_minor: String,
+    pub net_minor: String,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudRegisterDto {
+    pub code: String,
+    pub name: String,
+    /// RFC 3339.
+    pub last_ack_at: Option<String>,
+    pub pending_known: bool,
+    pub current: bool,
+}
+
+/// All registers, from the cloud (E14-T05, PRD §15). `freshness` is `fully_synchronized`,
+/// `partial` (`unsyncedRegisters` may hold data these figures lack; `lastSyncedAt` is the
+/// oldest of their last confirmations) or `stale` (the cloud was out of reach: these are the
+/// figures fetched at `fetchedAt`; `staleReason` says why).
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudSalesReportDto {
+    pub group_by: String,
+    pub from: String,
+    pub to: String,
+    pub currency_exponent: u8,
+    pub rows: Vec<CloudReportRowDto>,
+    pub total: CloudReportRowDto,
+    pub freshness: String,
+    pub unsynced_registers: u32,
+    pub last_synced_at: Option<String>,
+    pub stale_reason: Option<String>,
+    /// RFC 3339: when the cloud made the report, and when this register fetched it.
+    pub as_of: String,
+    pub fetched_at: String,
+    pub registers: Vec<CloudRegisterDto>,
+}
+
+impl CloudSalesReportDto {
+    pub fn from_report(r: &pos_application::cloud_reports::CloudSalesReport) -> Self {
+        use pos_application::cloud_reports::Freshness;
+        let n = |v: i64| u32::try_from(v).unwrap_or(0);
+        let row = |x: &pos_sync::reports::SalesReportRow| CloudReportRowDto {
+            key: x.key.clone(),
+            label: x.label.clone(),
+            sales_count: n(x.sales_count),
+            sales_minor: x.gross_minor.to_string(),
+            tax_minor: x.tax_minor.to_string(),
+            discount_minor: x.discount_minor.to_string(),
+            returns_count: n(x.returns_count),
+            refunds_minor: x.refunds_minor.to_string(),
+            net_minor: x.net_minor.to_string(),
+        };
+        let rows = &r.report.rows;
+        let sum = |f: fn(&pos_sync::reports::SalesReportRow) -> i64| rows.iter().map(f).sum::<i64>();
+        let total = CloudReportRowDto {
+            key: "total".into(),
+            label: "Total".into(),
+            sales_count: n(sum(|x| x.sales_count)),
+            sales_minor: sum(|x| x.gross_minor).to_string(),
+            tax_minor: sum(|x| x.tax_minor).to_string(),
+            discount_minor: sum(|x| x.discount_minor).to_string(),
+            returns_count: n(sum(|x| x.returns_count)),
+            refunds_minor: sum(|x| x.refunds_minor).to_string(),
+            net_minor: sum(|x| x.net_minor).to_string(),
+        };
+        let (freshness, unsynced, last_synced, stale_reason) = match &r.freshness {
+            Freshness::FullySynchronized => ("fully_synchronized", 0, None, None),
+            Freshness::Partial {
+                unsynced,
+                last_synced,
+            } => ("partial", *unsynced, last_synced.clone(), None),
+            Freshness::Stale { reason } => {
+                let c = &r.report.completeness;
+                (
+                    "stale",
+                    c.unsynced(),
+                    c.last_synced().map(str::to_owned),
+                    Some(reason.as_str().to_owned()),
+                )
+            }
+        };
+        Self {
+            group_by: serde_json::to_value(r.report.group_by)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            from: r.report.from.clone(),
+            to: r.report.to.clone(),
+            currency_exponent: r.report.currency_exponent,
+            rows: rows.iter().map(row).collect(),
+            total,
+            freshness: freshness.into(),
+            unsynced_registers: u32::try_from(unsynced).unwrap_or(u32::MAX),
+            last_synced_at: last_synced,
+            stale_reason,
+            as_of: r.report.as_of.clone(),
+            fetched_at: r.fetched_at.to_rfc3339(),
+            registers: r
+                .report
+                .completeness
+                .registers
+                .iter()
+                .map(|c| CloudRegisterDto {
+                    code: c.code.clone(),
+                    name: c.name.clone(),
+                    last_ack_at: c.last_ack_at.clone(),
+                    pending_known: c.pending_known,
+                    current: c.current,
+                })
+                .collect(),
+        }
+    }
+}

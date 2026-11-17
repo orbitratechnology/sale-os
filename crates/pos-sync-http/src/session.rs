@@ -5,6 +5,7 @@ use pos_application::link::{CredentialStore, SessionSeed};
 use pos_application::sync::{SyncTransport, TransportError};
 use pos_domain::Secret;
 use pos_sync::pull::{BootstrapPage, ChangesResponse};
+use pos_sync::reports::{GroupBy, SalesReport};
 use pos_sync::{PushRequest, PushResponse};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -111,12 +112,27 @@ impl SyncTransport for DeviceSession {
         .await
     }
 
-    async fn changes(&self, cursor: Option<String>, limit: u32) -> Result<ChangesResponse, TransportError> {
+    async fn changes(
+        &self,
+        cursor: Option<String>,
+        limit: u32,
+        unsent: Option<u64>,
+    ) -> Result<ChangesResponse, TransportError> {
         self.call(|t| {
             let cursor = cursor.clone();
-            async move { self.client.changes(&t, cursor.as_deref(), limit).await }
+            async move { self.client.changes(&t, cursor.as_deref(), limit, unsent).await }
         })
         .await
+    }
+
+    async fn sales_report(
+        &self,
+        from: &str,
+        to: &str,
+        group_by: GroupBy,
+    ) -> Result<SalesReport, TransportError> {
+        self.call(|t| async move { self.client.sales_report(&t, from, to, group_by).await })
+            .await
     }
 
     async fn bootstrap(&self, page: Option<String>) -> Result<BootstrapPage, TransportError> {

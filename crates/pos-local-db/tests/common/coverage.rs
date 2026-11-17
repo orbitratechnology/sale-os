@@ -55,6 +55,10 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
     ("product_search", "search index (rebuilt from products)"),
     ("search_index_rows", "search index bookkeeping"),
     (
+        "cloud_report_cache",
+        "reports fetched from the cloud, kept for when it is out of reach",
+    ),
+    (
         "bootstrap_staging",
         "a joining register's download, applied as a whole",
     ),

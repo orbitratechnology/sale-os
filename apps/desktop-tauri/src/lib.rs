@@ -102,6 +102,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         report_commands::reports_tender_mix,
         report_commands::reports_top_products,
         report_commands::reports_stock,
+        report_commands::reports_cloud_sales,
         report_commands::export_csv,
         report_commands::audit_list,
         cash_commands::cash_session_current,

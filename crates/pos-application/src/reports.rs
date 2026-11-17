@@ -170,7 +170,7 @@ pub struct ReportService {
     pub reports: Arc<dyn ReportQueries>,
 }
 
-fn check_range(from: BusinessDate, to: BusinessDate) -> Result<(), AppError> {
+pub(crate) fn check_range(from: BusinessDate, to: BusinessDate) -> Result<(), AppError> {
     let days = (to.as_naive() - from.as_naive()).num_days();
     if days < 0 {
         return Err(AppError::Validation(

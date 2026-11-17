@@ -13,6 +13,7 @@ pub mod compat;
 pub mod envelope;
 pub mod events;
 pub mod pull;
+pub mod reports;
 pub mod upcast;
 pub mod verify;
 
