@@ -4,6 +4,7 @@ pub mod auth;
 pub mod catalog;
 pub mod config;
 pub mod devices;
+pub mod extract;
 mod problem;
 pub mod reports;
 mod routes;

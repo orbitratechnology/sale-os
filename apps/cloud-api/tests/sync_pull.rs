@@ -34,8 +34,14 @@ async fn another_register_pulls_the_day_in_pages_and_resumes_from_its_cursor() {
     let mut seen = Vec::new();
     let mut pages = 0;
     loop {
+        // The first pull names no cursor, as a register's does.
+        let after = if cursor.is_empty() {
+            String::new()
+        } else {
+            format!("&cursor={cursor}")
+        };
         let (code, page) =
-            get::<ChangesResponse>(&s, &two, &format!("/v1/sync/changes?limit=10&cursor={cursor}")).await;
+            get::<ChangesResponse>(&s, &two, &format!("/v1/sync/changes?limit=10{after}")).await;
         assert_eq!(code, StatusCode::OK);
         let page = page.unwrap();
         pages += 1;

@@ -181,6 +181,15 @@ async fn at12_http_every_secured_route_refuses_another_business() {
             "GET /v1/sync/bootstrap",
             (Method::GET, "/v1/sync/bootstrap".into(), None),
         ),
+        // B's products, listed by A's owner.
+        (
+            "GET /v1/catalog/products",
+            (
+                Method::GET,
+                format!("/v1/catalog/products?businessId={}", b.business),
+                None,
+            ),
+        ),
         // A product edit aimed at B's business.
         (
             "POST /v1/catalog/products",

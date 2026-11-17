@@ -4,8 +4,9 @@
 
 use crate::auth::UserPrincipal;
 use crate::devices::{DevicePrincipal, internal, pool};
+use crate::extract::ApiQuery;
 use crate::{AppState, Problem};
-use axum::extract::{FromRequestParts, Query, State};
+use axum::extract::{FromRequestParts, State};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::routing::get;
@@ -100,7 +101,7 @@ pub fn register_completeness(now: DateTime<Utc>, r: RegisterState) -> RegisterCo
 async fn sales(
     State(state): State<AppState>,
     caller: Caller,
-    Query(q): Query<SalesQuery>,
+    ApiQuery(q): ApiQuery<SalesQuery>,
 ) -> Result<Json<SalesReport>, Problem> {
     let date = |s: &str, name: &str| {
         NaiveDate::parse_from_str(s, "%Y-%m-%d")

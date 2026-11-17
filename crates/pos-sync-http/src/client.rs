@@ -230,26 +230,13 @@ impl CloudAccount for CloudClient {
             .request(Method::POST, "/v1/auth/login", None)
             .json(&json!({"email": email, "password": password.expose()}));
         let (_, v): (_, Value) = self.send(r).await.map_err(link)?;
-        let token = v["userAccessToken"]
-            .as_str()
-            .ok_or_else(|| LinkError::Other("no token in the sign-in reply".into()))?;
-        Ok(OwnerSession {
-            token: Secret::new(token.to_owned()),
-        })
+        owner_session(&v).ok_or_else(|| LinkError::Other("no token in the sign-in reply".into()))
     }
 
     async fn businesses(&self, owner: &OwnerSession) -> Result<Vec<CloudBusiness>, LinkError> {
         let r = self.request(Method::GET, "/v1/businesses", Some(&owner.token));
         let (_, v): (_, Vec<Value>) = self.send(r).await.map_err(link)?;
-        Ok(v.iter()
-            .filter_map(|b| {
-                Some(CloudBusiness {
-                    business_id: b["businessId"].as_str()?.parse().ok()?,
-                    name: b["name"].as_str()?.to_owned(),
-                    currency_code: b["currencyCode"].as_str().unwrap_or_default().to_owned(),
-                })
-            })
-            .collect())
+        Ok(v.iter().filter_map(business).collect())
     }
 
     async fn create_business(&self, owner: &OwnerSession, b: &NewCloudBusiness) -> Result<(), LinkError> {
@@ -282,16 +269,104 @@ impl CloudAccount for CloudClient {
             .request(Method::POST, "/v1/devices/register", Some(&owner.token))
             .json(&body);
         let (_, v): (_, Value) = self.send(r).await.map_err(link)?;
-        let t =
-            tokens(&v).ok_or_else(|| LinkError::Other("no credentials in the registration reply".into()))?;
-        let uuid = |k: &str| v[k].as_str().and_then(|s| s.parse::<Uuid>().ok());
-        Ok(Registered {
-            device_id: uuid("deviceId").ok_or_else(|| LinkError::Other("no device id".into()))?,
-            access_token: t.access_token,
-            expires_in: t.expires_in,
-            refresh_token: t.refresh_token,
-            register_code: v["registerCode"].as_str().unwrap_or_default().to_owned(),
-            location_id: uuid("locationId").unwrap_or_default(),
-        })
+        registered(&v)
+            .ok_or_else(|| LinkError::Other("no device id or credentials in the registration reply".into()))
+    }
+}
+
+/// `POST /v1/auth/login` → the owner's session.
+fn owner_session(v: &Value) -> Option<OwnerSession> {
+    Some(OwnerSession {
+        token: Secret::new(v["userAccessToken"].as_str()?.to_owned()),
+    })
+}
+
+/// One `Business` of `GET /v1/businesses`; `None` when it lacks an id or a name.
+fn business(b: &Value) -> Option<CloudBusiness> {
+    Some(CloudBusiness {
+        business_id: b["businessId"].as_str()?.parse().ok()?,
+        name: b["name"].as_str()?.to_owned(),
+        currency_code: b["currencyCode"].as_str().unwrap_or_default().to_owned(),
+    })
+}
+
+/// `POST /v1/devices/register` → the new device and its credentials.
+fn registered(v: &Value) -> Option<Registered> {
+    let t = tokens(v)?;
+    let uuid = |k: &str| v[k].as_str().and_then(|s| s.parse::<Uuid>().ok());
+    Some(Registered {
+        device_id: uuid("deviceId")?,
+        access_token: t.access_token,
+        expires_in: t.expires_in,
+        refresh_token: t.refresh_token,
+        register_code: v["registerCode"].as_str().unwrap_or_default().to_owned(),
+        location_id: uuid("locationId").unwrap_or_default(),
+    })
+}
+
+#[cfg(test)]
+mod spec_examples {
+    //! E16-T06: what this client reads from each reply, against the examples in the contract
+    //! (`contracts/openapi/pos-cloud.v1.yaml`, themselves checked against their schemas by the
+    //! cloud API's contract test).
+    use super::*;
+    use pos_sync::pull::{BootstrapPage, ChangesResponse};
+    use pos_sync::reports::SalesReport;
+    use pos_sync::{AckResponse, PushResponse, ResultStatus};
+
+    fn example(path: &str, method: &str, status: &str) -> Value {
+        let file = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../contracts/openapi/pos-cloud.v1.yaml"
+        );
+        let spec: Value = serde_yaml_ng::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        spec["paths"][path][method]["responses"][status]["content"]["application/json"]["example"].clone()
+    }
+
+    fn typed<T: DeserializeOwned>(path: &str, method: &str, status: &str) -> T {
+        serde_json::from_value(example(path, method, status))
+            .unwrap_or_else(|e| panic!("{method} {path} {status}: {e}"))
+    }
+
+    #[test]
+    fn the_owner_calls() {
+        let login = owner_session(&example("/v1/auth/login", "post", "200")).expect("login");
+        assert!(login.token.expose().starts_with("eyJ"));
+        let list = example("/v1/businesses", "get", "200");
+        let businesses: Vec<CloudBusiness> = list.as_array().unwrap().iter().filter_map(business).collect();
+        assert_eq!(
+            businesses.len(),
+            list.as_array().unwrap().len(),
+            "every business reads"
+        );
+        assert_eq!(
+            (businesses[0].name.as_str(), businesses[0].currency_code.as_str()),
+            ("Harbour Café", "GBP")
+        );
+        let r = registered(&example("/v1/devices/register", "post", "201")).expect("registration");
+        assert_eq!((r.register_code.as_str(), r.expires_in), ("R02", 900));
+        assert!(!r.location_id.is_nil() && !r.device_id.is_nil());
+    }
+
+    #[test]
+    fn the_device_calls() {
+        let t = tokens(&example("/v1/auth/device/refresh", "post", "200")).expect("refresh");
+        assert_eq!(t.expires_in, 900);
+        let push: PushResponse = typed("/v1/sync/events", "post", "200");
+        assert_eq!(push.ack_sequence, 41);
+        assert_eq!(push.results[1].status, ResultStatus::Conflict);
+        let changes: ChangesResponse = typed("/v1/sync/changes", "get", "200");
+        assert_eq!(changes.next_cursor, "v1:1208");
+        // The snapshots inside are payloads the register applies.
+        let c = &changes.changes[0];
+        pos_sync::parse_payload(&c.event_type, c.schema_version, &c.snapshot).expect("a product.upserted v1");
+        let page: BootstrapPage = typed("/v1/sync/bootstrap", "get", "200");
+        assert!(page.next_page.is_some());
+        let e = &page.entities[0];
+        pos_sync::parse_payload(&e.event_type, e.schema_version, &e.snapshot).expect("a product.upserted v1");
+        let ack: AckResponse = typed("/v1/sync/ack", "get", "200");
+        assert_eq!(ack.ack_sequence, 41);
+        let report: SalesReport = typed("/v1/reports/sales", "get", "200");
+        assert!(report.completeness.fully_synchronized());
     }
 }

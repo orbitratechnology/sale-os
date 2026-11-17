@@ -4,8 +4,9 @@
 
 use crate::auth::jwt::Claims;
 use crate::auth::{UserPrincipal, now_secs};
+use crate::extract::{ApiJson, ApiPath};
 use crate::{AppState, Problem};
-use axum::extract::{FromRequestParts, Path, State};
+use axum::extract::{FromRequestParts, State};
 use axum::http::request::Parts;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -107,7 +108,7 @@ impl From<db::BusinessFull> for BusinessDto {
 async fn create_business(
     State(state): State<AppState>,
     user: UserPrincipal,
-    Json(req): Json<NewBusinessRequest>,
+    ApiJson(req): ApiJson<NewBusinessRequest>,
 ) -> Result<Response, Problem> {
     let pool = pool(&state)?;
     let name = req.name.trim();
@@ -117,7 +118,7 @@ async fn create_business(
     if req.country_code.len() != 2 || !req.country_code.chars().all(|c| c.is_ascii_uppercase()) {
         return Err(Problem::validation("countryCode: two capital letters (ISO 3166)"));
     }
-    if req.timezone.trim().is_empty() || req.timezone.len() > 64 {
+    if req.timezone.len() > 64 || pos_domain::time::parse_time_zone(&req.timezone).is_err() {
         return Err(Problem::validation("timezone: an IANA time zone name"));
     }
     let currency =
@@ -254,7 +255,7 @@ fn device_token(state: &AppState, business: Uuid, register: Uuid, device: Uuid) 
 async fn register_device(
     State(state): State<AppState>,
     user: UserPrincipal,
-    Json(req): Json<RegisterRequest>,
+    ApiJson(req): ApiJson<RegisterRequest>,
 ) -> Result<Response, Problem> {
     let pool = pool(&state)?;
     let code_ok = req.register_code.as_deref().is_none_or(|c| {
@@ -347,7 +348,7 @@ struct RefreshRequest {
 /// the device (`401 SYNC_DEVICE_REVOKED`), as does a revoked device.
 async fn refresh(
     State(state): State<AppState>,
-    Json(req): Json<RefreshRequest>,
+    ApiJson(req): ApiJson<RefreshRequest>,
 ) -> Result<Json<DeviceCredentials>, Problem> {
     let pool = pool(&state)?;
     let (next, next_hash) = new_refresh_token();
@@ -432,7 +433,7 @@ async fn list_devices(
 async fn revoke(
     State(state): State<AppState>,
     user: UserPrincipal,
-    Path(device_id): Path<Uuid>,
+    ApiPath(device_id): ApiPath<Uuid>,
 ) -> Result<StatusCode, Problem> {
     let pool = pool(&state)?;
     let mut tx = AccountTx::begin(pool, user.account_id).await.map_err(internal)?;

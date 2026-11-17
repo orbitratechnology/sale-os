@@ -25,3 +25,6 @@ keyring = { version = "3", default-features = false, features = ["apple-native",
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+serde_yaml_ng.workspace = true

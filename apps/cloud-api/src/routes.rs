@@ -1,3 +1,4 @@
+use crate::extract::ApiJson;
 use crate::{AppState, Problem};
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -91,7 +92,7 @@ pub struct MoneyAddResponse {
     pub formatted: String,
 }
 
-async fn debug_money_add(Json(req): Json<MoneyAddRequest>) -> Result<Json<MoneyAddResponse>, Problem> {
+async fn debug_money_add(ApiJson(req): ApiJson<MoneyAddRequest>) -> Result<Json<MoneyAddResponse>, Problem> {
     let currency = Currency::from_iso(&req.currency).map_err(|e| Problem::validation(e.to_string()))?;
     let parse = |s: &str| {
         s.parse::<i64>()

@@ -209,7 +209,7 @@ the action available (PRD §5.1).
 | `GET /v1/sync/changes?cursor=&limit=` | device | `→ { changes:[Change], nextCursor, hasMore }` | `Change = { serverSeq, aggregateType, aggregateId, version?, kind, originRegisterId?, snapshot }` |
 | `POST /v1/sync/events` | device | `PushRequest → PushResponse` (see below) | Up to 200 events or 2 MB per request |
 | `GET /v1/sync/ack` | device | `→ { registerId, ackSequence, serverTime }` | `registerId` comes from the token. The query parameter in the PRD is dropped as redundant. |
-| `GET /v1/catalog/products?query=&page=` | user | `→ Paged<ProductDto>` | Admin read-only in the MVP |
+| `GET /v1/catalog/products?businessId=&query=&page=&pageSize=` | user | `→ { items:[{ productId, version, product }], page, pageSize, total }` | Admin read-only in the MVP. Archived products included; `query` matches part of a name or SKU, or a whole barcode. `404` for a business the account does not belong to (E16-T06) |
 | `POST /v1/catalog/products` | user | `{ product, expectedVersion } → ProductDto \| 409 CONFLICT_VERSION` | Present in the PRD. Implemented through the same applier as device events (origin = cloud). P1 UI. |
 | `GET /v1/reports/sales?from=&to=&groupBy=day\|register\|tender` | user or device | `→ { groupBy, from, to, currencyCode, currencyExponent, rows, asOf, completeness:{ registers:[{ registerId, code, name, lastAckAt, pendingKnown, current }] } }` (device: its own business; user: `businessId` required, member only, else 404) | `completeness` drives the "fully synchronized vs last-synced" label (PRD §15). `current`: heard from within 5 min with nothing unsent, from the `unsent` count each register sends with `GET /v1/sync/changes` (E14-T05) |
 

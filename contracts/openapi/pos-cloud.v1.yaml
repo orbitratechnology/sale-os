@@ -1,13 +1,17 @@
 openapi: 3.1.0
 info:
   title: Sale OS Cloud API
-  version: 1.0.0-stage0
+  version: 1.0.0
   summary: Device sync, owner accounts and consolidated reports for Sale OS registers.
   description: |
-    Source of truth for the cloud REST contract (docs/backlog/07-contracts.md §3).
-    Covers the service endpoints and owner sign-up / sign-in (E16-T03). Devices, sync and
-    reports are added by E16-T04..T06 and E17. Errors use RFC 9457 problem+json carrying a catalogued `code`
-    (docs/errors.md).
+    Source of truth for the cloud REST contract (docs/backlog/07-contracts.md §3): every route
+    there is here (E16-T06). Every error, including a body or query that does not parse, is
+    RFC 9457 problem+json carrying a catalogued `code` (docs/errors.md).
+
+    Kept honest by two tests: `apps/cloud-api/tests/contract_routes.rs` sends real requests to every
+    operation and validates each answer, and checks every example against its schema;
+    `scripts/contract-fuzz.sh` runs Schemathesis against the real server in CI. The register's
+    client parses the examples (`crates/pos-sync-http`).
   contact:
     name: Sale OS engineering
   license:
@@ -144,6 +148,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
+              example: {
+                  "userAccessToken": "eyJhbGciOiJFZERTQSJ9.user.signature",
+                  "expiresIn": 900
+                }
         "401":
           description: "`AUTH_CREDENTIALS_INVALID`."
           content:
@@ -232,6 +240,19 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Business"
+              example: [
+                  {
+                    "businessId": "0193a7b2-5c1e-7d40-9f00-000000000001",
+                    "name": "Harbour Café",
+                    "countryCode": "GB",
+                    "timezone": "Europe/London",
+                    "currencyCode": "GBP",
+                    "currencyExponent": 2,
+                    "pricesIncludeTax": true,
+                    "version": 4,
+                    "status": "active"
+                  }
+                ]
         "401":
           description: "`AUTH_REQUIRED`."
           content:
@@ -268,6 +289,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceCredentials"
+              example: {
+                  "deviceId": "0193a7b2-5c1e-7d40-9f00-000000000004",
+                  "accessToken": "eyJhbGciOiJFZERTQSJ9.device.signature",
+                  "refreshToken": "rt_3q2Y8kQd7mWnZ0aB",
+                  "expiresIn": 900,
+                  "registerCode": "R02",
+                  "locationId": "0193a7b2-5c1e-7d40-9f00-000000000003"
+                }
         "401":
           description: "`AUTH_REQUIRED`."
           content:
@@ -323,6 +352,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceCredentials"
+              example: {
+                  "accessToken": "eyJhbGciOiJFZERTQSJ9.device.signature2",
+                  "refreshToken": "rt_9fK2LmQ0pX7sV1cD",
+                  "expiresIn": 900
+                }
         "401":
           description: "`SYNC_DEVICE_REVOKED` (revoked, or a spent token reused) or `AUTH_REQUIRED` (unknown or expired: link again)."
           content:
@@ -426,6 +460,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PushResponse"
+              example: {
+                  "ackSequence": 41,
+                  "serverTime": "2026-11-17T09:20:00Z",
+                  "results": [
+                    {
+                      "eventId": "0193a7b2-5c1e-7d40-9f00-000000000005",
+                      "localSequence": 41,
+                      "status": "applied",
+                      "serverSeq": 1207
+                    },
+                    {
+                      "eventId": "0193a7b2-5c1e-7d40-9f00-000000000006",
+                      "localSequence": 42,
+                      "status": "conflict",
+                      "serverVersion": 4,
+                      "serverSnapshot": {
+                        "id": "0193a7b2-5c1e-7d40-9f00-000000000007",
+                        "name": "Cola 330ml",
+                        "description": null,
+                        "categoryId": null,
+                        "productType": "stock",
+                        "unit": "ea",
+                        "taxCategoryId": "0193a7b2-5c1e-7d40-9f00-000000000009",
+                        "quickSelect": true,
+                        "archived": false,
+                        "version": 3,
+                        "variants": [
+                          {
+                            "id": "0193a7b2-5c1e-7d40-9f00-000000000008",
+                            "isDefault": true,
+                            "sku": "COLA-330",
+                            "options": {},
+                            "price": 120,
+                            "cost": null,
+                            "trackStock": true,
+                            "lowStockThreshold": null,
+                            "scanQty": 1000,
+                            "barcodes": [],
+                            "archived": false
+                          }
+                        ]
+                      },
+                      "code": "VERSION"
+                    }
+                  ]
+                }
         "401":
           description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
           content:
@@ -464,6 +544,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AckResponse"
+              example: {
+                  "registerId": "0193a7b2-5c1e-7d40-9f00-000000000002",
+                  "ackSequence": 41,
+                  "serverTime": "2026-11-17T09:20:00Z"
+                }
         "401":
           description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
           content:
@@ -477,6 +562,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
   /v1/catalog/products:
+    get:
+      operationId: listProducts
+      tags: [catalog]
+      summary: The business's products, read-only for the owner (E16-T06).
+      description: >-
+        Products by name, archived ones included (see `product.archived`), each with its latest
+        `product.upserted` snapshot and version. `query` matches part of the name or a SKU, or a
+        whole barcode.
+      security:
+        - userToken: []
+      parameters:
+        - name: businessId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: query
+          in: query
+          required: false
+          schema: { type: string, maxLength: 200 }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: One page of products.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductPage"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: not a business this account belongs to."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: a bad page, page size or query."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
     post:
       operationId: saveProduct
       tags: [catalog]
@@ -565,6 +708,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChangesResponse"
+              example: {
+                  "changes": [
+                    {
+                      "serverSeq": 1208,
+                      "aggregateType": "product",
+                      "aggregateId": "0193a7b2-5c1e-7d40-9f00-000000000007",
+                      "version": 3,
+                      "kind": "upsert",
+                      "eventType": "product.upserted",
+                      "schemaVersion": 1,
+                      "snapshot": {
+                        "id": "0193a7b2-5c1e-7d40-9f00-000000000007",
+                        "name": "Cola 330ml",
+                        "description": null,
+                        "categoryId": null,
+                        "productType": "stock",
+                        "unit": "ea",
+                        "taxCategoryId": "0193a7b2-5c1e-7d40-9f00-000000000009",
+                        "quickSelect": true,
+                        "archived": false,
+                        "version": 3,
+                        "variants": [
+                          {
+                            "id": "0193a7b2-5c1e-7d40-9f00-000000000008",
+                            "isDefault": true,
+                            "sku": "COLA-330",
+                            "options": {},
+                            "price": 120,
+                            "cost": null,
+                            "trackStock": true,
+                            "lowStockThreshold": null,
+                            "scanQty": 1000,
+                            "barcodes": [],
+                            "archived": false
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "nextCursor": "v1:1208",
+                  "hasMore": false
+                }
         "401":
           description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
           content:
@@ -622,6 +807,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SalesReport"
+              example: {
+                  "groupBy": "register",
+                  "from": "2026-11-17",
+                  "to": "2026-11-17",
+                  "currencyCode": "GBP",
+                  "currencyExponent": 2,
+                  "rows": [
+                    {
+                      "key": "0193a7b2-5c1e-7d40-9f00-000000000002",
+                      "label": "R01",
+                      "salesCount": 42,
+                      "grossMinor": 31890,
+                      "taxMinor": 5315,
+                      "discountMinor": 210,
+                      "returnsCount": 1,
+                      "refundsMinor": 450,
+                      "netMinor": 31440
+                    }
+                  ],
+                  "asOf": "2026-11-17T17:30:00Z",
+                  "completeness": {
+                    "registers": [
+                      {
+                        "registerId": "0193a7b2-5c1e-7d40-9f00-000000000002",
+                        "code": "R01",
+                        "name": "Till 1",
+                        "lastAckAt": "2026-11-17T17:28:00Z",
+                        "pendingKnown": false,
+                        "current": true
+                      }
+                    ]
+                  }
+                }
         "401":
           description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
           content:
@@ -674,6 +892,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BootstrapPage"
+              example: {
+                  "snapshotCursor": "v1:1207",
+                  "entities": [
+                    {
+                      "aggregateType": "product",
+                      "aggregateId": "0193a7b2-5c1e-7d40-9f00-000000000007",
+                      "eventType": "product.upserted",
+                      "schemaVersion": 1,
+                      "version": 3,
+                      "snapshot": {
+                        "id": "0193a7b2-5c1e-7d40-9f00-000000000007",
+                        "name": "Cola 330ml",
+                        "description": null,
+                        "categoryId": null,
+                        "productType": "stock",
+                        "unit": "ea",
+                        "taxCategoryId": "0193a7b2-5c1e-7d40-9f00-000000000009",
+                        "quickSelect": true,
+                        "archived": false,
+                        "version": 3,
+                        "variants": [
+                          {
+                            "id": "0193a7b2-5c1e-7d40-9f00-000000000008",
+                            "isDefault": true,
+                            "sku": "COLA-330",
+                            "options": {},
+                            "price": 120,
+                            "cost": null,
+                            "trackStock": true,
+                            "lowStockThreshold": null,
+                            "scanQty": 1000,
+                            "barcodes": [],
+                            "archived": false
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "nextPage": "v1:1207:8:0193a7b2-5c1e-7d40-9f00-000000000007"
+                }
         "401":
           description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
           content:
@@ -927,6 +1185,17 @@ components:
         productId: { type: string, format: uuid }
         version: { type: integer, minimum: 1 }
         product: { type: object }
+    ProductPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SavedProduct" }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 200 }
+        total: { type: integer, minimum: 0, description: "Products matching the query, across all pages." }
     Change:
       type: object
       additionalProperties: false

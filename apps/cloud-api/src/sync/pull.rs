@@ -7,9 +7,10 @@
 //! newer than what it holds.
 
 use crate::devices::{DevicePrincipal, internal, pool};
+use crate::extract::ApiQuery;
 use crate::{AppState, Problem};
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::State;
 use pos_cloud_db::master::{Kind, snapshot_page};
 use pos_cloud_db::sync::{changes_after, feed_position};
 use pos_cloud_db::{Principal, TenantTx};
@@ -43,15 +44,19 @@ fn principal(me: &DevicePrincipal) -> Principal {
 pub async fn changes(
     me: DevicePrincipal,
     State(state): State<AppState>,
-    Query(q): Query<ChangesQuery>,
+    ApiQuery(q): ApiQuery<ChangesQuery>,
 ) -> Result<Json<ChangesResponse>, Problem> {
     let after = match q.cursor.as_deref() {
-        None | Some("") => 0,
+        // From the start. An empty cursor is not one this server issued.
+        None => 0,
         Some(c) => {
             parse_cursor(c).ok_or_else(|| Problem::validation("cursor is not one this server issued"))?
         }
     };
-    let limit = q.limit.unwrap_or(CHANGES_DEFAULT).clamp(1, CHANGES_MAX);
+    let limit = q.limit.unwrap_or(CHANGES_DEFAULT);
+    if !(1..=CHANGES_MAX).contains(&limit) {
+        return Err(Problem::validation(format!("limit is 1 to {CHANGES_MAX}")));
+    }
     let mut tx = TenantTx::begin(pool(&state)?, &principal(&me))
         .await
         .map_err(internal)?;
@@ -132,9 +137,12 @@ impl PageToken {
 pub async fn bootstrap(
     me: DevicePrincipal,
     State(state): State<AppState>,
-    Query(q): Query<BootstrapQuery>,
+    ApiQuery(q): ApiQuery<BootstrapQuery>,
 ) -> Result<Json<BootstrapPage>, Problem> {
-    let size = q.size.unwrap_or(PAGE_DEFAULT).clamp(1, PAGE_MAX);
+    let size = q.size.unwrap_or(PAGE_DEFAULT);
+    if !(1..=PAGE_MAX).contains(&size) {
+        return Err(Problem::validation(format!("size is 1 to {PAGE_MAX}")));
+    }
     let mut tx = TenantTx::begin(pool(&state)?, &principal(&me))
         .await
         .map_err(internal)?;

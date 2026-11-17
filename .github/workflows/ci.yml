@@ -72,6 +72,17 @@ jobs:
       # Registers linked to the real API over HTTP (E17-T08), and the AT-06 smoke subset of
       # the network fault matrix (E17-T10; the full matrix runs nightly).
       - run: cargo test -p sync-e2e --locked
+      # E16-T06: property-based contract tests of the real API (Schemathesis): no 5xx, and every
+      # status, content type and body as the contract declares, for valid and invalid input.
+      - run: pipx install schemathesis==4.33.4
+      - run: scripts/contract-fuzz.sh
+        env:
+          CONTRACT_REPORT_DIR: ${{ runner.temp }}/contract-fuzz
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-fuzz
+          path: ${{ runner.temp }}/contract-fuzz
 
   cargo-deny:
     name: cargo-deny (licences, advisories, bans, sources)

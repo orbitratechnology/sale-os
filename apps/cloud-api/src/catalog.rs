@@ -1,10 +1,11 @@
-//! Catalogue edits made in the cloud (E17-T06): `POST /v1/catalog/products`. They go through
-//! the same version check, uniqueness rules and change feed as a register's
-//! `product.upserted`, with the cloud as their origin, so registers pull them like any other
-//! change.
+//! The catalogue in the cloud. Edits (E17-T06, `POST /v1/catalog/products`) go through the
+//! same version check, uniqueness rules and change feed as a register's `product.upserted`,
+//! with the cloud as their origin, so registers pull them like any other change. The list
+//! (E16-T06, `GET /v1/catalog/products`) is read-only for the owner in the MVP.
 
 use crate::auth::UserPrincipal;
 use crate::devices::{internal, pool};
+use crate::extract::{ApiJson, ApiQuery};
 use crate::sync::master::{Origin, upsert};
 use crate::sync::{ApplyError, ApplyOutcome};
 use crate::{AppState, Problem};
@@ -13,6 +14,7 @@ use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
 use pos_cloud_db::devices::is_member;
+use pos_cloud_db::master::list_products;
 use pos_cloud_db::{Principal, TenantTx};
 use pos_domain::{BusinessId, ErrorCode};
 use pos_sync::{Payload, codes};
@@ -20,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/catalog/products", post(save_product))
+    Router::new().route("/catalog/products", post(save_product).get(products))
 }
 
 #[derive(Deserialize)]
@@ -41,6 +43,82 @@ struct SavedProduct {
     product: serde_json::Value,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductsQuery {
+    business_id: Uuid,
+    #[serde(default)]
+    query: String,
+    /// 1-based.
+    page: Option<i64>,
+    page_size: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductPage {
+    items: Vec<SavedProduct>,
+    page: i64,
+    page_size: i64,
+    /// Products matching the query, across all pages.
+    total: i64,
+}
+
+const PAGE_SIZE_DEFAULT: i64 = 50;
+const PAGE_SIZE_MAX: i64 = 200;
+
+fn not_found() -> Problem {
+    // Someone else's business, or none: the same answer.
+    Problem::new(StatusCode::NOT_FOUND, ErrorCode::NotFound, "Not found", None)
+}
+
+async fn products(
+    State(state): State<AppState>,
+    user: UserPrincipal,
+    ApiQuery(q): ApiQuery<ProductsQuery>,
+) -> Result<Json<ProductPage>, Problem> {
+    let page = q.page.unwrap_or(1);
+    let page_size = q.page_size.unwrap_or(PAGE_SIZE_DEFAULT);
+    if page < 1 || !(1..=PAGE_SIZE_MAX).contains(&page_size) {
+        return Err(Problem::validation(format!(
+            "page starts at 1 and pageSize is 1 to {PAGE_SIZE_MAX}"
+        )));
+    }
+    let query = q.query.trim();
+    if query.chars().count() > 200 {
+        return Err(Problem::validation("query is longer than 200 characters"));
+    }
+    let mut tx = TenantTx::begin(
+        pool(&state)?,
+        &Principal {
+            business_id: BusinessId::from_uuid(q.business_id),
+        },
+    )
+    .await
+    .map_err(internal)?;
+    if !is_member(&mut tx, user.account_id).await.map_err(internal)? {
+        return Err(not_found());
+    }
+    let offset = (page - 1).saturating_mul(page_size);
+    let (rows, total) = list_products(&mut tx, query, page_size, offset)
+        .await
+        .map_err(internal)?;
+    tx.commit().await.map_err(internal)?;
+    Ok(Json(ProductPage {
+        items: rows
+            .into_iter()
+            .map(|r| SavedProduct {
+                product_id: r.product_id,
+                version: u64::try_from(r.version).unwrap_or(0),
+                product: r.snapshot,
+            })
+            .collect(),
+        page,
+        page_size,
+        total,
+    }))
+}
+
 fn conflict(code: ErrorCode, title: &str) -> Problem {
     Problem::new(StatusCode::CONFLICT, code, title, None)
 }
@@ -48,7 +126,7 @@ fn conflict(code: ErrorCode, title: &str) -> Problem {
 async fn save_product(
     State(state): State<AppState>,
     user: UserPrincipal,
-    Json(req): Json<SaveProduct>,
+    ApiJson(req): ApiJson<SaveProduct>,
 ) -> Result<Json<SavedProduct>, Problem> {
     let payload = pos_sync::parse_payload("product.upserted", 1, &req.product)
         .map_err(|e| Problem::validation(e.to_string()))?;
@@ -65,13 +143,7 @@ async fn save_product(
     .await
     .map_err(internal)?;
     if !is_member(&mut tx, user.account_id).await.map_err(internal)? {
-        // Someone else's business, or none: the same answer.
-        return Err(Problem::new(
-            StatusCode::NOT_FOUND,
-            ErrorCode::NotFound,
-            "Not found",
-            None,
-        ));
+        return Err(not_found());
     }
     let id = product.id.to_string();
     let origin = Origin {
