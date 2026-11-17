@@ -2,6 +2,8 @@
 //! registers (SQLite in temp dirs) wired the way the app wires them.
 #![allow(dead_code)]
 
+pub mod proxy;
+
 use pos_application::auth::{Argon2PinHasher, PinHasher};
 use pos_application::cart::CartService;
 use pos_application::cash::CashService;
@@ -92,6 +94,11 @@ pub struct Register {
 }
 
 pub async fn register(cloud: &Cloud, owner_pin: &str) -> Register {
+    register_at(&cloud.url, owner_pin).await
+}
+
+/// A register that reaches the cloud at `url` (the cloud itself, or a proxy in front of it).
+pub async fn register_at(url: &str, owner_pin: &str) -> Register {
     let dir = TempDir::new().unwrap();
     let store = SqliteStore::new(LocalDb::open(&DbOptions::in_dir(dir.path())).await.unwrap());
     let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
@@ -140,7 +147,7 @@ pub async fn register(cloud: &Cloud, owner_pin: &str) -> Register {
         ids,
         approval: None,
     };
-    let client = CloudClient::new(&cloud.url, "0.1.0").unwrap();
+    let client = CloudClient::new(url, "0.1.0").unwrap();
     let credentials = Arc::new(MemoryCredentials::default());
     let session = Arc::new(DeviceSession::new(client.clone(), credentials.clone()));
     let link = LinkService {
