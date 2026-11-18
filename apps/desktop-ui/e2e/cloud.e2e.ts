@@ -376,12 +376,23 @@ describe("backups (E19-T03)", () => {
     expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: true });
   });
 
-  it("a linked till cannot restore yet", async () => {
+  it("a linked till restores only online, and loses nothing", async () => {
     const page = await backupsPage(() => {
       window.__fake.cloud.linkState = "linked";
+      window.__fake.cloud.online = false;
     });
-    await page.getByText(/Restoring a linked till is not available yet/).waitFor();
-    const restore = page.getByTestId("backup-row").first().getByRole("button", { name: "Restore…" });
-    expect(await restore.isDisabled()).toBe(true);
+    await page.getByText(/its sales since the backup come back from the cloud/).waitFor();
+    await page.getByTestId("backup-row").first().getByRole("button", { name: "Restore…" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Restore a backup" });
+    await dialog.getByText(/come back from the cloud after the restart/).waitFor();
+    expect(await dialog.getByRole("checkbox").count()).toBe(0);
+    await dialog.getByRole("button", { name: "Restore and restart" }).click();
+    await page.getByText(/The cloud could not be reached/).waitFor();
+
+    await page.evaluate(() => (window.__fake.cloud.online = true));
+    await page.getByTestId("backup-row").first().getByRole("button", { name: "Restore…" }).click();
+    await dialog.getByRole("button", { name: "Restore and restart" }).click();
+    await page.getByText("Restored. Sale OS is restarting…").waitFor();
+    expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: false });
   });
 });

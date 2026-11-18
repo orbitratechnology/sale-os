@@ -95,7 +95,7 @@ pub struct StockItem {
     pub damaged: Quantity,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannedMovement {
     pub variant_id: VariantId,
@@ -153,7 +153,7 @@ fn text(v: &Option<String>, field: &'static str) -> Result<Option<String>, Docum
 }
 
 /// A validated document, ready to post.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentPlan {
     pub doc_type: DocumentType,
@@ -268,16 +268,25 @@ pub fn plan_document(draft: &DocumentDraft, items: &[StockItem]) -> Result<Docum
     })
 }
 
-/// A posted document: the header and its movements. The number is given by the store.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentSnapshot {
-    pub id: InventoryDocumentId,
-    #[serde(flatten)]
-    pub plan: DocumentPlan,
-    pub actor: UserId,
-    pub occurred_at: Timestamp,
-    pub business_date: BusinessDate,
+pub use documentsnapshot_serde::DocumentSnapshot;
+
+mod documentsnapshot_serde {
+    // Serde buffers a `#[serde(flatten)]` field in a value type that names f32/f64; no
+    // amount here is a float (the fields are Money/Quantity).
+    #![allow(clippy::disallowed_types)]
+    use super::*;
+
+    /// A posted document: the header and its movements. The number is given by the store.
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DocumentSnapshot {
+        pub id: InventoryDocumentId,
+        #[serde(flatten)]
+        pub plan: DocumentPlan,
+        pub actor: UserId,
+        pub occurred_at: Timestamp,
+        pub business_date: BusinessDate,
+    }
 }
 
 impl DocumentSnapshot {

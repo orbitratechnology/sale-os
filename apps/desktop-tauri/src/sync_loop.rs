@@ -7,6 +7,7 @@
 
 use pos_application::link::CredentialStore;
 use pos_application::queries::QueryError;
+use pos_application::replay::{ReplayService, Replayer};
 use pos_application::sync::{Next, OsRandom, SyncTransport, SyncWorker, TransportError};
 use pos_domain::Clock;
 use pos_local_db::SqliteStore;
@@ -51,7 +52,15 @@ impl SyncRunner {
                 }
             }
         });
-        tokio::spawn(run(worker.clone(), wake.clone(), store, credentials));
+        let shared = Arc::new(store.clone());
+        let replayer: Arc<dyn Replayer> = Arc::new(ReplayService {
+            store: shared.clone(),
+            setup: shared.clone(),
+            receipts: shared.clone(),
+            returns: shared,
+            ids: Arc::new(pos_domain::UuidV7Generator),
+        });
+        tokio::spawn(run(worker.clone(), wake.clone(), store, credentials, replayer));
         Self { worker, wake }
     }
 
@@ -67,9 +76,10 @@ async fn run(
     wake: Arc<Notify>,
     store: SqliteStore,
     credentials: Option<Arc<dyn CredentialStore>>,
+    replayer: Arc<dyn Replayer>,
 ) {
     loop {
-        let next = match cycle(&worker).await {
+        let next = match cycle(&worker, replayer.as_ref()).await {
             Ok(next) => next,
             Err(e) => {
                 tracing::warn!(error = %e, "sync push could not read or record the outbox");
@@ -107,7 +117,11 @@ async fn run(
 }
 
 /// One push, then one pull (or bootstrap page); what to do next is the more urgent of the two.
-async fn cycle(worker: &SyncWorker) -> Result<Next, QueryError> {
+/// After a restore, this register's own events come back first, before anything is pushed.
+async fn cycle(worker: &SyncWorker, replayer: &dyn Replayer) -> Result<Next, QueryError> {
+    if worker.store.pull_state().await?.replay_after.is_some() {
+        return Ok(worker.replay_step(replayer).await?.next);
+    }
     let push = worker.push_once().await?.next;
     if push == Next::Immediately {
         return Ok(Next::Immediately);

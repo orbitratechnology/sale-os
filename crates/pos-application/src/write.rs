@@ -533,6 +533,24 @@ pub struct WriteSet {
     ops: Vec<WriteOp>,
     outbox: Vec<OutboxDraft>,
     audit: Vec<AuditEntry>,
+    replay: Option<Replay>,
+}
+
+/// E19-T03: this write set re-creates, after a restore, an event the cloud already has from
+/// this register. The store gives the allocated numbers their original values and writes
+/// the original event (same id, sequence and payload, with the cloud's outcome) instead of
+/// the draft, so the till is as it was when it made the event.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Replay {
+    pub event_id: EventId,
+    pub local_sequence: u64,
+    pub event_type: String,
+    /// The payload as the cloud received it.
+    pub payload: serde_json::Value,
+    /// `applied`, `conflict` or `rejected`: the event's outbox status.
+    pub status: &'static str,
+    /// The numbers the event was given, per counter.
+    pub numbers: Vec<(Counter, u64)>,
 }
 
 impl WriteSet {
@@ -543,6 +561,7 @@ impl WriteSet {
             outbox: Vec::new(),
             audit: Vec::new(),
             resolving: BTreeSet::new(),
+            replay: None,
         }
     }
     pub fn context(&self) -> &WriteContext {
@@ -557,6 +576,10 @@ impl WriteSet {
     pub fn audit(&self) -> &[AuditEntry] {
         &self.audit
     }
+    /// Set when this re-creates an event after a restore (E19-T03).
+    pub fn replay(&self) -> Option<&Replay> {
+        self.replay.as_ref()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -567,6 +590,7 @@ pub struct WriteSetBuilder {
     audit: Vec<AuditEntry>,
     /// Aggregates whose new version follows the cloud's, not the local one (E18-T02).
     resolving: BTreeSet<AggregateRef>,
+    replay: Option<Replay>,
 }
 
 impl WriteSetBuilder {
@@ -826,7 +850,22 @@ impl WriteSetBuilder {
     }
 
     /// Validates the ADR-008 invariants and returns the immutable set.
+    /// Re-creates an event the cloud already has (E19-T03); the set must carry exactly one
+    /// outbox draft, of the same event type.
+    pub fn replaying(mut self, replay: Replay) -> Self {
+        self.replay = Some(replay);
+        self
+    }
+
     pub fn build(self) -> Result<WriteSet, WriteSetError> {
+        if let Some(r) = &self.replay
+            && (self.outbox.len() != 1 || self.outbox[0].event_type != r.event_type)
+        {
+            return Err(WriteSetError::Payload(format!(
+                "a replay of {} needs exactly one outbox draft of that type",
+                r.event_type
+            )));
+        }
         // Only purely local edits (e.g. adding a cart line) may skip the audit row.
         let local_only =
             self.outbox.is_empty() && self.ops.iter().all(|op| matches!(op.sync(), SyncKind::LocalOnly));
@@ -917,6 +956,7 @@ impl WriteSetBuilder {
             ops: self.ops,
             outbox: self.outbox,
             audit: self.audit,
+            replay: self.replay,
         })
     }
 
@@ -992,6 +1032,9 @@ pub enum WriteError {
     /// SQLITE_FULL: no space left for the write; the transaction was rolled back.
     #[error("the disk is full")]
     DiskFull,
+    /// E19-T03: a restored, linked register is still bringing back its events from the cloud.
+    #[error("this till is bringing back its sales from the cloud after a restore")]
+    ReplayPending,
     #[error("database error: {0}")]
     Io(String),
     #[error("fault injected before statement {statement}")]
@@ -1027,6 +1070,7 @@ impl HasErrorCode for WriteError {
             WriteError::Busy => ErrorCode::StoreBusy,
             WriteError::Corrupt(_) => ErrorCode::StoreCorrupt,
             WriteError::DiskFull => ErrorCode::StoreDiskFull,
+            WriteError::ReplayPending => ErrorCode::SyncReplayPending,
             WriteError::Io(_) | WriteError::FaultInjected { .. } => ErrorCode::StoreIo,
             WriteError::CartRevisionMismatch { .. } => ErrorCode::CartRevisionMismatch,
             // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.

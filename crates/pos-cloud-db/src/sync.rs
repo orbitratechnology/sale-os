@@ -91,13 +91,17 @@ pub struct NewInboxEntry<'a> {
     pub payload_sha256: &'a [u8],
     pub result_status: &'a str,
     pub result: &'a serde_json::Value,
+    pub aggregate_type: &'a str,
+    pub aggregate_id: &'a str,
+    pub base_version: Option<i64>,
 }
 
 pub async fn insert_inbox(tx: &mut TenantTx<'_>, e: &NewInboxEntry<'_>) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO event_inbox (business_id, event_id, register_id, local_sequence, event_type, schema_version,
-                                  occurred_at, payload, payload_sha256, result_status, result)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                                  occurred_at, payload, payload_sha256, result_status, result, aggregate_type,
+                                  aggregate_id, base_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     )
     .bind(*tx.business_id().as_uuid())
     .bind(e.event_id)
@@ -110,6 +114,9 @@ pub async fn insert_inbox(tx: &mut TenantTx<'_>, e: &NewInboxEntry<'_>) -> Resul
     .bind(e.payload_sha256)
     .bind(e.result_status)
     .bind(e.result)
+    .bind(e.aggregate_type)
+    .bind(e.aggregate_id)
+    .bind(e.base_version)
     .execute(tx.conn())
     .await
     .map(|_| ())
@@ -211,4 +218,83 @@ pub async fn changes_from_event(tx: &mut TenantTx<'_>, event_id: Uuid) -> Result
         .bind(event_id)
         .fetch_one(tx.conn())
         .await
+}
+
+/// One of a register's own events, as the inbox holds it (E19-T03).
+pub struct OwnEvent {
+    pub event_id: Uuid,
+    pub local_sequence: i64,
+    pub event_type: String,
+    pub schema_version: i32,
+    pub occurred_at: DateTime<Utc>,
+    pub payload: serde_json::Value,
+    pub result_status: String,
+    pub aggregate_type: Option<String>,
+    pub aggregate_id: Option<String>,
+    pub base_version: Option<i64>,
+}
+
+/// A register's own events after `after`, in sequence order (at most `limit`).
+pub async fn own_events(
+    tx: &mut TenantTx<'_>,
+    register_id: Uuid,
+    after: i64,
+    limit: i64,
+) -> Result<Vec<OwnEvent>, sqlx::Error> {
+    type Row = (
+        Uuid,
+        i64,
+        String,
+        i32,
+        DateTime<Utc>,
+        serde_json::Value,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT event_id, local_sequence, event_type, schema_version, occurred_at, payload, result_status,
+                aggregate_type, aggregate_id, base_version
+           FROM event_inbox
+          WHERE business_id = $1 AND register_id = $2 AND local_sequence > $3
+          ORDER BY local_sequence
+          LIMIT $4",
+    )
+    .bind(*tx.business_id().as_uuid())
+    .bind(register_id)
+    .bind(after)
+    .bind(limit)
+    .fetch_all(tx.conn())
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                event_id,
+                local_sequence,
+                event_type,
+                schema_version,
+                occurred_at,
+                payload,
+                result_status,
+                at,
+                ai,
+                bv,
+            )| {
+                OwnEvent {
+                    event_id,
+                    local_sequence,
+                    event_type,
+                    schema_version,
+                    occurred_at,
+                    payload,
+                    result_status,
+                    aggregate_type: at,
+                    aggregate_id: ai,
+                    base_version: bv,
+                }
+            },
+        )
+        .collect())
 }

@@ -864,6 +864,62 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/sync/replay:
+    get:
+      operationId: getReplay
+      tags: [sync]
+      summary: The calling register's own events, after a restore (E19-T03).
+      description: >-
+        A register restored from a backup gets back what it pushed after that backup, in
+        sequence order, with what the cloud did with each, so it can re-create those sales,
+        returns and documents with their original numbers before writing anything new. Only
+        ever the token's own register.
+      security:
+        - deviceToken: []
+      parameters:
+        - name: after
+          in: query
+          required: true
+          description: The last sequence the restored register has.
+          schema: { type: integer, minimum: 0 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        "200":
+          description: The next events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayPage"
+              example: {"events": [{"eventId": "0193a7b2-5c1e-7d40-9f00-000000000005", "localSequence": 42, "eventType": "audit.recorded",
+                "schemaVersion": 1, "occurredAt": "2026-11-17T09:20:00.000Z", "aggregateType": "audit", "aggregateId": "0193a7b2-5c1e-7d40-9f00-000000000006",
+                "payload": {}, "status": "applied"}], "ackSequence": 42, "hasMore": false}
+        "401":
+          description: "`AUTH_REQUIRED` or `SYNC_DEVICE_REVOKED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: "`VALIDATION_FAILED`: an event predates replay support."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: a bad `after` or `limit`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /v1/sync/bootstrap:
     get:
       operationId: getBootstrap
@@ -1275,6 +1331,31 @@ components:
             registers:
               type: array
               items: { $ref: "#/components/schemas/RegisterCompleteness" }
+    ReplayedEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, localSequence, eventType, schemaVersion, occurredAt, aggregateType, aggregateId, payload, status]
+      properties:
+        eventId: { type: string, format: uuid }
+        localSequence: { type: integer, minimum: 1 }
+        eventType: { type: string }
+        schemaVersion: { type: integer, minimum: 1 }
+        occurredAt: { type: string, format: date-time }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        baseVersion: { type: integer, minimum: 0 }
+        payload: { type: object }
+        status: { type: string, enum: [applied, conflict, rejected] }
+    ReplayPage:
+      type: object
+      additionalProperties: false
+      required: [events, ackSequence, hasMore]
+      properties:
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ReplayedEvent" }
+        ackSequence: { type: integer, minimum: 0 }
+        hasMore: { type: boolean }
     BootstrapEntity:
       type: object
       additionalProperties: false
@@ -1359,6 +1440,7 @@ components:
             - SYNC_REGISTER_IN_USE
             - SYNC_BUSINESS_ID_TAKEN
             - SYNC_OFFLINE
+            - SYNC_REPLAY_PENDING
             - SYNC_JOIN_NOT_ALLOWED
             - NOT_FOUND
             - CONFLICT_VERSION

@@ -867,8 +867,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         return { restorable: !damaged, problem: damaged ? "page 12 is never used" : null, tooNew: false };
       }
       if (cmd === "backup_restore") {
-        if (s.cloud.linkState === "linked") fail("VALIDATION_FAILED");
-        if (!a.confirmLoss) fail("VALIDATION_FAILED");
+        if (s.cloud.linkState === "linked") {
+          if (!s.cloud.online) fail("SYNC_OFFLINE");
+        } else if (!a.confirmLoss) fail("VALIDATION_FAILED");
         s.restartedFrom = String(a.backupId);
         return null;
       }

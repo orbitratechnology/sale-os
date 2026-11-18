@@ -53,6 +53,7 @@ pub fn routes() -> Router<AppState> {
         .route("/sync/ack", get(ack))
         .route("/sync/changes", get(pull::changes))
         .route("/sync/bootstrap", get(pull::bootstrap))
+        .route("/sync/replay", get(pull::replay))
 }
 
 // ---------- appliers ----------
@@ -334,6 +335,9 @@ async fn ingest_one(
             payload_sha256: &hash,
             result_status: status,
             result: &stored,
+            aggregate_type: &env.aggregate_type,
+            aggregate_id: &env.aggregate_id,
+            base_version: env.base_version.and_then(|v| i64::try_from(v).ok()),
         },
     )
     .await?;

@@ -31,9 +31,17 @@ name and renamed when complete, so a file named like a backup is always whole.
    again.
 4. Check: the sales history ends at the backup's time; stock and the drawer match it.
 
-**A till linked to the cloud cannot restore yet.** Its sales after the backup are in the cloud
-and must come back first (E19-T03 part 2). Until then: if the database is damaged, contact
-support. Do not copy files by hand.
+**A till linked to the cloud** loses nothing: its sales, returns, stock documents and drawer
+sessions after the backup come back from the cloud.
+
+- Restore only while the till is online; the app refuses otherwise. The backup must have been
+  made since the till was linked as it is now (not before linking or before a relink).
+- There is no loss checkbox. After the restart, the till first fetches its own events from the
+  cloud, with their original receipt numbers, then re-downloads products, prices, staff and
+  settings. Until the events are back, a sale cannot be completed (the cart is kept; the
+  message says why). With a normal connection this takes seconds.
+- Check: the sales history matches the cloud's for this till; the next receipt number follows
+  the last one.
 
 **Undoing a restore:** restore the "Before a restore" backup the same way.
 
@@ -65,8 +73,14 @@ Automated, run on every CI build:
   commands, as the owner. It is refused until the loss is confirmed; afterwards the product
   made after the backup is gone, `backup.restored` is recorded and the replaced database is
   kept.
+- `crates/sync-e2e/tests/restore.rs`: a linked till sells 3, backs up, sells 2 and makes a
+  product, all synced; the restore brings back 3; until the replay is done a sale is refused
+  with `SYNC_REPLAY_PENDING`; then the 5 sales are back with their receipt numbers, the product
+  with the bootstrap, stock counts all 5, nothing is waiting, the next sale is number 6 and the
+  cloud holds 6 sales, each once.
 - Browser tests (`e2e/cloud.e2e.ts`, "backups"): the owner's page, with "Back up now", the
-  second folder, Check, the confirmation, and restore unavailable on a linked till.
+  second folder, Check, the confirmation, and a linked till's restore (refused offline, no
+  loss checkbox).
 
 By hand, on the pilot machine before go-live (record the date and the result below):
 

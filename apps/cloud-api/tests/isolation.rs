@@ -181,6 +181,11 @@ async fn at12_http_every_secured_route_refuses_another_business() {
             "GET /v1/sync/bootstrap",
             (Method::GET, "/v1/sync/bootstrap".into(), None),
         ),
+        // A's own events only, never B's.
+        (
+            "GET /v1/sync/replay",
+            (Method::GET, "/v1/sync/replay?after=0".into(), None),
+        ),
         // B's products, listed by A's owner.
         (
             "GET /v1/catalog/products",
@@ -249,7 +254,9 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         // A's own listings still work and show A.
         if code == StatusCode::OK {
             // A's own listings show A (A has pushed nothing, so its pulls are empty).
-            let pull = op.starts_with("GET /v1/sync/changes") || op.starts_with("GET /v1/sync/bootstrap");
+            let pull = op.starts_with("GET /v1/sync/changes")
+                || op.starts_with("GET /v1/sync/bootstrap")
+                || op.starts_with("GET /v1/sync/replay");
             assert!(
                 pull || text.contains(&a.business.to_string()) || text.contains(&a.register.to_string()),
                 "{op}: {text}"

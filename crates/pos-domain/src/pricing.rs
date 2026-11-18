@@ -130,7 +130,7 @@ impl PricingPolicy {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaxLine {
     pub tax_rate_id: TaxRateId,
     pub name: String,

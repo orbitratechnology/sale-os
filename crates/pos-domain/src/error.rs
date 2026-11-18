@@ -49,6 +49,7 @@ pub enum ErrorCode {
     SyncRegisterInUse,
     SyncBusinessIdTaken,
     SyncOffline,
+    SyncReplayPending,
     SyncJoinNotAllowed,
     NotFound,
     ConflictVersion,
@@ -106,6 +107,7 @@ impl ErrorCode {
             SyncRegisterInUse => "SYNC_REGISTER_IN_USE",
             SyncBusinessIdTaken => "SYNC_BUSINESS_ID_TAKEN",
             SyncOffline => "SYNC_OFFLINE",
+            SyncReplayPending => "SYNC_REPLAY_PENDING",
             SyncJoinNotAllowed => "SYNC_JOIN_NOT_ALLOWED",
             NotFound => "NOT_FOUND",
             ConflictVersion => "CONFLICT_VERSION",
@@ -284,6 +286,10 @@ impl ErrorCode {
                 "The cloud could not be reached (no connection, a timeout, or a server error).",
                 "Check the connection and try again; local sales continue.",
             ),
+            SyncReplayPending => (
+                "After a restore, this linked till is bringing back its own sales from the cloud. Nothing new is saved until that is done (the cart is kept).",
+                "Say so and keep the cart; it needs the internet. Try again when the status bar shows it is done.",
+            ),
             SyncJoinNotAllowed => (
                 "This register already has live sales or products, so it cannot join another business (joining replaces its data).",
                 "Explain; offer to create a cloud business from this register instead.",
@@ -387,7 +393,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 45);
+        assert_eq!(seen.len(), 46);
     }
 
     #[test]

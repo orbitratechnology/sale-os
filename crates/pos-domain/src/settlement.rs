@@ -76,7 +76,7 @@ impl TenderStatus {
 
 /// Who confirmed a tender. `Provider` carries proof that cannot be built outside this module:
 /// there is no code path from operator input to a provider confirmation (AT-13).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfirmationSource {
     Operator,
@@ -94,7 +94,7 @@ impl ConfirmationSource {
 
 /// A payment provider's approval. Private field: only a `PaymentPort` result may make one,
 /// and the MVP has none (E10-T02 builds the flow behind a non-production port).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderApproval {
     reference: String,
 }
@@ -109,7 +109,7 @@ pub struct TenderInput {
     pub external_reference: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettledTender {
     pub kind: TenderKind,
     /// The part of the sale this tender pays.

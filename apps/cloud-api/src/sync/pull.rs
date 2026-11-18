@@ -12,10 +12,11 @@ use crate::{AppState, Problem};
 use axum::Json;
 use axum::extract::State;
 use pos_cloud_db::master::{Kind, snapshot_page};
-use pos_cloud_db::sync::{changes_after, feed_position};
+use pos_cloud_db::sync::{changes_after, feed_position, own_events};
 use pos_cloud_db::{Principal, TenantTx};
 use pos_sync::pull::{
-    BootstrapEntity, BootstrapPage, Change, ChangeKind, ChangesResponse, cursor, parse_cursor,
+    BootstrapEntity, BootstrapPage, Change, ChangeKind, ChangesResponse, ReplayPage, ReplayedEvent, cursor,
+    parse_cursor,
 };
 use serde::Deserialize;
 
@@ -212,4 +213,70 @@ mod tests {
             assert!(PageToken::decode(bad).is_none(), "{bad}");
         }
     }
+}
+
+const REPLAY_DEFAULT: i64 = 200;
+const REPLAY_MAX: i64 = 500;
+
+#[derive(Deserialize)]
+pub struct ReplayQuery {
+    after: i64,
+    limit: Option<i64>,
+}
+
+/// `GET /v1/sync/replay` (E19-T03): the calling register's own events after `after`, as it
+/// pushed them, with what the cloud did with each. Only ever the token's own register.
+pub async fn replay(
+    me: DevicePrincipal,
+    State(state): State<AppState>,
+    ApiQuery(q): ApiQuery<ReplayQuery>,
+) -> Result<Json<ReplayPage>, Problem> {
+    if q.after < 0 {
+        return Err(Problem::validation("after is 0 or more"));
+    }
+    let limit = q.limit.unwrap_or(REPLAY_DEFAULT);
+    if !(1..=REPLAY_MAX).contains(&limit) {
+        return Err(Problem::validation(format!("limit is 1 to {REPLAY_MAX}")));
+    }
+    let mut tx = TenantTx::begin(pool(&state)?, &principal(&me))
+        .await
+        .map_err(internal)?;
+    let mut rows = own_events(&mut tx, me.register_id, q.after, limit + 1)
+        .await
+        .map_err(internal)?;
+    let ack = pos_cloud_db::sync::ack(&mut tx, me.register_id)
+        .await
+        .map_err(internal)?;
+    tx.commit().await.map_err(internal)?;
+    let has_more = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
+    rows.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
+    let mut events = Vec::with_capacity(rows.len());
+    for r in rows {
+        // Written before the inbox kept aggregates (none of those were ever restored).
+        let (Some(aggregate_type), Some(aggregate_id)) = (r.aggregate_type, r.aggregate_id) else {
+            return Err(Problem::new(
+                axum::http::StatusCode::CONFLICT,
+                pos_domain::ErrorCode::ValidationFailed,
+                "Not replayable",
+                Some(format!("event {} predates replay support", r.local_sequence)),
+            ));
+        };
+        events.push(ReplayedEvent {
+            event_id: r.event_id,
+            local_sequence: u64::try_from(r.local_sequence).unwrap_or(0),
+            event_type: r.event_type,
+            schema_version: u32::try_from(r.schema_version).unwrap_or(1),
+            occurred_at: r.occurred_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            aggregate_type,
+            aggregate_id,
+            base_version: r.base_version.and_then(|v| u64::try_from(v).ok()),
+            payload: r.payload,
+            status: r.result_status,
+        });
+    }
+    Ok(Json(ReplayPage {
+        events,
+        ack_sequence: u64::try_from(ack).unwrap_or(0),
+        has_more,
+    }))
 }

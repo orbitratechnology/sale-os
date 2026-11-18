@@ -99,9 +99,55 @@ async fn apply_in_transaction(
     let ctx = ws.context();
     let mut applied = AppliedWriteSet::default();
 
+    // E19-T03: after a restore on a linked register, nothing new that syncs is written until
+    // this register's events after the backup are back from the cloud (their sequences and
+    // numbers are taken).
+    match ws.replay() {
+        None if !ws.outbox().is_empty() => {
+            let pending: Option<i64> = sqlx::query_scalar("SELECT replay_after FROM sync_state WHERE id = 1")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx)?
+                .flatten();
+            if pending.is_some() {
+                return Err(WriteError::ReplayPending);
+            }
+        }
+        None => {}
+        Some(r) => {
+            let have: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox_events WHERE event_id = ?")
+                .bind(r.event_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            if have > 0 {
+                // Already here: in the backup but not yet acknowledged when it was made, or a
+                // page applied twice. Only its outcome is the cloud's now.
+                sqlx::query(
+                    "UPDATE outbox_events SET status = ?, handled_at = coalesce(handled_at, ?)
+                     WHERE event_id = ? AND status IN ('pending', 'in_flight')",
+                )
+                .bind(r.status)
+                .bind(ctx.occurred_at.as_millis())
+                .bind(r.event_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                tx.commit().await.map_err(map_sqlx)?;
+                return Ok(applied);
+            }
+            for (counter, n) in &r.numbers {
+                set_counter(&mut tx, ctx, counter.column_name(), n.saturating_sub(1)).await?;
+            }
+        }
+    }
+
     run_ops(&mut tx, ctx, ws.ops(), &mut st, &mut applied).await?;
 
-    write_outbox(&mut tx, ctx, ws.outbox(), &mut st, &mut applied).await?;
+    match ws.replay() {
+        None => write_outbox(&mut tx, ctx, ws.outbox(), &mut st, &mut applied).await?,
+        Some(r) => write_replayed(&mut tx, ctx, &ws.outbox()[0], r, &mut applied).await?,
+    }
 
     for a in ws.audit() {
         st.step()?;
@@ -1473,6 +1519,76 @@ pub(crate) async fn write_outbox(
         applied.outbox.push((e.event_id, seq));
     }
 
+    Ok(())
+}
+
+/// Sets a register-local counter (E19-T03: before re-creating an event, so the next
+/// allocation gives the event its original number).
+async fn set_counter(
+    tx: &mut SqliteConnection,
+    ctx: &WriteContext,
+    name: &str,
+    value: u64,
+) -> Result<(), WriteError> {
+    sqlx::query(
+        "INSERT INTO register_counters (register_id, name, value) VALUES (?1, ?2, ?3)
+         ON CONFLICT (register_id, name) DO UPDATE SET value = ?3",
+    )
+    .bind(ctx.register_id.to_string())
+    .bind(name)
+    .bind(as_i64(value)?)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_sqlx)?;
+    Ok(())
+}
+
+/// Writes the original event a replay re-creates: its id, sequence and payload as the cloud
+/// has them, already handled with the cloud's outcome (E19-T03).
+async fn write_replayed(
+    tx: &mut SqliteConnection,
+    ctx: &WriteContext,
+    draft: &pos_application::OutboxDraft,
+    r: &pos_application::Replay,
+    applied: &mut AppliedWriteSet,
+) -> Result<(), WriteError> {
+    let current: Option<i64> = sqlx::query_scalar(
+        "SELECT value FROM register_counters WHERE register_id = ? AND name = 'outbox_seq'",
+    )
+    .bind(ctx.register_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_sqlx)?;
+    if current.unwrap_or(0) >= as_i64(r.local_sequence)? {
+        return Err(WriteError::Corrupt(format!(
+            "outbox sequence {} is already taken; the replay must come before new events",
+            r.local_sequence
+        )));
+    }
+    set_counter(tx, ctx, "outbox_seq", r.local_sequence).await?;
+    sqlx::query(
+        "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
+           schema_version, aggregate_type, aggregate_id, base_version, occurred_at, payload_json, status,
+           handled_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?11, ?11)",
+    )
+    .bind(r.event_id.to_string())
+    .bind(ctx.business_id.to_string())
+    .bind(ctx.location_id.to_string())
+    .bind(ctx.register_id.to_string())
+    .bind(as_i64(r.local_sequence)?)
+    .bind(&r.event_type)
+    .bind(i64::from(draft.schema_version))
+    .bind(draft.aggregate.aggregate_type)
+    .bind(&draft.aggregate.aggregate_id)
+    .bind(draft.base_version.map(as_i64).transpose()?)
+    .bind(ctx.occurred_at.as_millis())
+    .bind(r.payload.to_string())
+    .bind(r.status)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_sqlx)?;
+    applied.outbox.push((r.event_id, r.local_sequence));
     Ok(())
 }
 

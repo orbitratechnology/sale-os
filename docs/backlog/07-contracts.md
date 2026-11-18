@@ -338,6 +338,6 @@ return.completed, refund.recorded,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
 cash_session.opened, cash_session.closed,
-report.exported, data.exported, backup.created, backup.restored,
+report.exported, data.exported, backup.created, backup.restored, backup.event_restored,
 sync.linked, sync.device_revoked, sync.conflict_resolved, sync.event_rejected
 ```

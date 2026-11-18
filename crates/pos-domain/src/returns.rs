@@ -107,7 +107,7 @@ pub struct ReturnLineRequest {
     pub disposition: Disposition,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannedReturnLine {
     pub sale_line_id: SaleLineId,
@@ -313,25 +313,43 @@ pub fn settle_refunds(total: Money, refunds: &[TenderInput]) -> Result<Vec<Settl
     Ok(out)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReturnLineSnapshot {
-    pub id: ReturnLineId,
-    #[serde(flatten)]
-    pub line: PlannedReturnLine,
+pub use returnlinesnapshot_serde::ReturnLineSnapshot;
+
+mod returnlinesnapshot_serde {
+    // Serde buffers a `#[serde(flatten)]` field in a value type that names f32/f64; no
+    // amount here is a float (the fields are Money/Quantity).
+    #![allow(clippy::disallowed_types)]
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ReturnLineSnapshot {
+        pub id: ReturnLineId,
+        #[serde(flatten)]
+        pub line: PlannedReturnLine,
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RefundSnapshot {
-    pub id: RefundId,
-    pub seq: u32,
-    #[serde(flatten)]
-    pub tender: SettledTender,
+pub use refundsnapshot_serde::RefundSnapshot;
+
+mod refundsnapshot_serde {
+    // Serde buffers a `#[serde(flatten)]` field in a value type that names f32/f64; no
+    // amount here is a float (the fields are Money/Quantity).
+    #![allow(clippy::disallowed_types)]
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RefundSnapshot {
+        pub id: RefundId,
+        pub seq: u32,
+        #[serde(flatten)]
+        pub tender: SettledTender,
+    }
 }
 
 /// A completed return, as stored and as the `return.completed` v1 payload.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReturnSnapshot {
     pub id: ReturnId,

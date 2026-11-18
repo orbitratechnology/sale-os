@@ -364,6 +364,22 @@ async fn every_route_answers_as_the_contract_says() {
             415,
         ),
         (
+            "GET /v1/sync/replay",
+            Method::GET,
+            "/v1/sync/replay?after=0&limit=5".into(),
+            device.clone(),
+            None,
+            200,
+        ),
+        (
+            "GET /v1/sync/replay",
+            Method::GET,
+            "/v1/sync/replay?after=-1".into(),
+            device.clone(),
+            None,
+            422,
+        ),
+        (
             "GET /v1/sync/bootstrap",
             Method::GET,
             "/v1/sync/bootstrap?size=50".into(),

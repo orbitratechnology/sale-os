@@ -50,6 +50,7 @@ to the action below.
 | `SYNC_REGISTER_IN_USE` |  | Another device is linked to this register; linking this one disconnects it. | Ask the owner to confirm replacing the other device. |
 | `SYNC_BUSINESS_ID_TAKEN` |  | Another cloud account already owns a business with this ID. | Explain; link to another business or contact support. |
 | `SYNC_OFFLINE` |  | The cloud could not be reached (no connection, a timeout, or a server error). | Check the connection and try again; local sales continue. |
+| `SYNC_REPLAY_PENDING` |  | After a restore, this linked till is bringing back its own sales from the cloud. Nothing new is saved until that is done (the cart is kept). | Say so and keep the cart; it needs the internet. Try again when the status bar shows it is done. |
 | `SYNC_JOIN_NOT_ALLOWED` |  | This register already has live sales or products, so it cannot join another business (joining replaces its data). | Explain; offer to create a cloud business from this register instead. |
 | `NOT_FOUND` |  | No such cloud record for this account or device (also the answer for another business's records). | Refresh the list. |
 | `CONFLICT_VERSION` |  | Someone else changed this record first. | Open the conflict view. |

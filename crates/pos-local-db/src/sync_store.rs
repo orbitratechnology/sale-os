@@ -167,13 +167,14 @@ impl SyncStore for SqliteStore {
     }
 
     async fn pull_state(&self) -> Result<PullState, QueryError> {
-        let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT link_state, last_pull_cursor, bootstrap_page FROM sync_state WHERE id = 1",
+        let row: Option<(String, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
+            "SELECT link_state, last_pull_cursor, bootstrap_page, replay_after FROM sync_state WHERE id = 1",
         )
         .fetch_optional(self.db().readers())
         .await
         .map_err(q)?;
-        let (link, cursor, bootstrap_page) = row.unwrap_or_else(|| ("unlinked".into(), None, None));
+        let (link, cursor, bootstrap_page, replay_after) =
+            row.unwrap_or_else(|| ("unlinked".into(), None, None, None));
         let unsent: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM outbox_events WHERE status IN ('pending','in_flight','rejected')",
         )
@@ -185,6 +186,7 @@ impl SyncStore for SqliteStore {
             cursor,
             bootstrap_page,
             unsent: u64::try_from(unsent).unwrap_or(0),
+            replay_after: replay_after.and_then(|a| u64::try_from(a).ok()),
         })
     }
 
@@ -311,6 +313,38 @@ impl SyncStore for SqliteStore {
         .map_err(q)?;
         tx.commit().await.map_err(q)?;
         Ok(report)
+    }
+
+    async fn advance_replay(&self, after: u64) -> Result<(), QueryError> {
+        sqlx::query("UPDATE sync_state SET replay_after = ? WHERE id = 1 AND replay_after IS NOT NULL")
+            .bind(seq(after))
+            .execute(self.db().writer())
+            .await
+            .map_err(q)?;
+        Ok(())
+    }
+
+    async fn finish_replay(&self, ack_sequence: u64, at: Timestamp) -> Result<(), QueryError> {
+        let mut tx = self
+            .db()
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(q)?;
+        // What the cloud holds is acknowledged; anything after it (made here before the
+        // backup, never pushed) is pushed as usual. The ack never passes what is here.
+        sqlx::query(
+            "UPDATE sync_state SET replay_after = NULL, bootstrap_page = '', last_pull_ok_at = ?2,
+               last_ack_sequence = min(?1, coalesce((SELECT max(local_sequence) FROM outbox_events), 0)),
+               last_error_code = NULL, last_error_message = NULL
+             WHERE id = 1",
+        )
+        .bind(seq(ack_sequence))
+        .bind(at.as_millis())
+        .execute(&mut *tx)
+        .await
+        .map_err(q)?;
+        tx.commit().await.map_err(q)
     }
 
     async fn record_push_failure(&self, code: &str, _at: Timestamp) -> Result<(), QueryError> {

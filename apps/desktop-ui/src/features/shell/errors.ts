@@ -27,6 +27,8 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   AUTH_CREDENTIALS_INVALID: "That email or password is not right for the cloud account.",
   AUTH_RATE_LIMITED: "Too many sign-in attempts. Wait a few minutes and try again.",
   AUTH_REQUIRED: "Sign in to the cloud account first.",
+  SYNC_REPLAY_PENDING:
+    "This till is getting its sales back from the cloud after a restore. The cart is kept; finish the sale once that is done (it needs the internet).",
   SYNC_OFFLINE: "The cloud could not be reached. Check the internet connection and try again; sales continue on this till.",
   SYNC_JOIN_NOT_ALLOWED: "This till already has live sales or products, so it cannot join another business. Create the cloud business from it instead.",
   SYNC_BUSINESS_ID_TAKEN: "Another cloud account already has this business. Sign in with that account, or contact support.",

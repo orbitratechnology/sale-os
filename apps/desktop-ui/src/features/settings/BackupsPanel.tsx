@@ -174,8 +174,7 @@ export function BackupsPanel() {
                   <button
                     type="button"
                     className="secondary"
-                    disabled={busy || status.linked}
-                    aria-describedby={status.linked ? "restore-linked" : undefined}
+                    disabled={busy}
                     onClick={() => {
                       setConfirmed(false);
                       setRestoring(b);
@@ -191,8 +190,9 @@ export function BackupsPanel() {
       </table>
       {status.backups.length === 0 && <p className="small">No backups yet. The first is made a minute after start-up.</p>}
       {status.linked && (
-        <p id="restore-linked" className="small">
-          This till is linked to the cloud. Restoring a linked till is not available yet.
+        <p className="small">
+          This till is linked to the cloud: after a restore, its sales since the backup come back from the cloud. Restore
+          only while it is online.
         </p>
       )}
       {restoring && (
@@ -202,12 +202,19 @@ export function BackupsPanel() {
             {restoring.sales === 1 ? "sale" : "sales"})? The till goes back to that moment and Sale OS restarts. What it holds
             now is kept as a backup, so this can be undone.
           </p>
-          <label>
-            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> I understand that
-            sales, returns and stock changes made on this till after {when(restoring.createdAt)} will be lost.
-          </label>
+          {status.linked ? (
+            <p>
+              Sales, returns and stock changes made on this till since then come back from the cloud after the restart.
+              Until they have, sales cannot be completed.
+            </p>
+          ) : (
+            <label>
+              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> I understand
+              that sales, returns and stock changes made on this till after {when(restoring.createdAt)} will be lost.
+            </label>
+          )}
           <p>
-            <button type="button" disabled={busy || !confirmed} onClick={() => void restore()}>
+            <button type="button" disabled={busy || (!confirmed && !status.linked)} onClick={() => void restore()}>
               Restore and restart
             </button>{" "}
             <button type="button" className="secondary" disabled={busy} onClick={() => setRestoring(null)}>

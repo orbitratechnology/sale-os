@@ -34,7 +34,8 @@ pub struct BackupStatusDto {
     pub second_folder: Option<String>,
     /// The last copy to it failed with this.
     pub second_folder_problem: Option<String>,
-    /// Restoring on a linked register is not available yet (E19-T03 part 2).
+    /// A linked register gets its sales after the backup back from the cloud; an unlinked one
+    /// loses them.
     pub linked: bool,
 }
 
@@ -170,8 +171,9 @@ pub async fn backup_verify(
 
 /// Restores a backup, then restarts the app. The database it replaces is kept as a
 /// `pre_restore` backup. On a register that is not linked, sales made after the backup are
-/// lost: `confirm_loss` must say the owner saw that. A linked register cannot restore yet
-/// (its sales after the backup would have to come back from the cloud first).
+/// lost: `confirm_loss` must say the owner saw that. A linked register gets them back from the
+/// cloud after the restart, so the cloud must be reachable now and the backup must be from this
+/// same link.
 #[tauri::command]
 #[specta::specta]
 pub async fn backup_restore(
@@ -181,18 +183,6 @@ pub async fn backup_restore(
 ) -> Result<(), IpcError> {
     let ctx = owner(&services).await?;
     let st = status(&services).await?;
-    if st.linked {
-        return Err(IpcError::coded(
-            ErrorCode::ValidationFailed,
-            "This till is linked to the cloud. Restoring a linked till is not available yet: its sales after the backup must first come back from the cloud.",
-        ));
-    }
-    if !confirm_loss {
-        return Err(IpcError::coded(
-            ErrorCode::ValidationFailed,
-            "Confirm that sales made after the backup will be lost.",
-        ));
-    }
     let b = backups(&services)?;
     let found = b
         .find(&backup_id)
@@ -210,6 +200,14 @@ pub async fn backup_restore(
             "That backup cannot be restored: it failed its check.",
         ));
     }
+    if st.linked {
+        linked_restore_allowed(&services, b.db(), &found.path).await?;
+    } else if !confirm_loss {
+        return Err(IpcError::coded(
+            ErrorCode::ValidationFailed,
+            "Confirm that sales made after the backup will be lost.",
+        ));
+    }
     let db = b.db().clone();
     let opts = DbOptions {
         path: db.path().to_path_buf(),
@@ -222,6 +220,13 @@ pub async fn backup_restore(
         .map_err(|e| IpcError::from_error(&e))?;
     // The restored database records who restored what, then the app starts again on it.
     let reopened = LocalDb::open(&opts).await.map_err(|e| IpcError::from_error(&e))?;
+    if st.linked {
+        // Before anything else can write: the sync loop brings this till's later events back
+        // first, and new syncing writes wait for them (SYNC_REPLAY_PENDING).
+        if let Err(e) = backup::begin_replay(&reopened).await {
+            tracing::error!(error = %e, "restored, but the replay from the cloud could not be scheduled");
+        }
+    }
     let audit = pos_application::backups::BackupAudit {
         store: Arc::new(SqliteStore::new(reopened.clone())),
     };
@@ -238,5 +243,39 @@ pub async fn backup_restore(
         tracing::warn!(error = %e, "restored, but the audit row could not be written");
     }
     (services.restart)();
+    Ok(())
+}
+
+/// A linked register may restore a backup made while it had this same link, and only while the
+/// cloud answers (its later sales must come back from there).
+async fn linked_restore_allowed(
+    services: &AppServices,
+    db: &LocalDb,
+    backup_path: &std::path::Path,
+) -> Result<(), IpcError> {
+    let (state, device) = backup::link_of(backup_path)
+        .await
+        .map_err(|e| IpcError::from_error(&e))?;
+    let current = backup::device_of(db)
+        .await
+        .map_err(|e| IpcError::from_error(&e))?;
+    if state != "linked" || device != current {
+        return Err(IpcError::coded(
+            ErrorCode::ValidationFailed,
+            "That backup was made before this till was linked to the cloud as it is now. Choose a backup made since.",
+        ));
+    }
+    let cloud = services.cloud.as_ref().ok_or_else(|| {
+        IpcError::coded(
+            ErrorCode::SyncOffline,
+            "The cloud cannot be reached from this till.",
+        )
+    })?;
+    cloud.reports.transport.replay(0, 1).await.map_err(|_| {
+        IpcError::coded(
+            ErrorCode::SyncOffline,
+            "The cloud cannot be reached. A linked till restores only while online, so its sales after the backup can come back.",
+        )
+    })?;
     Ok(())
 }

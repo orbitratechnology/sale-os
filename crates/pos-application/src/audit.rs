@@ -72,6 +72,7 @@ actions! {
     DATA_EXPORTED = "data.exported",
     BACKUP_CREATED = "backup.created",
     BACKUP_RESTORED = "backup.restored",
+    BACKUP_EVENT_RESTORED = "backup.event_restored",
     SYNC_LINKED = "sync.linked",
     SYNC_DEVICE_REVOKED = "sync.device_revoked",
     SYNC_CONFLICT_RESOLVED = "sync.conflict_resolved",

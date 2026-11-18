@@ -5,7 +5,7 @@ use pos_application::link::{
 };
 use pos_application::sync::TransportError;
 use pos_domain::Secret;
-use pos_sync::pull::{BootstrapPage, ChangesResponse};
+use pos_sync::pull::{BootstrapPage, ChangesResponse, ReplayPage};
 use pos_sync::reports::{GroupBy, SalesReport};
 use pos_sync::{PushRequest, PushResponse};
 use reqwest::{Method, RequestBuilder, Response, StatusCode};
@@ -156,6 +156,19 @@ impl CloudClient {
         if let Some(p) = page {
             r = r.query(&[("page", p)]);
         }
+        self.send(r).await.map(|(_, v)| v).map_err(transport)
+    }
+
+    /// `GET /v1/sync/replay`: this register's own events after `after` (E19-T03).
+    pub async fn replay(
+        &self,
+        token: &Secret<String>,
+        after: u64,
+        limit: u32,
+    ) -> Result<ReplayPage, TransportError> {
+        let r = self
+            .request(Method::GET, "/v1/sync/replay", Some(token))
+            .query(&[("after", after), ("limit", u64::from(limit))]);
         self.send(r).await.map(|(_, v)| v).map_err(transport)
     }
 
@@ -310,7 +323,7 @@ mod spec_examples {
     //! (`contracts/openapi/pos-cloud.v1.yaml`, themselves checked against their schemas by the
     //! cloud API's contract test).
     use super::*;
-    use pos_sync::pull::{BootstrapPage, ChangesResponse};
+    use pos_sync::pull::{BootstrapPage, ChangesResponse, ReplayPage};
     use pos_sync::reports::SalesReport;
     use pos_sync::{AckResponse, PushResponse, ResultStatus};
 
@@ -364,6 +377,8 @@ mod spec_examples {
         assert!(page.next_page.is_some());
         let e = &page.entities[0];
         pos_sync::parse_payload(&e.event_type, e.schema_version, &e.snapshot).expect("a product.upserted v1");
+        let replay: ReplayPage = typed("/v1/sync/replay", "get", "200");
+        assert!(!replay.events.is_empty());
         let ack: AckResponse = typed("/v1/sync/ack", "get", "200");
         assert_eq!(ack.ack_sequence, 41);
         let report: SalesReport = typed("/v1/reports/sales", "get", "200");

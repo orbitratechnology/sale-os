@@ -23,6 +23,7 @@ pub mod printing;
 pub mod queries;
 pub mod receipts;
 pub mod records;
+pub mod replay;
 pub mod reports;
 pub mod returns;
 pub mod sales;
@@ -35,6 +36,6 @@ pub mod sync;
 pub mod write;
 
 pub use write::{
-    AppliedWriteSet, ChangeNotice, Counter, LocalStore, NumberSlot, OutboxDraft, WriteContext, WriteError,
-    WriteOp, WriteSet, WriteSetBuilder, WriteSetError,
+    AppliedWriteSet, ChangeNotice, Counter, LocalStore, NumberSlot, OutboxDraft, Replay, WriteContext,
+    WriteError, WriteOp, WriteSet, WriteSetBuilder, WriteSetError,
 };

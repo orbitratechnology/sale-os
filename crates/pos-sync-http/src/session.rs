@@ -4,7 +4,7 @@ use crate::client::CloudClient;
 use pos_application::link::{CredentialStore, SessionSeed};
 use pos_application::sync::{SyncTransport, TransportError};
 use pos_domain::Secret;
-use pos_sync::pull::{BootstrapPage, ChangesResponse};
+use pos_sync::pull::{BootstrapPage, ChangesResponse, ReplayPage};
 use pos_sync::reports::{GroupBy, SalesReport};
 use pos_sync::{PushRequest, PushResponse};
 use std::sync::{Arc, Mutex};
@@ -141,5 +141,10 @@ impl SyncTransport for DeviceSession {
             async move { self.client.bootstrap(&t, page.as_deref()).await }
         })
         .await
+    }
+
+    async fn replay(&self, after: u64, limit: u32) -> Result<ReplayPage, TransportError> {
+        self.call(|t| async move { self.client.replay(&t, after, limit).await })
+            .await
     }
 }

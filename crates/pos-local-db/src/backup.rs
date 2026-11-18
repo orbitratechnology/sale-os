@@ -322,6 +322,41 @@ pub async fn verify(path: &Path) -> Result<Verification, StoreError> {
     })
 }
 
+/// How a database file is linked to the cloud: `(link_state, device_id)` from its
+/// `sync_state` (`("unlinked", None)` if it has none).
+pub async fn link_of(path: &Path) -> Result<(String, Option<String>), StoreError> {
+    let mut c = open_file(path).await?;
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT link_state, device_id FROM sync_state WHERE id = 1")
+            .fetch_optional(&mut c)
+            .await
+            .map_err(StoreError::from_sqlx)?;
+    c.close().await.map_err(StoreError::from_sqlx)?;
+    Ok(row.unwrap_or_else(|| ("unlinked".into(), None)))
+}
+
+/// The device id the open database is linked with, if any.
+pub async fn device_of(db: &crate::LocalDb) -> Result<Option<String>, StoreError> {
+    sqlx::query_scalar("SELECT device_id FROM sync_state WHERE id = 1")
+        .fetch_optional(db.readers())
+        .await
+        .map(Option::flatten)
+        .map_err(StoreError::from_sqlx)
+}
+
+/// After restoring a linked register: its events after what the backup knew the cloud had are
+/// to come back from the cloud before anything new is synced, and the cloud's master data
+/// after them (E19-T03).
+pub async fn begin_replay(db: &crate::LocalDb) -> Result<u64, StoreError> {
+    let after: i64 = sqlx::query_scalar(
+        "UPDATE sync_state SET replay_after = last_ack_sequence WHERE id = 1 RETURNING last_ack_sequence",
+    )
+    .fetch_one(db.writer())
+    .await
+    .map_err(StoreError::from_sqlx)?;
+    Ok(u64::try_from(after).unwrap_or(0))
+}
+
 /// Replaces the database at `opts.path` with `backup`. **The database must be closed.**
 ///
 /// The backup is checked first. The current database is kept as a `pre-restore` backup

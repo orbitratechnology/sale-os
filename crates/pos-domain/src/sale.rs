@@ -14,10 +14,10 @@ use crate::{
     BusinessDate, CartId, Currency, ErrorCode, HasErrorCode, IdGenerator, LocationId, Money, MovementId,
     ProductId, Quantity, SaleId, SaleLineId, TenderId, Timestamp, UserId, VariantId,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Sandbox sales are practice: excluded from reports (PRD §7.1).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SaleMode {
     Sandbox,
@@ -33,7 +33,7 @@ impl SaleMode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaleLine {
     pub id: SaleLineId,
@@ -59,16 +59,25 @@ pub struct SaleLine {
     pub unit_cost: Option<Money>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaleTender {
-    pub id: TenderId,
-    pub seq: u32,
-    #[serde(flatten)]
-    pub tender: SettledTender,
+pub use saletender_serde::SaleTender;
+
+mod saletender_serde {
+    // Serde buffers a `#[serde(flatten)]` field in a value type that names f32/f64; no
+    // amount here is a float (the fields are Money/Quantity).
+    #![allow(clippy::disallowed_types)]
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SaleTender {
+        pub id: TenderId,
+        pub seq: u32,
+        #[serde(flatten)]
+        pub tender: SettledTender,
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaleSnapshot {
     pub id: SaleId,
