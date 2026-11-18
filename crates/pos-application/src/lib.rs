@@ -6,6 +6,7 @@ pub mod approval;
 pub mod audit;
 pub mod audit_log;
 pub mod auth;
+pub mod backups;
 pub mod cart;
 pub mod cash;
 pub mod catalog;

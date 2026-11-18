@@ -234,6 +234,23 @@ export const commands = {
 	 *  `SYNC_NOT_LINKED` before this register is linked.
 	 */
 	reportsCloudSales: (range: DateRangeDto, groupBy: CloudGroupByDto) => typedError<CloudSalesReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_cloud_sales", { range, groupBy })),
+	/**  The backups on this computer and in the second folder, newest first. */
+	backupStatus: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_status")),
+	/**  Makes a backup now (and its second copy), audited as `backup.created`. */
+	backupNow: () => typedError<BackupDto, IpcError_Serialize>(__TAURI_INVOKE("backup_now")),
+	/**  Asks for the second folder in the system dialog; cancelling changes nothing. */
+	backupChooseFolder: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_choose_folder")),
+	/**  Stops copying backups to a second folder. */
+	backupClearFolder: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_clear_folder")),
+	/**  A full `integrity_check` of one backup. */
+	backupVerify: (backupId: string) => typedError<BackupCheckDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_verify", { backupId })),
+	/**
+	 *  Restores a backup, then restarts the app. The database it replaces is kept as a
+	 *  `pre_restore` backup. On a register that is not linked, sales made after the backup are
+	 *  lost: `confirm_loss` must say the owner saw that. A linked register cannot restore yet
+	 *  (its sales after the backup would have to come back from the cloud first).
+	 */
+	backupRestore: (backupId: string, confirmLoss: boolean) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("backup_restore", { backupId, confirmLoss })),
 	/**
 	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
 	 *  the system dialog and writes the file (the WebView never names a path), then audits it
@@ -418,6 +435,55 @@ export type AuditRowDto_Serialize = {
 	entityLabel: string | null,
 	/**  The details as recorded (JSON). */
 	metadata: string,
+};
+
+export type BackupCheckDto = BackupCheckDto_Serialize | BackupCheckDto_Deserialize;
+
+export type BackupCheckDto_Deserialize = {
+	restorable: boolean,
+	problem?: string | null,
+	tooNew: boolean,
+};
+
+export type BackupCheckDto_Serialize = {
+	restorable: boolean,
+	problem: string | null,
+	tooNew: boolean,
+};
+
+export type BackupDto = {
+	/**  The file name: how the UI names a backup (never a path). */
+	id: string,
+	/**  `hourly`, `daily`, `shutdown`, `pre_migration`, `manual` or `pre_restore`. */
+	kind: string,
+	/**  RFC 3339. */
+	createdAt: string,
+	sizeKb: number,
+	sales: number,
+	/**  Only in the second folder (the copy on this computer was pruned or lost). */
+	secondFolderOnly: boolean,
+};
+
+export type BackupStatusDto = BackupStatusDto_Serialize | BackupStatusDto_Deserialize;
+
+export type BackupStatusDto_Deserialize = {
+	backups: BackupDto[],
+	/**  Where the second copies go, as the system names the folder (shown to the owner). */
+	secondFolder?: string | null,
+	/**  The last copy to it failed with this. */
+	secondFolderProblem?: string | null,
+	/**  Restoring on a linked register is not available yet (E19-T03 part 2). */
+	linked: boolean,
+};
+
+export type BackupStatusDto_Serialize = {
+	backups: BackupDto[],
+	/**  Where the second copies go, as the system names the folder (shown to the owner). */
+	secondFolder: string | null,
+	/**  The last copy to it failed with this. */
+	secondFolderProblem: string | null,
+	/**  Restoring on a linked register is not available yet (E19-T03 part 2). */
+	linked: boolean,
 };
 
 export type BarcodeDto = {

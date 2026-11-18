@@ -51,6 +51,10 @@ export interface FakeState {
   /** Completed sales with their lines, for returns. */
   sales: FakeSale[];
   /** The cash drawer (E15-T02). Totals are kept simply: cash net of change, and the count. */
+  /** E19-T03: backups (newest first), the second folder, and whether a restore restarted the app. */
+  backups?: { id: string; kind: string; createdAt: string; sizeKb: number; sales: number; secondFolderOnly: boolean }[];
+  backupFolder?: string | null;
+  restartedFrom?: string | null;
   /** E19-T02: the disk is full, so nothing can be saved. */
   diskFull?: boolean;
   drawer: {
@@ -837,6 +841,38 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       };
       s.cloud.kept[key] = report;
       return report;
+    }
+    case "backup_status":
+    case "backup_now":
+    case "backup_choose_folder":
+    case "backup_clear_folder":
+    case "backup_verify":
+    case "backup_restore": {
+      const me = needSession(s);
+      if (me.role !== "owner") fail("PERMISSION_DENIED");
+      s.backups ??= [
+        { id: "pos.daily.1793955600000.db", kind: "daily", createdAt: new Date(2026, 10, 5, 8, 0).toISOString(), sizeKb: 2310, sales: 40, secondFolderOnly: false },
+        { id: "pos.hourly.1793952000000.db.damaged", kind: "hourly", createdAt: new Date(2026, 10, 5, 7, 0).toISOString(), sizeKb: 2290, sales: 38, secondFolderOnly: false },
+      ];
+      const status = () => ({ backups: s.backups, secondFolder: s.backupFolder ?? null, secondFolderProblem: null, linked: s.cloud.linkState === "linked" });
+      if (cmd === "backup_now") {
+        const made = { id: `pos.manual.${Date.now()}.db`, kind: "manual", createdAt: new Date().toISOString(), sizeKb: 2320, sales: s.sales.length, secondFolderOnly: false };
+        s.backups.unshift(made);
+        return made;
+      }
+      if (cmd === "backup_choose_folder") s.backupFolder = "/media/usb/SaleOS";
+      if (cmd === "backup_clear_folder") s.backupFolder = null;
+      if (cmd === "backup_verify") {
+        const damaged = String(a.backupId).endsWith(".damaged");
+        return { restorable: !damaged, problem: damaged ? "page 12 is never used" : null, tooNew: false };
+      }
+      if (cmd === "backup_restore") {
+        if (s.cloud.linkState === "linked") fail("VALIDATION_FAILED");
+        if (!a.confirmLoss) fail("VALIDATION_FAILED");
+        s.restartedFrom = String(a.backupId);
+        return null;
+      }
+      return status();
     }
     case "sync_status": {
       needSession(s);

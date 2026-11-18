@@ -3,6 +3,7 @@ import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { BackupsPanel } from "./BackupsPanel";
 import { BusinessPanel } from "./BusinessPanel";
 import { CloudPanel } from "./CloudPanel";
 import { TaxesPanel } from "./TaxesPanel";
@@ -11,6 +12,7 @@ import { TaxesPanel } from "./TaxesPanel";
 const BUSINESS = "Business";
 const TAXES = "Taxes";
 const CLOUD = "Cloud";
+const BACKUPS = "Backups";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
@@ -50,7 +52,7 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, CLOUD];
+  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, CLOUD, BACKUPS];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -82,6 +84,10 @@ export function SettingsScreen({
       ) : group === CLOUD ? (
         <section className="card settings-list" aria-label={CLOUD}>
           <CloudPanel onRelinked={onRelinked} />
+        </section>
+      ) : group === BACKUPS ? (
+        <section className="card settings-list" aria-label={BACKUPS}>
+          <BackupsPanel />
         </section>
       ) : (
         <section className="card settings-list" aria-label={group ?? "Settings"}>

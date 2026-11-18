@@ -6,6 +6,7 @@
 //!   read-only connections for search and reports.
 
 mod audit_queries;
+pub mod backup;
 mod cart_queries;
 mod cash;
 mod cash_queries;
@@ -69,6 +70,7 @@ pub struct LocalDb {
     writer: SqlitePool,
     readers: SqlitePool,
     path: PathBuf,
+    backups_dir: PathBuf,
     migration: MigrationReport,
 }
 
@@ -157,6 +159,7 @@ impl LocalDb {
             writer,
             readers,
             path: opts.path.clone(),
+            backups_dir: opts.backups_dir.clone(),
             migration,
         })
     }
@@ -174,6 +177,32 @@ impl LocalDb {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Where automatic and manual backups go (E19-T03).
+    pub fn backups_dir(&self) -> &Path {
+        &self.backups_dir
+    }
+
+    /// Makes a backup now (E19-T03). Uses a read-only connection: sales carry on meanwhile.
+    pub async fn backup(&self, kind: backup::BackupKind) -> Result<backup::BackupInfo, StoreError> {
+        backup::create(&self.readers, &self.backups_dir, kind).await
+    }
+
+    /// The backups in [`LocalDb::backups_dir`], newest first.
+    pub fn backups(&self) -> Vec<backup::BackupInfo> {
+        backup::list(&self.backups_dir)
+    }
+
+    /// Changes since a backup show here: the last outbox sequence and the audit row count.
+    pub async fn change_marker(&self) -> Result<(i64, i64), StoreError> {
+        sqlx::query_as(
+            "SELECT (SELECT coalesce(max(local_sequence), 0) FROM outbox_events),
+                    (SELECT count(*) FROM audit_events)",
+        )
+        .fetch_one(&self.readers)
+        .await
+        .map_err(StoreError::from_sqlx)
     }
 
     /// What happened during [`LocalDb::open`].

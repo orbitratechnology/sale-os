@@ -344,6 +344,20 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}, "by": "value", "limit": 10}),
         ),
         ("reports_stock", Perm(ReportsView), json!({"lowOnly": false})),
+        ("backup_status", Perm(SettingsEdit), json!({})),
+        ("backup_now", Perm(SettingsEdit), json!({})),
+        ("backup_choose_folder", Perm(SettingsEdit), json!({})),
+        ("backup_clear_folder", Perm(SettingsEdit), json!({})),
+        (
+            "backup_verify",
+            Perm(SettingsEdit),
+            json!({"backupId": "none.db"}),
+        ),
+        (
+            "backup_restore",
+            Perm(SettingsEdit),
+            json!({"backupId": "none.db", "confirmLoss": false}),
+        ),
         (
             "reports_cloud_sales",
             Perm(ReportsView),
@@ -1386,4 +1400,85 @@ fn at01_new_business_twenty_products_and_a_cash_sale() {
         .collect();
     assert!(text.iter().any(|l| l.trim() == "Corner Shop"), "{text:?}");
     assert!(text.iter().any(|l| l.contains("Tax no. GB123456789")), "{text:?}");
+}
+
+/// E19-T03 over IPC: a backup, a change after it, then the restore (which needs the owner to
+/// confirm the loss on an unlinked till). The restored database has no trace of the change,
+/// records who restored what, and keeps the replaced database as a `pre_restore` backup.
+#[test]
+fn a_restore_puts_the_till_back_to_the_backup_and_records_it() {
+    let (dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let made = invoke(&w, "backup_now", json!({})).unwrap();
+    let id = made["id"].as_str().unwrap().to_owned();
+    assert_eq!(made["kind"], "manual");
+    let check = invoke(&w, "backup_verify", json!({"backupId": id})).unwrap();
+    assert_eq!(check["restorable"], true, "{check}");
+
+    // A product made after the backup.
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    invoke(&w, "product_create", product).unwrap();
+
+    // Not confirmed: refused, nothing changes.
+    let refused = invoke(
+        &w,
+        "backup_restore",
+        json!({"backupId": id, "confirmLoss": false}),
+    );
+    assert_eq!(
+        code("backup_restore", &refused).as_deref(),
+        Some("VALIDATION_FAILED")
+    );
+    let status = invoke(&w, "backup_status", json!({})).unwrap();
+    assert_eq!(status["linked"], false);
+    assert!(
+        status["backups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["id"] == id.as_str())
+    );
+
+    invoke(&w, "backup_restore", json!({"backupId": id, "confirmLoss": true})).unwrap();
+
+    // What the app finds when it starts again.
+    tauri::async_runtime::block_on(async {
+        let db = pos_local_db::LocalDb::open(&pos_local_db::DbOptions::in_dir(dir.path()))
+            .await
+            .unwrap();
+        let q = |sql: &'static str| {
+            let db = db.clone();
+            async move {
+                sqlx::query_scalar::<_, i64>(sql)
+                    .fetch_one(db.readers())
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(
+            q("SELECT count(*) FROM products").await,
+            0,
+            "the product after the backup is gone"
+        );
+        assert_eq!(
+            q("SELECT count(*) FROM audit_events WHERE action = 'backup.restored'").await,
+            1
+        );
+        assert!(
+            db.backups()
+                .iter()
+                .any(|b| b.meta.kind == pos_local_db::backup::BackupKind::PreRestore),
+            "the replaced database is kept"
+        );
+        db.close().await;
+    });
 }

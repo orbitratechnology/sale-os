@@ -64,8 +64,8 @@ Windows hardware (D-05):
   - **Post-restore sync safety:** after a restore, the outbox may hold events the server already has, or may be missing events the server has. The client re-reads the server `ack` and re-pulls its own register's facts from the cloud so that sales already synced are re-materialized locally. If the restored outbox sequence is behind the server's, the next sequence numbers are re-based from `ack + 1`, so no `event_id` collision is possible.
 - **Acceptance:**
   - [ ] Restoring an older backup on a linked register yields a local database that includes every sale the cloud has from this register (re-pulled), with no duplicates in the cloud.
-  - [ ] Restoring on an unlinked register shows a warning that sales after the backup time are lost, and the owner must confirm it.
-  - [ ] A backup restore drill is documented and run (PRD §13).
+  - [x] Restoring on an unlinked register shows a warning that sales after the backup time are lost, and the owner must confirm it.
+  - [x] A backup restore drill is documented and run (PRD §13).
 
 ### E19-T04 · Full business data export
 - **Size** S · **Deps** E14-T04 · **PRD** §2.2 (7), §13, §20

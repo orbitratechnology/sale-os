@@ -51,6 +51,10 @@ pub struct AppServices {
     /// The cloud this app links to (`POS_CLOUD_URL`), and the link wizard (E17-T08). `None`
     /// when no cloud is configured or the database failed to open.
     pub(crate) cloud: Option<Cloud>,
+    /// Automatic backups (E19-T03). `None` when the database failed to open.
+    pub(crate) backups: Option<Arc<crate::backups::Backups>>,
+    /// Restarts the app (after a restore). Set by the app; does nothing in tests.
+    pub(crate) restart: Arc<dyn Fn() + Send + Sync>,
     _log: Option<LogGuard>,
 }
 
@@ -63,6 +67,13 @@ pub trait FileDialog: Send + Sync {
         suggested_name: &str,
         filter: (&str, &[&str]),
     ) -> tokio::sync::oneshot::Receiver<Option<PathBuf>>;
+
+    /// Which folder, or `None` when the user cancels (or there is no dialog).
+    fn folder(&self) -> tokio::sync::oneshot::Receiver<Option<PathBuf>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(None);
+        rx
+    }
 
     /// Which file to open, or `None` when the user cancels (or there is no dialog).
     fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<PathBuf>> {
@@ -106,6 +117,7 @@ pub(crate) struct Services {
     pub audit: AuditService,
     /// Sync conflicts (E18).
     pub conflicts: pos_application::conflict::ConflictService,
+    pub backup_audit: pos_application::backups::BackupAudit,
     /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
     /// hardware adapters arrive in Stage 5.
     pub prints: PrintService,
@@ -135,6 +147,12 @@ impl AppServices {
     /// Opens the database under `data_dir` and wires the production ports.
     pub async fn start(data_dir: &Path, log: Option<LogGuard>) -> Self {
         Self::start_with_hasher(data_dir, log, Arc::new(Argon2PinHasher::new())).await
+    }
+
+    /// How the app restarts itself (after a restore).
+    pub fn with_restart(mut self, restart: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.restart = restart;
+        self
     }
 
     /// Uses `dialog` to ask where files are saved (the app passes the native dialog).
@@ -295,6 +313,9 @@ impl AppServices {
                     store: Arc::new(s.clone()),
                     conflicts: Arc::new(s.clone()),
                 },
+                backup_audit: pos_application::backups::BackupAudit {
+                    store: Arc::new(s.clone()),
+                },
                 queries: s.clone(),
                 approvals,
             }
@@ -361,6 +382,12 @@ impl AppServices {
             ),
             (None, _) => (None, None),
         };
+        // E19-T03: hourly (when something changed), daily and on shutdown.
+        let backups = db.as_ref().ok().map(|db| {
+            let b = crate::backups::Backups::new(db.clone(), data_dir);
+            b.start();
+            b
+        });
         Self {
             db,
             store,
@@ -372,6 +399,8 @@ impl AppServices {
             app,
             session: RwLock::new(None),
             file_dialog: Arc::new(NoDialog),
+            backups,
+            restart: Arc::new(|| tracing::warn!("restart requested; no app to restart")),
             _log: log,
         }
     }

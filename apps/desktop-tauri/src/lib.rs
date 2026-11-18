@@ -2,6 +2,8 @@
 //! service, map errors (ADR-012). Business rules live in `pos-domain` / `pos-application`.
 
 mod app_commands;
+mod backup_commands;
+mod backups;
 mod cash_commands;
 mod command_names;
 mod commands;
@@ -103,6 +105,12 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         report_commands::reports_top_products,
         report_commands::reports_stock,
         report_commands::reports_cloud_sales,
+        backup_commands::backup_status,
+        backup_commands::backup_now,
+        backup_commands::backup_choose_folder,
+        backup_commands::backup_clear_folder,
+        backup_commands::backup_verify,
+        backup_commands::backup_restore,
         report_commands::export_csv,
         report_commands::audit_list,
         cash_commands::cash_session_current,
@@ -153,16 +161,30 @@ pub fn run() {
             .map_err(|e| eprintln!("logging unavailable: {e}"))
             .ok();
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
+            let handle = app.handle().clone();
             let services = tauri::async_runtime::block_on(AppServices::start(&dir, log))
-                .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())));
+                .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())))
+                .with_restart(std::sync::Arc::new(move || handle.restart()));
             app.manage(services);
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, "Sale OS failed to start");
             eprintln!("Sale OS failed to start: {e}");
             std::process::exit(1);
+        })
+        .run(|app, event| {
+            // E19-T03: a backup each time the app closes normally.
+            if let tauri::RunEvent::Exit = event
+                && let Some(backups) = app.state::<AppServices>().backups.clone()
+            {
+                match tauri::async_runtime::block_on(backups.make(pos_local_db::backup::BackupKind::Shutdown))
+                {
+                    Ok(b) => tracing::info!(file = %b.id, "shutdown backup written"),
+                    Err(e) => tracing::warn!(error = %e, "shutdown backup failed"),
+                }
+            }
         });
 }
 
@@ -200,6 +222,19 @@ impl services::FileDialog for NativeFileDialog {
             dialog = dialog.set_parent(&window);
         }
         dialog.pick_file(move |chosen| {
+            let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
+        });
+        rx
+    }
+
+    fn folder(&self) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut dialog = self.0.dialog().file();
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.pick_folder(move |chosen| {
             let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
         });
         rx

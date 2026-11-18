@@ -322,3 +322,66 @@ describe("consolidated reports (E14-T05)", () => {
     expect(await page.getByTestId("cloud-row").count()).toBe(0);
   });
 });
+
+describe("backups (E19-T03)", () => {
+  async function backupsPage(setup: () => void = () => undefined): Promise<Page> {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=signIn`);
+    await page.evaluate(setup);
+    await page.getByRole("button", { name: /Olu/ }).click();
+    await page.keyboard.type("1234");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Backups" }).click();
+    await page.getByRole("heading", { name: "Backups", exact: true }).waitFor();
+    return page;
+  }
+
+  it("back up now, a second folder, a damaged backup, and a restore the owner confirms", async () => {
+    const page = await backupsPage();
+    const rows = page.getByTestId("backup-row");
+    expect(await rows.count()).toBe(2);
+    await page.getByRole("button", { name: "Back up now" }).click();
+    await page.getByRole("status").getByText(/Backed up:/).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=backup-row]").length === 3);
+    expect(await rows.first().innerText()).toContain("Made by hand");
+
+    // No second folder yet: the risk is said; then one is chosen in the system dialog.
+    await page.getByText(/if this computer's disk fails, the backups go with it/).waitFor();
+    await page.getByRole("button", { name: "Choose a folder…" }).click();
+    await page.getByText("/media/usb/SaleOS").waitFor();
+
+    // Checking: the damaged one says so.
+    const damaged = rows.filter({ hasText: "Hourly" });
+    await damaged.getByRole("button", { name: "Check" }).click();
+    await damaged.getByRole("alert").getByText("Damaged").waitFor();
+    const daily = rows.filter({ hasText: "Daily" });
+    await daily.getByRole("button", { name: "Check" }).click();
+    await daily.getByText("Whole").waitFor();
+
+    // Restoring needs the loss confirmed.
+    await daily.getByRole("button", { name: "Restore…" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Restore a backup" });
+    await dialog.getByText(/will be lost/).waitFor();
+    const go = dialog.getByRole("button", { name: "Restore and restart" });
+    expect(await go.isDisabled()).toBe(true);
+    await dialog.getByRole("checkbox").check();
+    await go.click();
+    await page.getByRole("status").getByText(/Restored\. Sale OS is restarting/).waitFor();
+    expect(await page.evaluate(() => window.__fake.restartedFrom)).toBe("pos.daily.1793955600000.db");
+    expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: true });
+  });
+
+  it("a linked till cannot restore yet", async () => {
+    const page = await backupsPage(() => {
+      window.__fake.cloud.linkState = "linked";
+    });
+    await page.getByText(/Restoring a linked till is not available yet/).waitFor();
+    const restore = page.getByTestId("backup-row").first().getByRole("button", { name: "Restore…" });
+    expect(await restore.isDisabled()).toBe(true);
+  });
+});

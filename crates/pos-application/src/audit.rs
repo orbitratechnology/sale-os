@@ -154,8 +154,6 @@ pub const PLANNED: &[(&str, &str)] = &[
     ("cart.recovery_discarded", "E09-T02 cart recovery"),
     ("tender.status_changed", "E10-T04 payment provider integration"),
     ("data.exported", "E19-T07 diagnostics / full data export"),
-    ("backup.created", "E18 backup"),
-    ("backup.restored", "E18 restore"),
     ("sync.linked", "E16 cloud link (Stage 3)"),
     ("sync.device_revoked", "E16 device management (Stage 3)"),
     ("sync.conflict_resolved", "E17 conflicts (Stage 3)"),
