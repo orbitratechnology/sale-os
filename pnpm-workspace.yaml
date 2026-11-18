@@ -2,3 +2,7 @@ packages:
   - apps/desktop-ui
 onlyBuiltDependencies:
   - esbuild
+# E19-T05: dev-tool dependencies with known advisories (spectral-cli and eslint pull these in).
+overrides:
+  lodash@<4.18.1: ^4.18.1
+  minimatch@>=7.0.0 <11.0.1: ^11.0.1

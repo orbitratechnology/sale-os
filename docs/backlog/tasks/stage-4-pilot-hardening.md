@@ -85,8 +85,8 @@ Windows hardware (D-05):
   - A PCI scope statement: confirm that no PAN, CVV, PIN or track data is stored or logged (grep the logs and database after the e2e suite).
 - **Acceptance:**
   - [ ] There is a threat model document. All high and critical findings are fixed or formally accepted by the product owner.
-  - [ ] A test runs the full e2e suite with a known test PAN typed into every free-text field, then asserts the PAN does not appear in the database, logs or outbox (the validation rejects it in reference fields, and other fields are checked for Luhn runs before logging).
-  - [ ] A decision record on local database encryption exists.
+  - [x] A test runs the full e2e suite with a known test PAN typed into every free-text field, then asserts the PAN does not appear in the database, logs or outbox (the validation rejects it in reference fields, and other fields are checked for Luhn runs before logging).
+  - [x] A decision record on local database encryption exists.
 
 ### E19-T06 · Signed installers and auto-update
 - **Size** M · **Deps** E01-T01, D-01 · **PRD** §13 (signed updates), §17 Stage 4

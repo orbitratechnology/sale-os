@@ -45,9 +45,12 @@ enum Failure {
 
 impl CloudClient {
     pub fn new(base_url: &str, app_version: &str) -> Result<Self, String> {
+        check_base_url(base_url)?;
         // TLS with the `ring` provider and the operating system's certificate store.
         let _ = rustls::crypto::ring::default_provider().install_default();
         let http = reqwest::Client::builder()
+            // The API never redirects; following one could send a token somewhere else.
+            .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(60))
             .build()
@@ -189,6 +192,33 @@ impl CloudClient {
     }
 }
 
+/// E19-T05: tokens and passwords only travel over TLS. Plain HTTP is allowed to this
+/// computer alone (development and tests).
+fn check_base_url(base_url: &str) -> Result<(), String> {
+    let lower = base_url.to_ascii_lowercase();
+    if lower.starts_with("https://") {
+        return Ok(());
+    }
+    let Some(rest) = lower.strip_prefix("http://") else {
+        return Err(format!("the cloud address must start with https:// ({base_url})"));
+    };
+    let host = rest.split(['/', '?']).next().unwrap_or("");
+    let host = host.rsplit_once(':').map_or(host, |(h, port)| {
+        if port.chars().all(|c| c.is_ascii_digit()) {
+            h
+        } else {
+            host
+        }
+    });
+    if matches!(host, "localhost" | "127.0.0.1" | "[::1]") {
+        Ok(())
+    } else {
+        Err(format!(
+            "the cloud address must use https:// (plain http is only for this computer): {base_url}"
+        ))
+    }
+}
+
 fn tokens(v: &Value) -> Option<DeviceTokens> {
     Some(DeviceTokens {
         access_token: Secret::new(v["accessToken"].as_str()?.to_owned()),
@@ -315,6 +345,25 @@ fn registered(v: &Value) -> Option<Registered> {
         register_code: v["registerCode"].as_str().unwrap_or_default().to_owned(),
         location_id: uuid("locationId").unwrap_or_default(),
     })
+}
+
+#[cfg(test)]
+mod base_url {
+    use super::check_base_url;
+
+    #[test]
+    fn https_only_except_this_computer() {
+        assert!(check_base_url("https://api.example.com").is_ok());
+        assert!(check_base_url("HTTPS://api.example.com/").is_ok());
+        assert!(check_base_url("http://127.0.0.1:8080").is_ok());
+        assert!(check_base_url("http://localhost:3000/").is_ok());
+        assert!(check_base_url("http://[::1]:9000").is_ok());
+        assert!(check_base_url("http://api.example.com").is_err());
+        assert!(check_base_url("http://127.0.0.1.evil.example:80").is_err());
+        assert!(check_base_url("http://localhost.evil.example").is_err());
+        assert!(check_base_url("ftp://api.example.com").is_err());
+        assert!(check_base_url("api.example.com").is_err());
+    }
 }
 
 #[cfg(test)]

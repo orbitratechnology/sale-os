@@ -29,3 +29,4 @@ Template: [0000-template.md](0000-template.md)
 | ADR-020 | [Stock buckets](0020-stock-buckets.md) | Proposed |
 | ADR-021 | [WebView2 distribution: bundle the offline installer](0021-webview2-offline-installer.md) | Proposed |
 | ADR-022 | [Keyboard-wedge scan detection in the WebView](0022-keyboard-wedge-scan-detection.md) | Proposed |
+| ADR-023 | [Local database encryption](0023-local-database-encryption.md) | Proposed |
