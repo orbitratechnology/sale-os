@@ -87,6 +87,7 @@
     "allow-backup-clear-folder",
     "allow-backup-verify",
     "allow-backup-restore",
+    "allow-data-export-full",
     "allow-export-csv",
     "allow-audit-list",
     "allow-cash-session-current",

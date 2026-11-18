@@ -253,6 +253,12 @@ export const commands = {
 	 */
 	backupRestore: (backupId: string, confirmLoss: boolean) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("backup_restore", { backupId, confirmLoss })),
 	/**
+	 *  E19-T04: every table of this till's database as CSV in one ZIP, with a manifest, saved where
+	 *  the owner chooses in the system dialog (null: cancelled; nothing written or audited). PIN
+	 *  hashes are left out. Audited `data.exported` with the file's name.
+	 */
+	dataExportFull: () => typedError<DataExportDto | null, IpcError_Serialize>(__TAURI_INVOKE("data_export_full")),
+	/**
 	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
 	 *  the system dialog and writes the file (the WebView never names a path), then audits it
 	 *  (`report.exported`). `null` when the user cancels: nothing is saved or recorded. Dated
@@ -1065,6 +1071,15 @@ export type CreatedWorkspaceDto = {
 	/**  Sign the owner in with this and the PIN they just chose. */
 	ownerUserId: UserId,
 	registerCode: string,
+};
+
+/**  A finished full data export (E19-T04). */
+export type DataExportDto = {
+	/**  Where the owner chose to save it (shown to the owner). */
+	path: string,
+	fileName: string,
+	tables: number,
+	rows: number,
 };
 
 export type DatabaseStatus = DatabaseStatus_Serialize | DatabaseStatus_Deserialize;

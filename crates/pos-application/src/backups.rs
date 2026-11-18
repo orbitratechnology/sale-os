@@ -1,4 +1,4 @@
-//! Audit rows for backups and restores (E19-T03). The backup files themselves are written by
+//! Audit rows for backups and restores (E19-T03) and the full data export (E19-T04). The backup files themselves are written by
 //! the local database (`pos_local_db::backup`); this records who made or restored one.
 
 use crate::audit::{self, AuditEntry};
@@ -59,5 +59,26 @@ impl BackupAudit {
             serde_json::json!({ "file": file, "backupCreatedAt": backup_created_at, "kept": kept }),
         )
         .await
+    }
+
+    /// The owner exported all the business's data (`data.exported`): the file's name (never
+    /// its folder), the tables and the rows.
+    pub async fn data_exported(
+        &self,
+        ctx: &CommandContext,
+        file: &str,
+        tables: usize,
+        rows: u64,
+    ) -> Result<(), AppError> {
+        ctx.authorize(Permission::SettingsEdit)?;
+        let ids = ctx.ids.as_ref();
+        let entry = AuditEntry::new(ids, audit::DATA_EXPORTED, "data_export", file)
+            .with_metadata(serde_json::json!({ "file": file, "tables": tables, "rows": rows }));
+        let set = WriteSet::builder(ctx.write_context())
+            .outbox(OutboxDraft::audit_recorded(ids, &entry)?)
+            .audit(entry)
+            .build()?;
+        self.store.apply(set).await?;
+        Ok(())
     }
 }

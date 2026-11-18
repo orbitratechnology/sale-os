@@ -358,6 +358,7 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SettingsEdit),
             json!({"backupId": "none.db", "confirmLoss": false}),
         ),
+        ("data_export_full", Perm(SettingsEdit), json!({})),
         (
             "reports_cloud_sales",
             Perm(ReportsView),
@@ -1481,4 +1482,63 @@ fn a_restore_puts_the_till_back_to_the_backup_and_records_it() {
         );
         db.close().await;
     });
+}
+
+/// A save dialog for the full export: answers with a path in `dir`, or cancels.
+struct ZipDialog {
+    to: Option<std::path::PathBuf>,
+}
+
+impl desktop_tauri_lib::FileDialog for ZipDialog {
+    fn ask(
+        &self,
+        suggested: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter, ("ZIP", ["zip"].as_slice()));
+        assert!(
+            suggested.starts_with("sale-os-export-") && suggested.ends_with(".zip"),
+            "{suggested}"
+        );
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(self.to.clone());
+        rx
+    }
+}
+
+/// E19-T04 over IPC: the owner saves the export where the dialog says; it is audited with the
+/// file's name. Cancelling writes and records nothing.
+#[test]
+fn the_owner_exports_all_data_and_it_is_audited() {
+    let out = tempfile::tempdir().unwrap();
+    for to in [None, Some(out.path().join("everything"))] {
+        let (_dir, _app, w) = start_with(Some(Arc::new(ZipDialog { to: to.clone() })));
+        let created = invoke(
+            &w,
+            "setup_create_workspace",
+            json!({"input": workspace_input("Shop", "1234")}),
+        )
+        .unwrap();
+        let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+        invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+        let done = invoke(&w, "data_export_full", json!({})).unwrap();
+        let audited = invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "data.exported", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap();
+        let rows = audited["rows"].as_array().unwrap().len();
+        if to.is_none() {
+            assert_eq!(done, Value::Null);
+            assert_eq!(rows, 0);
+            continue;
+        }
+        assert_eq!(done["fileName"], "everything.zip");
+        assert!(done["tables"].as_u64().unwrap() > 20, "{done}");
+        let bytes = std::fs::read(out.path().join("everything.zip")).unwrap();
+        assert_eq!(&bytes[..4], b"PK\x03\x04");
+        assert_eq!(rows, 1);
+        assert_eq!(audited["rows"][0]["entityId"], "everything.zip");
+    }
 }

@@ -82,6 +82,7 @@ pub const COMMANDS: &[&str] = &[
     "backup_clear_folder",
     "backup_verify",
     "backup_restore",
+    "data_export_full",
     "export_csv",
     "audit_list",
     "cash_session_current",

@@ -111,6 +111,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         backup_commands::backup_clear_folder,
         backup_commands::backup_verify,
         backup_commands::backup_restore,
+        backup_commands::data_export_full,
         report_commands::export_csv,
         report_commands::audit_list,
         cash_commands::cash_session_current,

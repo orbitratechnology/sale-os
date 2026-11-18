@@ -3870,6 +3870,8 @@ name = "pos-local-db"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "crc32fast",
+ "flate2",
  "jsonschema",
  "pos-application",
  "pos-device-ports",

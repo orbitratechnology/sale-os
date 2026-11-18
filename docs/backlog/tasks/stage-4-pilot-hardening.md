@@ -70,8 +70,8 @@ Windows hardware (D-05):
 ### E19-T04 · Full business data export
 - **Size** S · **Deps** E14-T04 · **PRD** §2.2 (7), §13, §20
 - **Acceptance:**
-  - [ ] An owner-only export produces a ZIP of CSV (all tables in [04](../04-local-database.md) except secrets: no `pin_hash`) plus a JSON manifest with the schema version and counts.
-  - [ ] It is re-readable by a documented script (`docs/export-format.md`) and audited as `data.exported`.
+  - [x] An owner-only export produces a ZIP of CSV (all tables in [04](../04-local-database.md) except secrets: no `pin_hash`) plus a JSON manifest with the schema version and counts.
+  - [x] It is re-readable by a documented script (`docs/export-format.md`) and audited as `data.exported`.
 
 ### E19-T05 · Security review
 - **Size** M · **Deps** Stage 3 · **PRD** §13, §18

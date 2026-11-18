@@ -16,6 +16,7 @@ mod config_queries;
 mod conflict_queries;
 mod error;
 mod export_queries;
+pub mod full_export;
 mod import_queries;
 mod link_store;
 mod migrate;

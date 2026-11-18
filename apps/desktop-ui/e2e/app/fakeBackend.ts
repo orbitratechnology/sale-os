@@ -847,7 +847,8 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "backup_choose_folder":
     case "backup_clear_folder":
     case "backup_verify":
-    case "backup_restore": {
+    case "backup_restore":
+    case "data_export_full": {
       const me = needSession(s);
       if (me.role !== "owner") fail("PERMISSION_DENIED");
       s.backups ??= [
@@ -859,6 +860,12 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         const made = { id: `pos.manual.${Date.now()}.db`, kind: "manual", createdAt: new Date().toISOString(), sizeKb: 2320, sales: s.sales.length, secondFolderOnly: false };
         s.backups.unshift(made);
         return made;
+      }
+      if (cmd === "data_export_full") {
+        const answer = s.saveAs.length ? s.saveAs.shift() : "sale-os-export-2026-11-05.zip";
+        if (answer == null) return null;
+        s.exports += 1;
+        return { path: `/home/user/Documents/${answer}`, fileName: answer, tables: 44, rows: 1234 };
       }
       if (cmd === "backup_choose_folder") s.backupFolder = "/media/usb/SaleOS";
       if (cmd === "backup_clear_folder") s.backupFolder = null;

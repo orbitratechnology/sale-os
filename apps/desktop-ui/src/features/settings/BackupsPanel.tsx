@@ -24,7 +24,8 @@ function size(kb: number): string {
  * Settings → Backups (E19-T03, owner only). The app backs up on its own: daily, hourly when
  * something changed, and when it closes. The owner can back up now, choose a second folder
  * (a USB stick or external drive) for copies, check a backup, and restore one. A restore
- * keeps the replaced database as a backup, then restarts the app.
+ * keeps the replaced database as a backup, then restarts the app. The owner can also export all
+ * the data as CSV in a ZIP (E19-T04).
  */
 export function BackupsPanel() {
   const [status, setStatus] = useState<BackupStatusDto | null>(null);
@@ -66,6 +67,11 @@ export function BackupsPanel() {
   async function check(b: BackupDto) {
     const c = await run(() => commands.backupVerify(b.id));
     if (c) setChecks((all) => ({ ...all, [b.id]: c }));
+  }
+
+  async function exportAll() {
+    const res = await run(() => commands.dataExportFull());
+    if (res) setDone(`Exported ${res.rows} rows from ${res.tables} tables to ${res.path}.`);
   }
 
   async function folder(clear: boolean) {
@@ -189,6 +195,16 @@ export function BackupsPanel() {
         </tbody>
       </table>
       {status.backups.length === 0 && <p className="small">No backups yet. The first is made a minute after start-up.</p>}
+      <section aria-label="Export all data">
+        <h3>Export all data</h3>
+        <p>
+          Everything this till holds — sales, returns, stock, products, staff, settings and the audit log — as spreadsheet
+          files (CSV) in one ZIP, for your records or another system. PINs are not included.{" "}
+          <button type="button" className="secondary" disabled={busy} onClick={() => void exportAll()}>
+            Export all data…
+          </button>
+        </p>
+      </section>
       {status.linked && (
         <p className="small">
           This till is linked to the cloud: after a restore, its sales since the backup come back from the cloud. Restore

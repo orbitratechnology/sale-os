@@ -376,6 +376,20 @@ describe("backups (E19-T03)", () => {
     expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: true });
   });
 
+  it("the owner exports all data; cancelling the save dialog does nothing", async () => {
+    const page = await backupsPage(() => {
+      window.__fake.saveAs = [null];
+    });
+    const button = page.getByRole("button", { name: "Export all data…" });
+    await button.click();
+    await page.waitForFunction(() => !document.querySelector("[aria-busy]"));
+    expect(await page.evaluate(() => window.__fake.exports)).toBe(0);
+    await button.click();
+    await page.getByText("Exported 1234 rows from 44 tables to /home/user/Documents/sale-os-export-2026-11-05.zip.").waitFor();
+    expect(await page.evaluate(() => window.__fake.exports)).toBe(1);
+    expect(await page.getByText("PINs are not included.").count()).toBe(1);
+  });
+
   it("a linked till restores only online, and loses nothing", async () => {
     const page = await backupsPage(() => {
       window.__fake.cloud.linkState = "linked";

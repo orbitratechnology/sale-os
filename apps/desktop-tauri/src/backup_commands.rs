@@ -39,6 +39,17 @@ pub struct BackupStatusDto {
     pub linked: bool,
 }
 
+/// A finished full data export (E19-T04).
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DataExportDto {
+    /// Where the owner chose to save it (shown to the owner).
+    pub path: String,
+    pub file_name: String,
+    pub tables: u32,
+    pub rows: u32,
+}
+
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupCheckDto {
@@ -278,4 +289,50 @@ async fn linked_restore_allowed(
         )
     })?;
     Ok(())
+}
+
+/// E19-T04: every table of this till's database as CSV in one ZIP, with a manifest, saved where
+/// the owner chooses in the system dialog (null: cancelled; nothing written or audited). PIN
+/// hashes are left out. Audited `data.exported` with the file's name.
+#[tauri::command]
+#[specta::specta]
+pub async fn data_export_full(services: State<'_, AppServices>) -> Result<Option<DataExportDto>, IpcError> {
+    let ctx = owner(&services).await?;
+    let b = backups(&services)?;
+    let now = ctx.clock.now();
+    let date: String = now.to_rfc3339().chars().take(10).collect();
+    let chosen = services
+        .file_dialog
+        .ask(&format!("sale-os-export-{date}.zip"), ("ZIP", &["zip"]))
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = chosen else {
+        return Ok(None);
+    };
+    let path = if path.extension().is_some() {
+        path
+    } else {
+        path.with_extension("zip")
+    };
+    let manifest =
+        pos_local_db::full_export::write(b.db(), &path, env!("CARGO_PKG_VERSION"), now.as_millis())
+            .await
+            .map_err(|e| IpcError::from_error(&e))?;
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    services
+        .app()?
+        .backup_audit
+        .data_exported(&ctx, &file_name, manifest.tables.len(), manifest.total_rows())
+        .await
+        .map_err(err)?;
+    Ok(Some(DataExportDto {
+        path: path.display().to_string(),
+        file_name,
+        tables: u32::try_from(manifest.tables.len()).unwrap_or(u32::MAX),
+        rows: u32::try_from(manifest.total_rows()).unwrap_or(u32::MAX),
+    }))
 }

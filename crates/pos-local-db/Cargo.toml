@@ -9,6 +9,8 @@ publish.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+crc32fast.workspace = true
+flate2.workspace = true
 pos-application.workspace = true
 pos-domain.workspace = true
 pos-sync.workspace = true
