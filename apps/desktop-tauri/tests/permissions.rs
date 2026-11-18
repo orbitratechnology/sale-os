@@ -513,7 +513,9 @@ fn start_with(
         services = services.with_file_dialog(d);
     }
     let app = mock_builder()
-        .invoke_handler(desktop_tauri_lib::specta_builder::<MockRuntime>().invoke_handler())
+        .invoke_handler(desktop_tauri_lib::guarded_invoke_handler(
+            &desktop_tauri_lib::specta_builder::<MockRuntime>(),
+        ))
         .build(tauri::generate_context!())
         .unwrap();
     app.manage(services);
@@ -1541,4 +1543,134 @@ fn the_owner_exports_all_data_and_it_is_audited() {
         assert_eq!(rows, 1);
         assert_eq!(audited["rows"][0]["entityId"], "everything.zip");
     }
+}
+
+/// Every string (and empty optional) argument position in `args`, as a JSON pointer and the
+/// guard's dotted path, with the key it sits under.
+fn text_positions(args: &Value) -> Vec<(String, String, String)> {
+    fn walk(v: &Value, pointer: &str, dotted: &str, key: &str, out: &mut Vec<(String, String, String)>) {
+        match v {
+            Value::String(_) | Value::Null => out.push((pointer.into(), dotted.into(), key.into())),
+            Value::Array(items) => {
+                for (i, x) in items.iter().enumerate() {
+                    walk(x, &format!("{pointer}/{i}"), &format!("{dotted}[{i}]"), key, out);
+                }
+            }
+            Value::Object(map) => {
+                for (k, x) in map {
+                    let d = if dotted.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{dotted}.{k}")
+                    };
+                    walk(x, &format!("{pointer}/{k}"), &d, k, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(args, "", "", "", &mut out);
+    out
+}
+
+/// E19-T05 / PAY-005: a test card number typed into any text argument of any command is
+/// refused before the command runs (a swipe, for scans and searches); and afterwards it is
+/// nowhere on disk: not in the database, its WAL, the backups, or the logs.
+#[test]
+fn a_card_number_typed_anywhere_is_refused_and_stored_nowhere() {
+    const PAN: &str = "4111 1111 1111 1111";
+    const SWIPE: &str = "%B4111111111111111^TEST/CARD^2512101000000000000?";
+    let logs = tempfile::tempdir().unwrap();
+    let log = pos_observability::init(&pos_observability::LogConfig {
+        dir: Some(logs.path().to_path_buf()),
+        file_prefix: "sweep".into(),
+        retention_days: 1,
+        stderr: false,
+        default_filter: "debug".into(),
+    })
+    .ok();
+    let (dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    invoke(&w, "backup_now", json!({})).unwrap();
+
+    let never_stored = ["pin", "ownerPin", "password", "newPin", "currentPin"];
+    let mut swept = 0;
+    for (cmd, _, args) in cases() {
+        for (pointer, dotted, key) in text_positions(&args) {
+            if never_stored.contains(&key.as_str()) {
+                continue;
+            }
+            let mut a = args.clone();
+            let typed = if key == "raw" || key == "query" {
+                SWIPE
+            } else {
+                PAN
+            };
+            *a.pointer_mut(&pointer).unwrap() = Value::String(format!("note {typed}"));
+            let e = invoke(&w, cmd, a).expect_err(cmd);
+            assert_eq!(e["code"], "CARD_DATA_REJECTED", "{cmd} {dotted}: {e}");
+            assert_eq!(e["details"]["field"], dotted.as_str(), "{cmd}");
+            assert!(
+                !e.to_string().contains("4111"),
+                "the refusal repeats the number: {e}"
+            );
+            swept += 1;
+        }
+    }
+    assert!(swept > 100, "only {swept} text arguments were tried");
+    // Typed with dashes, too.
+    let e = invoke(
+        &w,
+        "product_create",
+        json!({"product": {"name": "4111-1111-1111-1111"}}),
+    )
+    .unwrap_err();
+    assert_eq!(e["details"]["field"], "product.name");
+
+    drop(w);
+    drop(log); // flushes the log file
+    let mut files = Vec::new();
+    for root in [dir.path(), logs.path()] {
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).unwrap() {
+                let p = entry.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    assert!(files.iter().any(|f| f.extension().is_some_and(|e| e == "db")));
+    assert!(
+        files.iter().any(|f| f.starts_with(logs.path())),
+        "the test wrote no logs to check"
+    );
+    for f in &files {
+        let bytes = std::fs::read(f).unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        for needle in ["4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111"] {
+            assert!(!text.contains(needle), "{} holds the card number", f.display());
+        }
+    }
+    let logged: String = files
+        .iter()
+        .filter(|f| f.starts_with(logs.path()))
+        .map(|f| std::fs::read_to_string(f).unwrap())
+        .collect();
+    assert!(
+        logged.contains("card data refused at the IPC boundary"),
+        "the refusals were logged (and the log was read)"
+    );
+    eprintln!("{swept} text arguments refused; {} files clean", files.len());
 }

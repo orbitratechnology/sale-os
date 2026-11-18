@@ -10,6 +10,8 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   APPROVAL_REQUIRED: "This needs a manager's approval.",
   APPROVAL_INVALID: "That approval cannot be used: it was already used, has expired, or the approver cannot approve this.",
   VALIDATION_FAILED: "That value is not valid. Check it and try again.",
+  CARD_DATA_REJECTED:
+    "That looks like a card number, so it was not saved. Never type card numbers into Sale OS: take card payments on the card terminal.",
   CATALOG_NOT_FOUND: "That product no longer exists.",
   CATALOG_DUPLICATE_BARCODE: "Another product already uses that barcode.",
   CATALOG_DUPLICATE_SKU: "Another product already uses that SKU.",

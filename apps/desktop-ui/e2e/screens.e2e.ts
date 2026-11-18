@@ -523,7 +523,7 @@ describe("payment (E10-T03, E09-T08)", () => {
     await pay.getByLabel(/^Reference/).fill("4111 1111 1111 1111");
     await pay.getByRole("button", { name: /^Record/ }).click();
     await pay.getByRole("button", { name: "Complete sale" }).click();
-    await pay.getByRole("alert").filter({ hasText: "not valid" }).waitFor();
+    await pay.getByRole("alert").filter({ hasText: "looks like a card number" }).waitFor();
     expect(await page.getByRole("dialog", { name: "Sale completed" }).count()).toBe(0);
     await page.keyboard.press("Escape");
     await pay.waitFor({ state: "detached" });

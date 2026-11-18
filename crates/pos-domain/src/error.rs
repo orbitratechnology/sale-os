@@ -15,6 +15,7 @@ pub enum ErrorCode {
     ApprovalRequired,
     ApprovalInvalid,
     ValidationFailed,
+    CardDataRejected,
     CatalogDuplicateBarcode,
     CatalogDuplicateSku,
     CatalogNotFound,
@@ -73,6 +74,7 @@ impl ErrorCode {
             ApprovalRequired => "APPROVAL_REQUIRED",
             ApprovalInvalid => "APPROVAL_INVALID",
             ValidationFailed => "VALIDATION_FAILED",
+            CardDataRejected => "CARD_DATA_REJECTED",
             CatalogDuplicateBarcode => "CATALOG_DUPLICATE_BARCODE",
             CatalogDuplicateSku => "CATALOG_DUPLICATE_SKU",
             CatalogNotFound => "CATALOG_NOT_FOUND",
@@ -158,6 +160,10 @@ impl ErrorCode {
             ValidationFailed => (
                 "Input failed validation. `details.fields` lists the field errors.",
                 "Show inline field errors.",
+            ),
+            CardDataRejected => (
+                "A text field held what looks like a card number (a Luhn-valid run of 13–19 digits) or a card swipe. It was refused before anything was saved or logged (PAY-005); `details.field` names the field.",
+                "Say card numbers are never typed into Sale OS (card payments go through the card terminal) and clear the field.",
             ),
             CatalogDuplicateBarcode => (
                 "The barcode belongs to another active product (`details.owner`).",
@@ -393,7 +399,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 46);
+        assert_eq!(seen.len(), 47);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 mod app_commands;
 mod backup_commands;
 mod backups;
+mod card_guard;
 mod cash_commands;
 mod command_names;
 mod commands;
@@ -141,13 +142,20 @@ pub fn export_bindings(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("{e:?}"))
 }
 
+/// The command handler the app uses: the registry behind the card-data guard (E19-T05).
+pub fn guarded_invoke_handler<R: tauri::Runtime>(
+    builder: &tauri_specta::Builder<R>,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    card_guard::guard(builder.invoke_handler())
+}
+
 /// Starts the desktop application.
 pub fn run() {
     let builder = specta_builder::<tauri::Wry>();
     tauri::Builder::default()
         // Rust-side only: no `dialog:*` permission is granted to the WebView.
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(builder.invoke_handler())
+        .invoke_handler(guarded_invoke_handler(&builder))
         .setup(move |app| {
             builder.mount_events(app);
             let dir = app.path().app_data_dir()?;

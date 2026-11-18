@@ -371,7 +371,7 @@ async fn refusals_write_nothing() {
         )
         .await
         .unwrap_err();
-    assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
+    assert_eq!(e.error_code(), ErrorCode::CardDataRejected);
     assert_eq!(count(&t, "SELECT count(*) FROM sales").await, 0);
     assert_eq!(
         count(

@@ -16,6 +16,7 @@ to the action below.
 | `APPROVAL_REQUIRED` |  | A manager approval is needed (`details.permission`, `details.scope`). | Open the approval dialog, then retry with the token. |
 | `APPROVAL_INVALID` |  | The approval token expired, was already used, or is out of scope. | Ask for approval again. |
 | `VALIDATION_FAILED` |  | Input failed validation. `details.fields` lists the field errors. | Show inline field errors. |
+| `CARD_DATA_REJECTED` |  | A text field held what looks like a card number (a Luhn-valid run of 13–19 digits) or a card swipe. It was refused before anything was saved or logged (PAY-005); `details.field` names the field. | Say card numbers are never typed into Sale OS (card payments go through the card terminal) and clear the field. |
 | `CATALOG_DUPLICATE_BARCODE` |  | The barcode belongs to another active product (`details.owner`). | Link to the owning product. |
 | `CATALOG_DUPLICATE_SKU` |  | The SKU belongs to another active product. | Show the conflicting product. |
 | `CATALOG_NOT_FOUND` |  | The product or variant does not exist. | Refresh the list. |

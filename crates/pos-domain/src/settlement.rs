@@ -161,6 +161,7 @@ impl HasErrorCode for SettlementError {
             SettlementError::Insufficient { .. } => ErrorCode::TenderInsufficient,
             SettlementError::OverTenderNonCash => ErrorCode::TenderOverpayNonCash,
             SettlementError::ChangeFromNonCash => ErrorCode::TenderChangeFromNonCash,
+            SettlementError::ReferenceLooksLikeCard => ErrorCode::CardDataRejected,
             _ => ErrorCode::ValidationFailed,
         }
     }
@@ -374,7 +375,7 @@ mod tests {
         ] {
             let e = settle(m(1345), &[card(1345, Some(pan))], &policy()).unwrap_err();
             assert_eq!(e, SettlementError::ReferenceLooksLikeCard);
-            assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
+            assert_eq!(e.error_code(), ErrorCode::CardDataRejected);
             assert!(!e.to_string().contains("4111"), "the value is never echoed");
         }
         // Approval codes, short numbers and non-Luhn long numbers are fine.

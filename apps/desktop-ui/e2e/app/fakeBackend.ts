@@ -331,7 +331,31 @@ function add(s: FakeState, p: FakeProduct, qtyMilli: bigint): string {
 const workspace: Workspace = { businessName: "Corner Shop", registerName: "Till 1", registerCode: "R01", currencyCode: "GBP", currencyExponent: 2, mode: "sandbox" };
 
 /** Handles one command. Throws an IpcError-shaped object for refusals, as Tauri does. */
+/** The real app's IPC card-data guard (E19-T05), simplified: any Luhn-valid 13–19 digit run. */
+function cardLike(v: unknown, key = ""): boolean {
+  if (typeof v === "string") {
+    if (["pin", "ownerPin", "password", "raw", "query"].includes(key)) return false;
+    return v
+      .replace(/[ -]/g, "")
+      .split(/\D+/)
+      .some((run) => {
+        if (run.length < 13 || run.length > 19) return false;
+        let sum = 0;
+        [...run].reverse().forEach((c, i) => {
+          let d = Number(c);
+          if (i % 2) d = d * 2 > 9 ? d * 2 - 9 : d * 2;
+          sum += d;
+        });
+        return sum % 10 === 0;
+      });
+  }
+  if (Array.isArray(v)) return v.some((x) => cardLike(x, key));
+  if (v && typeof v === "object") return Object.entries(v).some(([k, x]) => cardLike(x, k));
+  return false;
+}
+
 export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): unknown {
+  if (cardLike(a)) fail("CARD_DATA_REJECTED");
   switch (cmd) {
     case "app_bootstrap_state":
       return { setupComplete: s.setupComplete, workspace: s.setupComplete ? workspace : null, session: s.session };
@@ -556,7 +580,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         if (amount <= 0n || remaining === 0n) fail("VALIDATION_FAILED");
         if (t.kind !== "cash" && amount > remaining) fail("TENDER_OVERPAY_NON_CASH");
         if (t.kind === "cash" && amount > remaining && i < tenders.length - 1) fail("TENDER_CHANGE_FROM_NON_CASH");
-        if (t.reference && /\d{13,19}/.test(t.reference.replace(/[ -]/g, ""))) fail("VALIDATION_FAILED");
+        if (t.reference && /\d{13,19}/.test(t.reference.replace(/[ -]/g, ""))) fail("CARD_DATA_REJECTED");
         remaining -= amount < remaining ? amount : remaining;
         tendered += amount;
       }

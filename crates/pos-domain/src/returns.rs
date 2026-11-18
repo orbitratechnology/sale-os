@@ -596,7 +596,7 @@ mod tests {
             &[t(TenderKind::CardExternal, 500, Some("4111111111111111"))],
         )
         .unwrap_err();
-        assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
+        assert_eq!(e.error_code(), ErrorCode::CardDataRejected);
     }
 
     #[test]
