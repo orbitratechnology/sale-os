@@ -279,7 +279,7 @@ pub(crate) async fn create(
         .await
         .map_err(StoreError::from_sqlx)?;
     crate::sync_file(&partial).map_err(io("sync backup"))?;
-    std::fs::rename(&partial, &path).map_err(io("name backup"))?;
+    crate::replace_file(&partial, &path).map_err(io("name backup"))?;
     let meta = describe(&path, kind, created_at, key).await?;
     write_meta(&path, &meta)?;
     prune(dir, kind)?;
@@ -348,7 +348,7 @@ pub fn copy_to(backup: &BackupInfo, folder: &Path) -> Result<BackupInfo, StoreEr
     let partial = folder.join(format!("{}.partial", backup.id));
     std::fs::copy(&backup.path, &partial).map_err(io("copy backup"))?;
     crate::sync_file(&partial).map_err(io("sync backup copy"))?;
-    std::fs::rename(&partial, &target).map_err(io("name backup copy"))?;
+    crate::replace_file(&partial, &target).map_err(io("name backup copy"))?;
     write_meta(&target, &backup.meta)?;
     prune(folder, backup.meta.kind)?;
     Ok(info(target, backup.meta.clone()))
@@ -477,7 +477,7 @@ pub async fn restore(opts: &DbOptions, backup: &Path) -> Result<RestoreReport, S
             std::fs::remove_file(&p).map_err(io("remove old journal"))?;
         }
     }
-    std::fs::rename(&incoming, &opts.path).map_err(io("put restored database in place"))?;
+    crate::replace_file(&incoming, &opts.path).map_err(io("put restored database in place"))?;
     tracing::warn!(
         backup = %backup.display(),
         outbox_sequence = restored.outbox_sequence,

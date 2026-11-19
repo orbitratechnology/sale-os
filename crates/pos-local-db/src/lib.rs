@@ -93,6 +93,23 @@ pub(crate) fn sync_file(path: &Path) -> std::io::Result<()> {
     std::fs::OpenOptions::new().write(true).open(path)?.sync_all()
 }
 
+/// Renames `from` over `to`. On Windows a file another process has just opened (the virus
+/// scanner looking at a file we just wrote) cannot be replaced for a moment ("Access is
+/// denied"): try again for up to about two seconds before giving up.
+pub(crate) fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut wait = Duration::from_millis(20);
+    for _ in 0..8 {
+        match std::fs::rename(from, to) {
+            Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied => {
+                std::thread::sleep(wait);
+                wait *= 2;
+            }
+            other => return other,
+        }
+    }
+    std::fs::rename(from, to)
+}
+
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 pub(crate) fn connect_options(path: &Path) -> SqliteConnectOptions {

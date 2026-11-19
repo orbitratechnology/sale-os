@@ -86,7 +86,7 @@ pub async fn write(
     let result = write_to(db, &partial, app_version, created_at_ms).await;
     match result {
         Ok(manifest) => {
-            std::fs::rename(&partial, path).map_err(|e| StoreError::io("export", e))?;
+            crate::replace_file(&partial, path).map_err(|e| StoreError::io("export", e))?;
             Ok(manifest)
         }
         Err(e) => {
