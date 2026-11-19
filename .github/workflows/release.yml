@@ -14,6 +14,9 @@ name: Release build (Windows)
 on:
   workflow_dispatch:
   push:
+    # Tags always build (path filters are not applied to tags); a branch push builds only
+    # when this file changed.
+    branches: ["**"]
     tags: ["v*"]
     paths: [".github/workflows/release.yml"]
 
