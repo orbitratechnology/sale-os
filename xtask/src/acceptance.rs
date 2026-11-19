@@ -550,18 +550,46 @@ fn run_browser_file(root: &Path, file: &str) -> Result<BTreeMap<String, bool>, S
     };
     let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     let mut titles = BTreeMap::new();
+    let mut failed = false;
     for file in v["testResults"].as_array().into_iter().flatten() {
         for t in file["assertionResults"].as_array().into_iter().flatten() {
             if let Some(title) = t["title"].as_str() {
-                titles.insert(title.to_owned(), t["status"] == "passed");
+                let passed = t["status"] == "passed";
+                // A title shared by several cases (describe.each) passes only if every case does.
+                let entry = titles.entry(title.to_owned()).or_insert(true);
+                *entry &= passed;
+                if !passed && t["status"] == "failed" {
+                    failed = true;
+                    let name = t["fullName"].as_str().unwrap_or(title);
+                    println!(
+                        "  browser failure in {file_name}: {name}",
+                        file_name = file_label(file)
+                    );
+                    for m in t["failureMessages"].as_array().into_iter().flatten() {
+                        let m = m.as_str().unwrap_or_default();
+                        let lines: Vec<&str> = m.lines().take(12).collect();
+                        println!("    {}", lines.join("\n    "));
+                    }
+                }
             }
         }
+    }
+    if failed {
+        // The tests' own diagnostics (console.error) go to vitest's output.
+        println!("  vitest output (last lines):\n{}", tail(&out));
     }
     if titles.is_empty() {
         // Chromium missing, or the file did not load: nothing ran.
         return Err(format!("no browser test ran:\n{}", tail(&out)));
     }
     Ok(titles)
+}
+
+fn file_label(file: &Value) -> &str {
+    file["name"]
+        .as_str()
+        .and_then(|n| n.rsplit(['/', '\\']).next())
+        .unwrap_or("?")
 }
 
 fn tail(out: &Output) -> String {
