@@ -206,7 +206,7 @@ export function AuditScreen({ onBack, onOpenProduct, onReturn }: { onBack: () =>
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && !error && <p className="small">Nothing recorded for these filters.</p>}
+        {rows.length === 0 && !error && <p className="empty-state">Nothing recorded for these filters.</p>}
         {next && (
           <div className="actions">
             <button type="button" className="secondary" onClick={more}>

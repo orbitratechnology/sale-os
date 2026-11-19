@@ -317,6 +317,46 @@ export function Checkout({
           )}
         </div>
       )}
+      <header className="topbar">
+        <div className="brand">
+          <strong>{workspace.businessName}</strong>
+          <span>
+            {workspace.registerName} · {workspace.registerCode}
+          </span>
+        </div>
+        <nav className="screen-nav" aria-label="Screens">
+          <button type="button" onClick={onProducts}>
+            Products <kbd>F6</kbd>
+          </button>
+          <button type="button" onClick={onSales}>
+            Sales <kbd>F8</kbd>
+          </button>
+          <button type="button" onClick={onReturns}>
+            Returns <kbd>F7</kbd>
+          </button>
+          <button type="button" onClick={onDrawer}>
+            Drawer <kbd>F10</kbd>
+          </button>
+          {onStock && (
+            <button type="button" onClick={onStock}>
+              Stock <kbd>F11</kbd>
+            </button>
+          )}
+          {onReports && (
+            <button type="button" onClick={onReports}>
+              Reports
+            </button>
+          )}
+          {onSettings && (
+            <button type="button" onClick={() => onSettings()}>
+              Settings
+            </button>
+          )}
+        </nav>
+        <button type="button" className="lock" onClick={() => void lock()}>
+          Lock <kbd>F12</kbd>
+        </button>
+      </header>
       <section className="entry" aria-label="Add items">
         <form onSubmit={submitCode} className="code-form">
           <input
@@ -376,69 +416,44 @@ export function Checkout({
             {cart ? money(cart.totalMinor) : ""}
           </output>
         </div>
-        <div className="actions-grid">
-          <button type="button" disabled={!selectedLine || !!selectedLine.scaleLabel} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "qty" })}>
-            Quantity <kbd>F3</kbd>
-          </button>
-          <button type="button" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "discount" })}>
-            Discount <kbd>F4</kbd>
-          </button>
-          <button type="button" disabled={!selectedLine} onClick={() => c.selected && void c.removeLine(c.selected)}>
-            Remove <kbd>Del</kbd>
-          </button>
-          <button type="button" disabled={!hasLines} onClick={() => setModal("orderDiscount")}>
-            Order discount
-          </button>
-          <button type="button" className="secondary" disabled={!selectedLine} onClick={() => setModal("price")}>
-            Change price
-          </button>
-          <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("clear")}>
-            Clear cart
-          </button>
-          <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("void")}>
-            Void sale
-          </button>
-          <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("park")}>
-            Park <kbd>F5</kbd>
-          </button>
-          <button type="button" className="secondary" onClick={() => setModal("parked")}>
-            Parked ({parkedCount}) <kbd>⇧F5</kbd>
-          </button>
-          <button type="button" className="secondary" onClick={onProducts}>
-            Products <kbd>F6</kbd>
-          </button>
-          <button type="button" className="secondary" onClick={onReturns}>
-            Returns <kbd>F7</kbd>
-          </button>
-          <button type="button" className="secondary" onClick={onSales}>
-            Sales <kbd>F8</kbd>
-          </button>
-          <button type="button" className="secondary" onClick={onDrawer}>
-            Drawer <kbd>F10</kbd>
-          </button>
-          {onStock && (
-            <button type="button" className="secondary" onClick={onStock}>
-              Stock <kbd>F11</kbd>
+        <div className="action-group" role="group" aria-labelledby="line-actions">
+          <h2 id="line-actions">This line</h2>
+          <div className="actions-grid">
+            <button type="button" className="secondary" disabled={!selectedLine || !!selectedLine.scaleLabel} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "qty" })}>
+              Quantity <kbd>F3</kbd>
             </button>
-          )}
-          {onReports && (
-            <button type="button" className="secondary" onClick={onReports}>
-              Reports
+            <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "discount" })}>
+              Discount <kbd>F4</kbd>
             </button>
-          )}
-          {onSettings && (
-            <button type="button" className="secondary" onClick={() => onSettings()}>
-              Settings
+            <button type="button" className="secondary" disabled={!selectedLine} onClick={() => setModal("price")}>
+              Change price
             </button>
-          )}
-          <button type="button" className="secondary" onClick={() => void lock()}>
-            Lock <kbd>F12</kbd>
-          </button>
-          <button type="button" className="pay" disabled={!hasLines} onClick={() => setModal("pay")}>
-            Pay <kbd>F9</kbd>
-          </button>
+            <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && void c.removeLine(c.selected)}>
+              Remove <kbd>Del</kbd>
+            </button>
+          </div>
         </div>
- {drawerNeeded && (
+        <div className="action-group" role="group" aria-labelledby="sale-actions">
+          <h2 id="sale-actions">This sale</h2>
+          <div className="actions-grid">
+            <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("orderDiscount")}>
+              Order discount
+            </button>
+            <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("park")}>
+              Park <kbd>F5</kbd>
+            </button>
+            <button type="button" className="secondary wide" onClick={() => setModal("parked")}>
+              Parked ({parkedCount}) <kbd>⇧F5</kbd>
+            </button>
+            <button type="button" className="secondary quiet-danger" disabled={!hasLines} onClick={() => setModal("clear")}>
+              Clear cart
+            </button>
+            <button type="button" className="secondary quiet-danger" disabled={!hasLines} onClick={() => setModal("void")}>
+              Void sale
+            </button>
+          </div>
+        </div>
+        {drawerNeeded && (
           <p role="status" className="drawer-needed">
             Open the cash drawer before selling. <button type="button" className="link" onClick={onDrawer}>Open drawer (F10)</button>
           </p>
@@ -461,6 +476,9 @@ export function Checkout({
                   })
           }
         />
+        <button type="button" className="pay" disabled={!hasLines} onClick={() => setModal("pay")}>
+          Pay <kbd>F9</kbd>
+        </button>
       </aside>
 
       <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} drawer={drawer} onConflicts={onConflicts} />

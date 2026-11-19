@@ -73,12 +73,15 @@ function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedI
         {workspace.mode === "sandbox" && <span className="sandbox-tag">SANDBOX</span>}
       </p>
       {!user ? (
-        <section aria-label="Who is signing in?">
+        <section aria-label="Who is signing in?" className="who">
           <h2>Who is signing in?</h2>
           <ul className="user-grid">
             {users?.map((u) => (
               <li key={u.userId}>
                 <button type="button" className="user-tile" onClick={() => setUser(u)}>
+                  <span className="avatar" aria-hidden="true">
+                    {u.displayName.trim().charAt(0).toUpperCase()}
+                  </span>
                   <span className="user-name">{u.displayName}</span>
                   <span className="role-badge">{u.role}</span>
                 </button>

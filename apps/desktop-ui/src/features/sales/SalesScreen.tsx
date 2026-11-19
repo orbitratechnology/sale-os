@@ -197,7 +197,7 @@ export function SalesScreen({
             ))}
           </tbody>
         </table>
-        {loaded && rows.length === 0 && !error && <p className="small">No sales match.</p>}
+        {loaded && rows.length === 0 && !error && <p className="empty-state">No sales match.</p>}
         {next && (
           <div className="actions">
             <button type="button" className="secondary" onClick={() => void load(filter, next)}>

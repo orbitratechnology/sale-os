@@ -107,7 +107,7 @@ export function BackupsPanel() {
 
   if (!status) return error ? <p role="alert">{describeError(error)}</p> : <p aria-busy="true">Loading…</p>;
   return (
-    <div>
+    <div className="panel-sections">
       <h2>Backups</h2>
       <p>
         Sale OS backs up this till by itself: once a day, every hour something changed, and when it closes. Copies go to a
@@ -248,7 +248,7 @@ export function BackupsPanel() {
           })}
         </tbody>
       </table>
-      {status.backups.length === 0 && <p className="small">No backups yet. The first is made a minute after start-up.</p>}
+      {status.backups.length === 0 && <p className="empty-state">No backups yet. The first is made a minute after start-up.</p>}
       <section aria-label="Export all data">
         <h3>Export all data</h3>
         <p>

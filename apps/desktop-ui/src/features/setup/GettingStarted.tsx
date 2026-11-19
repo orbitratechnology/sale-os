@@ -38,32 +38,48 @@ export function GettingStarted({
         <p>The till is ready to sell in practice (SANDBOX) mode. When you have a moment:</p>
         <ol className="getting-started">
           <li>
-            <strong>Products.</strong> Add them one by one, or import a CSV file from your supplier or old till.{" "}
-            <button type="button" className="secondary" ref={first} onClick={onProducts}>
-              Open Products <kbd>F6</kbd>
-            </button>
+            <div>
+              <span>
+                <strong>Products.</strong> Add them one by one, or import a CSV file from your supplier or old till.
+              </span>
+              <button type="button" className="secondary" ref={first} onClick={onProducts}>
+                Open Products <kbd>F6</kbd>
+              </button>
+            </div>
           </li>
           <li>
-            <strong>Staff.</strong> Give each cashier and manager their own PIN. Nobody shares the owner&apos;s.{" "}
-            <button type="button" className="secondary" onClick={onStaff}>
-              Add staff
-            </button>
+            <div>
+              <span>
+                <strong>Staff.</strong> Give each cashier and manager their own PIN. Nobody shares the owner&apos;s.
+              </span>
+              <button type="button" className="secondary" onClick={onStaff}>
+                Add staff
+              </button>
+            </div>
           </li>
           <li>
-            <strong>Receipts.</strong> Check the details printed on receipts, and add your logo.{" "}
-            <button type="button" className="secondary" onClick={onBusiness}>
-              Business details
-            </button>
+            <div>
+              <span>
+                <strong>Receipts.</strong> Check the details printed on receipts, and add your logo.
+              </span>
+              <button type="button" className="secondary" onClick={onBusiness}>
+                Business details
+              </button>
+            </div>
           </li>
           <li>
             <strong>Practise</strong> a few sales, a return, and opening and closing the drawer. Practice sales are left out of
             reports.
           </li>
           <li>
-            <strong>Go live</strong> when you are ready. You confirm with your PIN; practice sales stay out of reports.{" "}
-            <button type="button" className="secondary" onClick={onGoLive}>
-              Go live…
-            </button>
+            <div>
+              <span>
+                <strong>Go live</strong> when you are ready. You confirm with your PIN; practice sales stay out of reports.
+              </span>
+              <button type="button" className="secondary" onClick={onGoLive}>
+                Go live…
+              </button>
+            </div>
           </li>
         </ol>
         <div className="actions">

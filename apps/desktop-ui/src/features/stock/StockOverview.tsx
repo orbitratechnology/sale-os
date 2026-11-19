@@ -59,7 +59,7 @@ export function StockOverview() {
       <p className="drawer-needed" role="note">
         Stock on hand is calculated from recorded movements; it is not a physical count.
       </p>
-      <label>
+      <label className="check">
         <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> Low and negative only
       </label>
       {error && (
@@ -115,7 +115,7 @@ export function StockOverview() {
           })}
         </tbody>
       </table>
-      {report && report.rows.length === 0 && <p className="small">Nothing to show.</p>}
+      {report && report.rows.length === 0 && <p className="empty-state">Nothing to show.</p>}
 
       {open && (
         <div aria-label={`History: ${open.name}`} role="region">

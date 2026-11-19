@@ -311,7 +311,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
                 ))}
               </tbody>
             </table>
-            {top.rows.length === 0 && <p className="small">No sales in this period.</p>}
+            {top.rows.length === 0 && <p className="empty-state">No sales in this period.</p>}
           </>
         )}
         {tab === "stock" && stock && (
@@ -319,7 +319,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
             <p className="drawer-needed" role="note">
               Stock on hand is calculated from recorded movements; it is not a physical count.
             </p>
-            <label>
+            <label className="check">
               <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> Low and negative only
             </label>
             <table className="sales-table" aria-label="Stock on hand">
@@ -355,7 +355,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
                 ))}
               </tbody>
             </table>
-            {stock.rows.length === 0 && <p className="small">Nothing to show.</p>}
+            {stock.rows.length === 0 && <p className="empty-state">Nothing to show.</p>}
           </>
         )}
       </section>
@@ -419,7 +419,7 @@ function SalesReport({ s, money }: { s: SalesSummaryDto; money: (m: string) => s
           ))}
         </tbody>
       </table>
-      {s.days.length === 0 && <p className="small">No sales in this period.</p>}
+      {s.days.length === 0 && <p className="empty-state">No sales in this period.</p>}
     </>
   );
 }
@@ -472,7 +472,7 @@ function PaymentsReport({ m, money }: { m: TenderMixDto; money: (x: string) => s
           ))}
         </tbody>
       </table>
-      {m.rows.length === 0 && <p className="small">No payments in this period.</p>}
+      {m.rows.length === 0 && <p className="empty-state">No payments in this period.</p>}
       <p className="small">Cash is what was kept: handed over less change.</p>
     </>
   );

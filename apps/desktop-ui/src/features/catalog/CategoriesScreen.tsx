@@ -98,7 +98,7 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
         </p>
       )}
       <section className="card" aria-label="Category tree">
-        {tree.length === 0 && <p className="small">No categories yet.</p>}
+        {tree.length === 0 && <p className="empty-state">No categories yet.</p>}
         <ul className="plain-list">
           {tree.map(({ category: c, depth }) => (
             <li key={c.categoryId} data-testid="category-row" style={{ paddingLeft: `${(depth - 1) * 24}px` }}>
