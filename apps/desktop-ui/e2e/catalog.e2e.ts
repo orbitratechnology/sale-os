@@ -172,7 +172,7 @@ describe("unknown barcode (E07-T04)", () => {
     expect(scans.at(-1)).toMatchObject({ raw: "9300633603209", source: "manual" });
   });
 
-  it("a cashier is told to ask a manager instead", async () => {
+  it("a cashier asks a manager: the manager's PIN, then the cashier creates that one product", async () => {
     const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
     await page.goto(`${base}/app-harness.html?preset=signIn`);
     await page.getByRole("button", { name: /Cal/ }).click();
@@ -180,8 +180,25 @@ describe("unknown barcode (E07-T04)", () => {
     await page.keyboard.press("Enter");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
     await scan(page, "9300633603209");
-    await page.getByText("A manager can add it as a new product.").waitFor();
     expect(await page.getByRole("button", { name: "Create product" }).count()).toBe(0);
+    await page.getByRole("button", { name: "Ask a manager" }).click();
+    const approval = page.getByRole("dialog", { name: /approv/i });
+    await approval.waitFor();
+    await approval.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    const scope = (await calls(page, "auth_request_approval")).at(-1)?.scope;
+    expect(scope).toEqual({ permission: "barcode_create_from_scan", entityId: "9300633603209", maxPpm: null });
+    // The editor opens for this product, the barcode filled in.
+    await page.getByRole("list", { name: /Barcodes for/ }).getByText("9300633603209").waitFor();
+    await page.getByLabel("Name").fill("Tomato sauce");
+    await page.getByLabel(/^Price for/).fill("1.80");
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    const [created] = await calls(page, "product_create_from_scan");
+    expect(created).toMatchObject({ barcode: "9300633603209" });
+    expect(typeof created?.approvalTokenId).toBe("string");
+    expect(await calls(page, "product_create")).toEqual([]);
   });
 });
 

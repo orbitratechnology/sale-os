@@ -12,6 +12,7 @@ import { Dialog } from "./Dialog";
 import { ParkedDialog } from "./ParkedDialog";
 import { QuickSelectDialog } from "./QuickSelectDialog";
 import { RecoveryDialog } from "./RecoveryDialog";
+import { errorBeep } from "../../lib/beep";
 import { GettingStarted } from "../setup/GettingStarted";
 import { PaymentPanel } from "./PaymentPanel";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
@@ -76,6 +77,7 @@ export function Checkout({
   onCreateProduct,
   gettingStarted = false,
   onGettingStartedSeen,
+  errorSound = true,
 }: {
   workspace: Workspace;
   session: Session;
@@ -93,13 +95,16 @@ export function Checkout({
   onWentLive: (() => void) | null;
   /** Owner only: the settings screen, optionally on one page ("Staff", "Business"). */
   onSettings: ((group?: string) => void) | null;
+  /** `scanner.error_sound`: a tone with not-found and refusal messages (E07-T04). */
+  errorSound?: boolean;
   /** E04-T02: open "Getting started" now (the wizard just finished). */
   gettingStarted?: boolean;
   onGettingStartedSeen?: () => void;
   /** Managers and owners: the sync conflicts screen (E18). `null` for cashiers. */
   onConflicts: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
-  onCreateProduct: (barcode: string) => void;
+  /** `approvalTokenId`: a manager approved a cashier creating this one product (E07-T04). */
+  onCreateProduct: (barcode: string, approvalTokenId?: string) => void;
 }) {
   const c = useCart(onSignedOut);
   const [drawer, setDrawer] = useState<CashState | null>(null);
@@ -135,6 +140,11 @@ export function Checkout({
     };
   }, []);
   const exponent = c.cart?.currencyExponent ?? 2;
+  // E07-T04: the error cue. The message is always on screen; the tone is the setting's.
+  const noticeKind = c.notice?.kind;
+  useEffect(() => {
+    if (errorSound && (noticeKind === "notFound" || noticeKind === "error")) errorBeep();
+  }, [c.notice, noticeKind, errorSound]);
   const money = (minor: string) => formatMoney(minor, { exponent });
   const selectedLine = c.line(c.selected);
 
@@ -433,7 +443,24 @@ export function Checkout({
             Open the cash drawer before selling. <button type="button" className="link" onClick={onDrawer}>Open drawer (F10)</button>
           </p>
         )}
-        <Notice c={c} onSearch={(text) => search.current?.focus(text)} onCreate={canEditCatalog ? onCreateProduct : null} />
+        <Notice
+          c={c}
+          onSearch={(text) => search.current?.focus(text)}
+          onCreate={canEditCatalog ? onCreateProduct : null}
+          onAskManager={
+            canEditCatalog
+              ? null
+              : (code) =>
+                  c.setApproval({
+                    scope: { permission: "barcode_create_from_scan", entityId: code.trim(), maxPpm: null },
+                    retry: (token) => {
+                      c.setNotice(null);
+                      onCreateProduct(code, token);
+                      return Promise.resolve(true);
+                    },
+                  })
+          }
+        />
       </aside>
 
       <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} drawer={drawer} onConflicts={onConflicts} />
@@ -634,11 +661,14 @@ function Notice({
   c,
   onSearch,
   onCreate,
+  onAskManager,
 }: {
   c: ReturnType<typeof useCart>;
   onSearch: (text: string) => void;
   /** Only for roles that may create products from a scan (BarcodeCreateFromScan). */
   onCreate: ((barcode: string) => void) | null;
+  /** Everyone else: a manager approves on the spot, then the editor opens (E07-T04). */
+  onAskManager: ((barcode: string) => void) | null;
 }) {
   const n = c.notice;
   if (!n) return <div className="notice-slot" aria-live="assertive" />;
@@ -664,9 +694,11 @@ function Notice({
               <button type="button" className="secondary" onClick={() => onCreate(n.code)}>
                 Create product
               </button>
-            ) : (
-              <p className="small">A manager can add it as a new product.</p>
-            )}
+            ) : onAskManager ? (
+              <button type="button" className="secondary" onClick={() => onAskManager(n.code)}>
+                Ask a manager
+              </button>
+            ) : null}
           </>
         )}
         {n.kind === "error" && (

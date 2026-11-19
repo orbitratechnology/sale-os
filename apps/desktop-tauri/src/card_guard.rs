@@ -5,7 +5,8 @@
 //! the logs, whichever free-text field it is typed into. The refusal names the field, never
 //! the value.
 //!
-//! Scanned codes (`raw`) and search text (`query`) are different: about one EAN-13 barcode in
+//! Scanned codes (`raw`, and `barcode` for a product made from a scan) and search text
+//! (`query`) are different: about one EAN-13 barcode in
 //! ten also passes Luhn. There, card *swipes* are refused (magnetic-stripe track data, as a
 //! keyboard-wedge reader types it) and so are 15–19 digit Luhn runs (no retail barcode is that
 //! long: GTINs are at most 14 digits). PINs and the cloud password are never stored or logged,
@@ -17,7 +18,7 @@ use pos_domain::settlement::looks_like_card_number;
 use serde_json::Value;
 
 /// Keys holding a scan or a search (see the module comment).
-const SCANNED: &[&str] = &["raw", "query"];
+const SCANNED: &[&str] = &["raw", "query", "barcode"];
 /// Keys never stored or logged.
 const UNCHECKED: &[&str] = &[
     "pin",

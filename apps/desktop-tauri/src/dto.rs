@@ -2005,6 +2005,8 @@ pub struct PreferencesDto {
     pub scanner_max_key_gap_ms: u32,
     /// 0: never lock.
     pub lock_timeout_secs: u32,
+    /// Beep with a not-found or refusal message (E07-T04).
+    pub error_sound: bool,
 }
 
 // ---------- categories and tax configuration (E06-T05) ----------

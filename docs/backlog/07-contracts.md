@@ -44,7 +44,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | ReceiptReprint | ✓ | ✓ | ✓ | Every reprint is audited and marked as a REPRINT copy |
 | ReturnCreate | ✓ | ✓ | approval | `returns.cashier_requires_approval` (default true) |
 | ReturnApprove | ✓ | ✓ | – | |
-| CatalogEdit, BarcodeCreateFromScan, CatalogImport, CatalogExport | ✓ | ✓ | – | |
+| CatalogEdit, CatalogImport, CatalogExport | ✓ | ✓ | – | |
+| BarcodeCreateFromScan | ✓ | ✓ | approval | E07-T04: "Ask a manager" from the not-found prompt. The approval covers one product carrying that scanned barcode (`product_create_from_scan`); everything else in the catalogue stays CatalogEdit. |
 | InventoryReceive | ✓ | ✓ | – | |
 | InventoryAdjust | ✓ | ✓ | – | |
 | CashSessionClose, CashSessionViewVariance | ✓ | ✓ | close only (blind count) | |
@@ -78,6 +79,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `product_list` | CatalogView | `{ filter, page } → Paged<ProductRow>` | E06-T06a |
 | `product_get` | CatalogView | `{ productId } → ProductDto` | E06-T02 |
 | `product_create` / `product_update` | CatalogEdit | `{ product, baseVersion? } → ProductDto` | E06-T02 |
+| `product_create_from_scan` | CatalogEdit, or a BarcodeCreateFromScan approval for `barcode` | `{ product, barcode, approvalTokenId? } → ProductDto` (the product must carry `barcode`) | E07-T04 |
 | `product_archive` | CatalogEdit | `{ productId, baseVersion } → ()` | E06-T02 |
 | `catalog_lookup_code` | CatalogView | `{ code } → { kind:'barcode'\|'sku', variant } \| null` | E06-T04 |
 | `catalog_search` | CatalogView | `{ query, limit } → [SearchHit]` | E06-T04 |

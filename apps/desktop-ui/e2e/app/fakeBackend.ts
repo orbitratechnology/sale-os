@@ -100,6 +100,8 @@ export interface FakeState {
   imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[] }>;
   /** The business profile besides the name and till name (which live in `workspace`). */
   business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number; logo?: string | null };
+  /** `scanner.error_sound` (E07-T04). */
+  errorSound?: boolean;
   /** SET-001: what the logo dialog hands over next (`null`: the owner cancels). */
   logoFile?: "image" | "notAnImage" | null;
   /** Product categories (E06-T05). */
@@ -397,7 +399,7 @@ const workspace: Workspace = { businessName: "Corner Shop", registerName: "Till 
 /** The real app's IPC card-data guard (E19-T05), simplified: any Luhn-valid 13–19 digit run. */
 function cardLike(v: unknown, key = ""): boolean {
   if (typeof v === "string") {
-    if (["pin", "ownerPin", "password", "raw", "query", "recoveryKey", "id"].includes(key)) return false;
+    if (["pin", "ownerPin", "password", "raw", "query", "barcode", "recoveryKey", "id"].includes(key)) return false;
     if (/(Id|Ids|Ms)$/.test(key) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return false;
     return v
       .replace(/[ -]/g, "")
@@ -637,9 +639,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       return s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND");
     case "product_create":
+    case "product_create_from_scan":
     case "product_update": {
-      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
       const input = a.product as ProductInput;
+      if (cmd === "product_create_from_scan") {
+        // E07-T04: a cashier needs a manager's approval for this barcode; the product carries it.
+        const code = String(a.barcode).trim();
+        approve(s, "barcode_create_from_scan", null, a.approvalTokenId, code);
+        if (!input.variants.some((v) => (v.barcodes ?? []).some((b) => b.raw.trim() === code))) fail("VALIDATION_FAILED");
+      } else if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
       const existing = cmd === "product_update" ? (s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND")) : null;
       if (existing && existing.version !== a.baseVersion) fail("CONFLICT_VERSION");
       if (!input.name.trim()) fail("VALIDATION_FAILED", { field: "name" });
@@ -1170,7 +1178,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "app_preferences": {
       needSession(s);
       const get = (k: string) => JSON.parse(s.settings.get(k)?.valueJson ?? "null") as unknown;
-      return { scannerSuffix: get("scanner.suffix"), scannerMaxKeyGapMs: 35, lockTimeoutSecs: get("security.lock_timeout_secs") };
+      return { scannerSuffix: get("scanner.suffix"), scannerMaxKeyGapMs: 35, lockTimeoutSecs: get("security.lock_timeout_secs"), errorSound: s.errorSound ?? true };
     }
     case "auth_lock":
       needSession(s);

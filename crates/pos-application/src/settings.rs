@@ -160,6 +160,14 @@ pub const REGISTRY: &[SettingDef] = &[
         label: "Fastest typing that counts as a scan (ms between keys)",
         help: "Raise it for slow wireless scanners; people type far slower than any scanner.",
     },
+    SettingDef {
+        key: "scanner.error_sound",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Scanner",
+        label: "Beep when a code is not found or an action is refused",
+        help: "A short low tone. The message is always shown on screen too.",
+    },
 ];
 
 pub fn def(key: &str) -> Option<&'static SettingDef> {
@@ -272,6 +280,8 @@ pub struct Preferences {
     pub scanner_suffix: String,
     pub scanner_max_key_gap_ms: u32,
     pub lock_timeout_secs: u32,
+    /// E07-T04: a tone with a not-found or refusal message.
+    pub error_sound: bool,
 }
 
 impl SettingsService {
@@ -361,6 +371,7 @@ impl SettingsService {
                 .as_u64()
                 .and_then(|n| u32::try_from(n).ok())
                 .unwrap_or(300),
+            error_sound: get("scanner.error_sound").as_bool().unwrap_or(true),
         })
     }
 }

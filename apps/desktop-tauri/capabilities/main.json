@@ -47,6 +47,7 @@
     "allow-product-list",
     "allow-product-get",
     "allow-product-create",
+    "allow-product-create-from-scan",
     "allow-product-update",
     "allow-product-archive",
     "allow-catalog-lookup-code",

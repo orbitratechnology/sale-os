@@ -140,7 +140,7 @@ pub fn approvable(role: Role, permission: Permission) -> bool {
         && role == Role::Cashier
         && matches!(
             permission,
-            DiscountAboveThreshold | PriceOverride | CartVoid | ReturnCreate
+            DiscountAboveThreshold | PriceOverride | CartVoid | ReturnCreate | BarcodeCreateFromScan
         )
 }
 
@@ -180,7 +180,13 @@ mod tests {
             assert!(!approvable(Role::Owner, p), "{p:?}");
             assert!(!approvable(Role::Manager, p), "{p:?}");
         }
-        for p in [DiscountAboveThreshold, PriceOverride, CartVoid, ReturnCreate] {
+        for p in [
+            DiscountAboveThreshold,
+            PriceOverride,
+            CartVoid,
+            ReturnCreate,
+            BarcodeCreateFromScan,
+        ] {
             assert!(approvable(Role::Cashier, p), "{p:?}");
         }
         for p in [

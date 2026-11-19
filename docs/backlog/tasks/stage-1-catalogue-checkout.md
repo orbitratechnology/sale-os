@@ -260,9 +260,9 @@ hardware. It is measured by:
 ### E07-T04 · Unknown barcode flow
 - **Size** S · **Deps** E07-T02, E06-T06b · **PRD** BAR-006
 - **Acceptance:**
-  - [ ] A not-found toast shows the code and offers **Search** (pre-filled) and **Create product** (only if the user has `BarcodeCreateFromScan`; otherwise "Ask a manager", which opens the approval dialog).
-  - [ ] Create product opens the editor with the barcode pre-filled. Saving adds the item to the cart.
-  - [ ] An audible or visual error cue is shown; it is configurable and never only colour (a11y).
+  - [x] A not-found toast shows the code and offers **Search** (pre-filled) and **Create product** (only if the user has `BarcodeCreateFromScan`; otherwise "Ask a manager", which opens the approval dialog).
+  - [x] Create product opens the editor with the barcode pre-filled. Saving adds the item to the cart.
+  - [x] An audible or visual error cue is shown; it is configurable and never only colour (a11y).
 
 ## E08 Pricing, tax and discounts
 

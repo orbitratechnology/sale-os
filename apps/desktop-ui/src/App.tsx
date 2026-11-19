@@ -70,6 +70,7 @@ export function App() {
   // The shop's till preferences (E04-T03): scanner settings and the idle lock.
   const [scanPrefs, setScanPrefs] = useState<Partial<ScanDetectorConfig>>({});
   const [lockAfterSecs, setLockAfterSecs] = useState(0);
+  const [errorSound, setErrorSound] = useState(true);
   const userId = state?.session?.userId ?? null;
   const loadPrefs = useCallback(() => {
     void commands.appPreferences().then((res) => {
@@ -79,6 +80,7 @@ export function App() {
         maxInterKeyMs: res.data.scannerMaxKeyGapMs,
       });
       setLockAfterSecs(res.data.lockTimeoutSecs);
+      setErrorSound(res.data.errorSound);
     });
   }, []);
   useEffect(() => {
@@ -247,7 +249,8 @@ export function App() {
             workspace={workspace}
             productId={screen.productId}
             {...(screen.barcode ? { barcode: screen.barcode } : {})}
-            canEdit={canEdit}
+            {...(screen.approvalToken ? { approvalToken: screen.approvalToken } : {})}
+            canEdit={canEdit || Boolean(screen.approvalToken)}
             onSaved={(productId, created) => {
               // From the unknown-barcode prompt: put the new item in the cart and go back (E07-T04).
               if (created && screen.barcode) {
@@ -286,6 +289,7 @@ export function App() {
                 ? (group?: string) => setScreen({ kind: "settings", group })
                 : null
             }
+            errorSound={errorSound}
             gettingStarted={gettingStarted}
             onGettingStartedSeen={() => setGettingStarted(false)}
             onConflicts={
@@ -293,11 +297,12 @@ export function App() {
                 ? null
                 : () => setScreen({ kind: "conflicts" })
             }
-            onCreateProduct={(barcode) =>
+            onCreateProduct={(barcode, approvalToken) =>
               setScreen({
                 kind: "editor",
                 productId: null,
                 barcode,
+                ...(approvalToken ? { approvalToken } : {}),
                 returnTo: "till",
               })
             }
@@ -329,5 +334,7 @@ type Screen =
       kind: "editor";
       productId: string | null;
       barcode?: string;
+      /** A manager approved a cashier creating this product (E07-T04). */
+      approvalToken?: string;
       returnTo: "till" | "products" | "audit";
     };

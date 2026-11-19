@@ -91,6 +91,45 @@ impl CatalogService {
         Ok(product)
     }
 
+    /// E07-T04 (BAR-006): a product created at the till for a barcode nobody knew. Managers
+    /// and owners may; a cashier needs a manager's approval for exactly this barcode, and the
+    /// product must carry it. The audit entry names the approver.
+    pub async fn create_from_scan(
+        &self,
+        ctx: &CommandContext,
+        input: ProductInput,
+        barcode: &str,
+    ) -> Result<Product, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        let approver = if pos_domain::role_has(ctx.actor()?.role, Permission::CatalogEdit) {
+            None
+        } else {
+            ctx.authorize_with_approval(Permission::BarcodeCreateFromScan, barcode.trim(), None)?
+        };
+        let carries = input
+            .variants
+            .iter()
+            .flat_map(|v| &v.barcodes)
+            .any(|b| b.raw.trim() == barcode.trim());
+        if !carries {
+            return Err(AppError::Validation(
+                "the product must carry the scanned barcode".into(),
+                pos_domain::ErrorCode::ValidationFailed,
+            ));
+        }
+        let product = Product::create(input, ctx.ids.as_ref())?;
+        self.ensure_unique_across_products(&product).await?;
+        self.save_approved(
+            ctx,
+            product.clone(),
+            None,
+            audit::CATALOG_PRODUCT_CREATED,
+            approver,
+        )
+        .await?;
+        Ok(product)
+    }
+
     /// Replaces the product's state. `base_version` is the version the edit started from.
     pub async fn update(
         &self,
@@ -171,11 +210,25 @@ impl CatalogService {
         expected: Option<u64>,
         action: audit::AuditAction,
     ) -> Result<(), AppError> {
+        self.save_approved(ctx, product, expected, action, None).await
+    }
+
+    async fn save_approved(
+        &self,
+        ctx: &CommandContext,
+        product: Product,
+        expected: Option<u64>,
+        action: audit::AuditAction,
+        approver: Option<pos_domain::UserId>,
+    ) -> Result<(), AppError> {
         let ids = ctx.ids.as_ref();
         let event = OutboxDraft::product_upserted(ids, &product)?;
-        let entry = AuditEntry::new(ids, action, "product", product.id)
+        let mut entry = AuditEntry::new(ids, action, "product", product.id)
             .with_metadata(serde_json::json!({ "name": product.name, "version": product.version }))
             .linked_to(event.event_id);
+        if let Some(a) = approver {
+            entry = entry.with_approver(a);
+        }
         let set = WriteSet::builder(ctx.write_context())
             .put_product(product, expected)
             .outbox(event)

@@ -122,6 +122,12 @@ export const commands = {
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
 	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
 	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create", { product })),
+	/**
+	 *  E07-T04: a product for a barcode the till did not know, created from the "not found"
+	 *  prompt. A cashier needs a manager's approval for that barcode (`approvalTokenId`); the
+	 *  product must carry `barcode`.
+	 */
+	productCreateFromScan: (product: ProductInputDto_Deserialize, barcode: string, approvalTokenId: ApprovalId | null) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create_from_scan", { product, barcode, approvalTokenId })),
 	/**  `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`. */
 	productUpdate: (productId: ProductId, baseVersion: number, product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_update", { productId, baseVersion, product })),
 	productArchive: (productId: ProductId, baseVersion: number) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_archive", { productId, baseVersion })),
@@ -1546,6 +1552,8 @@ export type PreferencesDto = {
 	scannerMaxKeyGapMs: number,
 	/**  0: never lock. */
 	lockTimeoutSecs: number,
+	/**  Beep with a not-found or refusal message (E07-T04). */
+	errorSound: boolean,
 };
 
 export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;

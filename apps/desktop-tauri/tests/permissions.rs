@@ -207,6 +207,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"filter": {"query": "", "status": "active", "trackStock": null, "categoryId": null}, "offset": 0, "limit": 10}),
         ),
         ("product_get", Perm(CatalogView), json!({"productId": UNKNOWN_ID})),
+        (
+            "product_create_from_scan",
+            Perm(BarcodeCreateFromScan),
+            json!({"product": product["product"].clone(), "barcode": "NOT-ON-IT", "approvalTokenId": null}),
+        ),
         ("product_create", Perm(CatalogEdit), product),
         ("product_update", Perm(CatalogEdit), update),
         (
@@ -1671,7 +1676,7 @@ fn a_card_number_typed_anywhere_is_refused_and_stored_nowhere() {
                 continue;
             }
             let mut a = args.clone();
-            let typed = if key == "raw" || key == "query" {
+            let typed = if key == "raw" || key == "query" || key == "barcode" {
                 SWIPE
             } else {
                 PAN

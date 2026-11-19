@@ -42,6 +42,7 @@ export function ProductEditor({
   workspace,
   productId,
   barcode,
+  approvalToken,
   canEdit,
   onSaved,
   onClose,
@@ -50,6 +51,8 @@ export function ProductEditor({
   productId: string | null;
   /** From the unknown-barcode prompt: pre-filled on a new product (E07-T04). */
   barcode?: string;
+  /** A manager's approval for a cashier to create this one product (E07-T04). */
+  approvalToken?: string;
   canEdit: boolean;
   onSaved: (productId: string, created: boolean) => void;
   onClose: () => void;
@@ -136,7 +139,9 @@ export function ProductEditor({
     const res =
       draft.productId && draft.version !== null
         ? await commands.productUpdate(draft.productId, draft.version, input)
-        : await commands.productCreate(input);
+        : barcode
+          ? await commands.productCreateFromScan(input, barcode, approvalToken ?? null)
+          : await commands.productCreate(input);
     setBusy(false);
     if (res.status === "error") {
       const d = res.error.details;

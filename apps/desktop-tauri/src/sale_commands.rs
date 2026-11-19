@@ -67,6 +67,32 @@ pub async fn product_create(
     ProductDto::from_product(&p)
 }
 
+/// E07-T04: a product for a barcode the till did not know, created from the "not found"
+/// prompt. A cashier needs a manager's approval for that barcode (`approvalTokenId`); the
+/// product must carry `barcode`.
+#[tauri::command]
+#[specta::specta]
+pub async fn product_create_from_scan(
+    services: State<'_, AppServices>,
+    product: ProductInputDto,
+    barcode: String,
+    approval_token_id: Option<ApprovalId>,
+) -> Result<ProductDto, IpcError> {
+    let input = product.into_domain()?;
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services
+        .app()?
+        .catalog
+        .create_from_scan(&ctx, input, &barcode)
+        .await
+    {
+        Ok(p) => ProductDto::from_product(&p),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
+}
+
 /// `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`.
 #[tauri::command]
 #[specta::specta]

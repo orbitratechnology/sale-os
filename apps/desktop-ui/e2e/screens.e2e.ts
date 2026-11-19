@@ -263,6 +263,37 @@ describe("checkout (E09-T03..T06)", () => {
     expect(await search.evaluate((el) => el === document.activeElement)).toBe(true);
   });
 
+  it("an unknown code beeps once with the message, unless the shop turned the tone off (E07-T04)", async () => {
+    for (const on of [true, false]) {
+      const page = await open("signIn");
+      await page.evaluate((sound) => {
+        const w = window as unknown as { __tones: number; AudioContext: unknown };
+        w.__tones = 0;
+        // A stand-in audio device that counts tones.
+        w.AudioContext = class {
+          currentTime = 0;
+          destination = {};
+          createGain() {
+            return { gain: { value: 0 }, connect: (d: unknown) => d };
+          }
+          createOscillator() {
+            return { type: "", frequency: { value: 0 }, connect: (g: { connect: (d: unknown) => unknown }) => g, start: () => (w.__tones += 1), stop: () => undefined };
+          }
+        };
+        window.__fake.errorSound = sound;
+      }, on);
+      await page.getByRole("button", { name: /Olu/ }).click();
+      await page.keyboard.type("1234");
+      await page.keyboard.press("Enter");
+      await page.getByRole("region", { name: "Cart lines" }).waitFor();
+      await expect.poll(() => calls(page, "app_preferences").then((c) => c.length)).toBeGreaterThan(0);
+      await scan(page, "9300633603209");
+      await page.getByText("No product with code").waitFor();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __tones: number }).__tones)).toBe(on ? 1 : 0);
+      await page.close();
+    }
+  });
+
   it("search: type, arrow down, Enter adds; manual code entry uses the scan path", async () => {
     const page = await checkout();
     await page.keyboard.press("F2");
