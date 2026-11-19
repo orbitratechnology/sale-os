@@ -139,5 +139,5 @@ Windows hardware (D-05):
 ### E19-T12 · MVP acceptance suite (AT-01…AT-13) automated
 - **Size** M · **Deps** all · **PRD** §16.4, §20
 - **Acceptance:**
-  - [ ] Every AT in [08 §3](../08-test-strategy.md#3-mvp-acceptance-tests-prd-164--automation-mapping) is implemented as a named, automated test and runs green on the Windows reference machine and in CI.
+  - [ ] Every AT in [08 §3](../08-test-strategy.md#3-mvp-acceptance-tests-prd-164--automation-mapping) is implemented as a named, automated test and runs green on the Windows reference machine and in CI. *(Automated: `cargo xtask acceptance`, green on Linux and in the CI job on Windows and Linux; the reference machine run is to do.)*
   - [ ] The report is attached to the pilot go/no-go decision.
