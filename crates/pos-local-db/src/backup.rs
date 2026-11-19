@@ -143,6 +143,41 @@ async fn open_file(path: &Path) -> Result<sqlx::SqliteConnection, StoreError> {
         .map_err(StoreError::from_sqlx)
 }
 
+/// A private copy of a database file that someone else may have written (a backup on a USB
+/// stick), removed when dropped. RUSTSEC-2026-0459 (SQLite before 3.54) can leak process
+/// memory when a database is opened with a crafted sibling `-wal` file. A backup is one
+/// self-contained file (`VACUUM INTO`), so only that file is copied, into a new folder of our
+/// own: a `-wal` placed next to the original is never read.
+struct Staged {
+    dir: PathBuf,
+    file: PathBuf,
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn stage(path: &Path) -> Result<Staged, StoreError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "sale-os-stage-{}-{}-{}",
+        std::process::id(),
+        now_ms(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    // `create_dir`, not `create_dir_all`: the folder must be new.
+    std::fs::create_dir(&dir).map_err(io("stage backup"))?;
+    let staged = Staged {
+        file: dir.join("backup.db"),
+        dir,
+    };
+    std::fs::copy(path, &staged.file).map_err(io("stage backup"))?;
+    Ok(staged)
+}
+
 /// Reads what a database file holds, for its description.
 async fn describe(path: &Path, kind: BackupKind, created_at: i64) -> Result<BackupMeta, StoreError> {
     let mut c = open_file(path).await?;
@@ -305,8 +340,15 @@ pub fn copy_to(backup: &BackupInfo, folder: &Path) -> Result<BackupInfo, StoreEr
     Ok(info(target, backup.meta.clone()))
 }
 
-/// A full `integrity_check` of a backup file, and whether this app can open it.
+/// A full `integrity_check` of a backup file, and whether this app can open it. The file is
+/// checked as a private copy (see [`Staged`]).
 pub async fn verify(path: &Path) -> Result<Verification, StoreError> {
+    let staged = stage(path)?;
+    check(&staged.file).await
+}
+
+/// [`verify`] for a file of our own (no stranger's `-wal` can be beside it).
+async fn check(path: &Path) -> Result<Verification, StoreError> {
     let head = MIGRATOR.iter().map(|m| m.version).max().unwrap_or(0);
     let mut c = open_file(path).await?;
     let check: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
@@ -325,7 +367,8 @@ pub async fn verify(path: &Path) -> Result<Verification, StoreError> {
 /// How a database file is linked to the cloud: `(link_state, device_id)` from its
 /// `sync_state` (`("unlinked", None)` if it has none).
 pub async fn link_of(path: &Path) -> Result<(String, Option<String>), StoreError> {
-    let mut c = open_file(path).await?;
+    let staged = stage(path)?;
+    let mut c = open_file(&staged.file).await?;
     let row: Option<(String, Option<String>)> =
         sqlx::query_as("SELECT link_state, device_id FROM sync_state WHERE id = 1")
             .fetch_optional(&mut c)
@@ -364,30 +407,52 @@ pub async fn begin_replay(db: &crate::LocalDb) -> Result<u64, StoreError> {
 /// place under a temporary name and renamed, so a crash leaves either database whole. An
 /// older backup is upgraded the next time the database is opened.
 pub async fn restore(opts: &DbOptions, backup: &Path) -> Result<RestoreReport, StoreError> {
-    let v = verify(backup).await?;
-    if let Some(problem) = v.problem {
-        return Err(StoreError::Corrupt(format!(
-            "the backup failed its integrity check: {problem}"
-        )));
+    let dir = opts
+        .path
+        .parent()
+        .ok_or_else(|| StoreError::io("restore", std::io::Error::other("database path has no folder")))?;
+    // Copied in first, then checked and described as our own file: what is checked is what is
+    // restored, and nothing beside the original (a stranger's `-wal`) is ever opened.
+    let incoming = dir.join("pos.db.restoring");
+    let siblings = |p: &Path| {
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let mut s = p.as_os_str().to_owned();
+            s.push(suffix);
+            let _ = std::fs::remove_file(PathBuf::from(s));
+        }
+    };
+    siblings(&incoming);
+    std::fs::copy(backup, &incoming).map_err(io("copy backup into place"))?;
+    let checked = async {
+        let v = check(&incoming).await?;
+        if let Some(problem) = v.problem {
+            return Err(StoreError::Corrupt(format!(
+                "the backup failed its integrity check: {problem}"
+            )));
+        }
+        if v.too_new {
+            return Err(StoreError::SchemaTooNew {
+                db_version: v.schema_version,
+                app_version: MIGRATOR.iter().map(|m| m.version).max().unwrap_or(0),
+            });
+        }
+        describe(&incoming, BackupKind::Manual, now_ms()).await
     }
-    if v.too_new {
-        return Err(StoreError::SchemaTooNew {
-            db_version: v.schema_version,
-            app_version: MIGRATOR.iter().map(|m| m.version).max().unwrap_or(0),
-        });
-    }
-    let restored = describe(backup, BackupKind::Manual, now_ms()).await?;
+    .await;
+    let restored = match checked {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = std::fs::remove_file(&incoming);
+            siblings(&incoming);
+            return Err(e);
+        }
+    };
+    siblings(&incoming);
     let kept = if opts.path.exists() {
         Some(keep_current(opts).await?)
     } else {
         None
     };
-    let dir = opts
-        .path
-        .parent()
-        .ok_or_else(|| StoreError::io("restore", std::io::Error::other("database path has no folder")))?;
-    let incoming = dir.join("pos.db.restoring");
-    std::fs::copy(backup, &incoming).map_err(io("copy backup into place"))?;
     std::fs::File::open(&incoming)
         .and_then(|f| f.sync_all())
         .map_err(io("sync restored database"))?;
@@ -456,4 +521,29 @@ async fn keep_current(opts: &DbOptions) -> Result<BackupInfo, StoreError> {
     write_meta(&target, &meta)?;
     prune(&opts.backups_dir, BackupKind::PreRestore)?;
     Ok(info(target, meta))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stage;
+
+    #[test]
+    fn a_staged_copy_is_private_and_removed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let original = dir.path().join("b.db");
+        std::fs::write(&original, b"abc").unwrap();
+        let mut wal = original.as_os_str().to_owned();
+        wal.push("-wal");
+        std::fs::write(&wal, b"stranger").unwrap();
+        let staged = stage(&original).unwrap();
+        let folder = staged.dir.clone();
+        assert_eq!(std::fs::read(&staged.file).unwrap(), b"abc");
+        let names: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["backup.db"], "only the database file is copied");
+        drop(staged);
+        assert!(!folder.exists());
+    }
 }

@@ -180,6 +180,16 @@ pub struct StoredCart {
     pub lines: Vec<StoredCartLine>,
 }
 
+/// A parked cart with who parked it, when, and the label they gave (POS-012).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParkedCart {
+    pub cart: StoredCart,
+    pub label: Option<String>,
+    pub parked_at: pos_domain::Timestamp,
+    pub parked_by: pos_domain::UserId,
+    pub parked_by_name: String,
+}
+
 /// How this business prices (from `businesses`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PricingSettings {
@@ -195,6 +205,8 @@ pub struct PricingSettings {
 pub trait CartQueries: Send + Sync {
     /// The register's open cart, if any (at most one, enforced by a unique index).
     async fn open_cart(&self, register: pos_domain::RegisterId) -> Result<Option<StoredCart>, QueryError>;
+    /// The register's parked carts, oldest first (POS-012).
+    async fn parked_carts(&self, register: pos_domain::RegisterId) -> Result<Vec<ParkedCart>, QueryError>;
     /// A variant ready for the cart, with its tax rates resolved for `date`. Returned even
     /// if since archived, so a recovered cart can still show (and remove) it.
     async fn sellable(

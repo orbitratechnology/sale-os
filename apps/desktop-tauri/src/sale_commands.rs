@@ -350,6 +350,91 @@ pub async fn cart_void(
     res
 }
 
+/// A parked cart in the list (POS-012).
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ParkedCartDto {
+    pub cart_id: pos_domain::CartId,
+    pub label: Option<String>,
+    /// RFC 3339.
+    pub parked_at: String,
+    pub parked_by_name: String,
+    pub lines: u32,
+    /// At today's prices, minor units as a decimal string.
+    pub total_minor: String,
+}
+
+fn parked_dto(list: Vec<pos_application::cart::ParkedSummary>) -> Vec<ParkedCartDto> {
+    list.into_iter()
+        .map(|p| ParkedCartDto {
+            cart_id: p.cart_id,
+            label: p.label,
+            parked_at: p.parked_at.to_rfc3339(),
+            parked_by_name: p.parked_by_name,
+            lines: u32::try_from(p.lines).unwrap_or(u32::MAX),
+            total_minor: p.total.minor().to_string(),
+        })
+        .collect()
+}
+
+/// POS-012: sets the cart aside (with an optional label, at most 40 characters) and returns
+/// a fresh empty one. An empty cart cannot be parked; at most 20 per register.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_park(
+    services: State<'_, AppServices>,
+    revision: u32,
+    label: Option<String>,
+) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services
+        .app()?
+        .carts
+        .park(&ctx, u64::from(revision), label.as_deref())
+        .await
+        .map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// POS-012: the parked carts on this register, oldest first, priced as they sell today.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_parked_list(services: State<'_, AppServices>) -> Result<Vec<ParkedCartDto>, IpcError> {
+    let ctx = services.context().await?;
+    Ok(parked_dto(services.app()?.carts.parked(&ctx).await.map_err(err)?))
+}
+
+/// POS-012: makes a parked cart the current one. The current cart must be empty.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_resume(
+    services: State<'_, AppServices>,
+    cart_id: pos_domain::CartId,
+) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services.app()?.carts.resume(&ctx, cart_id).await.map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// POS-012: voids a parked cart without resuming it, with a reason; a cashier needs a
+/// manager's approval (as for voiding a sale). Returns the parked carts left.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_discard_parked(
+    services: State<'_, AppServices>,
+    cart_id: pos_domain::CartId,
+    reason: String,
+    approval_token_id: Option<ApprovalId>,
+) -> Result<Vec<ParkedCartDto>, IpcError> {
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services.app()?.carts.discard_parked(&ctx, cart_id, &reason).await {
+        Ok(list) => Ok(parked_dto(list)),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
+}
+
 /// Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
 /// stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
 #[tauri::command]

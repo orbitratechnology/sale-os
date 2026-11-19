@@ -152,6 +152,8 @@ export function useCart(onSignedOut: () => void) {
       run((t) => commands.cartOverridePrice(lineId, minor, reason, t), lineId),
     clear: () => run(() => commands.cartClear(cart?.revision ?? 0)),
     void: (reason: string) => run((t) => commands.cartVoid(cart?.revision ?? 0, reason, t)),
+    park: (label: string | null) => run(() => commands.cartPark(cart?.revision ?? 0, label)),
+    resume: (cartId: string) => run(() => commands.cartResume(cartId)),
   };
 }
 

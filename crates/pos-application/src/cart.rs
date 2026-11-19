@@ -115,6 +115,21 @@ impl CartService {
                 base: None,
             });
         };
+        let revision = stored.revision;
+        let cart = self.to_cart(stored, date).await?;
+        Ok(Loaded {
+            cart,
+            base: Some(revision),
+        })
+    }
+
+    /// A stored cart's lines, priced as they sell on `date` (current prices: a parked or
+    /// recovered cart picks up any price change).
+    async fn to_cart(
+        &self,
+        stored: crate::queries::StoredCart,
+        date: BusinessDate,
+    ) -> Result<Cart, AppError> {
         let mut lines = Vec::with_capacity(stored.lines.len());
         for l in stored.lines {
             let variant = self
@@ -131,17 +146,13 @@ impl CartService {
                 added_via: l.added_via,
             });
         }
-        let cart = Cart {
+        Ok(Cart {
             id: stored.cart_id,
             status: CartStatus::Open,
             lines,
             order_discount: stored.order_discount,
             revision: stored.revision,
             void_reason: None,
-        };
-        Ok(Loaded {
-            cart,
-            base: Some(stored.revision),
         })
     }
 
@@ -419,6 +430,190 @@ impl CartService {
         self.store.apply(set).await?;
         drop(guard);
         self.current(ctx).await
+    }
+}
+
+/// At most this many parked carts per register (POS-012): beyond it, finish or discard some.
+pub const MAX_PARKED: usize = 20;
+/// The longest label a parked cart can have.
+pub const MAX_PARKED_LABEL: usize = 40;
+
+/// A parked cart as the list shows it (POS-012).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParkedSummary {
+    pub cart_id: pos_domain::CartId,
+    pub label: Option<String>,
+    pub parked_at: pos_domain::Timestamp,
+    pub parked_by_name: String,
+    pub lines: usize,
+    /// At today's prices.
+    pub total: Money,
+}
+
+impl CartService {
+    /// POS-012: sets the open cart aside with an optional label and starts an empty one.
+    pub async fn park(
+        &self,
+        ctx: &CommandContext,
+        revision: u64,
+        label: Option<&str>,
+    ) -> Result<CartView, AppError> {
+        ctx.authorize(Permission::SaleComplete)?;
+        let guard = self.exclusive().await;
+        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let label = label.map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned);
+        if label
+            .as_ref()
+            .is_some_and(|l| l.chars().count() > MAX_PARKED_LABEL)
+        {
+            return Err(AppError::Validation(
+                format!("a label is at most {MAX_PARKED_LABEL} characters"),
+                pos_domain::ErrorCode::ValidationFailed,
+            ));
+        }
+        cart.park(revision).map_err(cart_err)?;
+        let base = base.ok_or_else(|| cart_err(pos_domain::cart::CartError::Empty))?;
+        if self.carts.parked_carts(ctx.register.register_id).await?.len() >= MAX_PARKED {
+            return Err(AppError::Validation(
+                format!("{MAX_PARKED} carts are already parked on this till: finish or discard one first"),
+                pos_domain::ErrorCode::ValidationFailed,
+            ));
+        }
+        let priced = self.view(ctx, cart.clone(), Vec::new()).await?.priced;
+        let actor = ctx.actor()?.clone();
+        let entry = AuditEntry::new(ctx.ids.as_ref(), audit::CART_PARKED, "cart", cart.id).with_metadata(
+            serde_json::json!({
+                "lines": cart.lines.len(),
+                "totalMinor": priced.total.minor().to_string(),
+                "label": label,
+            }),
+        );
+        let set = WriteSet::builder(ctx.write_context())
+            .park_cart(cart.id, base, label, actor.user_id)
+            .audit(entry)
+            .build()?;
+        self.store.apply(set).await?;
+        drop(guard);
+        self.current(ctx).await
+    }
+
+    /// The parked carts on this register, oldest first, priced as they would sell today.
+    pub async fn parked(&self, ctx: &CommandContext) -> Result<Vec<ParkedSummary>, AppError> {
+        ctx.authorize(Permission::SaleComplete)?;
+        let settings = self.carts.pricing_settings().await?;
+        let date = self.today(ctx, &settings)?;
+        let policy = PricingPolicy::new(settings.tax_mode);
+        let mut out = Vec::new();
+        for p in self.carts.parked_carts(ctx.register.register_id).await? {
+            let cart = self.to_cart(p.cart, date).await?;
+            let total = price_cart(&cart.pricing_lines(), cart.order_discount.as_ref(), &policy)
+                .map_err(|e| AppError::Validation(e.to_string(), pos_domain::HasErrorCode::error_code(&e)))?
+                .total;
+            out.push(ParkedSummary {
+                cart_id: cart.id,
+                label: p.label,
+                parked_at: p.parked_at,
+                parked_by_name: p.parked_by_name,
+                lines: cart.lines.len(),
+                total,
+            });
+        }
+        Ok(out)
+    }
+
+    /// POS-012: makes a parked cart the open one again, at today's prices. The current cart
+    /// must be empty (park or finish it first); an empty one is simply closed.
+    pub async fn resume(
+        &self,
+        ctx: &CommandContext,
+        cart_id: pos_domain::CartId,
+    ) -> Result<CartView, AppError> {
+        ctx.authorize(Permission::SaleComplete)?;
+        let guard = self.exclusive().await;
+        let parked = self
+            .carts
+            .parked_carts(ctx.register.register_id)
+            .await?
+            .into_iter()
+            .find(|p| p.cart.cart_id == cart_id)
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "that cart is no longer parked (someone resumed or discarded it)".into(),
+                    pos_domain::ErrorCode::CartRevisionMismatch,
+                )
+            })?;
+        let Loaded {
+            cart: mut current,
+            base,
+        } = self.load(ctx).await?;
+        if !current.lines.is_empty() {
+            return Err(AppError::Validation(
+                "park or finish the current sale before resuming another".into(),
+                pos_domain::ErrorCode::ValidationFailed,
+            ));
+        }
+        let actor = ctx.actor()?.clone();
+        let mut b = WriteSet::builder(ctx.write_context());
+        if let Some(base) = base {
+            // The empty open cart is closed, not kept: one open cart per register.
+            current.void(current.revision, "").map_err(cart_err)?;
+            b = b.put_cart(current, actor.user_id, Some(base));
+        }
+        let entry = AuditEntry::new(ctx.ids.as_ref(), audit::CART_RESUMED, "cart", cart_id).with_metadata(
+            serde_json::json!({
+                "lines": parked.cart.lines.len(),
+                "label": parked.label,
+                "parkedBy": parked.parked_by.to_string(),
+                "parkedAt": parked.parked_at.to_rfc3339(),
+            }),
+        );
+        self.store
+            .apply(b.resume_cart(cart_id).audit(entry).build()?)
+            .await?;
+        drop(guard);
+        self.current(ctx).await
+    }
+
+    /// POS-012: voids a parked cart without resuming it (a customer who never came back).
+    /// Like voiding a sale, a cashier needs approval and a reason.
+    pub async fn discard_parked(
+        &self,
+        ctx: &CommandContext,
+        cart_id: pos_domain::CartId,
+        reason: &str,
+    ) -> Result<Vec<ParkedSummary>, AppError> {
+        let approver = ctx.authorize_with_approval(Permission::CartVoid, cart_id, None)?;
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(cart_err(pos_domain::cart::CartError::ReasonRequired));
+        }
+        let parked = self
+            .carts
+            .parked_carts(ctx.register.register_id)
+            .await?
+            .into_iter()
+            .find(|p| p.cart.cart_id == cart_id)
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "that cart is no longer parked (someone resumed or discarded it)".into(),
+                    pos_domain::ErrorCode::CartRevisionMismatch,
+                )
+            })?;
+        let mut entry = AuditEntry::new(ctx.ids.as_ref(), audit::CART_PARKED_DISCARDED, "cart", cart_id)
+            .with_metadata(serde_json::json!({
+                "lines": parked.cart.lines.len(),
+                "label": parked.label,
+                "reason": reason,
+            }));
+        if let Some(a) = approver {
+            entry = entry.with_approver(a);
+        }
+        let set = WriteSet::builder(ctx.write_context())
+            .discard_parked_cart(cart_id, reason.to_owned())
+            .audit(entry)
+            .build()?;
+        self.store.apply(set).await?;
+        self.parked(ctx).await
     }
 }
 

@@ -252,6 +252,20 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"revision": 0, "reason": "harness", "approvalTokenId": null}),
         ),
         ("cart_clear", Perm(CartClear), json!({"revision": 0})),
+        // POS-012. A stale revision: allowed roles get past the permission check, and the
+        // harness's cart keeps its line.
+        (
+            "cart_park",
+            Perm(SaleComplete),
+            json!({"revision": 99999, "label": "harness"}),
+        ),
+        ("cart_parked_list", Perm(SaleComplete), json!({})),
+        ("cart_resume", Perm(SaleComplete), json!({"cartId": UNKNOWN_ID})),
+        (
+            "cart_discard_parked",
+            Perm(CartVoid),
+            json!({"cartId": UNKNOWN_ID, "reason": "harness", "approvalTokenId": null}),
+        ),
         (
             "checkout_complete",
             Perm(SaleComplete),

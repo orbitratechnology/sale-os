@@ -318,6 +318,62 @@ describe("checkout (E09-T03..T06)", () => {
     expect((await calls(page, "cart_clear"))[0]).toMatchObject({ revision: 1 });
   });
 
+  it("park with F5, serve someone else, resume with Shift+F5; a cashier's discard needs a manager (POS-012)", async () => {
+    const page = await checkout();
+    // Nothing to park yet: F5 does nothing (and does not reload the page).
+    await page.keyboard.press("F5");
+    expect(await page.getByRole("dialog").count()).toBe(0);
+    await scan(page, COLA);
+    await scan(page, COLA);
+    await page.waitForFunction(() => document.querySelector("[data-testid=qty]")?.textContent === "2");
+
+    await page.keyboard.press("F5");
+    const park = page.getByRole("dialog", { name: "Park this cart?" });
+    await park.getByLabel(/^Label/).fill("blue coat");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 0);
+    await page.getByRole("button", { name: /^Parked \(1\)/ }).waitFor();
+    expect((await calls(page, "cart_park"))[0]).toMatchObject({ label: "blue coat" });
+
+    // The next customer.
+    await scan(page, CRISPS);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("Shift+F5");
+    const parked = page.getByRole("dialog", { name: "Parked carts" });
+    await parked.getByText("Park or finish the current sale to resume one of these.").waitFor();
+    const row = parked.getByTestId("parked-row").first();
+    expect(await row.getByRole("rowheader").textContent()).toBe("blue coat");
+    expect(await row.getByRole("button", { name: "Resume" }).isDisabled()).toBe(true);
+    await page.keyboard.press("Escape");
+    await parked.waitFor({ state: "detached" });
+
+    // That customer is done (cleared here for brevity); Enter resumes the first parked cart.
+    await page.getByRole("button", { name: "Clear cart" }).click();
+    await page.getByRole("dialog", { name: "Clear the cart?" }).getByRole("button", { name: "Clear cart" }).click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 0);
+    await page.keyboard.press("Shift+F5");
+    await parked.getByTestId("parked-row").first().waitFor();
+    await page.keyboard.press("Enter");
+    await parked.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelector("[data-testid=qty]")?.textContent === "2");
+    await page.getByRole("button", { name: /^Parked \(0\)/ }).waitFor();
+
+    // Park it again; a cashier discards it: reason, then a manager's PIN.
+    await page.keyboard.press("F5");
+    await page.keyboard.press("Enter"); // no label
+    await page.getByRole("button", { name: /^Parked \(1\)/ }).waitFor();
+    await page.evaluate(() => {
+      if (window.__fake.session) window.__fake.session.role = "cashier";
+    });
+    await page.keyboard.press("Shift+F5");
+    await parked.getByTestId("parked-row").first().getByRole("button", { name: "Discard…" }).click();
+    const group = parked.getByRole("group", { name: "Discard a parked cart" });
+    await group.getByLabel("Reason").fill("customer left");
+    await group.getByRole("button", { name: "Discard cart" }).click();
+    await page.getByRole("dialog", { name: "Manager approval" }).waitFor();
+    expect(await calls(page, "cart_discard_parked")).toHaveLength(1);
+  });
+
   it("F12 locks: back to sign-in", async () => {
     const page = await checkout();
     await page.keyboard.press("F12");

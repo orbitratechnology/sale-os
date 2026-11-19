@@ -191,6 +191,8 @@ select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); bord
 
 /* Payment (E10-T03) */
 .dialog.pay { width: min(640px, calc(100vw - 32px)); gap: 12px; }
+.dialog.wide { width: min(780px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto; }
+.dialog .sales-table tr.selected { background: var(--selected); box-shadow: inset 4px 0 0 var(--accent); }
 .pay-head { display: flex; gap: 32px; align-items: end; }
 .pay-total, .pay-remaining { display: block; font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--total); }
 .pay-head .small { margin: 0; }

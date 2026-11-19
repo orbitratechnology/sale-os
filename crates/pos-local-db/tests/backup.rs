@@ -206,3 +206,34 @@ async fn retention_per_kind_and_a_second_folder() {
     assert!(backup::verify(&copied.path).await.unwrap().restorable());
     assert_eq!(backup::list(usb.path()).len(), 1);
 }
+
+/// RUSTSEC-2026-0459: a backup is never opened beside a stranger's `-wal`. One placed next to
+/// a backup on the stick is ignored by the check and the restore, and left untouched.
+#[tokio::test]
+async fn a_wal_file_beside_a_backup_is_never_opened() {
+    let shop = common::shop().await;
+    let db = shop.store.db().clone();
+    let tea = product(&shop).await;
+    sell(&shop, tea).await;
+    let made = db.backup(BackupKind::Manual).await.unwrap();
+    let usb = tempfile::TempDir::new().unwrap();
+    let copied = backup::copy_to(&made, usb.path()).unwrap();
+    let mut wal = copied.path.as_os_str().to_owned();
+    wal.push("-wal");
+    std::fs::write(&wal, vec![0xA5u8; 64 * 1024]).unwrap();
+
+    assert!(backup::verify(&copied.path).await.unwrap().restorable());
+    assert_eq!(backup::link_of(&copied.path).await.unwrap().0, "unlinked");
+    let opts = DbOptions::in_dir(db.path().parent().unwrap());
+    db.clone().close().await;
+    let report = backup::restore(&opts, &copied.path).await.unwrap();
+    assert_eq!(report.restored.sales, 1);
+    assert_eq!(
+        std::fs::read(&wal).unwrap(),
+        vec![0xA5u8; 64 * 1024],
+        "left as it was"
+    );
+    let back = LocalDb::open(&opts).await.unwrap();
+    assert_eq!(sales(&back).await, 1);
+    back.close().await;
+}

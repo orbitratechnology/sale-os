@@ -9,6 +9,7 @@ import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
 import { Dialog } from "./Dialog";
+import { ParkedDialog } from "./ParkedDialog";
 import { PaymentPanel } from "./PaymentPanel";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
@@ -21,6 +22,8 @@ type Modal =
   | "void"
   | "orderDiscount"
   | "price"
+  | "park"
+  | "parked"
   | { reason: string; then: (reason: string) => void }
   | null;
 
@@ -30,6 +33,8 @@ export const KEYS = {
   quantity: "F3",
   discount: "F4",
   remove: "Delete",
+  park: "F5",
+  parked: "Shift+F5",
   returns: "F7",
   sales: "F8",
   drawer: "F10",
@@ -99,6 +104,11 @@ export function Checkout({
   const [code, setCode] = useState("");
   const [scannerReady, setScannerReady] = useState(true);
   const search = useRef<SearchHandle | null>(null);
+  const [parkedCount, setParkedCount] = useState(0);
+  const countParked = useCallback(() => {
+    void commands.cartParkedList().then((res) => res.status === "ok" && setParkedCount(res.data.length));
+  }, []);
+  useEffect(countParked, [countParked]);
   const exponent = c.cart?.currencyExponent ?? 2;
   const money = (minor: string) => formatMoney(minor, { exponent });
   const selectedLine = c.line(c.selected);
@@ -177,6 +187,12 @@ export function Checkout({
         case "F4":
           e.preventDefault();
           if (sel) setEditing({ lineId: sel, field: "discount" });
+          return;
+        case "F5":
+          // Also stops the WebView reloading the page.
+          e.preventDefault();
+          if (e.shiftKey) setModal("parked");
+          else if (c.cart?.lines.length) setModal("park");
           return;
         case "F6":
           e.preventDefault();
@@ -338,6 +354,12 @@ export function Checkout({
           <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("void")}>
             Void sale
           </button>
+          <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("park")}>
+            Park <kbd>F5</kbd>
+          </button>
+          <button type="button" className="secondary" onClick={() => setModal("parked")}>
+            Parked ({parkedCount}) <kbd>⇧F5</kbd>
+          </button>
           <button type="button" className="secondary" onClick={onProducts}>
             Products <kbd>F6</kbd>
           </button>
@@ -429,6 +451,37 @@ export function Checkout({
         >
           <p>The cart is closed and kept for the audit trail. A new, empty cart opens.</p>
         </Dialog>
+      )}
+      {modal === "park" && (
+        <Dialog
+          title="Park this cart?"
+          confirmLabel="Park"
+          input={{ label: "Label, to find it again (optional)", optional: true, maxLength: 40 }}
+          onCancel={() => setModal(null)}
+          onConfirm={(label) => {
+            setModal(null);
+            void c.park(label.trim() || null).then((ok) => ok && countParked());
+          }}
+        >
+          <p>
+            The {cart?.lines.length} {cart?.lines.length === 1 ? "line is" : "lines are"} set aside and an empty cart opens for
+            the next customer. Resume it from Parked (<kbd>⇧F5</kbd>); prices are checked again then.
+          </p>
+        </Dialog>
+      )}
+      {modal === "parked" && (
+        <ParkedDialog
+          exponent={exponent}
+          canResume={!hasLines}
+          paused={c.approval !== null}
+          onCount={setParkedCount}
+          onApproval={c.setApproval}
+          onClose={() => setModal(null)}
+          onResume={(cartId) => {
+            setModal(null);
+            void c.resume(cartId).then(() => countParked());
+          }}
+        />
       )}
       {modal === "orderDiscount" && (
         <Dialog

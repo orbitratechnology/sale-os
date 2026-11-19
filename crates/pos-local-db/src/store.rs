@@ -1416,6 +1416,73 @@ pub(crate) async fn run_ops(
                     });
                 }
             }
+            WriteOp::ParkCart {
+                cart_id,
+                expected_revision,
+                label,
+                parked_by,
+            } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'parked', parked_label = ?1, parked_at = ?2, parked_by = ?3,
+                       updated_at = ?2, closed_at = ?2, revision = revision + 1
+                     WHERE cart_id = ?4 AND register_id = ?5 AND revision = ?6 AND status = 'open'",
+                )
+                .bind(label)
+                .bind(ctx.occurred_at.as_millis())
+                .bind(parked_by.to_string())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(as_i64(*expected_revision)?)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch {
+                        expected: Some(*expected_revision),
+                    });
+                }
+            }
+            WriteOp::ResumeCart { cart_id } => {
+                st.step()?;
+                // Another open cart (one with lines, made meanwhile) trips the unique index:
+                // the caller's view is stale.
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'open', parked_label = NULL, parked_at = NULL, parked_by = NULL,
+                       closed_at = NULL, updated_at = ?1, revision = revision + 1
+                     WHERE cart_id = ?2 AND register_id = ?3 AND status = 'parked'",
+                )
+                .bind(ctx.occurred_at.as_millis())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| match map_sqlx(e) {
+                    WriteError::UniqueViolation { .. } => WriteError::CartRevisionMismatch { expected: None },
+                    other => other,
+                })?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch { expected: None });
+                }
+            }
+            WriteOp::DiscardParkedCart { cart_id, reason } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'voided', void_reason = ?1, updated_at = ?2, closed_at = ?2,
+                       revision = revision + 1
+                     WHERE cart_id = ?3 AND register_id = ?4 AND status = 'parked'",
+                )
+                .bind(reason)
+                .bind(ctx.occurred_at.as_millis())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch { expected: None });
+                }
+            }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;
                 sqlx::query(

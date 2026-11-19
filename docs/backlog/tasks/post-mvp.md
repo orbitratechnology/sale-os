@@ -8,7 +8,7 @@ need a redesign.
 
 | Order | PRD ID | Item | Prio | Extension point already in place |
 |---|---|---|---|---|
-| 1 | POS-012 | Park and retrieve carts | P1 | `carts.status = 'parked'` is already allowed. Relax the unique-open-cart index to open-only (already the case). |
+| 1 | POS-012 | Park and retrieve carts | P1 | **Done (2026-11-19)**: see status.md. |
 | 2 | INV-010 | Cycle counts and stocktake reconciliation | P1 | New `inventory_documents.doc_type = 'count'`, which produces `correction` movements |
 | 3 | REP-007 | Cost-based gross margin | P1 | `sale_lines.unit_cost_minor` is already snapshotted. Needs a valuation policy ADR (average or FIFO). |
 | 4 | PAY-007 / PAY-008 | Real payment provider and reconciliation | P1 | `PaymentPort`, `tender_status_events`, `confirmation_source = provider`, and the E10-T02 state machine |

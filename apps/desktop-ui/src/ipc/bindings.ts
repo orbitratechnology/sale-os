@@ -147,6 +147,20 @@ export const commands = {
 	 */
 	cartVoid: (revision: number, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason, approvalTokenId })),
 	/**
+	 *  POS-012: sets the cart aside (with an optional label, at most 40 characters) and returns
+	 *  a fresh empty one. An empty cart cannot be parked; at most 20 per register.
+	 */
+	cartPark: (revision: number, label: string | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_park", { revision, label })),
+	/**  POS-012: the parked carts on this register, oldest first, priced as they sell today. */
+	cartParkedList: () => typedError<ParkedCartDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("cart_parked_list")),
+	/**  POS-012: makes a parked cart the current one. The current cart must be empty. */
+	cartResume: (cartId: CartId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_resume", { cartId })),
+	/**
+	 *  POS-012: voids a parked cart without resuming it, with a reason; a cashier needs a
+	 *  manager's approval (as for voiding a sale). Returns the parked carts left.
+	 */
+	cartDiscardParked: (cartId: CartId, reason: string, approvalTokenId: ApprovalId | null) => typedError<ParkedCartDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("cart_discard_parked", { cartId, reason, approvalTokenId })),
+	/**
 	 *  Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
 	 *  stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
 	 */
@@ -1374,6 +1388,33 @@ export type NewStaffInput = {
 };
 
 export type OnDuplicateDto = "skip" | "update" | "error";
+
+/**  A parked cart in the list (POS-012). */
+export type ParkedCartDto = ParkedCartDto_Serialize | ParkedCartDto_Deserialize;
+
+/**  A parked cart in the list (POS-012). */
+export type ParkedCartDto_Deserialize = {
+	cartId: CartId,
+	label?: string | null,
+	/**  RFC 3339. */
+	parkedAt: string,
+	parkedByName: string,
+	lines: number,
+	/**  At today's prices, minor units as a decimal string. */
+	totalMinor: string,
+};
+
+/**  A parked cart in the list (POS-012). */
+export type ParkedCartDto_Serialize = {
+	cartId: CartId,
+	label: string | null,
+	/**  RFC 3339. */
+	parkedAt: string,
+	parkedByName: string,
+	lines: number,
+	/**  At today's prices, minor units as a decimal string. */
+	totalMinor: string,
+};
 
 /**  `receipt`: the receipt as printed, on the till's paper width; `a4`: an A4 page. */
 export type PdfPaperDto = "receipt" | "a4";

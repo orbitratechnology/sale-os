@@ -38,6 +38,8 @@ export interface FakeState {
   orderDiscountPpm: number | null;
   cartId: string;
   revision: number;
+  /** POS-012: carts set aside, oldest first. */
+  parked: { cartId: string; label: string | null; parkedAt: string; parkedByName: string; lines: FakeState["lines"]; orderDiscountPpm: number | null }[];
   seenScans: Set<string>;
   lockedUntil: number | null;
   /** Issued approval tokens: id → scope (single use). */
@@ -193,6 +195,7 @@ function initialStateInner(preset: Preset): FakeState {
     orderDiscountPpm: null,
     cartId: id(),
     revision: 0,
+    parked: [],
     seenScans: new Set(),
     lockedUntil: null,
     tokens: new Map(),
@@ -238,6 +241,13 @@ const FAKE_SETTINGS = [
   { key: "receipt.footer_lines", group: "Receipts", label: "Lines at the bottom of receipts", help: "Up to 5 lines.", kind: { type: "lines", maxLines: 5, maxChars: 48 }, defaultJson: "[]" },
   { key: "scanner.suffix", group: "Scanner", label: "Key the scanner sends after a code", help: "Match the scanner.", kind: { type: "choice", options: ['"Enter"', '"Tab"', '"none"'] }, defaultJson: '"Enter"' },
 ] as const;
+
+function parkedList(s: FakeState) {
+  return s.parked.map((p) => {
+    const total = view({ ...s, lines: p.lines, orderDiscountPpm: p.orderDiscountPpm }).totalMinor;
+    return { cartId: p.cartId, label: p.label, parkedAt: p.parkedAt, parkedByName: p.parkedByName, lines: p.lines.length, totalMinor: total };
+  });
+}
 
 export function view(s: FakeState): CartView {
   const lines: CartLine[] = s.lines.map((l) => {
@@ -1363,6 +1373,43 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.orderDiscountPpm = null;
       s.revision += 1;
       return view(s);
+    case "cart_park": {
+      const me = needSession(s);
+      if (!s.lines.length) fail("CART_EMPTY");
+      if (a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
+      if (s.parked.length >= 20) fail("VALIDATION_FAILED");
+      s.parked.push({ cartId: s.cartId, label: (a.label as string | null) ?? null, parkedAt: new Date().toISOString(), parkedByName: me.displayName, lines: s.lines, orderDiscountPpm: s.orderDiscountPpm });
+      s.lines = [];
+      s.orderDiscountPpm = null;
+      s.cartId = id();
+      s.revision = 0;
+      return view(s);
+    }
+    case "cart_parked_list":
+      needSession(s);
+      return parkedList(s);
+    case "cart_resume": {
+      needSession(s);
+      const at = s.parked.findIndex((p) => p.cartId === a.cartId);
+      if (at < 0) fail("CART_REVISION_MISMATCH");
+      if (s.lines.length) fail("VALIDATION_FAILED");
+      const [p] = s.parked.splice(at, 1);
+      if (!p) fail("CART_REVISION_MISMATCH");
+      s.cartId = p.cartId;
+      s.lines = p.lines;
+      s.orderDiscountPpm = p.orderDiscountPpm;
+      s.revision = 1;
+      return view(s);
+    }
+    case "cart_discard_parked": {
+      needSession(s);
+      approve(s, "cart_void", null, a.approvalTokenId, String(a.cartId));
+      if (!String(a.reason ?? "").trim()) fail("VALIDATION_FAILED");
+      const at = s.parked.findIndex((p) => p.cartId === a.cartId);
+      if (at < 0) fail("CART_REVISION_MISMATCH");
+      s.parked.splice(at, 1);
+      return parkedList(s);
+    }
     case "cart_void": {
       needSession(s);
       if (s.lines.length) approve(s, "cart_void", null, a.approvalTokenId);

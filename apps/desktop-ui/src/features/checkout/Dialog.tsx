@@ -17,8 +17,8 @@ export function Dialog({
   children?: ReactNode;
   confirmLabel: string;
   danger?: boolean;
-  /** Ask for a value; confirm stays disabled while it is empty. */
-  input?: { label: string; initial?: string; inputMode?: "decimal" | "text" };
+  /** Ask for a value; confirm stays disabled while it is empty unless `optional`. */
+  input?: { label: string; initial?: string; inputMode?: "decimal" | "text"; optional?: boolean; maxLength?: number };
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -41,7 +41,7 @@ export function Dialog({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (input && !value.trim()) return;
+    if (input && !input.optional && !value.trim()) return;
     onConfirm(value);
   };
 
@@ -58,6 +58,7 @@ export function Dialog({
                 first.current = el;
               }}
               inputMode={input.inputMode ?? "text"}
+              maxLength={input.maxLength}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
@@ -70,7 +71,7 @@ export function Dialog({
           <button
             type="submit"
             className={danger ? "danger" : undefined}
-            disabled={!!input && !value.trim()}
+            disabled={!!input && !input.optional && !value.trim()}
             ref={
               input
                 ? undefined

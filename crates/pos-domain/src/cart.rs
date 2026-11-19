@@ -261,6 +261,18 @@ impl Cart {
         Ok(CartChange::Cleared { lines })
     }
 
+    /// POS-012: sets the cart aside with its lines, so the till can serve someone else. An
+    /// empty cart cannot be parked.
+    pub fn park(&mut self, expected_revision: u64) -> Result<(), CartError> {
+        self.ensure_open()?;
+        self.check_revision(expected_revision)?;
+        if self.lines.is_empty() {
+            return Err(CartError::Empty);
+        }
+        self.status = CartStatus::Parked;
+        Ok(())
+    }
+
     /// RET-001: abandons the draft with a reason. Nothing is sold, no stock moves.
     pub fn void(&mut self, expected_revision: u64, reason: &str) -> Result<CartChange, CartError> {
         self.ensure_open()?;

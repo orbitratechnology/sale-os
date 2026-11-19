@@ -11,6 +11,8 @@ Every checkout action works from the keyboard. The screen is never left to do an
 | `Del` | Remove the selected line | |
 | `↑` / `↓` | Select the previous or next line | |
 | `Numpad +` / `Numpad −` | One more or one fewer of the selected line | Whole-unit items only, never below one |
+| `F5` | Park the cart | Sets it aside with an optional label and opens an empty cart for the next customer (POS-012); at most 20 per till |
+| `Shift+F5` | Parked carts | Oldest first; `↑`/`↓` choose, `Enter` resumes (the current cart must be empty; prices are checked again), Discard… asks a reason (a cashier needs a manager); `Esc` closes |
 | `F6` | Products | The product list and editor; `Esc` comes back to the till |
 | `F7` | Returns | Find a sale by its receipt number (or scan the receipt), choose what comes back, refund; `Esc` steps back |
 | `F8` | Sales | Sales history: filter by date, receipt number, cashier and payment; open a sale for its detail, receipt, reprint and "Return items"; `Esc` steps back |

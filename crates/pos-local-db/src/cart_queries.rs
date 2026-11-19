@@ -1,11 +1,16 @@
-//! Cart reads (E09-T01): the open cart and sellable variants priced for a business date.
+//! Cart reads (E09-T01): the open cart, parked carts (POS-012) and sellable variants priced
+//! for a business date.
 
 use crate::SqliteStore;
-use pos_application::queries::{CartQueries, PricingSettings, QueryError, StoredCart, StoredCartLine};
+use pos_application::queries::{
+    CartQueries, ParkedCart, PricingSettings, QueryError, StoredCart, StoredCartLine,
+};
 use pos_domain::cart::{AddVia, SellableVariant};
 use pos_domain::catalog::Unit;
 use pos_domain::pricing::{TaxMode, TaxRate, resolve_rates};
-use pos_domain::{BusinessDate, Currency, CurrencyCode, Money, Quantity, RatePpm, RegisterId, VariantId};
+use pos_domain::{
+    BusinessDate, Currency, CurrencyCode, Money, Quantity, RatePpm, RegisterId, Timestamp, VariantId,
+};
 
 /// Used when the setting row is missing (setup always writes it).
 const DEFAULT_DISCOUNT_LIMIT_PPM: u32 = 100_000;
@@ -17,66 +22,51 @@ fn q(e: impl std::fmt::Display) -> QueryError {
 #[async_trait::async_trait]
 impl CartQueries for SqliteStore {
     async fn open_cart(&self, register: RegisterId) -> Result<Option<StoredCart>, QueryError> {
-        let r = self.db().readers();
         let head: Option<(String, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT cart_id, revision, opened_by, order_discount_json FROM carts WHERE register_id = ? AND status = 'open'",
         )
         .bind(register.to_string())
-        .fetch_optional(r)
+        .fetch_optional(self.db().readers())
         .await
         .map_err(q)?;
-        let Some((cart_id, revision, opened_by, order_discount)) = head else {
-            return Ok(None);
-        };
-        type LineRow = (
-            String,
+        match head {
+            Some(h) => Ok(Some(stored_cart(self, h).await?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn parked_carts(&self, register: RegisterId) -> Result<Vec<ParkedCart>, QueryError> {
+        type Row = (
             String,
             i64,
-            Option<i64>,
-            Option<String>,
             String,
             Option<String>,
+            Option<String>,
+            i64,
+            String,
+            String,
         );
-        let rows: Vec<LineRow> = sqlx::query_as(
-            "SELECT cart_line_id, variant_id, quantity_milli, unit_price_override_minor, line_discount_json, added_via,
-                    last_scan_event_id
-             FROM cart_lines WHERE cart_id = ? ORDER BY position",
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT c.cart_id, c.revision, c.opened_by, c.order_discount_json, c.parked_label, c.parked_at,
+                    c.parked_by, coalesce(u.display_name, '')
+             FROM carts c LEFT JOIN staff_users u ON u.user_id = c.parked_by
+             WHERE c.register_id = ? AND c.status = 'parked' ORDER BY c.parked_at, c.cart_id",
         )
-        .bind(&cart_id)
-        .fetch_all(r)
+        .bind(register.to_string())
+        .fetch_all(self.db().readers())
         .await
         .map_err(q)?;
-        let lines = rows
-            .into_iter()
-            .map(|(id, variant, qty, over, disc, via, scan)| {
-                let added_via = match (via.as_str(), scan) {
-                    ("scan", Some(e)) => AddVia::Scan {
-                        event_id: e.parse().map_err(q)?,
-                    },
-                    ("quick_select", _) => AddVia::QuickSelect,
-                    ("manual_code", _) => AddVia::ManualCode,
-                    _ => AddVia::Search,
-                };
-                Ok(StoredCartLine {
-                    line_id: id.parse().map_err(q)?,
-                    variant_id: variant.parse().map_err(q)?,
-                    quantity: Quantity::from_milli(qty),
-                    price_override: over.map(Money::from_minor),
-                    line_discount: disc.map(|d| serde_json::from_str(&d)).transpose().map_err(q)?,
-                    added_via,
-                })
-            })
-            .collect::<Result<Vec<_>, QueryError>>()?;
-        Ok(Some(StoredCart {
-            cart_id: cart_id.parse().map_err(q)?,
-            revision: u64::try_from(revision).map_err(q)?,
-            opened_by: opened_by.parse().map_err(q)?,
-            order_discount: order_discount
-                .map(|d| serde_json::from_str(&d))
-                .transpose()
-                .map_err(q)?,
-            lines,
-        }))
+        let mut out = Vec::with_capacity(rows.len());
+        for (id, revision, opened_by, discount, label, parked_at, parked_by, name) in rows {
+            out.push(ParkedCart {
+                cart: stored_cart(self, (id, revision, opened_by, discount)).await?,
+                label,
+                parked_at: Timestamp::from_millis(parked_at),
+                parked_by: parked_by.parse().map_err(q)?,
+                parked_by_name: name,
+            });
+        }
+        Ok(out)
     }
 
     async fn sellable(
@@ -183,4 +173,61 @@ impl CartQueries for SqliteStore {
             timezone,
         })
     }
+}
+
+/// A cart's lines, given its header row (`cart_id, revision, opened_by, order_discount_json`).
+async fn stored_cart(
+    store: &SqliteStore,
+    (cart_id, revision, opened_by, order_discount): (String, i64, String, Option<String>),
+) -> Result<StoredCart, QueryError> {
+    let r = store.db().readers();
+    type LineRow = (
+        String,
+        String,
+        i64,
+        Option<i64>,
+        Option<String>,
+        String,
+        Option<String>,
+    );
+    let rows: Vec<LineRow> = sqlx::query_as(
+            "SELECT cart_line_id, variant_id, quantity_milli, unit_price_override_minor, line_discount_json, added_via,
+                    last_scan_event_id
+             FROM cart_lines WHERE cart_id = ? ORDER BY position",
+        )
+        .bind(&cart_id)
+        .fetch_all(r)
+        .await
+        .map_err(q)?;
+    let lines = rows
+        .into_iter()
+        .map(|(id, variant, qty, over, disc, via, scan)| {
+            let added_via = match (via.as_str(), scan) {
+                ("scan", Some(e)) => AddVia::Scan {
+                    event_id: e.parse().map_err(q)?,
+                },
+                ("quick_select", _) => AddVia::QuickSelect,
+                ("manual_code", _) => AddVia::ManualCode,
+                _ => AddVia::Search,
+            };
+            Ok(StoredCartLine {
+                line_id: id.parse().map_err(q)?,
+                variant_id: variant.parse().map_err(q)?,
+                quantity: Quantity::from_milli(qty),
+                price_override: over.map(Money::from_minor),
+                line_discount: disc.map(|d| serde_json::from_str(&d)).transpose().map_err(q)?,
+                added_via,
+            })
+        })
+        .collect::<Result<Vec<_>, QueryError>>()?;
+    Ok(StoredCart {
+        cart_id: cart_id.parse().map_err(q)?,
+        revision: u64::try_from(revision).map_err(q)?,
+        opened_by: opened_by.parse().map_err(q)?,
+        order_discount: order_discount
+            .map(|d| serde_json::from_str(&d))
+            .transpose()
+            .map_err(q)?,
+        lines,
+    })
 }

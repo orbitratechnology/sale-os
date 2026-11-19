@@ -190,6 +190,25 @@ pub enum WriteOp {
         job: crate::records::PrintJobRecord,
         detail: serde_json::Value,
     },
+    /// Sets the open cart aside (POS-012): `open` → `parked` with its label, if its revision
+    /// is still `expected_revision`. The lines stay.
+    ParkCart {
+        cart_id: pos_domain::CartId,
+        expected_revision: u64,
+        label: Option<String>,
+        parked_by: UserId,
+    },
+    /// Makes a parked cart the open one again (POS-012). Fails with `CartRevisionMismatch` if
+    /// it is no longer parked (resumed or discarded at the same time).
+    ResumeCart {
+        cart_id: pos_domain::CartId,
+    },
+    /// Voids a parked cart without resuming it (POS-012). Fails with `CartRevisionMismatch`
+    /// if it is no longer parked.
+    DiscardParkedCart {
+        cart_id: pos_domain::CartId,
+        reason: String,
+    },
     /// Closes the open cart a sale was made from. Fails with `CartRevisionMismatch` if the
     /// cart changed since `expected_revision`.
     CloseCart {
@@ -311,6 +330,9 @@ impl WriteOp {
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::CloseCart { .. }
+            | WriteOp::ParkCart { .. }
+            | WriteOp::ResumeCart { .. }
+            | WriteOp::DiscardParkedCart { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
@@ -775,6 +797,29 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn park_cart(
+        mut self,
+        cart_id: pos_domain::CartId,
+        expected_revision: u64,
+        label: Option<String>,
+        parked_by: UserId,
+    ) -> Self {
+        self.ops.push(WriteOp::ParkCart {
+            cart_id,
+            expected_revision,
+            label,
+            parked_by,
+        });
+        self
+    }
+    pub fn resume_cart(mut self, cart_id: pos_domain::CartId) -> Self {
+        self.ops.push(WriteOp::ResumeCart { cart_id });
+        self
+    }
+    pub fn discard_parked_cart(mut self, cart_id: pos_domain::CartId, reason: String) -> Self {
+        self.ops.push(WriteOp::DiscardParkedCart { cart_id, reason });
+        self
+    }
     pub fn close_cart(
         mut self,
         cart_id: pos_domain::CartId,
@@ -984,6 +1029,9 @@ impl WriteSetBuilder {
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }
+            | WriteOp::ParkCart { .. }
+            | WriteOp::ResumeCart { .. }
+            | WriteOp::DiscardParkedCart { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::PutCart { .. }
             | WriteOp::RecordScanEvent { .. }

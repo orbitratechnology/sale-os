@@ -73,6 +73,7 @@
 | F-07 | Low | `dev_money_add`, a Stage 0 demo command, is still registered in release builds. It is a pure calculation with no data access. | Open (low): remove with the next IPC cleanup. |
 | F-08 | Low | CSP allows inline styles (`style-src 'unsafe-inline'`), needed by component style attributes. Inline *scripts* stay blocked. | Accepted (low). |
 | F-09 | — | No auto-updater yet, so there is no signing to audit. Updates must be signed before release. | Tracked in E19-T06 (release blocker). |
+| F-11 | Medium | RUSTSEC-2026-0459: the bundled SQLite (before 3.54) can return stale process memory when a database is opened beside a crafted `-wal`. No `sqlx` release takes the fixed `libsqlite3-sys` yet, and the backup check and restore opened backups in place, which could be on a stick someone else wrote. | **Mitigated (2026-11-19).** Backups from elsewhere are checked as a private copy of the single file; restore copies the file into the data folder first, then checks and describes that copy. Test: a stranger's `-wal` beside a backup is never read. Remove the `deny.toml` exception when `sqlx` moves to `libsqlite3-sys` 0.39. |
 | F-10 | — | No external penetration test of the cloud API's tenancy and auth. In-house: RLS, AT-12 isolation on every route, contract fuzzing, auth tests. | **Open: needs a third party** before the cloud goes beyond the pilot. |
 
 ## 5. Audits
