@@ -14,6 +14,9 @@ pub struct Problem {
     pub code: ErrorCode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// Structured facts for some codes (`SYNC_UPGRADE_REQUIRED`: `minVersion`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
 }
 
 impl Problem {
@@ -24,6 +27,7 @@ impl Problem {
             status: status.as_u16(),
             code,
             detail,
+            details: None,
         }
     }
 

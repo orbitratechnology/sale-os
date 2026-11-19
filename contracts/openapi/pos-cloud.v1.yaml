@@ -1395,6 +1395,12 @@ components:
           type: string
         code:
           $ref: "#/components/schemas/ErrorCode"
+        details:
+          type: object
+          description: Structured facts for some codes. SYNC_UPGRADE_REQUIRED (426, any route but /health and /version-policy, when x-app-version is below minSupported) carries minVersion.
+          properties:
+            minVersion:
+              type: string
     ErrorCode:
       type: string
       description: Catalogued error codes (docs/errors.md). Must equal pos_domain::ErrorCode.

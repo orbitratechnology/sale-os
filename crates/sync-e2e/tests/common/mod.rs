@@ -50,6 +50,18 @@ pub async fn cloud() -> Option<Cloud> {
 }
 
 impl Cloud {
+    /// Another server on the same database, with its own configuration (E19-T09: a raised
+    /// minimum app version). Returns its URL.
+    pub async fn serve_with(&self, config: cloud_api::Config) -> String {
+        let state = cloud_api::AppState::new(config, Some(self.pool.clone()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, cloud_api::router(state)).await.unwrap();
+        });
+        url
+    }
+
     /// A new owner account; returns its credentials.
     pub async fn owner(&self) -> (String, Secret<String>) {
         let email = format!("owner-{}@example.com", uuid::Uuid::now_v7().simple());

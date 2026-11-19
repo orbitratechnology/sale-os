@@ -121,8 +121,8 @@ Windows hardware (D-05):
 ### E19-T09 · Version policy enforcement
 - **Size** S · **Deps** E16-T04 · **PRD** §10.1 (app version policy)
 - **Acceptance:**
-  - [ ] Below `minSupported`, the server answers `426 SYNC_UPGRADE_REQUIRED`. The desktop keeps selling locally, queues events, and shows an update prompt.
-  - [ ] No local data is lost while waiting for the update.
+  - [x] Below `minSupported`, the server answers `426 SYNC_UPGRADE_REQUIRED`. The desktop keeps selling locally, queues events, and shows an update prompt.
+  - [x] No local data is lost while waiting for the update.
 
 ### E19-T10 · Data retention and deletion
 - **Size** S · **Deps** D-02, D-06 · **PRD** §13 ("define data retention and deletion behaviour before production launch")

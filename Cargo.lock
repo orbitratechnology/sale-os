@@ -5606,6 +5606,7 @@ dependencies = [
  "pos-sync",
  "pos-sync-http",
  "pos-testkit",
+ "reqwest",
  "serde_json",
  "sqlx",
  "tempfile",
