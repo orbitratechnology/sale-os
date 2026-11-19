@@ -52,16 +52,41 @@ describe.each(["Enter", "Tab", "none"])("keyboard wedge, suffix %s", (suffix) =>
     }
     await page.waitForTimeout(300); // let the final idle timer fire for suffix "none"
     const got = await scans(page);
+    let why = "";
     if (JSON.stringify(got) !== JSON.stringify(CODES)) {
-      // Timing diagnostics: this is how the 41 ms delivery stall was found.
+      // Timing diagnostics, in the failure message itself so CI reports show them: the
+      // codes received, and every gap between key events over 30 ms (this is how the 41 ms
+      // delivery stall was found).
       const keys = await page.evaluate(() => window.__keys);
-      console.error(`suffix ${suffix}: got`, got, "keys:", JSON.stringify(keys.map(([k, t]) => [k, Math.round(t)])));
+      const slow = keys.flatMap(([k, t], i) => {
+        const prev = i > 0 ? keys[i - 1] : undefined;
+        return prev && t - prev[1] > 30 ? [`${k}+${Math.round(t - prev[1])}ms`] : [];
+      });
+      why = `suffix ${suffix}: got ${JSON.stringify(got)}; gaps over 30 ms: ${slow.join(" ") || "none"}`;
     }
-    expect(got).toEqual(CODES);
+    expect(got, why).toEqual(CODES);
     const ids = await page.evaluate(() => new Set(window.__scans.map((s) => s.scanEventId)).size);
     expect(ids).toBe(20);
     await page.close();
   }, 60_000);
+});
+
+describe("a scan that stalls past maxStallMs", () => {
+  it("is dropped whole: no truncated code, and its Tab does not move focus into a field", async () => {
+    const page = await open("Tab");
+    await page.keyboard.type("501234", { delay: 5 });
+    await page.waitForTimeout(250); // longer than maxStallMs: the burst breaks
+    await page.keyboard.type("5678900", { delay: 5 });
+    await page.keyboard.press("Tab");
+    expect(await scans(page)).toEqual([]);
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("BODY");
+    // The next clean scan is read normally.
+    await page.waitForTimeout(300);
+    await page.keyboard.type("4006381333931", { delay: 5 });
+    await page.keyboard.press("Tab");
+    expect(await scans(page)).toEqual(["4006381333931"]);
+    await page.close();
+  }, 30_000);
 });
 
 describe("human typing", () => {

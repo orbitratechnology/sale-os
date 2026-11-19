@@ -61,16 +61,32 @@ export type KeyVerdict =
   | "buffered"
   /** A scan terminator; the caller must swallow it (no form submit, no focus move). */
   | "scan"
+  /**
+   * The terminator of a scan that stalled too long and was dropped. Its characters were
+   * swallowed in scanner-ready mode, so the caller swallows this too (no stray focus move or
+   * submit); in a field it is let through like any key.
+   */
+  | "dropped"
   /** Not scan input; let it through. */
   | "ignored";
 
 const MODIFIERS = new Set(["Shift", "CapsLock", "AltGraph"]);
+
+/**
+ * After a fast burst breaks on a long stall, characters arriving within this window are the
+ * rest of that scan, not a new one: they are dropped with it rather than emitted as a
+ * truncated code. A new item cannot be presented to the scanner this quickly after a stall
+ * and still be a separate read without a terminator in between.
+ */
+const RESUME_WINDOW_MS = 1000;
 
 export class ScanDetector {
   private buffer = "";
   private firstAt = 0;
   private lastAt = 0;
   private stalls = 0;
+  /** The current burst continues one that broke on a stall: it must not be emitted. */
+  private broken = false;
 
   constructor(
     private readonly config: ScanDetectorConfig,
@@ -88,10 +104,17 @@ export class ScanDetector {
           this.stalls += 1;
         } else if (gap > this.config.maxInterKeyMs) {
           // The burst has ended. Without a suffix the gap is the terminator; with one, an
-          // unterminated burst is human typing or a partial read: drop it.
+          // unterminated burst is human typing or a partial read: drop it. A scanner-speed
+          // burst cut by a stall marks what follows as its remainder (never a scan of its own).
+          // A burst that already absorbed a stall was judged scanner-fast when it did.
+          const stalledScan =
+            this.config.suffix !== "none" && (this.isFastSoFar() || this.stalls > 0) && gap <= RESUME_WINDOW_MS;
           if (this.config.suffix === "none") this.emitIfScan("gap", this.lastAt);
           this.reset();
+          this.broken = stalledScan;
         }
+      } else if (this.broken && at - this.lastAt > RESUME_WINDOW_MS) {
+        this.broken = false;
       }
       if (!this.buffer) this.firstAt = at;
       this.buffer += key;
@@ -100,6 +123,10 @@ export class ScanDetector {
     }
     if (MODIFIERS.has(key)) return "ignored";
     if (this.config.suffix !== "none" && key === this.config.suffix) {
+      if (this.broken && this.buffer) {
+        this.reset();
+        return "dropped";
+      }
       const emitted = at - this.lastAt <= this.config.maxStallMs && this.emitIfScan(key, at);
       this.reset();
       return emitted ? "scan" : "ignored";
@@ -135,5 +162,6 @@ export class ScanDetector {
   private reset(): void {
     this.buffer = "";
     this.stalls = 0;
+    this.broken = false;
   }
 }

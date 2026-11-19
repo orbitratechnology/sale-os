@@ -66,7 +66,7 @@ export function useScanCapture(
       inScanField = field !== null;
 
       const verdict = detector.key(e.key, e.timeStamp);
-      if (verdict === "scan" || (verdict === "buffered" && !editable)) {
+      if (verdict === "scan" || ((verdict === "buffered" || verdict === "dropped") && !editable)) {
         e.preventDefault();
         if (verdict === "scan") e.stopPropagation();
       }

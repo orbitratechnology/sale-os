@@ -71,6 +71,35 @@ describe("terminators and noise", () => {
     expect(run("Enter", keys).scans).toEqual([]);
   });
 
+  it.each<ScanSuffix>(["Enter", "Tab"])("a scan broken by a long stall is dropped, never emitted as a truncated tail (suffix %s)", (suffix) => {
+    // 6 characters at scanner speed, a 200 ms stall (over maxStallMs), the other 7, the suffix:
+    // the tail alone is long and fast enough to look like a scan, but it is half a code.
+    const keys: Array<[string, number]> = [
+      ...[..."501234"].map((c, i): [string, number] => [c, i === 0 ? 0 : 5]),
+      ...[..."5678900"].map((c, i): [string, number] => [c, i === 0 ? 200 : 5]),
+      [suffix, 5],
+    ];
+    expect(run(suffix, keys).scans).toEqual([]);
+  });
+
+  it("too many stalls drop the whole scan; the tail is not emitted", () => {
+    const keys: Array<[string, number]> = [
+      ...[..."5012345678900"].map((c, i): [string, number] => [c, i === 0 ? 0 : i === 3 || i === 5 || i === 7 ? 100 : 5]),
+      ["Enter", 5],
+    ];
+    expect(run("Enter", keys).scans).toEqual([]);
+  });
+
+  it("the next clean scan after a broken one is recognised", () => {
+    const keys: Array<[string, number]> = [
+      ...[..."501234"].map((c, i): [string, number] => [c, i === 0 ? 0 : 5]),
+      ...[..."5678900"].map((c, i): [string, number] => [c, i === 0 ? 200 : 5]),
+      ["Enter", 5],
+      ...burst("4006381333931", 5, "Enter", 300),
+    ];
+    expect(run("Enter", keys).scans.map((s) => s.raw)).toEqual(["4006381333931"]);
+  });
+
   it("fast human digraphs separated by a pause are not a scan", () => {
     // "ab" fast, pause, "cd" fast, Enter: average gap is well above scanner speed.
     const keys: Array<[string, number]> = [["a", 0], ["b", 30], ["c", 120], ["d", 30], ["Enter", 30]];
