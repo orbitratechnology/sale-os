@@ -41,6 +41,8 @@ enum Check {
         name: &'static str,
         prefix: bool,
         database: bool,
+        /// Also run tests marked `#[ignore]` (the nightly fault matrix belongs to AT-06).
+        ignored: bool,
     },
     /// A browser test, by its title, in an `apps/desktop-ui/e2e` file.
     Browser { file: &'static str, title: &'static str },
@@ -55,6 +57,7 @@ const fn rust(package: &'static str, test: &'static str, name: &'static str) -> 
         name,
         prefix: false,
         database: false,
+        ignored: false,
     }
 }
 const fn lib(package: &'static str, name: &'static str) -> Check {
@@ -64,6 +67,7 @@ const fn lib(package: &'static str, name: &'static str) -> Check {
         name,
         prefix: true,
         database: false,
+        ignored: false,
     }
 }
 /// Rust tests against the real cloud (PostgreSQL).
@@ -74,6 +78,7 @@ const fn cloud(package: &'static str, test: &'static str, name: &'static str, pr
         name,
         prefix,
         database: true,
+        ignored: false,
     }
 }
 const fn browser(file: &'static str, title: &'static str) -> Check {
@@ -162,7 +167,15 @@ const SUITE: &[At] = &[
     At {
         id: "AT-06",
         statement: "An offline sale syncs exactly once despite retries",
-        checks: &[cloud("sync-e2e", "faults", "at06_", true)],
+        // Every fault scenario: the per-PR smoke subset and the nightly matrix.
+        checks: &[Check::Rust {
+            package: "sync-e2e",
+            target: Target::Test("faults"),
+            name: "at06_",
+            prefix: true,
+            database: true,
+            ignored: true,
+        }],
     },
     At {
         id: "AT-07",
@@ -269,7 +282,7 @@ const SUITE: &[At] = &[
 /// What one check found.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Outcome {
-    /// This many tests ran and passed.
+    /// This many tests (or crash-harness kills) ran and passed.
     Passed(usize),
     Failed(String),
     /// No test has this name.
@@ -281,7 +294,7 @@ impl Outcome {
     fn label(&self) -> String {
         match self {
             Outcome::Passed(1) => "passed".into(),
-            Outcome::Passed(n) => format!("passed ({n} tests)"),
+            Outcome::Passed(n) => format!("passed ({n})"),
             Outcome::Failed(why) => format!("FAILED: {why}"),
             Outcome::Missing => "MISSING: no test has this name".into(),
             Outcome::NotRun(why) => format!("NOT RUN: {why}"),
@@ -395,11 +408,12 @@ impl Runner<'_> {
                 name,
                 prefix,
                 database,
+                ignored,
             } => {
                 if database && std::env::var_os("TEST_DATABASE_URL").is_none() {
                     return Outcome::NotRun("needs PostgreSQL (TEST_DATABASE_URL is not set)".into());
                 }
-                self.rust(package, target, name, prefix)
+                self.rust(package, target, name, prefix, ignored)
             }
             Check::Browser { file, title } => {
                 let ran = self
@@ -419,7 +433,7 @@ impl Runner<'_> {
         }
     }
 
-    fn rust(&self, package: &str, target: Target, name: &str, prefix: bool) -> Outcome {
+    fn rust(&self, package: &str, target: Target, name: &str, prefix: bool, ignored: bool) -> Outcome {
         let mut cmd = Command::new(env!("CARGO"));
         cmd.current_dir(self.root)
             .args(["test", "--locked", "-p", package]);
@@ -430,6 +444,9 @@ impl Runner<'_> {
         cmd.args(["--", name]);
         if !prefix {
             cmd.arg("--exact");
+        }
+        if ignored {
+            cmd.arg("--include-ignored");
         }
         let out = match cmd.output() {
             Ok(o) => o,
@@ -565,6 +582,7 @@ fn describe(check: &Check) -> String {
             name,
             prefix,
             database,
+            ignored: _,
         } => {
             let target = match target {
                 Target::Lib => format!("{package} (unit)"),
