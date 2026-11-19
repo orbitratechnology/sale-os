@@ -99,7 +99,9 @@ export interface FakeState {
   /** Import jobs by id: the rows and what validation decided. */
   imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[] }>;
   /** The business profile besides the name and till name (which live in `workspace`). */
-  business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number };
+  business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number; logo?: string | null };
+  /** SET-001: what the logo dialog hands over next (`null`: the owner cancels). */
+  logoFile?: "image" | "notAnImage" | null;
   /** Product categories (E06-T05). */
   categories: CategoryDto[];
   /** Tax configuration (E06-T05). */
@@ -1296,6 +1298,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       return { jobId, ...job };
     }
     case "business_profile_get":
+    case "business_logo_choose":
+    case "business_logo_clear":
+    case "business_logo_get":
     case "business_profile_update": {
       if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
       const b = s.business;
@@ -1303,8 +1308,22 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         name: workspace.businessName, legalName: b.legalName, taxRegistrationNo: b.taxRegistrationNo, addressLines: b.addressLines,
         phone: b.phone, email: b.email, registerName: workspace.registerName, registerCode: workspace.registerCode, countryCode: "GB",
         timezone: "Europe/London", currencyCode: workspace.currencyCode, pricesIncludeTax: true, businessVersion: b.version, registerVersion: b.registerVersion,
+        hasLogo: Boolean(b.logo),
       });
       if (cmd === "business_profile_get") return view();
+      if (cmd === "business_logo_get") return b.logo ?? null;
+      if (cmd === "business_logo_choose" || cmd === "business_logo_clear") {
+        if (cmd === "business_logo_choose") {
+          const file = s.logoFile ?? null;
+          if (file === null) return null;
+          if (file === "notAnImage") fail("VALIDATION_FAILED", { field: "logo", value: "notAnImage" });
+        }
+        if (a.businessVersion !== b.version) fail("CONFLICT_VERSION");
+        // A 1×1 PNG stands for the stored logo.
+        b.logo = cmd === "business_logo_choose" ? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" : null;
+        b.version += 1;
+        return view();
+      }
       if (a.businessVersion !== b.version || a.registerVersion !== b.registerVersion) fail("CONFLICT_VERSION");
       const input = a.input as { name: string; legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; registerName: string };
       const opt = (v: string | null) => v?.trim() || null;

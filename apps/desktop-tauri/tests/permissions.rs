@@ -191,6 +191,17 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
                    "phone": null, "email": null, "registerName": "X"}, "businessVersion": 999, "registerVersion": 999}),
         ),
         (
+            "business_logo_choose",
+            Perm(SettingsEdit),
+            json!({"businessVersion": 1}),
+        ),
+        (
+            "business_logo_clear",
+            Perm(SettingsEdit),
+            json!({"businessVersion": 1}),
+        ),
+        ("business_logo_get", Perm(SettingsEdit), json!({})),
+        (
             "product_list",
             Perm(CatalogView),
             json!({"filter": {"query": "", "status": "active", "trackStock": null, "categoryId": null}, "offset": 0, "limit": 10}),
@@ -1931,4 +1942,97 @@ fn the_diagnostics_bundle_tells_support_enough_and_nothing_private() {
         files["logs/sale-os.2026-11-19.log"].contains("1111]"),
         "masked, last four kept"
     );
+}
+
+/// Hands over each path in turn when asked to open a file.
+#[derive(Default)]
+struct LogoDialog {
+    files: std::sync::Mutex<Vec<std::path::PathBuf>>,
+}
+
+impl desktop_tauri_lib::FileDialog for LogoDialog {
+    fn ask(&self, _: &str, _: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(None);
+        rx
+    }
+    fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter, ("Images", ["png", "jpg", "jpeg"].as_slice()));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Some(self.files.lock().unwrap().remove(0)));
+        rx
+    }
+}
+
+#[test]
+fn the_owner_sets_and_removes_the_business_logo() {
+    // SET-001: Rust opens the dialog; the image is shrunk to a PNG in app data and recorded
+    // on the business. A file that is not an image is refused and changes nothing.
+    let files = tempfile::tempdir().unwrap();
+    let jpeg = files.path().join("shop logo.jpg");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../crates/pos-receipts/tests/fixtures/logo-800x600.jpg"
+        ),
+        &jpeg,
+    )
+    .unwrap();
+    let text = files.path().join("notes.png");
+    std::fs::write(&text, "not an image").unwrap();
+    let dialog = Arc::new(LogoDialog::default());
+    *dialog.files.lock().unwrap() = vec![jpeg, text];
+    let (dir, _app, w) = start_with(Some(dialog));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let profile = invoke(&w, "business_profile_get", json!({})).unwrap();
+    assert_eq!(profile["hasLogo"], false);
+    assert_eq!(invoke(&w, "business_logo_get", json!({})).unwrap(), Value::Null);
+
+    let set = invoke(
+        &w,
+        "business_logo_choose",
+        json!({"businessVersion": profile["businessVersion"]}),
+    )
+    .unwrap();
+    assert_eq!(set["hasLogo"], true);
+    let stored = std::fs::read(dir.path().join("logo.png")).unwrap();
+    assert!(stored.starts_with(b"\x89PNG"));
+    let url = invoke(&w, "business_logo_get", json!({})).unwrap();
+    assert!(url.as_str().unwrap().starts_with("data:image/png;base64,"));
+
+    let refused = invoke(
+        &w,
+        "business_logo_choose",
+        json!({"businessVersion": set["businessVersion"]}),
+    )
+    .unwrap_err();
+    assert_eq!(refused["code"], "VALIDATION_FAILED");
+    assert_eq!(refused["details"]["field"], "logo");
+    assert_eq!(refused["details"]["value"], "notAnImage");
+    assert_eq!(
+        std::fs::read(dir.path().join("logo.png")).unwrap(),
+        stored,
+        "unchanged"
+    );
+
+    let cleared = invoke(
+        &w,
+        "business_logo_clear",
+        json!({"businessVersion": set["businessVersion"]}),
+    )
+    .unwrap();
+    assert_eq!(cleared["hasLogo"], false);
+    assert!(!dir.path().join("logo.png").exists());
+    assert_eq!(invoke(&w, "business_logo_get", json!({})).unwrap(), Value::Null);
 }

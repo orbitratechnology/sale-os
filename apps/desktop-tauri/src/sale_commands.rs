@@ -800,9 +800,10 @@ pub async fn receipt_export_pdf(
         }
     };
     let app = services.app()?;
+    let logo = crate::config_commands::stored_logo(&services).await;
     let pdf = app
         .receipt_pdfs
-        .render(&ctx, of, paper.into_domain())
+        .render(&ctx, of, paper.into_domain(), logo.as_ref())
         .await
         .map_err(err)?;
     let chosen = services

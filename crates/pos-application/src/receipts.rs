@@ -7,7 +7,7 @@ use crate::queries::ReceiptQueries;
 use crate::{LocalStore, OutboxDraft, WriteSet};
 use pos_domain::{ErrorCode, Permission, ReceiptId, ReturnId, SaleId};
 use pos_receipts::ReceiptDocument;
-use pos_receipts::pdf::{PdfFormat, render_pdf};
+use pos_receipts::pdf::{PdfFormat, render_pdf_with_logo};
 use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, TextLine, render};
 use std::sync::Arc;
 
@@ -129,6 +129,7 @@ impl ReceiptPdfService {
         ctx: &CommandContext,
         of: ReceiptOf,
         paper: PdfPaper,
+        logo: Option<&pos_receipts::logo::Logo>,
     ) -> Result<ReceiptPdf, AppError> {
         ctx.authorize(Permission::SalesView)?;
         let actor = ctx.actor()?;
@@ -156,7 +157,8 @@ impl ReceiptPdfService {
                 }
             }
         };
-        let bytes = render_pdf(&document, format).map_err(|e| AppError::Internal(e.to_string()))?;
+        let bytes =
+            render_pdf_with_logo(&document, format, logo).map_err(|e| AppError::Internal(e.to_string()))?;
         let number: String = document
             .meta
             .receipt_number

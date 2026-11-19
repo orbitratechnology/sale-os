@@ -4,6 +4,7 @@
 
 pub mod document;
 pub mod escpos;
+pub mod logo;
 pub mod pdf;
 pub mod text;
 

@@ -12,6 +12,8 @@ pos-domain.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 krilla.workspace = true
+png.workspace = true
+zune-jpeg.workspace = true
 rustybuzz.workspace = true
 unicode-width.workspace = true
 

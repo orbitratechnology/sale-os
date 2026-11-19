@@ -1629,6 +1629,36 @@ describe("staff (E05-T06)", () => {
   });
 });
 
+describe("business logo (SET-001)", () => {
+  it("the owner chooses a logo through the system dialog, sees it, and removes it", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Business" }).click();
+    const row = page.getByRole("region", { name: "Logo" });
+    await row.getByText("No logo.").waitFor();
+    // Cancelling the dialog changes nothing.
+    await row.getByRole("button", { name: "Choose a logo…" }).click();
+    await expect.poll(() => calls(page, "business_logo_choose").then((c) => c.length)).toBe(1);
+    expect(await row.getByRole("img").count()).toBe(0);
+    // A file that is not an image is refused with the reason.
+    await page.evaluate(() => {
+      window.__fake.logoFile = "notAnImage";
+    });
+    await row.getByRole("button", { name: "Choose a logo…" }).click();
+    await row.getByRole("alert").filter({ hasText: "That file is not a PNG or JPEG image." }).waitFor();
+    await page.evaluate(() => {
+      window.__fake.logoFile = "image";
+    });
+    await row.getByRole("button", { name: "Choose a logo…" }).click();
+    await row.getByRole("img", { name: "The business logo" }).waitFor();
+    expect(await row.getByRole("alert").count()).toBe(0);
+    expect((await calls(page, "business_logo_choose")).at(-1)).toEqual({ businessVersion: 1 });
+    await row.getByRole("button", { name: "Remove logo" }).click();
+    await row.getByText("No logo.").waitFor();
+    expect(await calls(page, "business_logo_clear")).toEqual([{ businessVersion: 2 }]);
+  });
+});
+
 describe("taxes (E06-T05)", () => {
   it("a VAT change on a date: end the old rate, add the new one, swap it into the category", async () => {
     const page = await checkout();

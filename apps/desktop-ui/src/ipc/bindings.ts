@@ -93,6 +93,16 @@ export const commands = {
 	 */
 	businessProfileUpdate: (input: BusinessProfileInputDto_Deserialize, businessVersion: number, registerVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_update", { input, businessVersion, registerVersion })),
 	/**
+	 *  Asks for a PNG or JPEG (the dialog opens from Rust), shrinks it to at most 512 px and
+	 *  keeps it as `logo.png` in app data, then records it on the business. `null` when the
+	 *  owner cancels. Receipts saved as PDF show it at the top.
+	 */
+	businessLogoChoose: (businessVersion: number) => typedError<BusinessProfileDto_Serialize | null, IpcError_Serialize>(__TAURI_INVOKE("business_logo_choose", { businessVersion })),
+	/**  Removes the logo from the business and from app data. */
+	businessLogoClear: (businessVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_logo_clear", { businessVersion })),
+	/**  The logo as a `data:image/png;base64,…` URL for the settings preview; `null` when none. */
+	businessLogoGet: () => typedError<string | null, IpcError_Serialize>(__TAURI_INVOKE("business_logo_get")),
+	/**
 	 *  Asks for a CSV file, reads it and stages it as an import job. `null` when the user
 	 *  cancels the dialog. The catalogue does not change.
 	 */
@@ -630,6 +640,8 @@ export type BusinessProfileDto_Deserialize = {
 	pricesIncludeTax: boolean,
 	businessVersion: number,
 	registerVersion: number,
+	/**  A logo is set (SET-001); `business_logo_get` returns it. */
+	hasLogo: boolean,
 };
 
 /**
@@ -651,6 +663,8 @@ export type BusinessProfileDto_Serialize = {
 	pricesIncludeTax: boolean,
 	businessVersion: number,
 	registerVersion: number,
+	/**  A logo is set (SET-001); `business_logo_get` returns it. */
+	hasLogo: boolean,
 };
 
 export type BusinessProfileInputDto = BusinessProfileInputDto_Serialize | BusinessProfileInputDto_Deserialize;

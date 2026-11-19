@@ -335,3 +335,50 @@ fn long_receipts_page_on_a4_and_stay_one_roll() {
     assert_eq!(roll.len(), 1);
     assert_eq!(roll[0].1, expected_roll(&d, COLUMNS_80MM));
 }
+
+/// Image XObjects in the PDF, with their pixel size.
+fn images(pdf: &[u8]) -> Vec<(i64, i64)> {
+    let doc = lopdf::Document::load_mem(pdf).unwrap();
+    doc.objects
+        .values()
+        .filter_map(|o| o.as_stream().ok())
+        .filter(|s| s.dict.get(b"Subtype").and_then(|t| t.as_name()).ok() == Some(b"Image".as_slice()))
+        .map(|s| {
+            (
+                s.dict.get(b"Width").unwrap().as_i64().unwrap(),
+                s.dict.get(b"Height").unwrap().as_i64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// SET-001: the logo sits at the top of sale and refund receipts on both papers; the text
+/// is unchanged, the roll is taller by the logo, and a Z summary has none.
+#[test]
+fn the_logo_is_drawn_above_the_receipt_and_the_text_is_unchanged() {
+    use pos_receipts::pdf::render_pdf_with_logo;
+    let logo = pos_receipts::logo::prepare(include_bytes!("fixtures/logo-800x600.jpg")).unwrap();
+    let d = doc("sale");
+    let plain = render_pdf(&d, PdfFormat::Receipt80).unwrap();
+    let with = render_pdf_with_logo(&d, PdfFormat::Receipt80, Some(&logo)).unwrap();
+    assert!(images(&plain).is_empty());
+    assert_eq!(
+        images(&with),
+        vec![(512, 384)],
+        "embedded once, at the stored size"
+    );
+    let (a, b) = (read(&plain), read(&with));
+    assert_eq!(a[0].1, b[0].1, "the same lines");
+    let grew = b[0].0.1 - a[0].0.1;
+    assert!(
+        grew > f64::from(20.0 * MM) && grew < f64::from(30.0 * MM),
+        "taller by the logo: {grew}"
+    );
+
+    let a4 = render_pdf_with_logo(&d, PdfFormat::A4, Some(&logo)).unwrap();
+    assert_eq!(images(&a4).len(), 1);
+    assert_eq!(read(&a4)[0].1, read(&render_pdf(&d, PdfFormat::A4).unwrap())[0].1);
+
+    let z = render_pdf_with_logo(&doc("z_summary"), PdfFormat::Receipt80, Some(&logo)).unwrap();
+    assert!(images(&z).is_empty(), "no logo on a Z summary");
+}

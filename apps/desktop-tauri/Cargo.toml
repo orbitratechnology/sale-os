@@ -23,6 +23,7 @@ pos-local-db.workspace = true
 pos-observability.workspace = true
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 pos-receipts.workspace = true
+base64.workspace = true
 pos-sync.workspace = true
 pos-sync-http.workspace = true
 serde_json.workspace = true

@@ -2114,6 +2114,8 @@ pub struct BusinessProfileDto {
     pub prices_include_tax: bool,
     pub business_version: u32,
     pub register_version: u32,
+    /// A logo is set (SET-001); `business_logo_get` returns it.
+    pub has_logo: bool,
 }
 
 impl BusinessProfileDto {
@@ -2134,6 +2136,7 @@ impl BusinessProfileDto {
             prices_include_tax: b.prices_include_tax,
             business_version: version_out(b.version)?,
             register_version: version_out(v.register.version)?,
+            has_logo: b.logo_path.is_some(),
         })
     }
 }

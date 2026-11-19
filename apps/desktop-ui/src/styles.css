@@ -286,3 +286,4 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 .quick-name { font-weight: 600; overflow-wrap: anywhere; }
 .quick-price { font-variant-numeric: tabular-nums; }
 .entry .quick-open { margin-top: 8px; min-height: 44px; }
+.logo-preview { max-width: 160px; max-height: 80px; display: block; margin-bottom: 8px; border: 1px solid var(--border); background: #fff; }
