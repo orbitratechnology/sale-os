@@ -48,6 +48,7 @@
     "allow-product-archive",
     "allow-catalog-lookup-code",
     "allow-catalog-search",
+    "allow-catalog-quick-select",
     "allow-scan-submit",
     "allow-cart-current",
     "allow-cart-recovery",

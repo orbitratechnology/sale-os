@@ -10,6 +10,7 @@ import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
 import { Dialog } from "./Dialog";
 import { ParkedDialog } from "./ParkedDialog";
+import { QuickSelectDialog } from "./QuickSelectDialog";
 import { RecoveryDialog } from "./RecoveryDialog";
 import { PaymentPanel } from "./PaymentPanel";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
@@ -26,12 +27,14 @@ type Modal =
   | "park"
   | "parked"
   | "recovered"
+  | "quick"
   | { reason: string; then: (reason: string) => void }
   | null;
 
 /** The key map (E09-T05). Shown in the action bar; documented in docs/keyboard.md. */
 export const KEYS = {
   search: "F2",
+  quick: "Shift+F2",
   quantity: "F3",
   discount: "F4",
   remove: "Delete",
@@ -193,7 +196,8 @@ export function Checkout({
       switch (e.key) {
         case "F2":
           e.preventDefault();
-          search.current?.focus();
+          if (e.shiftKey) setModal("quick");
+          else search.current?.focus();
           return;
         case "F3":
           e.preventDefault();
@@ -305,6 +309,9 @@ export function Checkout({
           />
         </form>
         <SearchPanel ref={search} exponent={exponent} onPick={(hit) => void c.addVariant(hit.variantId)} />
+        <button type="button" className="secondary quick-open" onClick={() => setModal("quick")}>
+          Quick items <kbd>⇧F2</kbd>
+        </button>
       </section>
 
       <section className="cart-area" aria-label="Cart lines">
@@ -485,6 +492,9 @@ export function Checkout({
             the next customer. Resume it from Parked (<kbd>⇧F5</kbd>); prices are checked again then.
           </p>
         </Dialog>
+      )}
+      {modal === "quick" && (
+        <QuickSelectDialog exponent={exponent} onPick={(variantId) => c.addQuick(variantId)} onClose={() => setModal(null)} />
       )}
       {modal === "recovered" && recovered && (
         <RecoveryDialog

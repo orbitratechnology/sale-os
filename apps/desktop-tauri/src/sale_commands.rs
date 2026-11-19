@@ -120,6 +120,69 @@ pub async fn catalog_lookup_code(
     Ok(hit.map(Into::into))
 }
 
+/// One page of the quick-select grid (E09-T04, POS-002).
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickSelectPageDto {
+    /// The grid's tabs: categories that have quick-select products, in their order.
+    pub categories: Vec<QuickSelectCategoryDto>,
+    /// Products in the chosen tab, all pages.
+    pub total: u32,
+    pub products: Vec<QuickProductDto>,
+}
+
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickSelectCategoryDto {
+    pub category_id: pos_domain::CategoryId,
+    pub name: String,
+}
+
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickProductDto {
+    pub product_id: pos_domain::ProductId,
+    pub name: String,
+    /// More than one: the till asks which.
+    pub variants: Vec<CatalogHitDto>,
+}
+
+/// Products flagged for quick-select, by name, `limit` (at most 48) per page; `categoryId`
+/// narrows to one tab.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_quick_select(
+    services: State<'_, AppServices>,
+    category_id: Option<pos_domain::CategoryId>,
+    offset: u32,
+    limit: u32,
+) -> Result<QuickSelectPageDto, IpcError> {
+    let ctx = services.context().await?;
+    let page = services
+        .app()?
+        .catalog
+        .quick_select(&ctx, category_id, offset, limit)
+        .await
+        .map_err(err)?;
+    Ok(QuickSelectPageDto {
+        categories: page
+            .categories
+            .into_iter()
+            .map(|(category_id, name)| QuickSelectCategoryDto { category_id, name })
+            .collect(),
+        total: page.total,
+        products: page
+            .products
+            .into_iter()
+            .map(|p| QuickProductDto {
+                product_id: p.product_id,
+                name: p.name,
+                variants: p.variants.into_iter().map(Into::into).collect(),
+            })
+            .collect(),
+    })
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn catalog_search(

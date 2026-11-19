@@ -205,6 +205,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ),
         ("catalog_lookup_code", Perm(CatalogView), json!({"code": "NOPE"})),
         (
+            "catalog_quick_select",
+            Perm(CatalogView),
+            json!({"categoryId": null, "offset": 0, "limit": 24}),
+        ),
+        (
             "catalog_search",
             Perm(CatalogView),
             json!({"query": "cola", "limit": 5}),

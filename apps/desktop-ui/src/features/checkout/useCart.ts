@@ -143,6 +143,8 @@ export function useCart(onSignedOut: () => void) {
     approval,
     setApproval,
     addVariant: (variantId: string) => run(() => commands.cartAddVariant(variantId, null, "search")),
+    /** E09-T04: a tile on the quick-select grid. */
+    addQuick: (variantId: string) => run(() => commands.cartAddVariant(variantId, null, "quickSelect")),
     setQuantity: (lineId: string, qtyMilli: string) => run(() => commands.cartSetQuantity(lineId, qtyMilli), lineId),
     removeLine: (lineId: string) => run(() => commands.cartRemoveLine(lineId)),
     setLineDiscount: (lineId: string, d: DiscountInput | null) =>

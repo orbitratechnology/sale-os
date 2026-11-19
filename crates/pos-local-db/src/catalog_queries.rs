@@ -225,6 +225,72 @@ impl CatalogQueries for SqliteStore {
             .collect()
     }
 
+    async fn quick_select(
+        &self,
+        category: Option<pos_domain::CategoryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<pos_application::queries::QuickSelectPage, QueryError> {
+        use pos_application::queries::{QuickProduct, QuickSelectPage};
+        let r = self.db().readers();
+        let categories: Vec<(String, String)> = sqlx::query_as(
+            "SELECT DISTINCT c.category_id, c.name, c.sort_order FROM products p
+               JOIN categories c ON c.category_id = p.category_id AND c.status = 'active'
+              WHERE p.quick_select = 1 AND p.status = 'active'
+              ORDER BY c.sort_order, c.name COLLATE NOCASE",
+        )
+        .fetch_all(r)
+        .await
+        .map_err(q)
+        .map(|rows: Vec<(String, String, i64)>| rows.into_iter().map(|(id, n, _)| (id, n)).collect())?;
+        let cat = category.map(|c| c.to_string());
+        let total: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM products p WHERE p.quick_select = 1 AND p.status = 'active'
+               AND (?1 IS NULL OR p.category_id = ?1)
+               AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active')",
+        )
+        .bind(&cat)
+        .fetch_one(r)
+        .await
+        .map_err(q)?;
+        let rows: Vec<HitRow> = sqlx::query_as(&format!(
+            "WITH page AS (
+               SELECT p.product_id, p.name FROM products p
+                WHERE p.quick_select = 1 AND p.status = 'active' AND (?1 IS NULL OR p.category_id = ?1)
+                  AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active')
+                ORDER BY p.name COLLATE NOCASE, p.product_id LIMIT ?2 OFFSET ?3)
+             SELECT {HIT_COLUMNS} FROM page JOIN products p USING (product_id)
+               JOIN product_variants v ON v.product_id = p.product_id AND v.status = 'active'
+              ORDER BY p.name COLLATE NOCASE, p.product_id, v.sort_order, v.variant_id"
+        ))
+        .bind(&cat)
+        .bind(i64::from(limit))
+        .bind(i64::from(offset))
+        .fetch_all(r)
+        .await
+        .map_err(q)?;
+        let mut products: Vec<QuickProduct> = Vec::new();
+        for row in rows {
+            let h = hit(row, MatchedBy::Search, None)?;
+            match products.last_mut() {
+                Some(last) if last.product_id == h.product_id => last.variants.push(h),
+                _ => products.push(QuickProduct {
+                    product_id: h.product_id,
+                    name: h.name.clone(),
+                    variants: vec![h],
+                }),
+            }
+        }
+        Ok(QuickSelectPage {
+            categories: categories
+                .into_iter()
+                .map(|(id, name)| Ok((id.parse().map_err(q)?, name)))
+                .collect::<Result<_, QueryError>>()?,
+            total: u32::try_from(total).unwrap_or(u32::MAX),
+            products,
+        })
+    }
+
     async fn tax_categories(&self) -> Result<Vec<TaxCategorySummary>, QueryError> {
         let rows: Vec<(String, String, bool, Option<String>, Option<i64>)> = sqlx::query_as(
             "SELECT c.tax_category_id, c.name, c.is_default, r.name, r.rate_ppm

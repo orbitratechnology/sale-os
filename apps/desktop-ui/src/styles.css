@@ -278,3 +278,11 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 
 .recovery-key { border: 2px dashed var(--accent); padding: 8px 12px; border-radius: 6px; }
 .recovery-key .mono { font-size: 1.1rem; letter-spacing: 0.04em; word-break: break-all; }
+
+/* Quick-select grid (E09-T04): touch targets of at least 44 px. */
+.quick-select { width: min(960px, 96vw); }
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 12px 0; }
+.quick-tile { min-height: 72px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; text-align: left; padding: 8px 10px; }
+.quick-name { font-weight: 600; overflow-wrap: anywhere; }
+.quick-price { font-variant-numeric: tabular-nums; }
+.entry .quick-open { margin-top: 8px; min-height: 44px; }

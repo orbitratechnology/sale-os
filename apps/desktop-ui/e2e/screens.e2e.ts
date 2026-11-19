@@ -1437,6 +1437,71 @@ describe("business profile (E04-T03)", () => {
   });
 });
 
+describe("quick-select grid (E09-T04, POS-002)", () => {
+  /** Cola and Crisps on the grid, plus a Smoothie in two sizes, in two categories. */
+  async function stocked(extra = 0): Promise<Page> {
+    const page = await checkout();
+    await page.evaluate((more) => {
+      const f = window.__fake;
+      const drinks = { categoryId: crypto.randomUUID(), name: "Drinks" };
+      const snacks = { categoryId: crypto.randomUUID(), name: "Snacks" };
+      for (const p of f.products) {
+        if (p.name === "Cola 330ml") Object.assign(p, { quick: true, category: drinks });
+        if (p.name === "Crisps") Object.assign(p, { quick: true, category: snacks });
+      }
+      const smoothie = crypto.randomUUID();
+      for (const [label, price] of [["S", 200n], ["L", 300n]] as const) {
+        f.products.push({ variantId: crypto.randomUUID(), productId: smoothie, name: "Smoothie", sku: `SM-${label}`, barcodes: {}, priceMinor: price, quick: true, category: drinks, label });
+      }
+      for (let i = 0; i < more; i++) {
+        f.products.push({ variantId: crypto.randomUUID(), productId: crypto.randomUUID(), name: `Item ${String(i).padStart(2, "0")}`, sku: `IT${i}`, barcodes: {}, priceMinor: 100n, quick: true });
+      }
+    }, extra);
+    return page;
+  }
+
+  it("Shift+F2 opens it; a tap adds one; a product with sizes asks which; tabs filter", async () => {
+    const page = await stocked();
+    await page.keyboard.press("Shift+F2");
+    const dialog = page.getByRole("dialog", { name: "Quick items" });
+    await dialog.waitFor();
+    const tiles = dialog.getByTestId("quick-tile");
+    await expect.poll(() => tiles.allTextContents()).toEqual(["Cola 330ml1.20", "Crisps0.85", "Smoothie2.00–3.002 options"]);
+    for (const box of await Promise.all((await tiles.all()).map((t) => t.boundingBox()))) {
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    // Scans wait while the grid is open.
+    await scan(page, CRISPS);
+    expect(await calls(page, "scan_submit")).toHaveLength(0);
+    await tiles.filter({ hasText: "Cola 330ml" }).click();
+    await dialog.getByRole("status").filter({ hasText: "Added Cola 330ml." }).waitFor();
+    expect((await calls(page, "cart_add_variant")).at(-1)).toMatchObject({ qtyMilli: null, via: "quickSelect" });
+    await tiles.filter({ hasText: "Smoothie" }).click();
+    const sizes = dialog.getByRole("group", { name: "Choose a Smoothie" });
+    await sizes.getByRole("button", { name: /^L/ }).click();
+    await dialog.getByRole("status").filter({ hasText: "Added Smoothie L." }).waitFor();
+    await dialog.getByRole("tab", { name: "Snacks" }).click();
+    await expect.poll(() => tiles.allTextContents()).toEqual(["Crisps0.85"]);
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    expect(await lines(page)).toHaveLength(2);
+  });
+
+  it("pages 24 tiles at a time", async () => {
+    const page = await stocked(30);
+    await page.getByRole("button", { name: /Quick items/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Quick items" });
+    await expect.poll(() => dialog.getByTestId("quick-tile").count()).toBe(24);
+    await dialog.getByText("Page 1 of 2").waitFor();
+    await dialog.getByRole("button", { name: "Next" }).click();
+    await expect.poll(() => dialog.getByTestId("quick-tile").count()).toBe(9);
+    expect((await calls(page, "catalog_quick_select")).at(-1)).toEqual({ categoryId: null, offset: 24, limit: 24 });
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await dialog.waitFor({ state: "detached" });
+  });
+});
+
 describe("cart recovery (E09-T02, POS-011)", () => {
   /** Signs in as Cal after the fake was given a cart left open by the last run. */
   async function recovered(repriced: boolean): Promise<Page> {

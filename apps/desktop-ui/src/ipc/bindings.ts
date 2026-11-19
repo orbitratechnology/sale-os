@@ -119,6 +119,11 @@ export const commands = {
 	catalogLookupCode: (code: string) => typedError<CatalogHitDto_Serialize | null, IpcError_Serialize>(__TAURI_INVOKE("catalog_lookup_code", { code })),
 	catalogSearch: (query: string, limit: number) => typedError<CatalogHitDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("catalog_search", { query, limit })),
 	/**
+	 *  Products flagged for quick-select, by name, `limit` (at most 48) per page; `categoryId`
+	 *  narrows to one tab.
+	 */
+	catalogQuickSelect: (categoryId: CategoryId | null, offset: number, limit: number) => typedError<QuickSelectPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("catalog_quick_select", { categoryId, offset, limit })),
+	/**
 	 *  Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI
 	 *  per delivery: a repeated delivery is reported as `duplicate` and changes nothing.
 	 */
@@ -1696,6 +1701,48 @@ export type ProductType =
 "non_stock" | 
 /**  Services; never stock-tracked. */
 "service";
+
+export type QuickProductDto = QuickProductDto_Serialize | QuickProductDto_Deserialize;
+
+export type QuickProductDto_Deserialize = {
+	productId: ProductId,
+	name: string,
+	/**  More than one: the till asks which. */
+	variants: CatalogHitDto_Deserialize[],
+};
+
+export type QuickProductDto_Serialize = {
+	productId: ProductId,
+	name: string,
+	/**  More than one: the till asks which. */
+	variants: CatalogHitDto_Serialize[],
+};
+
+export type QuickSelectCategoryDto = {
+	categoryId: CategoryId,
+	name: string,
+};
+
+/**  One page of the quick-select grid (E09-T04, POS-002). */
+export type QuickSelectPageDto = QuickSelectPageDto_Serialize | QuickSelectPageDto_Deserialize;
+
+/**  One page of the quick-select grid (E09-T04, POS-002). */
+export type QuickSelectPageDto_Deserialize = {
+	/**  The grid's tabs: categories that have quick-select products, in their order. */
+	categories: QuickSelectCategoryDto[],
+	/**  Products in the chosen tab, all pages. */
+	total: number,
+	products: QuickProductDto_Deserialize[],
+};
+
+/**  One page of the quick-select grid (E09-T04, POS-002). */
+export type QuickSelectPageDto_Serialize = {
+	/**  The grid's tabs: categories that have quick-select products, in their order. */
+	categories: QuickSelectCategoryDto[],
+	/**  Products in the chosen tab, all pages. */
+	total: number,
+	products: QuickProductDto_Serialize[],
+};
 
 export type ReceiptDto = {
 	receiptNumber: string,

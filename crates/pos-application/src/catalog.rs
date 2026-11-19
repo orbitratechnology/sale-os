@@ -47,6 +47,21 @@ impl CatalogService {
             .await?)
     }
 
+    /// The quick-select grid (E09-T04, POS-002): at most 48 products per page.
+    pub async fn quick_select(
+        &self,
+        ctx: &CommandContext,
+        category: Option<pos_domain::CategoryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<crate::queries::QuickSelectPage, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self
+            .catalog
+            .quick_select(category, offset, limit.clamp(1, 48))
+            .await?)
+    }
+
     /// The product list (E06-T06a). At most [`MAX_PAGE`] rows per call.
     pub async fn list(
         &self,

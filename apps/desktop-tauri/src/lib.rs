@@ -75,6 +75,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::product_archive,
         sale_commands::catalog_lookup_code,
         sale_commands::catalog_search,
+        sale_commands::catalog_quick_select,
         sale_commands::scan_submit,
         sale_commands::cart_current,
         sale_commands::cart_recovery,

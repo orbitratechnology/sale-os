@@ -43,6 +43,7 @@ pub const COMMANDS: &[&str] = &[
     "product_archive",
     "catalog_lookup_code",
     "catalog_search",
+    "catalog_quick_select",
     "scan_submit",
     "cart_current",
     "cart_recovery",

@@ -106,6 +106,32 @@ pub trait CatalogQueries: Send + Sync {
         offset: u32,
         limit: u32,
     ) -> Result<ProductPage, QueryError>;
+    /// One page of the quick-select grid (POS-002): active products flagged `quick_select`,
+    /// by name, each with its active variants; `category` narrows to one category.
+    async fn quick_select(
+        &self,
+        category: Option<pos_domain::CategoryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<QuickSelectPage, QueryError>;
+}
+
+/// A page of the quick-select grid, with the categories that have quick-select products
+/// (the grid's tabs).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct QuickSelectPage {
+    pub categories: Vec<(pos_domain::CategoryId, String)>,
+    /// Products in the chosen tab, all pages.
+    pub total: u32,
+    pub products: Vec<QuickProduct>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickProduct {
+    pub product_id: pos_domain::ProductId,
+    pub name: String,
+    /// At least one; more than one opens the variant picker.
+    pub variants: Vec<CatalogHit>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

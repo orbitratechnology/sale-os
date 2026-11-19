@@ -23,6 +23,10 @@ export interface FakeProduct {
   sku: string;
   barcodes: Record<string, number>; // code → units per scan
   priceMinor: bigint;
+  /** E09-T04: on the quick-select grid, in this category; `label` names a variant. */
+  quick?: boolean;
+  category?: { categoryId: string; name: string };
+  label?: string;
 }
 
 interface StaffUser extends SignInUser {
@@ -353,7 +357,7 @@ export function view(s: FakeState): CartView {
 }
 
 function hit(p: FakeProduct): CatalogHit {
-  return { productId: p.productId, variantId: p.variantId, name: p.name, label: "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search" };
+  return { productId: p.productId, variantId: p.variantId, name: p.name, label: p.label ?? "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search" };
 }
 
 /** The approval rule Rust applies (authorize_with_approval): cashiers need a covering token. */
@@ -1440,6 +1444,21 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       const q = String(a.query).toLowerCase();
       return s.products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().startsWith(q)).map(hit);
+    }
+    case "catalog_quick_select": {
+      needSession(s);
+      const quick = s.products.filter((p) => p.quick);
+      const categories = [...new Map(quick.filter((p) => p.category).map((p) => [p.category?.categoryId, p.category])).values()];
+      const inTab = quick.filter((p) => a.categoryId === null || p.category?.categoryId === a.categoryId);
+      const byProduct = new Map<string, FakeProduct[]>();
+      for (const p of [...inTab].sort((x, y) => x.name.localeCompare(y.name))) byProduct.set(p.productId, [...(byProduct.get(p.productId) ?? []), p]);
+      const all = [...byProduct.values()];
+      const page = all.slice(Number(a.offset), Number(a.offset) + Number(a.limit));
+      return {
+        categories: categories.sort((x, y) => (x?.name ?? "").localeCompare(y?.name ?? "")),
+        total: all.length,
+        products: page.map((vs) => ({ productId: vs[0]?.productId, name: vs[0]?.name, variants: vs.map(hit) })),
+      };
     }
     case "cart_add_variant": {
       needSession(s);

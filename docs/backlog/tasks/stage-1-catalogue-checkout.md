@@ -342,10 +342,10 @@ hardware. It is measured by:
 ### E09-T04 · Product search panel and quick-select grid
 - **Size** M · **Deps** E06-T04, E09-T03 · **PRD** POS-002
 - **Acceptance:**
-  - [ ] Search as you type (debounce 80 ms) with keyboard navigation (↑/↓/Enter adds).
+  - [x] Search as you type (debounce 80 ms) with keyboard navigation (↑/↓/Enter adds).
   - [ ] Search shows the price, the variant label and on-hand stock (once Stage 2 lands).
-  - [ ] The quick-select grid shows products flagged `quick_select`, paged, with categories as tabs. It is touch-friendly (targets of at least 44 px).
-  - [ ] Choosing a variant product opens a variant picker.
+  - [x] The quick-select grid shows products flagged `quick_select`, paged, with categories as tabs. It is touch-friendly (targets of at least 44 px).
+  - [x] Choosing a variant product opens a variant picker.
 
 ### E09-T05 · Keyboard map and accessibility
 - **Size** S · **Deps** E09-T03, E09-T04 · **PRD** §5.1, §14 (Accessibility)

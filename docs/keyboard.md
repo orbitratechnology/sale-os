@@ -6,6 +6,7 @@ Every checkout action works from the keyboard. The screen is never left to do an
 |---|---|---|
 | *scan* | Add the item | Any time focus is not in a text field ("Scanner ready" in the status bar), or in the code field |
 | `F2` | Search products | Type; `↑`/`↓` choose; `Enter` adds; `Esc` closes |
+| `Shift+F2` | Quick items | The quick-select grid: products ticked “Show on the quick-select grid”, by name, with category tabs, 24 per page (Previous / Next). A tap adds one and the grid stays open; a product with variants asks which. Tiles are at least 44 px. `Esc` or Done closes |
 | `F3` | Change the selected line's quantity | Typed inline; `Enter` saves, `Esc` cancels. Zero is refused: use `Del` |
 | `F4` | Discount on the selected line (%) | Empty removes it |
 | `Del` | Remove the selected line | |
