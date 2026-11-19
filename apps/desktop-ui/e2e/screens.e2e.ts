@@ -127,6 +127,18 @@ describe("first run (E04-T02)", () => {
     const [login] = await calls(page, "auth_login");
     expect(login).toMatchObject({ pin: "1234" });
     await page.getByLabel("Status").getByText("Olu").waitFor();
+    // Steps 5–7: "Getting started" opens once, and each step goes where it is done.
+    const start = page.getByRole("dialog", { name: "Getting started" });
+    await start.waitFor();
+    await start.getByRole("button", { name: "Add staff" }).click();
+    await page.getByRole("tab", { name: "Staff", selected: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await start.count()).toBe(0);
+    // Offered again from the SANDBOX banner until the till goes live.
+    await page.getByRole("note").getByRole("button", { name: "Getting started" }).click();
+    await start.getByRole("button", { name: "Business details" }).click();
+    await page.getByRole("tab", { name: "Business", selected: true }).waitFor();
   });
 });
 

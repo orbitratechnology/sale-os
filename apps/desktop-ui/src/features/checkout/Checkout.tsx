@@ -12,6 +12,7 @@ import { Dialog } from "./Dialog";
 import { ParkedDialog } from "./ParkedDialog";
 import { QuickSelectDialog } from "./QuickSelectDialog";
 import { RecoveryDialog } from "./RecoveryDialog";
+import { GettingStarted } from "../setup/GettingStarted";
 import { PaymentPanel } from "./PaymentPanel";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
@@ -27,6 +28,7 @@ type Modal =
   | "park"
   | "parked"
   | "recovered"
+  | "start"
   | "quick"
   | { reason: string; then: (reason: string) => void }
   | null;
@@ -72,6 +74,8 @@ export function Checkout({
   onSettings,
   onConflicts,
   onCreateProduct,
+  gettingStarted = false,
+  onGettingStartedSeen,
 }: {
   workspace: Workspace;
   session: Session;
@@ -87,8 +91,11 @@ export function Checkout({
   onReports: (() => void) | null;
   /** Owner only: the till went live (refresh the workspace). `null` hides "Go live". */
   onWentLive: (() => void) | null;
-  /** Owner only: the settings screen. */
-  onSettings: (() => void) | null;
+  /** Owner only: the settings screen, optionally on one page ("Staff", "Business"). */
+  onSettings: ((group?: string) => void) | null;
+  /** E04-T02: open "Getting started" now (the wizard just finished). */
+  gettingStarted?: boolean;
+  onGettingStartedSeen?: () => void;
   /** Managers and owners: the sync conflicts screen (E18). `null` for cashiers. */
   onConflicts: (() => void) | null;
   /** E07-T04: open the editor with an unknown barcode pre-filled. */
@@ -105,7 +112,7 @@ export function Checkout({
   }, []);
   const drawerNeeded = drawer !== null && drawer.required && drawer.session === null;
   const [editing, setEditing] = useState<Editing>(null);
-  const [modal, setModal] = useState<Modal>(null);
+  const [modal, setModal] = useState<Modal>(gettingStarted && onWentLive ? "start" : null);
   const [code, setCode] = useState("");
   const [scannerReady, setScannerReady] = useState(true);
   const search = useRef<SearchHandle | null>(null);
@@ -290,6 +297,9 @@ export function Checkout({
           {onWentLive && (
             <>
               {" "}
+              <button type="button" className="link" onClick={() => setModal("start")}>
+                Getting started
+              </button>{" "}
               <button type="button" className="link" onClick={() => setModal("goLive")}>
                 Go live…
               </button>
@@ -407,7 +417,7 @@ export function Checkout({
             </button>
           )}
           {onSettings && (
-            <button type="button" className="secondary" onClick={onSettings}>
+            <button type="button" className="secondary" onClick={() => onSettings()}>
               Settings
             </button>
           )}
@@ -492,6 +502,30 @@ export function Checkout({
             the next customer. Resume it from Parked (<kbd>⇧F5</kbd>); prices are checked again then.
           </p>
         </Dialog>
+      )}
+      {modal === "start" && onSettings && (
+        <GettingStarted
+          onProducts={() => {
+            onGettingStartedSeen?.();
+            onProducts();
+          }}
+          onStaff={() => {
+            onGettingStartedSeen?.();
+            onSettings("Staff");
+          }}
+          onBusiness={() => {
+            onGettingStartedSeen?.();
+            onSettings("Business");
+          }}
+          onGoLive={() => {
+            onGettingStartedSeen?.();
+            setModal("goLive");
+          }}
+          onClose={() => {
+            onGettingStartedSeen?.();
+            setModal(null);
+          }}
+        />
       )}
       {modal === "quick" && (
         <QuickSelectDialog exponent={exponent} onPick={(variantId) => c.addQuick(variantId)} onClose={() => setModal(null)} />

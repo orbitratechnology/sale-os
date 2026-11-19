@@ -34,16 +34,20 @@ For whoever installs and supports Sale OS in a pilot shop. Restoring backups has
    - the tax rates.
 
    It works offline and takes a few minutes. The till starts in **SANDBOX** mode (practice
-   sales, excluded from reports).
+   sales, excluded from reports), and **Getting started** lists what is left, each with a
+   button (also on the SANDBOX banner until Live).
 2. **Products.** Products (**F6**): add them one by one, or import a CSV file there.
-3. **Staff.** Add cashiers and managers with their own PINs. Nobody shares the owner's PIN.
+3. **Staff.** Settings → Staff: add cashiers and managers with their own PINs. Nobody shares
+   the owner's PIN.
 4. **Recovery key.**
    - The owner opens Settings → Backups → Show recovery key, writes it on paper, keeps it away
      from the till, and presses "I have written it down".
    - **Without it, backups cannot be opened on another computer.**
-5. **Second backup folder.** Settings → Backups → Choose a folder… (a USB stick, ideally
+5. **Logo.** Settings → Business → Choose a logo… (PNG or JPEG). It is printed on receipts
+   saved as PDF.
+6. **Second backup folder.** Settings → Backups → Choose a folder… (a USB stick, ideally
    BitLocker To Go).
-6. **Practise** a few sales, a return, and a drawer open and close. Then **Go live** (the
+7. **Practise** a few sales, a return, and a drawer open and close. Then **Go live** (the
    SANDBOX banner → Go live…). Sandbox sales stay excluded from reports.
 
 ## 3. Linking to the cloud

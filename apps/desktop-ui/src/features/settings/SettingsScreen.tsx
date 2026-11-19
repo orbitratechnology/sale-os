@@ -22,17 +22,20 @@ const STAFF = "Staff";
  * version it showed. Each change is saved on its own and audited.
  */
 export function SettingsScreen({
+  initialGroup,
   onBack,
   onChanged,
   onRelinked,
 }: {
+  /** The page to open on (e.g. "Staff" from Getting started); otherwise the first. */
+  initialGroup?: string | undefined;
   onBack: () => void;
   onChanged: () => void;
   /** The till joined another business: its data and staff were replaced. */
   onRelinked: () => void;
 }) {
   const [settings, setSettings] = useState<SettingDto[] | null>(null);
-  const [group, setGroup] = useState<string | null>(null);
+  const [group, setGroup] = useState<string | null>(initialGroup ?? null);
   const [error, setError] = useState<IpcError | null>(null);
 
   const load = useCallback(() => {

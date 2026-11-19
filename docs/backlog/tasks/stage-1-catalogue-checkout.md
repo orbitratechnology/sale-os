@@ -50,10 +50,10 @@ hardware. It is measured by:
 
   Show the "cloud not linked — data stays on this device until you link" explainer.
 - **Acceptance:**
-  - [ ] An e2e test completes the wizard offline in under 3 minutes (scripted).
-  - [ ] Sandbox sales show a SANDBOX banner and are excluded from reports (enforced in E14).
-  - [ ] Switching to Live needs the owner PIN and is audited (`mode.changed`).
-  - [ ] Every step is keyboard-navigable.
+  - [x] An e2e test completes the wizard offline in under 3 minutes (scripted).
+  - [x] Sandbox sales show a SANDBOX banner and are excluded from reports (enforced in E14).
+  - [x] Switching to Live needs the owner PIN and is audited (`mode.changed`).
+  - [x] Every step is keyboard-navigable.
 
 ### E04-T03 · Settings store and settings UI shell
 - **Size** S · **Deps** E04-T01 · **PRD** SET-004, SET-005

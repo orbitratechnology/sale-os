@@ -37,6 +37,8 @@ export function App() {
   const [state, setState] = useState<BootstrapState | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "till" });
+  /** E04-T02: the wizard just finished; the till offers "Getting started" once. */
+  const [gettingStarted, setGettingStarted] = useState(false);
 
   const apply = useCallback((res: Result<BootstrapState>) => {
     if (res.status === "ok") {
@@ -116,7 +118,14 @@ export function App() {
   }
   if (!state) return <main className="shell" aria-busy="true" />;
   if (!state.setupComplete || !state.workspace)
-    return <SetupWizard onDone={refresh} />;
+    return (
+      <SetupWizard
+        onDone={() => {
+          setGettingStarted(true);
+          refresh();
+        }}
+      />
+    );
   if (!state.session || state.session.mustChangePin) {
     return (
       <SignIn
@@ -151,6 +160,7 @@ export function App() {
       case "settings":
         return (
           <SettingsScreen
+            initialGroup={screen.group}
             onBack={() => setScreen({ kind: "till" })}
             onChanged={loadPrefs}
             onRelinked={() => {
@@ -273,9 +283,11 @@ export function App() {
             onWentLive={state.session.role === "owner" ? refresh : null}
             onSettings={
               state.session.role === "owner"
-                ? () => setScreen({ kind: "settings" })
+                ? (group?: string) => setScreen({ kind: "settings", group })
                 : null
             }
+            gettingStarted={gettingStarted}
+            onGettingStartedSeen={() => setGettingStarted(false)}
             onConflicts={
               state.session.role === "cashier"
                 ? null
@@ -311,7 +323,7 @@ type Screen =
   | { kind: "stock" }
   | { kind: "reports" }
   | { kind: "audit" }
-  | { kind: "settings" }
+  | { kind: "settings"; group?: string | undefined }
   | { kind: "conflicts" }
   | {
       kind: "editor";
