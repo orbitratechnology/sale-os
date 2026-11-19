@@ -26,6 +26,8 @@ export interface VariantDraft {
   variantId: string | null;
   options: Record<string, string>;
   price: string;
+  /** CAT-002: what the item costs the shop, as typed; empty when not known. */
+  cost: string;
   sku: string;
   barcodes: BarcodeDraft[];
   lowStock: string;
@@ -56,7 +58,7 @@ export interface FieldProblem {
 }
 
 export function blankVariant(options: Record<string, string> = {}): VariantDraft {
-  return { variantId: null, options, price: "", sku: "", barcodes: [], lowStock: "", scanQty: "1" };
+  return { variantId: null, options, price: "", cost: "", sku: "", barcodes: [], lowStock: "", scanQty: "1" };
 }
 
 export function blankDraft(taxCategoryId: string, barcode?: string): ProductDraft {
@@ -133,6 +135,7 @@ export function fromProduct(p: ProductDto_Serialize, exponent: number): ProductD
         variantId: v.variantId,
         options: v.options,
         price: formatMoney(v.priceMinor, { exponent, group: null }),
+        cost: v.costMinor === null || v.costMinor === undefined ? "" : formatMoney(v.costMinor, { exponent, group: null }),
         sku: v.sku ?? "",
         barcodes: v.barcodes.map((b) => ({ raw: b.raw, qualifier: b.qualifier, packQty: formatMilli(b.packQtyMilli) })),
         lowStock: v.lowStockThresholdMilli === null ? "" : formatMilli(v.lowStockThresholdMilli),
@@ -150,6 +153,8 @@ export function toInput(d: ProductDraft, exponent: number): ProductInputDto_Dese
   for (const [i, v] of d.variants.entries()) {
     const price = scaleDecimal(v.price, exponent);
     if (price === null) return { field: "price", variant: i, message: "Enter a price like 1.20." };
+    const cost = v.cost.trim() ? scaleDecimal(v.cost, exponent) : null;
+    if (v.cost.trim() && cost === null) return { field: "cost", variant: i, message: "Enter a cost like 0.80, or leave it empty." };
     const scanQty = scaleDecimal(v.scanQty || "1", 3);
     if (scanQty === null || scanQty === "0") return { field: "scanQty", variant: i, message: "Enter how many one scan adds, e.g. 1." };
     const lowStock = v.lowStock.trim() ? scaleDecimal(v.lowStock, 3) : null;
@@ -165,7 +170,7 @@ export function toInput(d: ProductDraft, exponent: number): ProductInputDto_Dese
       sku: v.sku.trim() || null,
       options: v.options,
       priceMinor: price,
-      costMinor: null,
+      costMinor: cost,
       trackStock: tracked,
       lowStockThresholdMilli: lowStock,
       scanQtyMilli: scanQty,

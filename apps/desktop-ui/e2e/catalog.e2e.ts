@@ -96,6 +96,7 @@ describe("product editor (E06-T06b)", () => {
     await page.getByRole("button", { name: "New product" }).click();
     await page.getByLabel("Name").fill("Sparkling water");
     await page.getByLabel("Price for Sparkling water").fill("0.95");
+    await page.getByLabel("Cost for Sparkling water").fill("0.40");
     await page.getByLabel("SKU for Sparkling water").fill("WATER");
     await scan(page, "5000112546415"); // scanner-ready: goes to the editor, not the cart
     await page.getByRole("list", { name: "Barcodes for Sparkling water" }).getByText("5000112546415").waitFor();
@@ -104,7 +105,7 @@ describe("product editor (E06-T06b)", () => {
     const [created] = await calls(page, "product_create");
     expect(created?.product).toMatchObject({
       name: "Sparkling water",
-      variants: [{ priceMinor: "95", sku: "WATER", barcodes: [{ raw: "5000112546415", qualifier: "primary" }] }],
+      variants: [{ priceMinor: "95", costMinor: "40", sku: "WATER", barcodes: [{ raw: "5000112546415", qualifier: "primary" }] }],
     });
     expect(await calls(page, "scan_submit")).toEqual([]);
   });
@@ -329,5 +330,9 @@ describe("CSV import (E06-T08)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
     await products(page);
     expect(await page.getByRole("button", { name: "Import CSV" }).count()).toBe(0);
+    // The editor is read-only for a cashier, and the cost price is not shown (CAT-002).
+    await page.getByTestId("product-row").first().click();
+    await page.getByRole("table", { name: "Variants" }).waitFor();
+    expect(await page.getByRole("columnheader", { name: /Cost/ }).count()).toBe(0);
   });
 });

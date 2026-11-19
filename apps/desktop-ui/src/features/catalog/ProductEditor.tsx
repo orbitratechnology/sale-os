@@ -288,6 +288,7 @@ export function ProductEditor({
               <tr>
                 {hasAxes && <th scope="col">Variant</th>}
                 <th scope="col">Price ({workspace.currencyCode})</th>
+                {!ro && <th scope="col">Cost ({workspace.currencyCode})</th>}
                 <th scope="col">SKU</th>
                 <th scope="col">Barcodes</th>
                 <th scope="col">Low-stock alert</th>
@@ -304,6 +305,19 @@ export function ProductEditor({
                       <input aria-label={`Price for ${label}`} readOnly={ro} inputMode="decimal" className="num" value={v.price} onChange={(e) => setVariant(i, { price: e.target.value })} />
                       <Inline msg={at("price", i)} />
                     </td>
+                    {!ro && (
+                      <td>
+                        <input
+                          aria-label={`Cost for ${label}`}
+                          inputMode="decimal"
+                          className="num"
+                          placeholder="optional"
+                          value={v.cost}
+                          onChange={(e) => setVariant(i, { cost: e.target.value })}
+                        />
+                        <Inline msg={at("cost", i)} />
+                      </td>
+                    )}
                     <td>
                       <input aria-label={`SKU for ${label}`} readOnly={ro} value={v.sku} onChange={(e) => setVariant(i, { sku: e.target.value })} />
                       <Inline msg={problem?.field === "sku" && (problem.variant === i || problem.value === v.sku.trim()) ? problem.message : null} />
