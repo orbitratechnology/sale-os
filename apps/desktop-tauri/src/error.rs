@@ -210,11 +210,24 @@ mod details_tests {
     #[test]
     fn staff_errors_name_the_input_and_the_rule() {
         use pos_domain::staff::StaffError as S;
-        let d = |e: S| IpcError::from_app(&AppError::Staff(e)).details.map(|d| (d.field, d.value));
-        assert_eq!(d(S::NameTaken), Some((Some("displayName".into()), Some("taken".into()))));
-        assert_eq!(d(S::NameTooLong), Some((Some("displayName".into()), Some("40".into()))));
+        let d = |e: S| {
+            IpcError::from_app(&AppError::Staff(e))
+                .details
+                .map(|d| (d.field, d.value))
+        };
+        assert_eq!(
+            d(S::NameTaken),
+            Some((Some("displayName".into()), Some("taken".into())))
+        );
+        assert_eq!(
+            d(S::NameTooLong),
+            Some((Some("displayName".into()), Some("40".into())))
+        );
         assert_eq!(d(S::PinFormat), Some((Some("pin".into()), None)));
-        assert_eq!(d(S::LastOwner), Some((Some("role".into()), Some("lastOwner".into()))));
+        assert_eq!(
+            d(S::LastOwner),
+            Some((Some("role".into()), Some("lastOwner".into())))
+        );
         assert_eq!(d(S::NotFound), None);
         let e = IpcError::from_app(&AppError::Staff(S::PinFormat));
         assert_eq!(e.code, ErrorCode::ValidationFailed);
