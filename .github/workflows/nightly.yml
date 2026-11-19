@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.97.0
       - uses: Swatinem/rust-cache@v2
-      - name: Crash harness (E02-T04, E19-T02: sales, returns, stock documents, imports, acknowledgements)
+      - name: "Crash harness (E02-T04, E19-T02: sales, returns, stock documents, imports, acknowledgements)"
         run: cargo xtask crash-harness --kills 100 --report crash-report.txt
       - name: 10,000 concurrent applies (E02-T03)
         run: cargo test -p pos-local-db --release --test apply concurrent
