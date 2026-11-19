@@ -70,6 +70,12 @@ const PRODUCTS: [(&str, &str, i64, bool); 3] = [
     ("WRAP", "Gift wrap", 100, false),
 ];
 
+/// The database as the app has it: encrypted (ADR-023), here with a fixed test key so the
+/// parent can open what the killed child wrote.
+fn harness_opts(dir: &std::path::Path) -> DbOptions {
+    DbOptions::in_dir(dir).with_key(pos_local_db::crypto::DbKey::from_bytes([0x5A; 32]))
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let result = match args.get(1).map(String::as_str) {
@@ -98,7 +104,7 @@ fn child(db_dir: &Path, ack_path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     rt.block_on(async {
         let s = |e: &dyn std::fmt::Display| e.to_string();
-        let db = LocalDb::open(&DbOptions::in_dir(db_dir))
+        let db = LocalDb::open(&harness_opts(db_dir))
             .await
             .map_err(|e| s(&e))?;
         let store = SqliteStore::new(db.clone());
@@ -750,7 +756,7 @@ async fn verify(dir: &Path, ack: &Path) -> Result<Verdict, String> {
             done: Done::default(),
         });
     }
-    let db = LocalDb::open(&DbOptions::in_dir(dir))
+    let db = LocalDb::open(&harness_opts(dir))
         .await
         .map_err(|e| format!("reopen failed: {e}"))?;
     let r = db.readers();
@@ -911,13 +917,18 @@ async fn verify(dir: &Path, ack: &Path) -> Result<Verdict, String> {
 /// database to upgrade (0014 includes a data migration: the search index rows). Kept next to
 /// those files' contents; if a later edit breaks it, building the template fails loudly.
 const DOWN_TO_0013: &str = "
+DROP INDEX ix_carts_parked;
+ALTER TABLE carts DROP COLUMN parked_by;
+ALTER TABLE carts DROP COLUMN parked_at;
+ALTER TABLE carts DROP COLUMN parked_label;
+ALTER TABLE sync_state DROP COLUMN replay_after;
 DROP TABLE cloud_report_cache;
 DROP TABLE bootstrap_staging;
 ALTER TABLE sync_state DROP COLUMN link_progress;
 DROP TABLE search_index_rows;
 DROP INDEX ix_outbox_aggregate;
 ALTER TABLE sync_state DROP COLUMN bootstrap_page;
-DELETE FROM _sqlx_migrations WHERE version IN (14, 15);
+DELETE FROM _sqlx_migrations WHERE version IN (14, 15, 16, 17);
 ";
 
 /// Opens (and so upgrades) the database, says so, and waits to be killed.
@@ -927,7 +938,7 @@ fn migrate_child(dir: &Path) -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
     rt.block_on(async {
-        LocalDb::open(&DbOptions::in_dir(dir))
+        LocalDb::open(&harness_opts(dir))
             .await
             .map_err(|e| e.to_string())?;
         println!("migrated");
@@ -968,12 +979,16 @@ async fn kept_counts(db: &LocalDb) -> Result<Vec<i64>, String> {
 /// The schema version as the file says, read without upgrading it.
 async fn version_on_disk(db: &Path) -> Result<i64, String> {
     use sqlx::ConnectOptions;
-    let mut c = sqlx::sqlite::SqliteConnectOptions::new()
-        .filename(db)
-        .read_only(true)
-        .connect()
-        .await
-        .map_err(|e| e.to_string())?;
+    let mut c = pos_local_db::crypto::keyed(
+        sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(db)
+            .read_only(true),
+        db,
+        harness_opts(db).key.as_ref(),
+    )
+    .connect()
+    .await
+    .map_err(|e| e.to_string())?;
     sqlx::query_scalar("SELECT coalesce(max(version), 0) FROM _sqlx_migrations WHERE success = 1")
         .fetch_one(&mut c)
         .await
@@ -1033,15 +1048,19 @@ fn migrate_campaign(args: &[String]) -> Result<(), String> {
     // 2. Back to schema 13, with everything in the main file.
     let before = rt.block_on(async {
         use sqlx::ConnectOptions;
-        let mut c = sqlx::sqlite::SqliteConnectOptions::new()
-            .filename(template.join("pos.db"))
-            .connect()
-            .await
-            .map_err(|e| e.to_string())?;
+        let file = template.join("pos.db");
+        let mut c = pos_local_db::crypto::keyed(
+            sqlx::sqlite::SqliteConnectOptions::new().filename(&file),
+            &file,
+            harness_opts(&template).key.as_ref(),
+        )
+        .connect()
+        .await
+        .map_err(|e| e.to_string())?;
         sqlx::raw_sql(DOWN_TO_0013)
             .execute(&mut c)
             .await
-            .map_err(|e| format!("undoing 0014-0015: {e}"))?;
+            .map_err(|e| format!("undoing 0014-0017: {e}"))?;
         sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
             .execute(&mut c)
             .await
@@ -1114,7 +1133,7 @@ fn migrate_campaign(args: &[String]) -> Result<(), String> {
         *landed.entry(at_kill).or_default() += 1;
         rt.block_on(async {
             // The app starting again: it must open, finish the upgrade and keep everything.
-            let db = LocalDb::open(&DbOptions::in_dir(&work))
+            let db = LocalDb::open(&harness_opts(&work))
                 .await
                 .map_err(|e| format!("kill {k} (at v{at_kill}): reopen failed: {e}"))?;
             let v = db.schema_version().await.map_err(|e| e.to_string())?;

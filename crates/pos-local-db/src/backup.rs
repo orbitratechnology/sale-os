@@ -8,6 +8,7 @@
 //! A restore replaces the database file while it is closed. The current database is kept
 //! first as a `pre-restore` backup, so a restore can itself be undone.
 
+use crate::crypto::DbKey;
 use crate::{DbOptions, MIGRATOR, StoreError};
 use serde::{Deserialize, Serialize};
 use sqlx::{ConnectOptions, Connection};
@@ -134,13 +135,24 @@ fn meta_path(backup: &Path) -> PathBuf {
 }
 
 /// A read-only connection to a database file that is not the live one.
-async fn open_file(path: &Path) -> Result<sqlx::SqliteConnection, StoreError> {
-    sqlx::sqlite::SqliteConnectOptions::new()
-        .filename(path)
-        .read_only(true)
-        .connect()
-        .await
-        .map_err(StoreError::from_sqlx)
+async fn open_file(path: &Path, key: Option<&DbKey>) -> Result<sqlx::SqliteConnection, StoreError> {
+    // An encrypted file the key does not open reads as "not a database": say what it is.
+    if crate::crypto::file_kind(path) == crate::crypto::FileKind::Encrypted {
+        match key {
+            Some(k) if crate::crypto::key_opens(path, k).await => {}
+            _ => return Err(StoreError::Locked),
+        }
+    }
+    crate::crypto::keyed(
+        sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(path)
+            .read_only(true),
+        path,
+        key,
+    )
+    .connect()
+    .await
+    .map_err(StoreError::from_sqlx)
 }
 
 /// A private copy of a database file that someone else may have written (a backup on a USB
@@ -179,8 +191,13 @@ fn stage(path: &Path) -> Result<Staged, StoreError> {
 }
 
 /// Reads what a database file holds, for its description.
-async fn describe(path: &Path, kind: BackupKind, created_at: i64) -> Result<BackupMeta, StoreError> {
-    let mut c = open_file(path).await?;
+async fn describe(
+    path: &Path,
+    kind: BackupKind,
+    created_at: i64,
+    key: Option<&DbKey>,
+) -> Result<BackupMeta, StoreError> {
+    let mut c = open_file(path, key).await?;
     // A scalar from `table`, or 0 if the file has no such table (an empty or very old one).
     async fn scalar(c: &mut sqlx::SqliteConnection, table: &str, sql: &str) -> Result<i64, StoreError> {
         let exists: i64 =
@@ -247,6 +264,7 @@ pub(crate) async fn create(
     readers: &sqlx::SqlitePool,
     dir: &Path,
     kind: BackupKind,
+    key: Option<&DbKey>,
 ) -> Result<BackupInfo, StoreError> {
     std::fs::create_dir_all(dir).map_err(io("create backups directory"))?;
     let created_at = now_ms();
@@ -264,7 +282,7 @@ pub(crate) async fn create(
         .and_then(|f| f.sync_all())
         .map_err(io("sync backup"))?;
     std::fs::rename(&partial, &path).map_err(io("name backup"))?;
-    let meta = describe(&path, kind, created_at).await?;
+    let meta = describe(&path, kind, created_at, key).await?;
     write_meta(&path, &meta)?;
     prune(dir, kind)?;
     tracing::info!(kind = kind.as_str(), file = %path.display(), "backup written");
@@ -342,21 +360,22 @@ pub fn copy_to(backup: &BackupInfo, folder: &Path) -> Result<BackupInfo, StoreEr
 
 /// A full `integrity_check` of a backup file, and whether this app can open it. The file is
 /// checked as a private copy (see [`Staged`]).
-pub async fn verify(path: &Path) -> Result<Verification, StoreError> {
+/// An encrypted backup that `key` does not open is refused with [`StoreError::Locked`].
+pub async fn verify(path: &Path, key: Option<&DbKey>) -> Result<Verification, StoreError> {
     let staged = stage(path)?;
-    check(&staged.file).await
+    check(&staged.file, key).await
 }
 
 /// [`verify`] for a file of our own (no stranger's `-wal` can be beside it).
-async fn check(path: &Path) -> Result<Verification, StoreError> {
+async fn check(path: &Path, key: Option<&DbKey>) -> Result<Verification, StoreError> {
     let head = MIGRATOR.iter().map(|m| m.version).max().unwrap_or(0);
-    let mut c = open_file(path).await?;
+    let mut c = open_file(path, key).await?;
     let check: Vec<String> = sqlx::query_scalar("PRAGMA integrity_check")
         .fetch_all(&mut c)
         .await
         .map_err(StoreError::from_sqlx)?;
     c.close().await.map_err(StoreError::from_sqlx)?;
-    let meta = describe(path, BackupKind::Manual, 0).await?;
+    let meta = describe(path, BackupKind::Manual, 0, key).await?;
     Ok(Verification {
         problem: (check != ["ok"]).then(|| check.join("; ")),
         schema_version: meta.schema_version,
@@ -366,9 +385,9 @@ async fn check(path: &Path) -> Result<Verification, StoreError> {
 
 /// How a database file is linked to the cloud: `(link_state, device_id)` from its
 /// `sync_state` (`("unlinked", None)` if it has none).
-pub async fn link_of(path: &Path) -> Result<(String, Option<String>), StoreError> {
+pub async fn link_of(path: &Path, key: Option<&DbKey>) -> Result<(String, Option<String>), StoreError> {
     let staged = stage(path)?;
-    let mut c = open_file(&staged.file).await?;
+    let mut c = open_file(&staged.file, key).await?;
     let row: Option<(String, Option<String>)> =
         sqlx::query_as("SELECT link_state, device_id FROM sync_state WHERE id = 1")
             .fetch_optional(&mut c)
@@ -424,7 +443,7 @@ pub async fn restore(opts: &DbOptions, backup: &Path) -> Result<RestoreReport, S
     siblings(&incoming);
     std::fs::copy(backup, &incoming).map_err(io("copy backup into place"))?;
     let checked = async {
-        let v = check(&incoming).await?;
+        let v = check(&incoming, opts.key.as_ref()).await?;
         if let Some(problem) = v.problem {
             return Err(StoreError::Corrupt(format!(
                 "the backup failed its integrity check: {problem}"
@@ -436,7 +455,7 @@ pub async fn restore(opts: &DbOptions, backup: &Path) -> Result<RestoreReport, S
                 app_version: MIGRATOR.iter().map(|m| m.version).max().unwrap_or(0),
             });
         }
-        describe(&incoming, BackupKind::Manual, now_ms()).await
+        describe(&incoming, BackupKind::Manual, now_ms(), opts.key.as_ref()).await
     }
     .await;
     let restored = match checked {
@@ -483,10 +502,13 @@ async fn keep_current(opts: &DbOptions) -> Result<BackupInfo, StoreError> {
     // A consistent copy (WAL included) if the database opens; its files as they are if not
     // (it may be the damaged one being replaced).
     let copied = async {
-        let mut c = sqlx::sqlite::SqliteConnectOptions::new()
-            .filename(&opts.path)
-            .connect()
-            .await?;
+        let mut c = crate::crypto::keyed(
+            sqlx::sqlite::SqliteConnectOptions::new().filename(&opts.path),
+            &opts.path,
+            opts.key.as_ref(),
+        )
+        .connect()
+        .await?;
         sqlx::query("VACUUM INTO ?")
             .bind(target.to_string_lossy().into_owned())
             .execute(&mut c)
@@ -508,7 +530,7 @@ async fn keep_current(opts: &DbOptions) -> Result<BackupInfo, StoreError> {
             }
         }
     }
-    let meta = describe(&target, BackupKind::PreRestore, created_at)
+    let meta = describe(&target, BackupKind::PreRestore, created_at, opts.key.as_ref())
         .await
         .unwrap_or(BackupMeta {
             kind: BackupKind::PreRestore,

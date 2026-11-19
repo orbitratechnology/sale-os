@@ -39,6 +39,7 @@ pub enum ErrorCode {
     StoreDiskFull,
     StoreCorrupt,
     StoreSchemaTooNew,
+    StoreLocked,
     SyncNotLinked,
     SyncDeviceRevoked,
     SyncUpgradeRequired,
@@ -98,6 +99,7 @@ impl ErrorCode {
             StoreDiskFull => "STORE_DISK_FULL",
             StoreCorrupt => "STORE_CORRUPT",
             StoreSchemaTooNew => "STORE_SCHEMA_TOO_NEW",
+            StoreLocked => "STORE_LOCKED",
             SyncNotLinked => "SYNC_NOT_LINKED",
             SyncDeviceRevoked => "SYNC_DEVICE_REVOKED",
             SyncUpgradeRequired => "SYNC_UPGRADE_REQUIRED",
@@ -247,6 +249,10 @@ impl ErrorCode {
             StoreSchemaTooNew => (
                 "The database was written by a newer app version. It was not modified.",
                 "Ask the user to update the app.",
+            ),
+            StoreLocked => (
+                "The database (or the backup) is encrypted and this computer does not have its key: the keychain entry is missing, or it came from another computer (ADR-023).",
+                "Ask the owner for the recovery key they wrote down and offer the recovery-key screen; never suggest deleting the database.",
             ),
             SyncNotLinked => (
                 "This register is not linked to a cloud account.",
@@ -399,7 +405,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 47);
+        assert_eq!(seen.len(), 48);
     }
 
     #[test]

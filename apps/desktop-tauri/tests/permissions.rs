@@ -373,6 +373,14 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"backupId": "none.db", "confirmLoss": false}),
         ),
         ("data_export_full", Perm(SettingsEdit), json!({})),
+        ("security_recovery_key", Perm(SettingsEdit), json!({})),
+        ("security_recovery_key_confirmed", Perm(SettingsEdit), json!({})),
+        // Only acts on a locked database; refused (as a validation error) otherwise.
+        (
+            "db_unlock",
+            Public,
+            json!({"recoveryKey": "00000000-00000000-00000000-00000000-00000000-00000000-00000000-00000000"}),
+        ),
         (
             "reports_cloud_sales",
             Perm(ReportsView),
@@ -1615,7 +1623,14 @@ fn a_card_number_typed_anywhere_is_refused_and_stored_nowhere() {
     invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
     invoke(&w, "backup_now", json!({})).unwrap();
 
-    let never_stored = ["pin", "ownerPin", "password", "newPin", "currentPin"];
+    let never_stored = [
+        "pin",
+        "ownerPin",
+        "password",
+        "newPin",
+        "currentPin",
+        "recoveryKey",
+    ];
     let mut swept = 0;
     for (cmd, _, args) in cases() {
         for (pointer, dotted, key) in text_positions(&args) {
@@ -1687,4 +1702,93 @@ fn a_card_number_typed_anywhere_is_refused_and_stored_nowhere() {
         "the refusals were logged (and the log was read)"
     );
     eprintln!("{swept} text arguments refused; {} files clean", files.len());
+}
+
+/// The app over a given data folder and key store (ADR-023).
+fn start_keyed(
+    dir: &std::path::Path,
+    keys: Arc<dyn desktop_tauri_lib::db_key::DbKeyStore>,
+) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
+    let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
+    let services = tauri::async_runtime::block_on(AppServices::start_with(dir, None, hasher, keys));
+    let app = mock_builder()
+        .invoke_handler(desktop_tauri_lib::guarded_invoke_handler(
+            &desktop_tauri_lib::specta_builder::<MockRuntime>(),
+        ))
+        .build(tauri::generate_context!())
+        .unwrap();
+    app.manage(services);
+    let w = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    (app, w)
+}
+
+/// ADR-023 over IPC: the till's data is encrypted with a key from the keychain; the owner can
+/// read the recovery key (audited); on a computer whose keychain lacks the key, the app is
+/// locked until the recovery key is typed, and a wrong one is refused.
+#[test]
+fn encrypted_till_recovery_key_and_unlock() {
+    use desktop_tauri_lib::db_key::MemoryDbKey;
+    let dir = tempfile::tempdir().unwrap();
+    let keychain = Arc::new(MemoryDbKey::default());
+    let recovery;
+    {
+        let (_app, w) = start_keyed(dir.path(), keychain.clone());
+        let created = invoke(
+            &w,
+            "setup_create_workspace",
+            json!({"input": workspace_input("Shop", "1234")}),
+        )
+        .unwrap();
+        let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+        invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+        let status = invoke(&w, "backup_status", json!({})).unwrap();
+        assert_eq!(status["encrypted"], true, "{status}");
+        assert_eq!(status["recoveryKeyConfirmed"], false);
+        recovery = invoke(&w, "security_recovery_key", json!({}))
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(recovery.split('-').count(), 8);
+        let status = invoke(&w, "security_recovery_key_confirmed", json!({})).unwrap();
+        assert_eq!(status["recoveryKeyConfirmed"], true);
+        let audited = invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "security.recovery_key_viewed", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap();
+        assert_eq!(audited["rows"].as_array().unwrap().len(), 1);
+        assert!(
+            !audited.to_string().contains(&recovery),
+            "the key is not in the audit log"
+        );
+        // Not locked: unlocking is refused.
+        let e = invoke(&w, "db_unlock", json!({"recoveryKey": recovery})).unwrap_err();
+        assert_eq!(e["code"], "VALIDATION_FAILED");
+        invoke(&w, "auth_logout", json!({})).unwrap();
+    }
+    let bytes = std::fs::read(dir.path().join("pos.db")).unwrap();
+    assert!(!bytes.starts_with(b"SQLite format 3"), "encrypted on disk");
+
+    // A new Windows account (an empty keychain): locked, and the app says so.
+    let empty = Arc::new(MemoryDbKey::default());
+    {
+        let (_app, w) = start_keyed(dir.path(), empty.clone());
+        let e = invoke(&w, "app_bootstrap_state", json!({})).unwrap_err();
+        assert_eq!(e["code"], "STORE_LOCKED", "{e}");
+        let wrong = "0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD";
+        let e = invoke(&w, "db_unlock", json!({"recoveryKey": wrong})).unwrap_err();
+        assert_eq!(e["code"], "STORE_LOCKED");
+        let e = invoke(&w, "db_unlock", json!({"recoveryKey": "too short"})).unwrap_err();
+        assert_eq!(e["code"], "VALIDATION_FAILED");
+        assert!(empty.0.lock().unwrap().is_none(), "nothing kept from a wrong key");
+        invoke(&w, "db_unlock", json!({"recoveryKey": recovery.to_lowercase()})).unwrap();
+    }
+    // After the restart it opens.
+    let (_app, w) = start_keyed(dir.path(), empty);
+    let state = invoke(&w, "app_bootstrap_state", json!({})).unwrap();
+    assert_eq!(state["setupComplete"], true);
 }

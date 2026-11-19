@@ -1430,6 +1430,7 @@ components:
             - STORE_DISK_FULL
             - STORE_CORRUPT
             - STORE_SCHEMA_TOO_NEW
+            - STORE_LOCKED
             - SYNC_NOT_LINKED
             - SYNC_DEVICE_REVOKED
             - SYNC_UPGRADE_REQUIRED

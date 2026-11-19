@@ -21,6 +21,9 @@ const TICK: Duration = Duration::from_secs(300);
 #[serde(rename_all = "camelCase")]
 struct Config {
     secondary_folder: Option<PathBuf>,
+    /// When the owner confirmed writing the recovery key down (ADR-023), epoch ms.
+    #[serde(default)]
+    recovery_key_confirmed_at: Option<i64>,
 }
 
 /// The last copy to the second folder, for the settings page.
@@ -150,18 +153,31 @@ impl Backups {
 
     /// Sets (or with `None` clears) the second folder.
     pub(crate) fn set_secondary_folder(&self, folder: Option<PathBuf>) -> std::io::Result<()> {
-        let config = Config {
-            secondary_folder: folder,
-        };
-        std::fs::write(
-            &self.config_path,
-            serde_json::to_string_pretty(&config).map_err(std::io::Error::other)?,
-        )?;
+        let mut config = self.config();
+        config.secondary_folder = folder;
+        self.save(&config)?;
         *self
             .secondary
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = SecondaryState::default();
         Ok(())
+    }
+
+    fn save(&self, config: &Config) -> std::io::Result<()> {
+        std::fs::write(
+            &self.config_path,
+            serde_json::to_string_pretty(config).map_err(std::io::Error::other)?,
+        )
+    }
+
+    pub(crate) fn recovery_key_confirmed(&self) -> bool {
+        self.config().recovery_key_confirmed_at.is_some()
+    }
+
+    pub(crate) fn confirm_recovery_key(&self) -> std::io::Result<()> {
+        let mut config = self.config();
+        config.recovery_key_confirmed_at = Some(now_ms());
+        self.save(&config)
     }
 
     /// The backups on this computer and in the second folder, newest first.

@@ -12,7 +12,7 @@ use pos_domain::cart::AddVia;
 use pos_domain::settlement::{TenderInput, TenderKind};
 use pos_domain::{ErrorCode, HasErrorCode, UuidV7Generator};
 use pos_local_db::backup::{self, BackupKind};
-use pos_local_db::{DbOptions, LocalDb, SqliteStore};
+use pos_local_db::{LocalDb, SqliteStore};
 use std::sync::Arc;
 
 async fn receipts(store: &SqliteStore) -> Vec<String> {
@@ -51,12 +51,8 @@ async fn a_linked_till_restores_and_gets_its_later_sales_back_from_the_cloud() {
 
     // The restore, as the app does it: close, replace, reopen, schedule the replay.
     let db = r.store.db().clone();
-    let opts = DbOptions {
-        path: db.path().to_path_buf(),
-        backups_dir: db.backups_dir().to_path_buf(),
-        reader_connections: 1,
-    };
-    let (state, device) = backup::link_of(&made.path).await.unwrap();
+    let opts = db.options();
+    let (state, device) = backup::link_of(&made.path, db.key()).await.unwrap();
     assert_eq!(state, "linked");
     assert_eq!(device, backup::device_of(&db).await.unwrap());
     db.close().await;

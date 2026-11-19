@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "node:url";
+import { RECOVERY_KEY } from "./app/fakeBackend";
 
 let server: ViteDevServer;
 let browser: Browser;
@@ -374,6 +375,37 @@ describe("backups (E19-T03)", () => {
     await page.getByRole("status").getByText(/Restored\. Sale OS is restarting/).waitFor();
     expect(await page.evaluate(() => window.__fake.restartedFrom)).toBe("pos.daily.1793955600000.db");
     expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: true });
+  });
+
+  it("encrypted: the owner reads the recovery key and confirms writing it down (ADR-023)", async () => {
+    const page = await backupsPage();
+    const section = page.getByRole("region", { name: "Encryption" });
+    await section.getByText(/data and its backups are encrypted/).waitFor();
+    await section.getByRole("alert").getByText(/Write the recovery key down/).waitFor();
+    await section.getByRole("button", { name: "Show recovery key" }).click();
+    expect(await section.getByTestId("recovery-key").textContent()).toBe(RECOVERY_KEY);
+    await section.getByRole("button", { name: "I have written it down" }).click();
+    await section.getByRole("button", { name: "Show recovery key" }).waitFor();
+    expect(await section.getByRole("alert").count()).toBe(0);
+    expect(await calls(page, "security_recovery_key_confirmed")).toHaveLength(1);
+  });
+
+  it("a locked till asks for the recovery key; a wrong one is refused", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=locked`);
+    await page.getByRole("heading", { name: "This till's data is locked" }).waitFor();
+    const input = page.getByLabel("Recovery key");
+    const unlock = page.getByRole("button", { name: "Unlock" });
+    expect(await unlock.isDisabled()).toBe(true);
+    await input.fill("FFFFFFFF-".repeat(7) + "FFFFFFFF");
+    await unlock.click();
+    await page.getByRole("alert").getByText(/does not have its key/).waitFor();
+    await input.fill(RECOVERY_KEY.toLowerCase().replace(/-/g, " "));
+    await unlock.click();
+    await page.getByText("Unlocked. Sale OS is restarting…").waitFor();
   });
 
   it("the owner exports all data; cancelling the save dialog does nothing", async () => {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-db-unlock"
+description = "Enables the db_unlock command without any pre-configured scope."
+commands.allow = ["db_unlock"]
+
+[[permission]]
+identifier = "deny-db-unlock"
+description = "Denies the db_unlock command without any pre-configured scope."
+commands.deny = ["db_unlock"]

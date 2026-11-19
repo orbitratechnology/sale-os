@@ -74,6 +74,7 @@ actions! {
     REPORT_EXPORTED = "report.exported",
     DATA_EXPORTED = "data.exported",
     BACKUP_CREATED = "backup.created",
+    SECURITY_RECOVERY_KEY_VIEWED = "security.recovery_key_viewed",
     BACKUP_RESTORED = "backup.restored",
     BACKUP_EVENT_RESTORED = "backup.event_restored",
     SYNC_LINKED = "sync.linked",

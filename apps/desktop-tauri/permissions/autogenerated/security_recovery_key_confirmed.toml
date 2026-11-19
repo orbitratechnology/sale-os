@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-security-recovery-key-confirmed"
+description = "Enables the security_recovery_key_confirmed command without any pre-configured scope."
+commands.allow = ["security_recovery_key_confirmed"]
+
+[[permission]]
+identifier = "deny-security-recovery-key-confirmed"
+description = "Denies the security_recovery_key_confirmed command without any pre-configured scope."
+commands.deny = ["security_recovery_key_confirmed"]

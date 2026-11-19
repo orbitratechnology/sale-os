@@ -20,6 +20,7 @@ import { StockScreen } from "./features/stock/StockScreen";
 import { ReportsScreen } from "./features/reports/ReportsScreen";
 import { AuditScreen } from "./features/audit/AuditScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
+import { UnlockScreen } from "./features/shell/UnlockScreen";
 import { SettingsScreen } from "./features/settings/SettingsScreen";
 import { ConflictsScreen } from "./features/sync/ConflictsScreen";
 import { ScanPreferences } from "./features/scan/preferences";
@@ -109,7 +110,7 @@ export function App() {
   if (error) {
     return (
       <main className="shell">
-        <ErrorPanel error={error} />
+        {error.code === "STORE_LOCKED" ? <UnlockScreen /> : <ErrorPanel error={error} />}
       </main>
     );
   }

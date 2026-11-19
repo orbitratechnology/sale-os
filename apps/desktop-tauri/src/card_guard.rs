@@ -19,7 +19,14 @@ use serde_json::Value;
 /// Keys holding a scan or a search (see the module comment).
 const SCANNED: &[&str] = &["raw", "query"];
 /// Keys never stored or logged.
-const UNCHECKED: &[&str] = &["pin", "ownerPin", "password", "newPin", "currentPin"];
+const UNCHECKED: &[&str] = &[
+    "pin",
+    "ownerPin",
+    "password",
+    "newPin",
+    "currentPin",
+    "recoveryKey",
+];
 
 /// Magnetic-stripe track 1 (`%B<pan>^`) or track 2 (`;<pan>=`) as a reader types it.
 fn looks_like_track_data(text: &str) -> bool {

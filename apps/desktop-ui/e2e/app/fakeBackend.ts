@@ -38,6 +38,9 @@ export interface FakeState {
   orderDiscountPpm: number | null;
   cartId: string;
   revision: number;
+  /** ADR-023: the data is encrypted and this computer lacks the key. */
+  locked?: boolean;
+  recoveryKeyConfirmed?: boolean;
   /** POS-012: carts set aside, oldest first. */
   parked: { cartId: string; label: string | null; parkedAt: string; parkedByName: string; lines: FakeState["lines"]; orderDiscountPpm: number | null }[];
   seenScans: Set<string>;
@@ -124,7 +127,7 @@ export interface FakeSale {
   returns: { returnId: string; returnNumber: string; totalMinor: bigint; reason: string; refunds: string[] }[];
 }
 
-export type Preset = "fresh" | "signIn" | "checkout";
+export type Preset = "fresh" | "signIn" | "checkout" | "locked";
 
 let n = 0;
 const id = () => `0190a5b0-0000-7000-8000-${String(++n).padStart(12, "0")}`;
@@ -177,7 +180,8 @@ const TAX = "0190a5b0-0000-7000-8000-00000000ta01";
 const RATE = "0190a5b0-0000-7000-8000-00000000ra01";
 
 export function initialState(preset: Preset): FakeState {
-  const s = initialStateInner(preset);
+  const s = initialStateInner(preset === "locked" ? "signIn" : preset);
+  if (preset === "locked") s.locked = true;
   for (const p of s.products) s.catalog.set(p.productId, dtoFor(p));
   return s;
 }
@@ -344,7 +348,7 @@ const workspace: Workspace = { businessName: "Corner Shop", registerName: "Till 
 /** The real app's IPC card-data guard (E19-T05), simplified: any Luhn-valid 13–19 digit run. */
 function cardLike(v: unknown, key = ""): boolean {
   if (typeof v === "string") {
-    if (["pin", "ownerPin", "password", "raw", "query"].includes(key)) return false;
+    if (["pin", "ownerPin", "password", "raw", "query", "recoveryKey"].includes(key)) return false;
     return v
       .replace(/[ -]/g, "")
       .split(/\D+/)
@@ -364,8 +368,16 @@ function cardLike(v: unknown, key = ""): boolean {
   return false;
 }
 
+export const RECOVERY_KEY = "0123ABCD-4567EF01-89ABCDEF-01234567-89ABCDEF-01234567-89ABCDEF-01234567";
+
 export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): unknown {
   if (cardLike(a)) fail("CARD_DATA_REJECTED");
+  if (s.locked) {
+    if (cmd !== "db_unlock") fail("STORE_LOCKED");
+    if (String(a.recoveryKey).replace(/[\s-]/g, "").toUpperCase() !== RECOVERY_KEY.replace(/-/g, "")) fail("STORE_LOCKED");
+    s.locked = false;
+    return null;
+  }
   switch (cmd) {
     case "app_bootstrap_state":
       return { setupComplete: s.setupComplete, workspace: s.setupComplete ? workspace : null, session: s.session };
@@ -882,14 +894,29 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "backup_clear_folder":
     case "backup_verify":
     case "backup_restore":
-    case "data_export_full": {
+    case "data_export_full":
+    case "security_recovery_key":
+    case "security_recovery_key_confirmed": {
       const me = needSession(s);
       if (me.role !== "owner") fail("PERMISSION_DENIED");
       s.backups ??= [
         { id: "pos.daily.1793955600000.db", kind: "daily", createdAt: new Date(2026, 10, 5, 8, 0).toISOString(), sizeKb: 2310, sales: 40, secondFolderOnly: false },
         { id: "pos.hourly.1793952000000.db.damaged", kind: "hourly", createdAt: new Date(2026, 10, 5, 7, 0).toISOString(), sizeKb: 2290, sales: 38, secondFolderOnly: false },
       ];
-      const status = () => ({ backups: s.backups, secondFolder: s.backupFolder ?? null, secondFolderProblem: null, linked: s.cloud.linkState === "linked" });
+      const status = () => ({
+        backups: s.backups,
+        secondFolder: s.backupFolder ?? null,
+        secondFolderProblem: null,
+        linked: s.cloud.linkState === "linked",
+        encrypted: true,
+        encryptionProblem: null,
+        recoveryKeyConfirmed: s.recoveryKeyConfirmed ?? false,
+      });
+      if (cmd === "security_recovery_key") return RECOVERY_KEY;
+      if (cmd === "security_recovery_key_confirmed") {
+        s.recoveryKeyConfirmed = true;
+        return status();
+      }
       if (cmd === "backup_now") {
         const made = { id: `pos.manual.${Date.now()}.db`, kind: "manual", createdAt: new Date().toISOString(), sizeKb: 2320, sales: s.sales.length, secondFolderOnly: false };
         s.backups.unshift(made);

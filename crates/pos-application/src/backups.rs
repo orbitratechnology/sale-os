@@ -81,4 +81,17 @@ impl BackupAudit {
         self.store.apply(set).await?;
         Ok(())
     }
+
+    /// The owner looked at the database recovery key (ADR-023). The key itself is never
+    /// recorded.
+    pub async fn recovery_key_viewed(&self, ctx: &CommandContext) -> Result<(), AppError> {
+        ctx.authorize(Permission::SettingsEdit)?;
+        self.record(
+            ctx,
+            audit::SECURITY_RECOVERY_KEY_VIEWED,
+            "database",
+            serde_json::json!({}),
+        )
+        .await
+    }
 }

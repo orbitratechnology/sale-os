@@ -273,6 +273,21 @@ export const commands = {
 	 */
 	dataExportFull: () => typedError<DataExportDto | null, IpcError_Serialize>(__TAURI_INVOKE("data_export_full")),
 	/**
+	 *  ADR-023: the database recovery key, for the owner to write down (audited
+	 *  `security.recovery_key_viewed`; the key itself is never recorded). Without it, a backup
+	 *  cannot be read on another computer.
+	 */
+	securityRecoveryKey: () => typedError<string, IpcError_Serialize>(__TAURI_INVOKE("security_recovery_key")),
+	/**  The owner wrote the recovery key down: the Backups page stops asking. */
+	securityRecoveryKeyConfirmed: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("security_recovery_key_confirmed")),
+	/**
+	 *  ADR-023: when the database is encrypted and this computer has no key for it (a new Windows
+	 *  account, a reinstalled PC, a backup copied from another till), the owner types the recovery
+	 *  key. It is checked against the database, kept in the keychain, and the app restarts. Needs
+	 *  no session (nobody can sign in to a locked database); refused when the database is open.
+	 */
+	dbUnlock: (recoveryKey: string) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("db_unlock", { recoveryKey })),
+	/**
 	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
 	 *  the system dialog and writes the file (the WebView never names a path), then audits it
 	 *  (`report.exported`). `null` when the user cancels: nothing is saved or recorded. Dated
@@ -498,6 +513,12 @@ export type BackupStatusDto_Deserialize = {
 	 *  loses them.
 	 */
 	linked: boolean,
+	/**  The database and backups are encrypted (ADR-023). */
+	encrypted: boolean,
+	/**  Why they are not, when they are not. */
+	encryptionProblem?: string | null,
+	/**  The owner confirmed writing the recovery key down. */
+	recoveryKeyConfirmed: boolean,
 };
 
 export type BackupStatusDto_Serialize = {
@@ -511,6 +532,12 @@ export type BackupStatusDto_Serialize = {
 	 *  loses them.
 	 */
 	linked: boolean,
+	/**  The database and backups are encrypted (ADR-023). */
+	encrypted: boolean,
+	/**  Why they are not, when they are not. */
+	encryptionProblem: string | null,
+	/**  The owner confirmed writing the recovery key down. */
+	recoveryKeyConfirmed: boolean,
 };
 
 export type BarcodeDto = {
@@ -1178,7 +1205,7 @@ export type DocumentType =
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
  *  The UI maps codes to actionable copy; `message` strings are for logs only.
  */
-export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CARD_DATA_REJECTED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_DISK_FULL" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "SYNC_OFFLINE" | "SYNC_REPLAY_PENDING" | "SYNC_JOIN_NOT_ALLOWED" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
+export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CARD_DATA_REJECTED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_DISK_FULL" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "STORE_LOCKED" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "SYNC_OFFLINE" | "SYNC_REPLAY_PENDING" | "SYNC_JOIN_NOT_ALLOWED" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
 
 /**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
 export type ErrorDetails = ErrorDetails_Serialize | ErrorDetails_Deserialize;

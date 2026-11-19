@@ -14,6 +14,7 @@ mod catalog_queries;
 mod cloud_report_cache;
 mod config_queries;
 mod conflict_queries;
+pub mod crypto;
 mod error;
 mod export_queries;
 pub mod full_export;
@@ -53,6 +54,9 @@ pub struct DbOptions {
     pub backups_dir: PathBuf,
     /// Number of read-only connections (default 4).
     pub reader_connections: u32,
+    /// The SQLCipher key (ADR-023). `None` writes plain SQLite (tests, tools); the app
+    /// always passes one.
+    pub key: Option<crypto::DbKey>,
 }
 
 impl DbOptions {
@@ -61,7 +65,14 @@ impl DbOptions {
             path: dir.join("pos.db"),
             backups_dir: dir.join("backups"),
             reader_connections: 4,
+            key: None,
         }
+    }
+
+    /// The same, encrypted with `key`.
+    pub fn with_key(mut self, key: crypto::DbKey) -> Self {
+        self.key = Some(key);
+        self
     }
 }
 
@@ -73,6 +84,7 @@ pub struct LocalDb {
     path: PathBuf,
     backups_dir: PathBuf,
     migration: MigrationReport,
+    key: Option<crypto::DbKey>,
 }
 
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
@@ -88,6 +100,49 @@ pub(crate) fn connect_options(path: &Path) -> SqliteConnectOptions {
         .busy_timeout(BUSY_TIMEOUT)
 }
 
+/// Before opening with a key: a plain database (from before encryption) and the plain backups
+/// beside it are encrypted in place; an encrypted one must open with the key. Without a key,
+/// an encrypted database cannot be opened at all.
+async fn prepare_encryption(opts: &DbOptions) -> Result<(), StoreError> {
+    use crypto::FileKind;
+    let kind = crypto::file_kind(&opts.path);
+    let Some(key) = &opts.key else {
+        return match kind {
+            FileKind::Encrypted => Err(StoreError::Locked),
+            _ => Ok(()),
+        };
+    };
+    match kind {
+        FileKind::Missing => Ok(()),
+        FileKind::Encrypted => {
+            if crypto::key_opens(&opts.path, key).await {
+                Ok(())
+            } else {
+                Err(StoreError::Locked)
+            }
+        }
+        FileKind::Plain => {
+            crypto::encrypt_in_place(&opts.path, key).await?;
+            let mut converted = 0;
+            for b in backup::list(&opts.backups_dir) {
+                if crypto::file_kind(&b.path) == FileKind::Plain {
+                    match crypto::encrypt_in_place(&b.path, key).await {
+                        Ok(()) => converted += 1,
+                        Err(e) => {
+                            tracing::warn!(error = %e, file = %b.path.display(), "a backup could not be encrypted")
+                        }
+                    }
+                }
+            }
+            tracing::warn!(
+                backups = converted,
+                "the database was not encrypted: it is now (ADR-023)"
+            );
+            Ok(())
+        }
+    }
+}
+
 impl LocalDb {
     /// Opens (creating if needed) and migrates the database with the embedded migrations.
     pub async fn open(opts: &DbOptions) -> Result<Self, StoreError> {
@@ -100,8 +155,9 @@ impl LocalDb {
         if let Some(parent) = opts.path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| StoreError::io("create database directory", e))?;
         }
+        prepare_encryption(opts).await?;
         let existed = opts.path.exists();
-        let base = connect_options(&opts.path);
+        let base = crypto::keyed(connect_options(&opts.path), &opts.path, opts.key.as_ref());
 
         let writer = SqlitePoolOptions::new()
             .max_connections(1)
@@ -162,7 +218,23 @@ impl LocalDb {
             path: opts.path.clone(),
             backups_dir: opts.backups_dir.clone(),
             migration,
+            key: opts.key.clone(),
         })
+    }
+
+    /// The key the database is encrypted with, if it is (ADR-023).
+    pub fn key(&self) -> Option<&crypto::DbKey> {
+        self.key.as_ref()
+    }
+
+    /// The options this database was opened with (to close and reopen it).
+    pub fn options(&self) -> DbOptions {
+        DbOptions {
+            path: self.path.clone(),
+            backups_dir: self.backups_dir.clone(),
+            reader_connections: 1,
+            key: self.key.clone(),
+        }
     }
 
     /// The single writer connection. All business writes go through `LocalStore::apply`
@@ -187,7 +259,7 @@ impl LocalDb {
 
     /// Makes a backup now (E19-T03). Uses a read-only connection: sales carry on meanwhile.
     pub async fn backup(&self, kind: backup::BackupKind) -> Result<backup::BackupInfo, StoreError> {
-        backup::create(&self.readers, &self.backups_dir, kind).await
+        backup::create(&self.readers, &self.backups_dir, kind, self.key.as_ref()).await
     }
 
     /// The backups in [`LocalDb::backups_dir`], newest first.

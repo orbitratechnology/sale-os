@@ -35,6 +35,7 @@ export function BackupsPanel() {
   const [restoring, setRestoring] = useState<BackupDto | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void commands.backupStatus().then((res) => {
@@ -67,6 +68,19 @@ export function BackupsPanel() {
   async function check(b: BackupDto) {
     const c = await run(() => commands.backupVerify(b.id));
     if (c) setChecks((all) => ({ ...all, [b.id]: c }));
+  }
+
+  async function showRecoveryKey() {
+    const k = await run(() => commands.securityRecoveryKey());
+    if (k) setRecovery(k);
+  }
+
+  async function confirmRecoveryKey() {
+    const s = await run(() => commands.securityRecoveryKeyConfirmed());
+    if (s) {
+      setStatus(s);
+      setRecovery(null);
+    }
   }
 
   async function exportAll() {
@@ -110,6 +124,46 @@ export function BackupsPanel() {
           Back up now
         </button>
       </p>
+      <section aria-label="Encryption">
+        <h3>Encryption</h3>
+        {status.encrypted ? (
+          <>
+            <p>
+              This till's data and its backups are encrypted. They open only on this computer, or with the{" "}
+              <strong>recovery key</strong>.
+            </p>
+            {!status.recoveryKeyConfirmed && (
+              <p role="alert">
+                Write the recovery key down and keep it somewhere safe, away from this computer. Without it, the backups
+                cannot be opened if this computer fails.
+              </p>
+            )}
+            {recovery ? (
+              <div className="recovery-key">
+                <p className="mono" data-testid="recovery-key">
+                  {recovery}
+                </p>
+                <p className="small">Anyone with this key and a backup can read the shop's data. Do not photograph it or email it.</p>
+                <button type="button" disabled={busy} onClick={() => void confirmRecoveryKey()}>
+                  I have written it down
+                </button>{" "}
+                <button type="button" className="secondary" onClick={() => setRecovery(null)}>
+                  Hide
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="secondary" disabled={busy} onClick={() => void showRecoveryKey()}>
+                Show recovery key
+              </button>
+            )}
+          </>
+        ) : (
+          <p role="alert">
+            This till's data is not encrypted{status.encryptionProblem ? `: ${status.encryptionProblem}` : "."} Use
+            BitLocker on this computer and on backup sticks.
+          </p>
+        )}
+      </section>
       <section aria-label="Second folder">
         <h3>Second folder</h3>
         {status.secondFolder ? (

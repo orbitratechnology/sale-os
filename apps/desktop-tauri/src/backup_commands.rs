@@ -5,7 +5,7 @@ use crate::app_commands::err;
 use crate::{AppServices, IpcError};
 use pos_domain::{ErrorCode, Permission, Timestamp};
 use pos_local_db::backup::{self, BackupInfo, BackupKind};
-use pos_local_db::{DbOptions, LocalDb, SqliteStore};
+use pos_local_db::{LocalDb, SqliteStore};
 use serde::Serialize;
 use specta::Type;
 use std::sync::Arc;
@@ -37,6 +37,12 @@ pub struct BackupStatusDto {
     /// A linked register gets its sales after the backup back from the cloud; an unlinked one
     /// loses them.
     pub linked: bool,
+    /// The database and backups are encrypted (ADR-023).
+    pub encrypted: bool,
+    /// Why they are not, when they are not.
+    pub encryption_problem: Option<String>,
+    /// The owner confirmed writing the recovery key down.
+    pub recovery_key_confirmed: bool,
 }
 
 /// A finished full data export (E19-T04).
@@ -96,6 +102,12 @@ async fn status(services: &AppServices) -> Result<BackupStatusDto, IpcError> {
         second_folder: b.secondary_folder().map(|p| p.display().to_string()),
         second_folder_problem: b.secondary_state().problem,
         linked: link == "linked",
+        encrypted: b.db().key().is_some(),
+        encryption_problem: match &services.encryption {
+            crate::db_key::Encryption::Off(why) => Some(why.clone()),
+            crate::db_key::Encryption::On => None,
+        },
+        recovery_key_confirmed: b.recovery_key_confirmed(),
     })
 }
 
@@ -167,10 +179,11 @@ pub async fn backup_verify(
     backup_id: String,
 ) -> Result<BackupCheckDto, IpcError> {
     owner(&services).await?;
-    let found = backups(&services)?
+    let b = backups(&services)?;
+    let found = b
         .find(&backup_id)
         .ok_or_else(|| IpcError::coded(ErrorCode::NotFound, "no such backup"))?;
-    let v = backup::verify(&found.path)
+    let v = backup::verify(&found.path, b.db().key())
         .await
         .map_err(|e| IpcError::from_error(&e))?;
     Ok(BackupCheckDto {
@@ -198,7 +211,7 @@ pub async fn backup_restore(
     let found = b
         .find(&backup_id)
         .ok_or_else(|| IpcError::coded(ErrorCode::NotFound, "no such backup"))?;
-    let v = backup::verify(&found.path)
+    let v = backup::verify(&found.path, b.db().key())
         .await
         .map_err(|e| IpcError::from_error(&e))?;
     if !v.restorable() {
@@ -220,11 +233,7 @@ pub async fn backup_restore(
         ));
     }
     let db = b.db().clone();
-    let opts = DbOptions {
-        path: db.path().to_path_buf(),
-        backups_dir: db.backups_dir().to_path_buf(),
-        reader_connections: 1,
-    };
+    let opts = db.options();
     db.close().await;
     let report = backup::restore(&opts, &found.path)
         .await
@@ -264,7 +273,7 @@ async fn linked_restore_allowed(
     db: &LocalDb,
     backup_path: &std::path::Path,
 ) -> Result<(), IpcError> {
-    let (state, device) = backup::link_of(backup_path)
+    let (state, device) = backup::link_of(backup_path, db.key())
         .await
         .map_err(|e| IpcError::from_error(&e))?;
     let current = backup::device_of(db)
@@ -335,4 +344,73 @@ pub async fn data_export_full(services: State<'_, AppServices>) -> Result<Option
         tables: u32::try_from(manifest.tables.len()).unwrap_or(u32::MAX),
         rows: u32::try_from(manifest.total_rows()).unwrap_or(u32::MAX),
     }))
+}
+
+/// ADR-023: the database recovery key, for the owner to write down (audited
+/// `security.recovery_key_viewed`; the key itself is never recorded). Without it, a backup
+/// cannot be read on another computer.
+#[tauri::command]
+#[specta::specta]
+pub async fn security_recovery_key(services: State<'_, AppServices>) -> Result<String, IpcError> {
+    let ctx = owner(&services).await?;
+    let key =
+        backups(&services)?.db().key().cloned().ok_or_else(|| {
+            IpcError::coded(ErrorCode::ValidationFailed, "This till's data is not encrypted.")
+        })?;
+    services
+        .app()?
+        .backup_audit
+        .recovery_key_viewed(&ctx)
+        .await
+        .map_err(err)?;
+    Ok(key.recovery_key())
+}
+
+/// The owner wrote the recovery key down: the Backups page stops asking.
+#[tauri::command]
+#[specta::specta]
+pub async fn security_recovery_key_confirmed(
+    services: State<'_, AppServices>,
+) -> Result<BackupStatusDto, IpcError> {
+    owner(&services).await?;
+    backups(&services)?
+        .confirm_recovery_key()
+        .map_err(|e| IpcError::coded(ErrorCode::StoreIo, e.to_string()))?;
+    status(&services).await
+}
+
+/// ADR-023: when the database is encrypted and this computer has no key for it (a new Windows
+/// account, a reinstalled PC, a backup copied from another till), the owner types the recovery
+/// key. It is checked against the database, kept in the keychain, and the app restarts. Needs
+/// no session (nobody can sign in to a locked database); refused when the database is open.
+#[tauri::command]
+#[specta::specta]
+pub async fn db_unlock(services: State<'_, AppServices>, recovery_key: String) -> Result<(), IpcError> {
+    match services.app() {
+        Err(e) if e.code == ErrorCode::StoreLocked => {}
+        _ => {
+            return Err(IpcError::coded(
+                ErrorCode::ValidationFailed,
+                "The database is not locked.",
+            ));
+        }
+    }
+    let key = pos_local_db::crypto::DbKey::from_recovery_key(&recovery_key)
+        .map_err(|e| IpcError::coded(ErrorCode::ValidationFailed, e.to_string()))?;
+    let path = pos_local_db::DbOptions::in_dir(&services.data_dir).path;
+    if !pos_local_db::crypto::key_opens(&path, &key).await {
+        return Err(IpcError::coded(
+            ErrorCode::StoreLocked,
+            "That recovery key does not open this till's data. Check it and try again.",
+        ));
+    }
+    services.db_keys.set(&key).await.map_err(|e| {
+        IpcError::coded(
+            ErrorCode::StoreIo,
+            format!("The key is right, but the keychain could not keep it: {e}"),
+        )
+    })?;
+    tracing::warn!("database unlocked with the recovery key; restarting");
+    (services.restart)();
+    Ok(())
 }

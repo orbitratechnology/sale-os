@@ -45,6 +45,23 @@ sessions after the backup come back from the cloud.
 
 **Undoing a restore:** restore the "Before a restore" backup the same way.
 
+## Encryption and the recovery key (ADR-023)
+
+The database and every backup are encrypted. The key is in this computer's keychain, under the
+Windows account that runs Sale OS.
+
+- **At install, and again at go-live:** the owner opens Settings → Backups → Show recovery key,
+  writes it on paper, keeps it away from the till (with the shop's other important papers), and
+  presses "I have written it down". Do not photograph it or email it.
+- The Windows account that runs the till must have a password. Without one, the keychain (and
+  so the data) is protected only by physical access to the PC.
+- **A new PC, a reinstalled Windows, or a backup brought from another till:** Sale OS opens on
+  "This till's data is locked". Type the recovery key of the till the data came from. It is
+  checked against the data, kept in the new keychain, and the app restarts.
+- **No recovery key** means the backups cannot be opened anywhere. A linked till still has its
+  sales in the cloud: install fresh and link to the business again. An unlinked one has no
+  other copy.
+
 ## If the app does not start
 
 The app's own restore screen needs the app to open. If the database itself will not open:
@@ -53,7 +70,8 @@ The app's own restore screen needs the app to open. If the database itself will 
 2. In `<app data>`, move `pos.db`, `pos.db-wal` and `pos.db-shm` into a new folder named
    `damaged-<date>` (keep them for support; never delete them).
 3. Copy the chosen backup to `<app data>\pos.db` (from `backups\` or the second folder).
-4. Start Sale OS. An older backup is upgraded on start-up, after its own pre-upgrade backup.
+4. Start Sale OS. An older backup is upgraded on start-up, after its own pre-upgrade backup. If
+   the backup came from another computer, it asks for that till's recovery key first.
 
 ## The drill
 

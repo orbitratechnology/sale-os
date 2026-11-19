@@ -55,6 +55,9 @@ pub struct AppServices {
     pub(crate) backups: Option<Arc<crate::backups::Backups>>,
     /// Restarts the app (after a restore). Set by the app; does nothing in tests.
     pub(crate) restart: Arc<dyn Fn() + Send + Sync>,
+    /// Where the database key is kept, and whether the data is encrypted (ADR-023).
+    pub(crate) db_keys: Arc<dyn crate::db_key::DbKeyStore>,
+    pub(crate) encryption: crate::db_key::Encryption,
     _log: Option<LogGuard>,
 }
 
@@ -146,7 +149,13 @@ pub(crate) struct Session {
 impl AppServices {
     /// Opens the database under `data_dir` and wires the production ports.
     pub async fn start(data_dir: &Path, log: Option<LogGuard>) -> Self {
-        Self::start_with_hasher(data_dir, log, Arc::new(Argon2PinHasher::new())).await
+        Self::start_with(
+            data_dir,
+            log,
+            Arc::new(Argon2PinHasher::new()),
+            Arc::new(crate::db_key::KeychainDbKey::new(data_dir)),
+        )
+        .await
     }
 
     /// How the app restarts itself (after a restore).
@@ -168,7 +177,21 @@ impl AppServices {
         log: Option<LogGuard>,
         hasher: Arc<dyn PinHasher>,
     ) -> Self {
-        let db = match LocalDb::open(&DbOptions::in_dir(data_dir)).await {
+        Self::start_with(data_dir, log, hasher, Arc::new(crate::db_key::NoDbKey)).await
+    }
+
+    /// As [`AppServices::start`] with a chosen PIN hasher and key store (tests use one in
+    /// memory, or none for a plain database).
+    pub async fn start_with(
+        data_dir: &Path,
+        log: Option<LogGuard>,
+        hasher: Arc<dyn PinHasher>,
+        db_keys: Arc<dyn crate::db_key::DbKeyStore>,
+    ) -> Self {
+        let mut opts = DbOptions::in_dir(data_dir);
+        let (key, encryption) = crate::db_key::key_for_start(db_keys.as_ref(), &opts.path).await;
+        opts.key = key;
+        let db = match LocalDb::open(&opts).await {
             Ok(db) => {
                 if let Ok(Some(register)) = db.device_register_id().await {
                     pos_observability::set_context("register_id", register);
@@ -401,6 +424,8 @@ impl AppServices {
             file_dialog: Arc::new(NoDialog),
             backups,
             restart: Arc::new(|| tracing::warn!("restart requested; no app to restart")),
+            db_keys,
+            encryption,
             _log: log,
         }
     }

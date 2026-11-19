@@ -92,7 +92,7 @@ async fn back_up_restore_and_keep_what_was_replaced() {
     assert_eq!((b.meta.kind, b.meta.sales), (BackupKind::Manual, 2));
     assert!(b.meta.outbox_sequence > 0 && b.size_bytes > 0);
     assert!(!b.path.with_extension("db.partial").exists());
-    let v = backup::verify(&b.path).await.unwrap();
+    let v = backup::verify(&b.path, None).await.unwrap();
     assert!(v.restorable(), "{v:?}");
     assert_eq!(db.backups().first().map(|x| x.id.clone()), Some(b.id.clone()));
 
@@ -137,7 +137,7 @@ async fn a_damaged_or_newer_backup_is_refused_and_nothing_changes() {
         *b = 0x5a;
     }
     std::fs::write(&damaged, &bytes).unwrap();
-    let v = backup::verify(&damaged).await;
+    let v = backup::verify(&damaged, None).await;
     assert!(
         v.as_ref().map_or(true, |v| !v.restorable()),
         "a damaged file passed: {v:?}"
@@ -162,7 +162,7 @@ async fn a_damaged_or_newer_backup_is_refused_and_nothing_changes() {
         .unwrap();
         c.close().await.unwrap();
     }
-    assert!(backup::verify(&newer).await.unwrap().too_new);
+    assert!(backup::verify(&newer, None).await.unwrap().too_new);
 
     let opts = DbOptions::in_dir(db.path().parent().unwrap());
     sell(&shop, tea).await;
@@ -203,7 +203,7 @@ async fn retention_per_kind_and_a_second_folder() {
     let usb = tempfile::TempDir::new().unwrap();
     let copied = backup::copy_to(&daily, usb.path()).unwrap();
     assert_eq!(copied.meta, daily.meta);
-    assert!(backup::verify(&copied.path).await.unwrap().restorable());
+    assert!(backup::verify(&copied.path, None).await.unwrap().restorable());
     assert_eq!(backup::list(usb.path()).len(), 1);
 }
 
@@ -222,8 +222,8 @@ async fn a_wal_file_beside_a_backup_is_never_opened() {
     wal.push("-wal");
     std::fs::write(&wal, vec![0xA5u8; 64 * 1024]).unwrap();
 
-    assert!(backup::verify(&copied.path).await.unwrap().restorable());
-    assert_eq!(backup::link_of(&copied.path).await.unwrap().0, "unlinked");
+    assert!(backup::verify(&copied.path, None).await.unwrap().restorable());
+    assert_eq!(backup::link_of(&copied.path, None).await.unwrap().0, "unlinked");
     let opts = DbOptions::in_dir(db.path().parent().unwrap());
     db.clone().close().await;
     let report = backup::restore(&opts, &copied.path).await.unwrap();

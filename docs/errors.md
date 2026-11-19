@@ -40,6 +40,7 @@ to the action below.
 | `STORE_DISK_FULL` |  | The disk holding the local database is full. Nothing was saved; what was open (the cart) is kept. | Show "Cannot save — disk full" and keep the cart; the owner frees space, then the cashier tries again. |
 | `STORE_CORRUPT` |  | The local database failed an integrity check. | Stop and guide the owner to restore a backup. |
 | `STORE_SCHEMA_TOO_NEW` |  | The database was written by a newer app version. It was not modified. | Ask the user to update the app. |
+| `STORE_LOCKED` |  | The database (or the backup) is encrypted and this computer does not have its key: the keychain entry is missing, or it came from another computer (ADR-023). | Ask the owner for the recovery key they wrote down and offer the recovery-key screen; never suggest deleting the database. |
 | `SYNC_NOT_LINKED` |  | This register is not linked to a cloud account. | Open the link wizard. |
 | `SYNC_DEVICE_REVOKED` |  | The owner disconnected this register from the cloud. | Explain; local sales continue. |
 | `SYNC_UPGRADE_REQUIRED` |  | The cloud requires a newer app (`details.minVersion`). | Prompt to update; local sales continue. |

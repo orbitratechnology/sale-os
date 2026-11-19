@@ -7,7 +7,9 @@
 //!
 //! ```text
 //! cargo run --release -p pos-bench -- [--scale full|small] [--samples N]
-//!     [--markdown FILE] [--json FILE] [--baseline FILE] [--max-regression PCT]
+//!     [--markdown FILE] [--json FILE] [--baseline FILE] [--max-regression PCT] [--plain]
+//!
+//! The database is encrypted as in the app (ADR-023); `--plain` measures plain SQLite.
 //! ```
 //!
 //! `--baseline` compares with an earlier `--json` result and fails when a median is more than
@@ -84,6 +86,9 @@ struct Run {
     machine: String,
     build: String,
     dataset_seconds: u64,
+    /// The database was encrypted (ADR-023). Runs from before encryption have no field.
+    #[serde(default)]
+    encrypted: bool,
     measures: Vec<Measure>,
 }
 
@@ -93,6 +98,8 @@ struct Args {
     json: Option<PathBuf>,
     baseline: Option<PathBuf>,
     max_regression: u64,
+    /// The app encrypts its database (ADR-023); `--plain` measures plain SQLite to compare.
+    plain: bool,
 }
 
 fn args() -> Result<Args> {
@@ -102,6 +109,7 @@ fn args() -> Result<Args> {
         json: None,
         baseline: None,
         max_regression: 20,
+        plain: false,
     };
     let mut it = std::env::args().skip(1);
     let mut samples = None;
@@ -120,6 +128,7 @@ fn args() -> Result<Args> {
             "--json" => a.json = Some(value()?.into()),
             "--baseline" => a.baseline = Some(value()?.into()),
             "--max-regression" => a.max_regression = value()?.parse()?,
+            "--plain" => a.plain = true,
             other => bail!("unknown argument {other}; see the crate docs"),
         }
     }
@@ -164,7 +173,8 @@ impl Rng {
 
 struct Bench {
     _dir: tempfile::TempDir,
-    path: PathBuf,
+    /// Opens the database as the app does (encrypted unless `--plain`).
+    opts: DbOptions,
     store: SqliteStore,
     owner: CommandContext,
     hasher: Arc<dyn PinHasher>,
@@ -175,10 +185,14 @@ struct Bench {
     sales: usize,
 }
 
-async fn build(scale: Scale) -> Result<Bench> {
+async fn build(scale: Scale, plain: bool) -> Result<Bench> {
     let dir = tempfile::TempDir::new()?;
     let path = dir.path().to_path_buf();
-    let store = SqliteStore::new(LocalDb::open(&DbOptions::in_dir(&path)).await?);
+    let mut opts = DbOptions::in_dir(&path);
+    if !plain {
+        opts.key = Some(pos_local_db::crypto::DbKey::generate()?);
+    }
+    let store = SqliteStore::new(LocalDb::open(&opts).await?);
     // Cheap PIN hashing: sign-in speed is not one of the targets.
     let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
@@ -365,7 +379,7 @@ async fn build(scale: Scale) -> Result<Bench> {
         .map_err(|e| anyhow!("{e:?}"))?;
     Ok(Bench {
         _dir: dir,
-        path,
+        opts,
         store,
         owner,
         hasher,
@@ -626,7 +640,7 @@ async fn measure(b: &Bench, samples: usize) -> Result<Vec<Measure>> {
     let mut d = Vec::with_capacity(samples);
     for _ in 0..samples {
         let t = Instant::now();
-        let db = LocalDb::open(&DbOptions::in_dir(&b.path)).await?;
+        let db = LocalDb::open(&b.opts).await?;
         db.schema_version().await?;
         let s = Arc::new(SqliteStore::new(db.clone()));
         let staff = AuthService {
@@ -770,7 +784,7 @@ fn write(path: &Path, text: &str) -> Result<()> {
 async fn main() -> Result<()> {
     let a = args()?;
     let built = Instant::now();
-    let bench = build(a.scale).await?;
+    let bench = build(a.scale, a.plain).await?;
     let dataset_seconds = built.elapsed().as_secs();
     eprintln!("dataset ready in {dataset_seconds} s");
     let measures = measure(&bench, a.scale.samples).await?;
@@ -785,6 +799,7 @@ async fn main() -> Result<()> {
         }
         .into(),
         dataset_seconds,
+        encrypted: !a.plain,
         measures,
     };
     let md = markdown(&run);
@@ -800,6 +815,13 @@ async fn main() -> Result<()> {
             let base: Run = serde_json::from_str(&std::fs::read_to_string(p)?)?;
             if base.scale != run.scale {
                 eprintln!("baseline is at another scale; not compared");
+                return Ok(());
+            }
+            if base.encrypted != run.encrypted {
+                eprintln!(
+                    "baseline was {} encrypted; not compared (this run becomes it)",
+                    if base.encrypted { "" } else { "not" }
+                );
                 return Ok(());
             }
             let worse = regressions(&run, &base, a.max_regression);
@@ -868,6 +890,7 @@ mod tests {
             machine: String::new(),
             build: String::new(),
             dataset_seconds: 0,
+            encrypted: true,
             measures: vec![m(p50)],
         };
         assert_eq!(regressions(&run(5_000), &run(4_000), 20).len(), 1, "+25%");

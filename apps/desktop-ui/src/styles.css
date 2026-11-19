@@ -275,3 +275,6 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 .import-counts dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
 .import-wizard fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; }
 .import-wizard fieldset .check { display: block; margin: 6px 0; }
+
+.recovery-key { border: 2px dashed var(--accent); padding: 8px 12px; border-radius: 6px; }
+.recovery-key .mono { font-size: 1.1rem; letter-spacing: 0.04em; word-break: break-all; }

@@ -23,6 +23,10 @@ pub enum StoreError {
     DiskFull,
     #[error("{context}: {message}")]
     Io { context: &'static str, message: String },
+    /// The database (or a backup) is encrypted and the key this computer has does not open it
+    /// (ADR-023): the owner's recovery key is needed.
+    #[error("the database is encrypted and this computer does not have its key")]
+    Locked,
 }
 
 impl StoreError {
@@ -59,6 +63,7 @@ impl HasErrorCode for StoreError {
             StoreError::Busy => ErrorCode::StoreBusy,
             StoreError::Corrupt(_) => ErrorCode::StoreCorrupt,
             StoreError::DiskFull => ErrorCode::StoreDiskFull,
+            StoreError::Locked => ErrorCode::StoreLocked,
         }
     }
 }

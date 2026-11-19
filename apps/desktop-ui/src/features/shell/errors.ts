@@ -25,6 +25,8 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   STORE_BUSY: "The till is busy. Try again.",
   STORE_IO: "Sale OS cannot read or write its database. Check disk space and that the data folder is on this computer.",
   STORE_DISK_FULL: "Cannot save — disk full. Nothing was saved and the cart is kept. Free space on this computer, then try again.",
+  STORE_LOCKED:
+    "This data is encrypted and this computer does not have its key. Enter the recovery key the owner wrote down.",
   STORE_CORRUPT: "The local database looks damaged. Do not delete it; contact support to restore from a backup.",
   AUTH_CREDENTIALS_INVALID: "That email or password is not right for the cloud account.",
   AUTH_RATE_LIMITED: "Too many sign-in attempts. Wait a few minutes and try again.",
