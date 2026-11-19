@@ -92,6 +92,22 @@ impl CartService {
         self
     }
 
+    /// Sellable stock on hand at this register's location (E09-T04: shown in search). Empty
+    /// when the service has no stock queries.
+    pub async fn on_hand(
+        &self,
+        ctx: &CommandContext,
+        variants: &[VariantId],
+    ) -> Result<std::collections::BTreeMap<VariantId, Quantity>, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        match &self.stock {
+            Some(stock) if !variants.is_empty() => {
+                Ok(stock.on_hand(ctx.register.location_id, variants).await?)
+            }
+            _ => Ok(std::collections::BTreeMap::new()),
+        }
+    }
+
     pub(crate) fn store(&self) -> &Arc<dyn LocalStore> {
         &self.store
     }

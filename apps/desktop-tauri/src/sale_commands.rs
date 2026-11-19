@@ -191,13 +191,28 @@ pub async fn catalog_search(
     limit: u32,
 ) -> Result<Vec<CatalogHitDto>, IpcError> {
     let ctx = services.context().await?;
-    let hits = services
-        .app()?
-        .catalog
-        .search(&ctx, &query, limit)
-        .await
-        .map_err(err)?;
-    Ok(hits.into_iter().map(Into::into).collect())
+    let app = services.app()?;
+    let hits = app.catalog.search(&ctx, &query, limit).await.map_err(err)?;
+    let tracked: Vec<VariantId> = hits
+        .iter()
+        .filter(|h| h.track_stock)
+        .map(|h| h.variant_id)
+        .collect();
+    let on_hand = app.carts.on_hand(&ctx, &tracked).await.map_err(err)?;
+    Ok(hits
+        .into_iter()
+        .map(|h| {
+            let stock = h.track_stock.then(|| {
+                on_hand
+                    .get(&h.variant_id)
+                    .copied()
+                    .unwrap_or(pos_domain::Quantity::ZERO)
+            });
+            let mut dto = CatalogHitDto::from(h);
+            dto.on_hand_milli = stock.map(|q| q.milli().to_string());
+            dto
+        })
+        .collect())
 }
 
 /// Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI

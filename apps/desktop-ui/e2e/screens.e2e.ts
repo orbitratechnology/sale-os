@@ -255,7 +255,12 @@ describe("checkout (E09-T03..T06)", () => {
     const page = await checkout();
     await page.keyboard.press("F2");
     await page.keyboard.type("c");
-    await page.getByRole("listbox", { name: "Search results" }).waitFor();
+    const results = page.getByRole("listbox", { name: "Search results" });
+    await results.waitFor();
+    // On-hand stock beside each stock-tracked result; none is flagged.
+    await expect
+      .poll(() => results.getByTestId("search-stock").allTextContents())
+      .toEqual(expect.arrayContaining(["40 in stock", "3 in stock", "None in stock"]));
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "cart_add_variant"));

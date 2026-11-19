@@ -427,6 +427,9 @@ pub struct CatalogHitDto {
     pub scan_qty_milli: String,
     /// `"barcode"`, `"sku"` or `"search"`.
     pub matched_by: String,
+    /// Search results only (E09-T04): sellable stock on hand at this location, in
+    /// thousandths, for stock-tracked items; `null` otherwise.
+    pub on_hand_milli: Option<String>,
 }
 
 impl From<CatalogHit> for CatalogHitDto {
@@ -447,6 +450,7 @@ impl From<CatalogHit> for CatalogHitDto {
                 MatchedBy::Search => "search",
             }
             .into(),
+            on_hand_milli: None,
         }
     }
 }

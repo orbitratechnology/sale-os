@@ -359,7 +359,7 @@ export function view(s: FakeState): CartView {
 }
 
 function hit(p: FakeProduct): CatalogHit {
-  return { productId: p.productId, variantId: p.variantId, name: p.name, label: p.label ?? "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search" };
+  return { productId: p.productId, variantId: p.variantId, name: p.name, label: p.label ?? "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search", onHandMilli: null };
 }
 
 /** The approval rule Rust applies (authorize_with_approval): cashiers need a covering token. */
@@ -1462,7 +1462,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "catalog_search": {
       needSession(s);
       const q = String(a.query).toLowerCase();
-      return s.products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().startsWith(q)).map(hit);
+      return s.products
+        .filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().startsWith(q))
+        .map((p) => ({ ...hit(p), onHandMilli: String(FAKE_STOCK[p.name] ?? 0n) }));
     }
     case "catalog_quick_select": {
       needSession(s);

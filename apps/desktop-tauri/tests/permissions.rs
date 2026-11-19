@@ -1410,6 +1410,13 @@ fn at01_new_business_twenty_products_and_a_cash_sale() {
     assert_eq!(by_sku["name"], "White Bread");
     let by_name = invoke(&w, "catalog_search", json!({"query": "banan", "limit": 5})).unwrap();
     assert_eq!(by_name[0]["name"], "Bananas");
+    // E09-T04: stock on hand comes with each stock-tracked result (nothing received yet).
+    let stock = &by_name[0]["onHandMilli"];
+    if by_name[0]["trackStock"] == true {
+        assert_eq!(stock, "0");
+    } else {
+        assert_eq!(stock, &Value::Null);
+    }
     // The test cash sale: two scans (one barcode, one SKU), paid in cash with change.
     let mut cart = Value::Null;
     for (i, code) in ["4006381333931", "BREAD-W"].iter().enumerate() {

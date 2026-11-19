@@ -884,6 +884,11 @@ export type CatalogHitDto_Deserialize = {
 	scanQtyMilli: string,
 	/**  `"barcode"`, `"sku"` or `"search"`. */
 	matchedBy: string,
+	/**
+	 *  Search results only (E09-T04): sellable stock on hand at this location, in
+	 *  thousandths, for stock-tracked items; `null` otherwise.
+	 */
+	onHandMilli?: string | null,
 };
 
 export type CatalogHitDto_Serialize = {
@@ -899,6 +904,11 @@ export type CatalogHitDto_Serialize = {
 	scanQtyMilli: string,
 	/**  `"barcode"`, `"sku"` or `"search"`. */
 	matchedBy: string,
+	/**
+	 *  Search results only (E09-T04): sellable stock on hand at this location, in
+	 *  thousandths, for stock-tracked items; `null` otherwise.
+	 */
+	onHandMilli: string | null,
 };
 
 export type CategoryDto = CategoryDto_Serialize | CategoryDto_Deserialize;

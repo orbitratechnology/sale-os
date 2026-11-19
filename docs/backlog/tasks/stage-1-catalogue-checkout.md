@@ -343,7 +343,7 @@ hardware. It is measured by:
 - **Size** M · **Deps** E06-T04, E09-T03 · **PRD** POS-002
 - **Acceptance:**
   - [x] Search as you type (debounce 80 ms) with keyboard navigation (↑/↓/Enter adds).
-  - [ ] Search shows the price, the variant label and on-hand stock (once Stage 2 lands).
+  - [x] Search shows the price, the variant label and on-hand stock (once Stage 2 lands).
   - [x] The quick-select grid shows products flagged `quick_select`, paged, with categories as tabs. It is touch-friendly (targets of at least 44 px).
   - [x] Choosing a variant product opens a variant picker.
 
