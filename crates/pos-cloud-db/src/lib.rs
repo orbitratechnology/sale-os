@@ -9,6 +9,7 @@ pub mod facts;
 pub mod master;
 pub mod repo;
 pub mod reports;
+pub mod retention;
 pub mod sync;
 pub mod tenant;
 

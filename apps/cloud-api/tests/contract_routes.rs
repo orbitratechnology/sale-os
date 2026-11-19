@@ -158,6 +158,9 @@ async fn every_route_answers_as_the_contract_says() {
     let email = format!("contract-{}@example.com", Uuid::now_v7().simple());
     let creds = json!({"email": email, "password": "correct horse battery staple"});
     let biz = t.business;
+    // E19-T10: a business of its own (the others are renamed by the cases' pushes).
+    let gone = tenant(&s, "Gone").await;
+    let gone_user = Some(gone.user_token.clone());
     let new_business = Uuid::now_v7();
 
     // (operation, method, uri, token, body, expected status). Order matters where one call
@@ -502,6 +505,47 @@ async fn every_route_answers_as_the_contract_says() {
             None,
             401,
         ),
+        // E19-T10, last: a deletion request revokes the business's tills.
+        (
+            "POST /v1/businesses/{businessId}/deletion",
+            Method::POST,
+            format!("/v1/businesses/{}/deletion", gone.business),
+            gone_user.clone(),
+            Some(json!({"confirmName": "not the name"})),
+            422,
+        ),
+        (
+            "POST /v1/businesses/{businessId}/deletion",
+            Method::POST,
+            format!("/v1/businesses/{}/deletion", gone.business),
+            gone_user.clone(),
+            Some(json!({"confirmName": gone.name})),
+            202,
+        ),
+        (
+            "POST /v1/businesses/{businessId}/deletion",
+            Method::POST,
+            format!("/v1/businesses/{}/deletion", gone.business),
+            gone_user.clone(),
+            Some(json!({"confirmName": gone.name})),
+            404,
+        ),
+        (
+            "DELETE /v1/businesses/{businessId}/deletion",
+            Method::DELETE,
+            format!("/v1/businesses/{}/deletion", gone.business),
+            gone_user.clone(),
+            None,
+            204,
+        ),
+        (
+            "DELETE /v1/businesses/{businessId}/deletion",
+            Method::DELETE,
+            format!("/v1/businesses/{}/deletion", gone.business),
+            gone_user.clone(),
+            None,
+            404,
+        ),
     ];
 
     let mut failures = Vec::new();
@@ -525,7 +569,9 @@ async fn every_route_answers_as_the_contract_says() {
     // And every secured route without a token: 401, as a declared problem.
     for op in operations(&spec).iter().filter(|op| secured(&spec, op)) {
         let (method, path) = op.split_once(' ').unwrap();
-        let uri = path.replace("{deviceId}", &Uuid::now_v7().to_string());
+        let uri = path
+            .replace("{deviceId}", &Uuid::now_v7().to_string())
+            .replace("{businessId}", &Uuid::now_v7().to_string());
         let res = send(&s, method.parse().unwrap(), &uri, None, None).await;
         if res.status != StatusCode::UNAUTHORIZED {
             failures.push(format!("{op} without a token: {} {}", res.status, res.body));
@@ -534,16 +580,16 @@ async fn every_route_answers_as_the_contract_says() {
             failures.push(format!("{op} without a token: {e}"));
         }
     }
-    let missing: Vec<_> = operations(&spec).difference(&succeeded).cloned().collect();
-    assert!(
-        missing.is_empty(),
-        "operations with no successful case: {missing:?}"
-    );
     assert!(
         failures.is_empty(),
         "{} contract failures:\n{}",
         failures.len(),
         failures.join("\n")
+    );
+    let missing: Vec<_> = operations(&spec).difference(&succeeded).cloned().collect();
+    assert!(
+        missing.is_empty(),
+        "operations with no successful case: {missing:?}"
     );
 }
 

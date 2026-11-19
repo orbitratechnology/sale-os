@@ -397,6 +397,115 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /v1/businesses/{businessId}/deletion:
+    post:
+      operationId: requestBusinessDeletion
+      tags: [devices]
+      summary: Asks for the cloud business to be deleted (E19-T10).
+      description: >-
+        The business stops at once: its tills are revoked and owner reports refuse it. Its data is
+        removed after the grace period (POS_DELETION_GRACE_DAYS, default 30), until when the
+        owner can cancel. The tills keep their own data.
+      security:
+        - userToken: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmName]
+              properties:
+                confirmName:
+                  type: string
+                  description: The business's name, typed again.
+            example:
+              confirmName: Harbour Café
+      responses:
+        "202":
+          description: Deletion scheduled.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [businessId, deletionDueAt]
+                properties:
+                  businessId:
+                    type: string
+                    format: uuid
+                  deletionDueAt:
+                    type: string
+                    format: date-time
+              example:
+                businessId: 0190a5b0-1111-7000-8000-000000000001
+                deletionDueAt: "2026-12-19T09:00:00+00:00"
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: not one of the owner's active businesses."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: "`VALIDATION_FAILED`: confirmName is not the business's name."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    delete:
+      operationId: cancelBusinessDeletion
+      tags: [devices]
+      summary: Cancels a pending deletion during the grace period. Its tills link again.
+      security:
+        - userToken: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Cancelled; the business is active again.
+        "401":
+          description: "`AUTH_REQUIRED`."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: "`NOT_FOUND`: no pending deletion of one of the owner's businesses."
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          description: Any other error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /v1/devices/{deviceId}/revoke:
     post:
       operationId: revokeDevice

@@ -158,6 +158,22 @@ async fn at12_http_every_secured_route_refuses_another_business() {
         ),
         ("GET /v1/devices", (Method::GET, "/v1/devices".into(), None)),
         (
+            "POST /v1/businesses/{businessId}/deletion",
+            (
+                Method::POST,
+                format!("/v1/businesses/{}/deletion", b.business),
+                Some(json!({"confirmName": b.name})),
+            ),
+        ),
+        (
+            "DELETE /v1/businesses/{businessId}/deletion",
+            (
+                Method::DELETE,
+                format!("/v1/businesses/{}/deletion", b.business),
+                None,
+            ),
+        ),
+        (
             "POST /v1/devices/{deviceId}/revoke",
             (Method::POST, format!("/v1/devices/{}/revoke", b.device), None),
         ),

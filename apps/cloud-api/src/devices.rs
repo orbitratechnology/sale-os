@@ -26,6 +26,10 @@ pub const REFRESH_DAYS: i32 = 90;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/businesses", post(create_business).get(list_businesses))
+        .route(
+            "/businesses/{business_id}/deletion",
+            post(request_deletion).delete(cancel_deletion),
+        )
         .route("/devices/register", post(register_device))
         .route("/devices", get(list_devices))
         .route("/devices/{device_id}/revoke", post(revoke))
@@ -427,6 +431,89 @@ async fn list_devices(
             })
             .collect(),
     ))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeletionRequest {
+    /// The business's name, typed again: a deletion is never one click.
+    confirm_name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeletionDto {
+    business_id: Uuid,
+    /// RFC 3339: when the data is removed; until then the owner can cancel.
+    deletion_due_at: String,
+}
+
+/// E19-T10: the owner asks for the cloud business to be deleted. It disappears from use at
+/// once (its tills are revoked, owner reports refuse it) and its data is removed after the
+/// grace period (`POS_DELETION_GRACE_DAYS`). The tills keep their own data.
+async fn request_deletion(
+    State(state): State<AppState>,
+    user: UserPrincipal,
+    ApiPath(business_id): ApiPath<Uuid>,
+    ApiJson(body): ApiJson<DeletionRequest>,
+) -> Result<(StatusCode, Json<DeletionDto>), Problem> {
+    let pool = pool(&state)?;
+    let principal = Principal {
+        business_id: BusinessId::from_uuid(business_id),
+    };
+    let mut tx = TenantTx::begin(pool, &principal).await.map_err(internal)?;
+    if !db::is_member(&mut tx, user.account_id).await.map_err(internal)? {
+        return Err(not_found());
+    }
+    let name = db::business_full(&mut tx)
+        .await
+        .map_err(internal)?
+        .ok_or_else(not_found)?
+        .name;
+    if body.confirm_name.trim() != name.trim() {
+        return Err(Problem::validation("confirmName must be the business's name"));
+    }
+    let due = chrono::Utc::now() + chrono::Duration::days(i64::from(state.config.deletion_grace_days));
+    if !pos_cloud_db::retention::request_deletion(&mut tx, due)
+        .await
+        .map_err(internal)?
+    {
+        return Err(not_found());
+    }
+    tx.commit().await.map_err(internal)?;
+    tracing::warn!(%business_id, due = %due.to_rfc3339(), "cloud business deletion requested");
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(DeletionDto {
+            business_id,
+            deletion_due_at: due.to_rfc3339(),
+        }),
+    ))
+}
+
+/// Cancels a pending deletion during the grace period. The tills were revoked: link them again.
+async fn cancel_deletion(
+    State(state): State<AppState>,
+    user: UserPrincipal,
+    ApiPath(business_id): ApiPath<Uuid>,
+) -> Result<StatusCode, Problem> {
+    let pool = pool(&state)?;
+    let principal = Principal {
+        business_id: BusinessId::from_uuid(business_id),
+    };
+    let mut tx = TenantTx::begin(pool, &principal).await.map_err(internal)?;
+    if !db::is_member_any_status(&mut tx, user.account_id)
+        .await
+        .map_err(internal)?
+        || !pos_cloud_db::retention::cancel_deletion(&mut tx)
+            .await
+            .map_err(internal)?
+    {
+        return Err(not_found());
+    }
+    tx.commit().await.map_err(internal)?;
+    tracing::warn!(%business_id, "cloud business deletion cancelled");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// The owner disconnects a device. Another owner's device: 404, as if it did not exist.

@@ -75,6 +75,19 @@ pub async fn business_full(tx: &mut TenantTx<'_>) -> Result<Option<BusinessFull>
 pub async fn is_member(tx: &mut TenantTx<'_>, account_id: Uuid) -> Result<bool, sqlx::Error> {
     let id = *tx.business_id().as_uuid();
     sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM business_members m JOIN businesses b USING (business_id)
+           WHERE m.business_id = $1 AND m.account_id = $2 AND b.status = 'active')",
+    )
+    .bind(id)
+    .bind(account_id)
+    .fetch_one(tx.conn())
+    .await
+}
+
+/// Membership whatever the business's status (to cancel a pending deletion).
+pub async fn is_member_any_status(tx: &mut TenantTx<'_>, account_id: Uuid) -> Result<bool, sqlx::Error> {
+    let id = *tx.business_id().as_uuid();
+    sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM business_members WHERE business_id = $1 AND account_id = $2)",
     )
     .bind(id)
