@@ -90,6 +90,7 @@ pub const COMMANDS: &[&str] = &[
     "security_recovery_key",
     "security_recovery_key_confirmed",
     "db_unlock",
+    "diagnostics_export",
     "export_csv",
     "audit_list",
     "cash_session_current",

@@ -1166,6 +1166,7 @@ name = "desktop-tauri"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "flate2",
  "keyring",
  "pos-application",
  "pos-device-virtual",

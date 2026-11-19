@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
 import type { CashStateDto_Serialize as CashState, SyncStatusDto } from "../../ipc/bindings";
+import { describeError } from "../shell/errors";
 import { indicatorText } from "../sync/syncText";
 
 /** How often the status bar asks Rust where sync stands. */
@@ -27,6 +28,13 @@ export function StatusBar({
   onConflicts?: (() => void) | null;
 }) {
   const [sync, setSync] = useState<SyncStatusDto | null>(null);
+  const [diag, setDiag] = useState<string | null>(null);
+  async function saveDiagnostics() {
+    setDiag("Saving diagnostics…");
+    const res = await commands.diagnosticsExport();
+    if (res.status === "error") setDiag(describeError(res.error));
+    else setDiag(res.data ? `Diagnostics saved to ${res.data.path}` : null);
+  }
   useEffect(() => {
     let live = true;
     const load = () =>
@@ -64,6 +72,19 @@ export function StatusBar({
       <span data-testid="sync-status" data-state={sync?.indicator ?? "not_linked"}>
         {sync ? indicatorText(sync) : "Not linked · saved on this computer"}
       </span>
+      <button
+        type="button"
+        className="link small"
+        title="A file for support: the till's state and its logs, without business records or secrets"
+        onClick={() => void saveDiagnostics()}
+      >
+        Save diagnostics…
+      </button>
+      {diag && (
+        <span role="status" className="small">
+          {diag}
+        </span>
+      )}
       {sync && sync.conflicts > 0 && onConflicts && (
         <button type="button" className="secondary small" onClick={onConflicts}>
           Resolve conflicts

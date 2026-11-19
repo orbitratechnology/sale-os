@@ -104,8 +104,8 @@ Windows hardware (D-05):
 ### E19-T07 · Diagnostics bundle
 - **Size** S · **Deps** E01-T04, E11-T06 · **PRD** §14 (Observability), §17 Stage 4
 - **Acceptance:**
-  - [ ] `diagnostics_export` produces a ZIP with the redacted logs (7 days), app/OS/WebView2 versions, the schema version, the `integrity_check` result, projection drift, sync state and counts, print-job states, settings (non-secret), and the last 100 audit actions (IDs only, no customer data).
-  - [ ] A test asserts the bundle contains no PIN hashes, tokens or full payloads.
+  - [x] `diagnostics_export` produces a ZIP with the redacted logs (7 days), app/OS/WebView2 versions, the schema version, the `integrity_check` result, projection drift, sync state and counts, print-job states, settings (non-secret), and the last 100 audit actions (IDs only, no customer data).
+  - [x] A test asserts the bundle contains no PIN hashes, tokens or full payloads.
 
 ### E19-T08 · Usability and accessibility validation in shops
 - **Size** M · **Deps** Stage 2 UI · **PRD** §17 Stage 4, §5.1, §14 (Accessibility)

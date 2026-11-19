@@ -322,7 +322,7 @@ pub fn csv_field(value: Option<&str>, storage_type: &str) -> String {
 /// A minimal ZIP writer: deflated entries, each local header patched with its CRC and sizes
 /// once the entry is written (so no data descriptors; every reader understands it). No ZIP64:
 /// an entry or the archive over 4 GiB is refused.
-struct Zip<W: Write + Seek> {
+pub(crate) struct Zip<W: Write + Seek> {
     out: W,
     entries: Vec<Entry>,
     current: Option<Current>,
@@ -354,7 +354,7 @@ fn too_big() -> StoreError {
 }
 
 impl<W: Write + Seek> Zip<W> {
-    fn new(out: W) -> Self {
+    pub(crate) fn new(out: W) -> Self {
         Self {
             out,
             entries: Vec::new(),
@@ -366,7 +366,7 @@ impl<W: Write + Seek> Zip<W> {
         StoreError::io("export", e)
     }
 
-    fn start(&mut self, name: &str) -> Result<(), StoreError> {
+    pub(crate) fn start(&mut self, name: &str) -> Result<(), StoreError> {
         let offset = self.out.stream_position().map_err(Self::io)?;
         let mut h = Vec::with_capacity(30 + name.len());
         h.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
@@ -391,7 +391,7 @@ impl<W: Write + Seek> Zip<W> {
         Ok(())
     }
 
-    fn finish_entry(&mut self) -> Result<(), StoreError> {
+    pub(crate) fn finish_entry(&mut self) -> Result<(), StoreError> {
         let c = self
             .current
             .take()
@@ -419,7 +419,7 @@ impl<W: Write + Seek> Zip<W> {
         Ok(())
     }
 
-    fn close(mut self) -> Result<W, StoreError> {
+    pub(crate) fn close(mut self) -> Result<W, StoreError> {
         let start = self.out.stream_position().map_err(Self::io)?;
         for e in &self.entries {
             let mut h = Vec::with_capacity(46 + e.name.len());

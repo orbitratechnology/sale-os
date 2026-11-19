@@ -15,6 +15,7 @@ mod cloud_report_cache;
 mod config_queries;
 mod conflict_queries;
 pub mod crypto;
+pub mod diagnostics;
 mod error;
 mod export_queries;
 pub mod full_export;

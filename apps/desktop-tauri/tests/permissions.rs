@@ -8,7 +8,7 @@ use desktop_tauri_lib::{AppServices, COMMANDS};
 use pos_application::auth::{Argon2PinHasher, PinHasher};
 use pos_domain::{Permission, Role, role_has};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tauri::Manager;
 use tauri::ipc::{CallbackFn, InvokeBody, InvokeResponseBody};
@@ -374,6 +374,7 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ),
         ("data_export_full", Perm(SettingsEdit), json!({})),
         ("security_recovery_key", Perm(SettingsEdit), json!({})),
+        ("diagnostics_export", Session, json!({})),
         ("security_recovery_key_confirmed", Perm(SettingsEdit), json!({})),
         // Only acts on a locked database; refused (as a validation error) otherwise.
         (
@@ -1797,4 +1798,129 @@ fn encrypted_till_recovery_key_and_unlock() {
     let (_app, w) = start_keyed(dir.path(), empty);
     let state = invoke(&w, "app_bootstrap_state", json!({})).unwrap();
     assert_eq!(state["setupComplete"], true);
+}
+
+/// Saves to a fixed folder, whatever the suggested name.
+struct SaveInto(std::path::PathBuf);
+
+impl desktop_tauri_lib::FileDialog for SaveInto {
+    fn ask(
+        &self,
+        suggested: &str,
+        _filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Some(self.0.join(suggested)));
+        rx
+    }
+}
+
+/// The entries of a ZIP whose local headers carry their sizes (as Sale OS writes them).
+fn unzip(bytes: &[u8]) -> BTreeMap<String, String> {
+    use std::io::Read;
+    let u16_at = |i: usize| u16::from_le_bytes([bytes[i], bytes[i + 1]]) as usize;
+    let u32_at = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
+    let mut out = BTreeMap::new();
+    let mut i = 0;
+    while u32_at(i) == 0x0403_4b50 {
+        let compressed = u32_at(i + 18) as usize;
+        let (name_len, extra_len) = (u16_at(i + 26), u16_at(i + 28));
+        let name = String::from_utf8(bytes[i + 30..i + 30 + name_len].to_vec()).unwrap();
+        let start = i + 30 + name_len + extra_len;
+        let mut text = String::new();
+        flate2::read::DeflateDecoder::new(&bytes[start..start + compressed])
+            .read_to_string(&mut text)
+            .unwrap();
+        out.insert(name, text);
+        i = start + compressed;
+    }
+    out
+}
+
+/// E19-T07: the diagnostics bundle holds the till's state and the redacted logs, and no PIN
+/// hash, payload or card number.
+#[test]
+fn the_diagnostics_bundle_tells_support_enough_and_nothing_private() {
+    let out = tempfile::tempdir().unwrap();
+    let (dir, _app, w) = start_with(Some(Arc::new(SaveInto(out.path().to_path_buf()))));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Zebra Biscuits Deluxe");
+    invoke(&w, "product_create", product).unwrap();
+    // A log line that slipped a card number through (redaction at write time is the first line
+    // of defence; the bundle masks again).
+    std::fs::create_dir_all(dir.path().join("logs")).unwrap();
+    std::fs::write(
+        dir.path().join("logs/sale-os.2026-11-19.log"),
+        "{\"msg\":\"reference 4111 1111 1111 1111 refused\"}\n",
+    )
+    .unwrap();
+
+    let done = invoke(&w, "diagnostics_export", json!({})).unwrap();
+    let peek = unzip(&std::fs::read(out.path().join(done["fileName"].as_str().unwrap())).unwrap());
+    let peek: Value = serde_json::from_str(&peek["diagnostics.json"]).unwrap();
+    assert_eq!(
+        done["integrityOk"], true,
+        "{}",
+        peek["database"]["integrityCheck"]
+    );
+    assert_eq!(done["stockDrift"], 0);
+    assert_eq!(done["files"], 2);
+    let name = done["fileName"].as_str().unwrap();
+    assert!(
+        name.starts_with("sale-os-diagnostics-") && name.ends_with(".zip"),
+        "{name}"
+    );
+    let files = unzip(&std::fs::read(out.path().join(name)).unwrap());
+    let diag: Value = serde_json::from_str(&files["diagnostics.json"]).unwrap();
+    assert_eq!(diag["database"]["integrityCheck"], json!(["ok"]));
+    assert!(diag["database"]["schemaVersion"].as_i64().unwrap() >= 18);
+    assert!(!diag["database"]["recentAudit"].as_array().unwrap().is_empty());
+    assert!(!diag["database"]["settings"].as_array().unwrap().is_empty());
+    assert!(
+        diag["database"]["outbox"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["events"].as_i64() > Some(0))
+    );
+    assert_eq!(
+        diag["app"]["encrypted"], false,
+        "this harness runs without a keychain"
+    );
+
+    let all: String = files.values().cloned().collect();
+    let hashes: Vec<String> = tauri::async_runtime::block_on(async {
+        let db = pos_local_db::LocalDb::open(&pos_local_db::DbOptions::in_dir(dir.path()))
+            .await
+            .unwrap();
+        let h = sqlx::query_scalar("SELECT pin_hash FROM staff_users")
+            .fetch_all(db.readers())
+            .await
+            .unwrap();
+        db.close().await;
+        h
+    });
+    for h in &hashes {
+        assert!(!all.contains(h.as_str()), "a PIN hash is in the bundle");
+    }
+    assert!(!all.contains("$argon2"));
+    assert!(
+        !all.contains("Zebra Biscuits Deluxe"),
+        "no event payloads or business records"
+    );
+    assert!(!all.contains("4111 1111 1111 1111"), "the card number is masked");
+    assert!(
+        files["logs/sale-os.2026-11-19.log"].contains("1111]"),
+        "masked, last four kept"
+    );
 }

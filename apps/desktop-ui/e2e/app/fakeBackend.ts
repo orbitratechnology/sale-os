@@ -1402,6 +1402,12 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.orderDiscountPpm = null;
       s.revision += 1;
       return view(s);
+    case "diagnostics_export": {
+      needSession(s);
+      const answer = s.saveAs.length ? s.saveAs.shift() : "sale-os-diagnostics-2026-11-05T0920.zip";
+      if (answer == null) return null;
+      return { path: `/home/user/Documents/${answer}`, fileName: answer, files: 3, integrityOk: true, stockDrift: 0 };
+    }
     case "cart_park": {
       const me = needSession(s);
       if (!s.lines.length) fail("CART_EMPTY");

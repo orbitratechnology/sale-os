@@ -374,6 +374,16 @@ describe("checkout (E09-T03..T06)", () => {
     expect(await calls(page, "cart_discard_parked")).toHaveLength(1);
   });
 
+  it("anyone signed in can save a diagnostics file for support (E19-T07)", async () => {
+    const page = await checkout();
+    await page.evaluate(() => {
+      if (window.__fake.session) window.__fake.session.role = "cashier";
+    });
+    await page.getByRole("button", { name: "Save diagnostics…" }).click();
+    await page.getByText("Diagnostics saved to /home/user/Documents/sale-os-diagnostics-2026-11-05T0920.zip").waitFor();
+    expect(await calls(page, "diagnostics_export")).toHaveLength(1);
+  });
+
   it("F12 locks: back to sign-in", async () => {
     const page = await checkout();
     await page.keyboard.press("F12");

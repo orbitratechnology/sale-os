@@ -95,6 +95,7 @@
     "allow-security-recovery-key",
     "allow-security-recovery-key-confirmed",
     "allow-db-unlock",
+    "allow-diagnostics-export",
     "allow-export-csv",
     "allow-audit-list",
     "allow-cash-session-current",

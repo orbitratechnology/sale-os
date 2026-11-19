@@ -10,6 +10,7 @@ mod command_names;
 mod commands;
 mod config_commands;
 pub mod db_key;
+mod diagnostics_commands;
 mod dto;
 mod error;
 mod import_commands;
@@ -121,6 +122,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         backup_commands::security_recovery_key,
         backup_commands::security_recovery_key_confirmed,
         backup_commands::db_unlock,
+        diagnostics_commands::diagnostics_export,
         report_commands::export_csv,
         report_commands::audit_list,
         cash_commands::cash_session_current,

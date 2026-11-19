@@ -287,6 +287,8 @@ export const commands = {
 	 *  no session (nobody can sign in to a locked database); refused when the database is open.
 	 */
 	dbUnlock: (recoveryKey: string) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("db_unlock", { recoveryKey })),
+	/**  Saves the bundle where the user chooses (null: cancelled; nothing written). */
+	diagnosticsExport: () => typedError<DiagnosticsDto | null, IpcError_Serialize>(__TAURI_INVOKE("diagnostics_export")),
 	/**
 	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
 	 *  the system dialog and writes the file (the WebView never names a path), then audits it
@@ -1148,6 +1150,16 @@ export type DateRangeDto = {
 export type DayFiguresDto = {
 	date: string,
 	figures: SalesFiguresDto,
+};
+
+export type DiagnosticsDto = {
+	/**  Where it was saved (shown to the user). */
+	path: string,
+	fileName: string,
+	files: number,
+	integrityOk: boolean,
+	/**  Stock balances that differ from their movements. */
+	stockDrift: number,
 };
 
 export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;

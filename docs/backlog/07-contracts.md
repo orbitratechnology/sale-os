@@ -125,7 +125,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `sync_repair_queue` / `sync_repair_action` | SyncManage | | E17-T09 |
 | `backup_now` / `backup_list` / `backup_restore` | SettingsEdit (owner) | | E19-T03 |
 | `data_export_full` | SettingsEdit (owner) | `{} → { path, fileName, tables, rows } \| null`: Rust asks where to save (ZIP) and writes every table as CSV plus `manifest.json` (`docs/export-format.md`); no PIN hashes; audited `data.exported` (null: cancelled) | E19-T04 |
-| `diagnostics_export` | session | `{ saveTo } → ()` | E19-T07 |
+| `diagnostics_export` | session | `{} → { path, fileName, files, integrityOk, stockDrift } \| null`: Rust asks where to save the ZIP (null: cancelled) | E19-T07 |
 | `dev_scanner_*`, `dev_printer_*`, `dev_payment_*`, `dev_network_*` | DevtoolsUse (debug builds) | Scenario controls | E07-T03, E13-T06, E10-T02, E17-T10 |
 
 ## 2. Error model

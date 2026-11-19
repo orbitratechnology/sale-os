@@ -37,6 +37,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
 tempfile.workspace = true
 tauri = { workspace = true, features = ["test"] }
