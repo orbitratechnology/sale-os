@@ -278,9 +278,7 @@ pub(crate) async fn create(
         .execute(readers)
         .await
         .map_err(StoreError::from_sqlx)?;
-    std::fs::File::open(&partial)
-        .and_then(|f| f.sync_all())
-        .map_err(io("sync backup"))?;
+    crate::sync_file(&partial).map_err(io("sync backup"))?;
     std::fs::rename(&partial, &path).map_err(io("name backup"))?;
     let meta = describe(&path, kind, created_at, key).await?;
     write_meta(&path, &meta)?;
@@ -349,9 +347,7 @@ pub fn copy_to(backup: &BackupInfo, folder: &Path) -> Result<BackupInfo, StoreEr
     let target = folder.join(&backup.id);
     let partial = folder.join(format!("{}.partial", backup.id));
     std::fs::copy(&backup.path, &partial).map_err(io("copy backup"))?;
-    std::fs::File::open(&partial)
-        .and_then(|f| f.sync_all())
-        .map_err(io("sync backup copy"))?;
+    crate::sync_file(&partial).map_err(io("sync backup copy"))?;
     std::fs::rename(&partial, &target).map_err(io("name backup copy"))?;
     write_meta(&target, &backup.meta)?;
     prune(folder, backup.meta.kind)?;
@@ -472,9 +468,7 @@ pub async fn restore(opts: &DbOptions, backup: &Path) -> Result<RestoreReport, S
     } else {
         None
     };
-    std::fs::File::open(&incoming)
-        .and_then(|f| f.sync_all())
-        .map_err(io("sync restored database"))?;
+    crate::sync_file(&incoming).map_err(io("sync restored database"))?;
     for suffix in ["-wal", "-shm"] {
         let mut p = opts.path.as_os_str().to_owned();
         p.push(suffix);

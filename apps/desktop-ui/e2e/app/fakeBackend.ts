@@ -349,7 +349,8 @@ const workspace: Workspace = { businessName: "Corner Shop", registerName: "Till 
 /** The real app's IPC card-data guard (E19-T05), simplified: any Luhn-valid 13–19 digit run. */
 function cardLike(v: unknown, key = ""): boolean {
   if (typeof v === "string") {
-    if (["pin", "ownerPin", "password", "raw", "query", "recoveryKey"].includes(key)) return false;
+    if (["pin", "ownerPin", "password", "raw", "query", "recoveryKey", "id"].includes(key)) return false;
+    if (/(Id|Ids|Ms)$/.test(key) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return false;
     return v
       .replace(/[ -]/g, "")
       .split(/\D+/)

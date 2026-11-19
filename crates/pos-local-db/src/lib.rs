@@ -87,6 +87,12 @@ pub struct LocalDb {
     key: Option<crypto::DbKey>,
 }
 
+/// Flushes a file we just wrote to the disk. Opened for writing: on Windows,
+/// `FlushFileBuffers` refuses a read-only handle ("Access is denied").
+pub(crate) fn sync_file(path: &Path) -> std::io::Result<()> {
+    std::fs::OpenOptions::new().write(true).open(path)?.sync_all()
+}
+
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 pub(crate) fn connect_options(path: &Path) -> SqliteConnectOptions {

@@ -28,6 +28,16 @@ const UNCHECKED: &[&str] = &[
     "recoveryKey",
 ];
 
+/// Identifiers the app made itself (UUIDs, backup file names with a millisecond time, epoch
+/// milliseconds): never typed, and a 13-digit time passes Luhn one time in ten.
+pub fn is_identifier(key: &str, value: &str) -> bool {
+    key == "id"
+        || key.ends_with("Id")
+        || key.ends_with("Ids")
+        || key.ends_with("Ms")
+        || uuid::Uuid::try_parse(value).is_ok()
+}
+
 /// Magnetic-stripe track 1 (`%B<pan>^`) or track 2 (`;<pan>=`) as a reader types it.
 fn looks_like_track_data(text: &str) -> bool {
     let track = |start: &str, end: char| {
@@ -52,7 +62,7 @@ pub fn find(value: &Value) -> Option<String> {
     fn walk(v: &Value, path: &str, key: &str) -> Option<String> {
         match v {
             Value::String(s) => {
-                let bad = if UNCHECKED.contains(&key) {
+                let bad = if UNCHECKED.contains(&key) || is_identifier(key, s) {
                     false
                 } else if SCANNED.contains(&key) {
                     looks_like_track_data(s) || long_card_run(s)
@@ -152,5 +162,20 @@ mod tests {
         assert!(find(&json!({"raw": "4111111111111111"})).is_some());
         // Not checked: never stored or logged.
         assert_eq!(find(&json!({"pin": "4111111111111111"})), None);
+    }
+
+    #[test]
+    fn identifiers_are_not_card_numbers() {
+        // A backup's id holds a 13-digit millisecond time that passes Luhn.
+        assert!(looks_like_card_number("1795067246946"));
+        assert_eq!(find(&json!({"backupId": "pos.manual.1795067246946.db"})), None);
+        assert_eq!(find(&json!({"asOfMs": "1795067246946"})), None);
+        // A UUID whose digits happen to run long, under any key.
+        assert_eq!(
+            find(&json!({"items": ["01234567-8901-4234-8567-890123456789"]})),
+            None
+        );
+        // A note is still checked.
+        assert!(find(&json!({"note": "1795067246946"})).is_some());
     }
 }

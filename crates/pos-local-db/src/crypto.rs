@@ -197,9 +197,7 @@ pub async fn encrypt_in_place(path: &Path, key: &DbKey) -> Result<(), StoreError
         let _ = std::fs::remove_file(&target);
         return Err(StoreError::from_sqlx(e));
     }
-    std::fs::File::open(&target)
-        .and_then(|f| f.sync_all())
-        .map_err(|e| StoreError::io("sync encrypted database", e))?;
+    crate::sync_file(&target).map_err(|e| StoreError::io("sync encrypted database", e))?;
     if !key_opens(&target, key).await {
         let _ = std::fs::remove_file(&target);
         return Err(StoreError::Corrupt(
