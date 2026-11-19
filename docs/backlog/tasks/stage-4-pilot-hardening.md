@@ -133,7 +133,7 @@ Windows hardware (D-05):
 ### E19-T11 · Pilot runbook and support process
 - **Size** S · **Deps** E19-T03, E19-T07
 - **Acceptance:**
-  - [ ] Runbooks cover install, first run, linking, the daily close, restore from backup, a replaced PC (new install joins and bootstraps; old device revoked), revoked device recovery, the "sync attention needed" playbook, and how to collect diagnostics.
+  - [x] Runbooks cover install, first run, linking, the daily close, restore from backup, a replaced PC (new install joins and bootstraps; old device revoked), revoked device recovery, the "sync attention needed" playbook, and how to collect diagnostics.
   - [ ] There is an escalation path and an on-call rota for the pilot period.
 
 ### E19-T12 · MVP acceptance suite (AT-01…AT-13) automated
