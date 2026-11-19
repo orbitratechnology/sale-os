@@ -1,0 +1,67 @@
+name: Release build (Windows)
+
+# Production (release-profile) Windows installers for the pilot, plus the tools for the pilot
+# PC's reference runs. Run it from the Actions tab ("Run workflow", once this file is on the
+# default branch), by pushing a tag v*, or by changing this file on any branch.
+#
+# The cloud is optional at run time: set POS_CLOUD_URL on the till to link it. Without it
+# the till works on its own (no hosting is chosen yet, D-06).
+#
+# Not signed yet: code signing and auto-update wait for the certificate and update key
+# (E19-T06). Until then Windows SmartScreen warns about an unknown publisher; check the
+# SHA-256 in SHA256SUMS.txt before installing (pilot runbook §1).
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    paths: [".github/workflows/release.yml"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  windows:
+    name: Release installers and pilot tools (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: tauri build (release, NSIS + MSI)
+        run: pnpm tauri build
+      - name: Pilot tools (performance suite)
+        run: cargo build --release --locked -p pos-bench
+      - name: Collect, with checksums
+        shell: pwsh
+        run: |
+          $out = New-Item -ItemType Directory -Force -Path dist-release
+          Copy-Item target/release/bundle/nsis/*.exe $out
+          Copy-Item target/release/bundle/msi/*.msi $out
+          New-Item -ItemType Directory -Force -Path "$out/pilot-tools" | Out-Null
+          Copy-Item target/release/pos-bench.exe "$out/pilot-tools/"
+          $lines = Get-ChildItem -Recurse -File $out | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            "$hash  $($_.FullName.Substring($out.FullName.Length + 1).Replace('\', '/'))"
+          }
+          $lines | Set-Content -Encoding ascii "$out/SHA256SUMS.txt"
+          Get-Content "$out/SHA256SUMS.txt"
+          "commit $env:GITHUB_SHA" | Set-Content -Encoding ascii "$out/BUILD.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sale-os-windows-release-${{ github.sha }}
+          path: dist-release
+          if-no-files-found: error
+          retention-days: 90

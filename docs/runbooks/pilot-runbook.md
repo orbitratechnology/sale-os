@@ -15,6 +15,11 @@ For whoever installs and supports Sale OS in a pilot shop. Restoring backups has
      (ADR-023).
    - BitLocker or device encryption is recommended on top.
 2. **Install** the signed installer.
+   - The pilot build comes from the GitHub Actions workflow "Release build (Windows)": the
+     artefact `sale-os-windows-release-<commit>` holds the NSIS installer (`.exe`, per user,
+     recommended), the `.msi`, `SHA256SUMS.txt` (compare it with `Get-FileHash` before
+     installing) and `pilot-tools/pos-bench.exe` for the reference performance run
+     (`pos-bench.exe --scale full`, E19-T01).
    - It includes WebView2 (ADR-021), so no internet is needed.
    - Installers are signed once E19-T06 is done. Until then, Windows SmartScreen warns about
      an unknown publisher: check the file came from us, then choose "Run anyway".
