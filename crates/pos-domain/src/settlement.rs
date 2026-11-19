@@ -407,6 +407,32 @@ mod tests {
         assert_eq!((s.rounding, s.total_due, s.change), (m(0), m(1347), m(153)));
     }
 
+    /// AT-13: whatever the till enters (any kind, any reference, even one that reads like an
+    /// approval), the tender is confirmed by the operator. Only a `PaymentPort` result can make
+    /// a provider confirmation, and `TenderInput` has no field that could carry one.
+    #[test]
+    fn at13_till_input_is_only_ever_operator_confirmed() {
+        for kind in [
+            TenderKind::CardExternal,
+            TenderKind::BankTransferExternal,
+            TenderKind::QrExternal,
+            TenderKind::OtherExternal,
+        ] {
+            for reference in [None, Some("APPROVED 123456"), Some("provider")] {
+                let input = TenderInput {
+                    kind,
+                    amount: m(500),
+                    external_reference: reference.map(Into::into),
+                };
+                let s = settle(m(500), &[input], &policy()).unwrap();
+                assert_eq!(s.tenders[0].confirmation, ConfirmationSource::Operator);
+                assert_eq!(s.tenders[0].confirmation.as_str(), "operator");
+            }
+        }
+        let s = settle(m(500), &[cash(500)], &policy()).unwrap();
+        assert_eq!(s.tenders[0].confirmation, ConfirmationSource::Operator);
+    }
+
     #[test]
     fn invariants_hold() {
         let s = settle(m(999), &[card(400, None), cash(1000)], &policy()).unwrap();

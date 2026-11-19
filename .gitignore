@@ -9,3 +9,4 @@ dist/
 /.pnpm-store/
 coverage/
 .schemathesis/
+/acceptance-report/

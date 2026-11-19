@@ -7,7 +7,9 @@
 //! - `schema-release`        record the current schemas as released (when an app version ships)
 //! - `trace`                 verify every PRD P0 requirement is traced to a task
 //! - `crash-harness [--kills N] [--report FILE]`  kill-and-verify durability campaign (E02-T04)
+//! - `acceptance [--report DIR] [--only AT-01,..] [--kills N]`  the MVP acceptance suite (E19-T12)
 
+mod acceptance;
 mod deps;
 mod trace;
 
@@ -26,9 +28,10 @@ fn main() -> Result<()> {
         Some("schema-release") => event_schemas("release"),
         Some("trace") => trace::run(&root()),
         Some("crash-harness") => crash_harness(&args[1..]),
+        Some("acceptance") => acceptance::run(&root(), &args[1..]),
         _ => {
             eprintln!(
-                "usage: cargo xtask <check-deps | gen-bindings [--check] | gen-schemas [--check] | schema-compat | schema-release | trace>"
+                "usage: cargo xtask <check-deps | gen-bindings [--check] | gen-schemas [--check] | schema-compat | schema-release | trace | crash-harness | acceptance>"
             );
             std::process::exit(2);
         }
