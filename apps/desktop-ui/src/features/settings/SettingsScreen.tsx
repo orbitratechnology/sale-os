@@ -6,6 +6,7 @@ import { describeError } from "../shell/errors";
 import { BackupsPanel } from "./BackupsPanel";
 import { BusinessPanel } from "./BusinessPanel";
 import { CloudPanel } from "./CloudPanel";
+import { StaffPanel } from "./StaffPanel";
 import { TaxesPanel } from "./TaxesPanel";
 
 /** The business and tax pages sit beside the registry groups; they are not registry settings. */
@@ -13,6 +14,7 @@ const BUSINESS = "Business";
 const TAXES = "Taxes";
 const CLOUD = "Cloud";
 const BACKUPS = "Backups";
+const STAFF = "Staff";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
@@ -52,7 +54,7 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, CLOUD, BACKUPS];
+  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, STAFF, TAXES, CLOUD, BACKUPS];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -76,6 +78,10 @@ export function SettingsScreen({
       {group === BUSINESS ? (
         <section className="card settings-list" aria-label={BUSINESS}>
           <BusinessPanel onChanged={onChanged} />
+        </section>
+      ) : group === STAFF ? (
+        <section className="card settings-list" aria-label={STAFF}>
+          <StaffPanel />
         </section>
       ) : group === TAXES ? (
         <section className="card settings-list" aria-label={TAXES}>

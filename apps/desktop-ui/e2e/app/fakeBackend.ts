@@ -9,6 +9,7 @@ import type { CartLine, CartView, CatalogHit, IpcError, Session, SignInUser, Wor
 import type {
   CategoryDto_Serialize as CategoryDto,
   Permission,
+  Role,
   ProductDto_Serialize as ProductDto,
   ProductInputDto_Deserialize as ProductInput,
   TaxCategoryConfigDto,
@@ -27,6 +28,10 @@ export interface FakeProduct {
 interface StaffUser extends SignInUser {
   pin: string;
   failed: number;
+  /** Staff management (E05-T06); absent means active, version 1. */
+  active?: boolean;
+  version?: number;
+  mustChangePin?: boolean;
 }
 
 export interface FakeState {
@@ -226,6 +231,40 @@ function initialStateInner(preset: Preset): FakeState {
   };
 }
 
+const staffDto = (u: StaffUser) => ({
+  userId: u.userId,
+  displayName: u.displayName,
+  role: u.role,
+  active: u.active !== false,
+  mustChangePin: u.mustChangePin ?? false,
+  version: u.version ?? 1,
+});
+
+function ownerOnly(s: FakeState) {
+  if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+}
+
+/** Rust's name rules: required, at most 40 characters, unique among active staff. */
+function staffName(s: FakeState, raw: string, except: string | null): string {
+  const name = raw.trim();
+  if (!name) fail("VALIDATION_FAILED", { field: "displayName" });
+  if ([...name].length > 40) fail("VALIDATION_FAILED", { field: "displayName", value: "40" });
+  if (s.users.some((u) => u.active !== false && u.userId !== except && u.displayName.toLowerCase() === name.toLowerCase()))
+    fail("VALIDATION_FAILED", { field: "displayName", value: "taken" });
+  return name;
+}
+
+function staffAt(s: FakeState, userId: string, baseVersion: number): StaffUser {
+  const u = s.users.find((x) => x.userId === userId) ?? fail("VALIDATION_FAILED");
+  if ((u.version ?? 1) !== baseVersion) fail("CONFLICT_VERSION");
+  return u;
+}
+
+function lastOwner(s: FakeState, u: StaffUser) {
+  if (!s.users.some((x) => x.userId !== u.userId && x.role === "owner" && x.active !== false))
+    fail("VALIDATION_FAILED", { field: "role", value: "lastOwner" });
+}
+
 function fail(code: IpcError["code"], details: IpcError["details"] = null): never {
   const e: IpcError = { code, message: code, retryable: false, correlationId: id(), details };
   throw e;
@@ -393,7 +432,46 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       return { ownerUserId: owner.userId, registerCode: "R01" };
     }
     case "auth_list_users":
-      return s.users.map(({ userId, displayName, role }) => ({ userId, displayName, role }));
+      return s.users.filter((u) => u.active !== false).map(({ userId, displayName, role }) => ({ userId, displayName, role }));
+    case "staff_list":
+      ownerOnly(s);
+      return s.users.map(staffDto);
+    case "staff_create": {
+      ownerOnly(s);
+      const input = a.input as { displayName: string; role: Role; pin: string };
+      const name = staffName(s, input.displayName, null);
+      if (!/^\d{4,8}$/.test(input.pin)) fail("VALIDATION_FAILED", { field: "pin" });
+      const u: StaffUser = { userId: id(), displayName: name, role: input.role, pin: input.pin, failed: 0, active: true, version: 1 };
+      s.users.push(u);
+      return staffDto(u);
+    }
+    case "staff_update": {
+      ownerOnly(s);
+      const input = a.input as { userId: string; baseVersion: number; displayName: string | null; role: Role | null };
+      const u = staffAt(s, input.userId, input.baseVersion);
+      if (input.displayName !== null) u.displayName = staffName(s, input.displayName, u.userId);
+      if (input.role !== null && input.role !== "owner" && u.role === "owner") lastOwner(s, u);
+      if (input.role !== null) u.role = input.role;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
+    case "staff_deactivate": {
+      ownerOnly(s);
+      const u = staffAt(s, String(a.userId), Number(a.baseVersion));
+      if (u.role === "owner") lastOwner(s, u);
+      u.active = false;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
+    case "staff_reset_pin": {
+      ownerOnly(s);
+      const u = staffAt(s, String(a.userId), Number(a.baseVersion));
+      if (!/^\d{4,8}$/.test(String(a.pin))) fail("VALIDATION_FAILED", { field: "pin" });
+      u.pin = String(a.pin);
+      u.mustChangePin = true;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
     case "auth_login": {
       const u = s.users.find((x) => x.userId === a.userId) ?? fail("VALIDATION_FAILED");
       if (s.lockedUntil !== null && s.lockedUntil > Date.now()) fail("AUTH_LOCKED_OUT", { remainingAttempts: null, retryAtMs: String(s.lockedUntil) });

@@ -1437,6 +1437,70 @@ describe("business profile (E04-T03)", () => {
   });
 });
 
+describe("staff (E05-T06)", () => {
+  it("the owner adds, edits, resets a PIN and deactivates; mistakes are shown; the last owner stays", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Staff" }).click();
+    const table = page.getByRole("table", { name: "Staff" });
+    await expect.poll(() => table.getByTestId("role-badge").allTextContents()).toEqual(["Owner", "Manager", "Cashier"]);
+    const add = page.getByRole("form", { name: "Add a staff member" });
+    const panel = page.getByRole("region", { name: "Staff" });
+    // A taken name, then two PINs that differ: refused with the reason.
+    await add.getByLabel("Name").fill("mia");
+    await add.getByLabel("PIN (4–8 digits)").fill("5555");
+    await add.getByLabel("PIN again").fill("5555");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByRole("alert").filter({ hasText: "Another active staff member already has this name." }).waitFor();
+    await add.getByLabel("Name").fill("Tom");
+    await add.getByLabel("PIN again").fill("5556");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByRole("alert").filter({ hasText: "The two PINs differ." }).waitFor();
+    await add.getByLabel("PIN again").fill("5555");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByText("Tom can now sign in as cashier.").waitFor();
+    expect((await calls(page, "staff_create")).at(-1)).toEqual({ input: { displayName: "Tom", role: "cashier", pin: "5555" } });
+    // Tom becomes a manager.
+    await table.getByRole("button", { name: "Edit Tom" }).click();
+    const edit = page.getByRole("form", { name: "Edit Tom" });
+    await edit.getByLabel("Role").selectOption("manager");
+    await edit.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => table.getByTestId("role-badge").allTextContents()).toEqual(["Owner", "Manager", "Cashier", "Manager"]);
+    expect((await calls(page, "staff_update")).at(-1)).toMatchObject({ input: { displayName: null, role: "manager", baseVersion: 1 } });
+    // Cal forgot their PIN: a temporary one, changed at the next sign-in.
+    await table.getByRole("button", { name: "Reset PIN for Cal" }).click();
+    const pin = page.getByRole("form", { name: "New PIN for Cal" });
+    await pin.getByLabel("Temporary PIN", { exact: true }).fill("9999");
+    await pin.getByLabel("Temporary PIN again").fill("9999");
+    await pin.getByRole("button", { name: "Set PIN" }).click();
+    await table.getByText("new PIN at next sign-in").waitFor();
+    // The only owner cannot be deactivated.
+    await table.getByRole("button", { name: "Deactivate Olu" }).click();
+    await page.getByRole("group", { name: "Deactivate Olu" }).getByRole("button", { name: "Deactivate" }).click();
+    await table.getByRole("alert").filter({ hasText: "at least one active owner" }).waitFor();
+    await page.getByRole("group", { name: "Deactivate Olu" }).getByRole("button", { name: "Keep" }).click();
+    // Cal leaves: no longer on the PIN pad, history kept.
+    await table.getByRole("button", { name: "Deactivate Cal" }).click();
+    await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
+    await page.getByTestId("staff-inactive").filter({ hasText: "Deactivated: Cal" }).waitFor();
+    // No PIN is ever shown back.
+    expect(await page.locator("main").textContent()).not.toContain("9999");
+    const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
+    await page.addScriptTag({ path: axePath });
+    const violations = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
+    });
+    expect(violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F12");
+    await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
+    await page.getByRole("button", { name: /Tom/ }).waitFor();
+    expect(await page.getByRole("button", { name: /Cal/ }).count()).toBe(0);
+  });
+});
+
 describe("taxes (E06-T05)", () => {
   it("a VAT change on a date: end the old rate, add the new one, swap it into the category", async () => {
     const page = await checkout();

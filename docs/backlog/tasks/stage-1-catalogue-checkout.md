@@ -128,10 +128,10 @@ hardware. It is measured by:
 ### E05-T06 · Login, lock and staff management UI
 - **Size** M · **Deps** E05-T02..T05
 - **Acceptance:**
-  - [ ] PIN pad usable by mouse, touch and keyboard.
-  - [ ] Shows remaining attempts and a lockout countdown.
-  - [ ] Staff list with role badges, plus create, edit, deactivate and reset PIN.
-  - [ ] The `ApprovalDialog` component can be reused by any command that returns `APPROVAL_REQUIRED`, and retries the original command with the token.
+  - [x] PIN pad usable by mouse, touch and keyboard.
+  - [x] Shows remaining attempts and a lockout countdown.
+  - [x] Staff list with role badges, plus create, edit, deactivate and reset PIN.
+  - [x] The `ApprovalDialog` component can be reused by any command that returns `APPROVAL_REQUIRED`, and retries the original command with the token.
 
 ## E06 Catalogue
 

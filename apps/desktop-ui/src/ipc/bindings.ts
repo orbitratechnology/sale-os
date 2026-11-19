@@ -1242,10 +1242,14 @@ export type ErrorDetails_Deserialize = {
 	scope?: ApprovalScope_Deserialize | null,
 	/**
 	 *  Validation and duplicate errors: the input at fault, for an inline message
-	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`;
+	 *  staff: `displayName`, `pin`, `role`).
 	 */
 	field?: string | null,
-	/**  The offending value when there is one (the SKU or barcode). */
+	/**
+	 *  The offending value when there is one (the SKU or barcode). Staff errors put the rule
+	 *  here: `taken`, the maximum length, `same` (PIN) or `lastOwner`.
+	 */
 	value?: string | null,
 	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
 	ownerProductId?: ProductId | null,
@@ -1263,10 +1267,14 @@ export type ErrorDetails_Serialize = {
 	scope: ApprovalScope_Serialize | null,
 	/**
 	 *  Validation and duplicate errors: the input at fault, for an inline message
-	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`;
+	 *  staff: `displayName`, `pin`, `role`).
 	 */
 	field: string | null,
-	/**  The offending value when there is one (the SKU or barcode). */
+	/**
+	 *  The offending value when there is one (the SKU or barcode). Staff errors put the rule
+	 *  here: `taken`, the maximum length, `same` (PIN) or `lastOwner`.
+	 */
 	value: string | null,
 	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
 	ownerProductId: ProductId | null,
