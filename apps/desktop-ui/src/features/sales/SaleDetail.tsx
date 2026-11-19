@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  ReceiptText,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SaleDetailDto_Serialize as Detail } from "../../ipc/bindings";
@@ -56,10 +60,12 @@ export function SaleDetail({
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>
+        <h1 className="page-title">
+          <ReceiptText />
           Sale <span className="mono">{sale.receiptNumber}</span>
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to sales <kbd>Esc</kbd>
         </button>
       </header>

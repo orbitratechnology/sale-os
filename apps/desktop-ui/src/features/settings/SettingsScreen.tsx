@@ -1,3 +1,5 @@
+import type { LucideIcon } from "lucide-react";
+import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Percent, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
@@ -61,8 +63,12 @@ export function SettingsScreen({
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Settings</h1>
+        <h1 className="page-title">
+          <Settings />
+          Settings
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>
@@ -71,12 +77,17 @@ export function SettingsScreen({
           {describeError(error)}
         </p>
       )}
-      <div className="receipt-widths" role="tablist" aria-label="Settings pages">
-        {groups.map((g) => (
-          <button key={g} type="button" role="tab" aria-selected={g === group} className={g === group ? "" : "secondary"} onClick={() => setGroup(g)}>
-            {g}
-          </button>
-        ))}
+      <div className="settings-layout">
+      <div className="side-nav" role="tablist" aria-label="Settings pages" aria-orientation="vertical">
+        {groups.map((g) => {
+          const Icon = GROUP_ICONS[g] ?? Settings;
+          return (
+            <button key={g} type="button" role="tab" aria-selected={g === group} className={g === group ? "" : "secondary"} onClick={() => setGroup(g)}>
+              <Icon />
+              {g}
+            </button>
+          );
+        })}
       </div>
       {group === BUSINESS ? (
         <section className="card settings-list" aria-label={BUSINESS}>
@@ -115,9 +126,24 @@ export function SettingsScreen({
             ))}
         </section>
       )}
+      </div>
     </main>
   );
 }
+
+/** An icon for each settings page; pages added later fall back to the gear. */
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  Inventory: Boxes,
+  "Cash drawer": Banknote,
+  Security: ShieldCheck,
+  Receipts: ReceiptText,
+  Scanner: ScanBarcode,
+  Business: Building,
+  Staff: Users,
+  Taxes: Percent,
+  Cloud: Cloud,
+  Backups: Database,
+};
 
 function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onSaved: (s: SettingDto) => void; onConflict: () => void }) {
   const current: unknown = JSON.parse(setting.valueJson);

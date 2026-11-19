@@ -1,3 +1,6 @@
+import {
+  Search,
+} from "../../ui/icons";
 import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
 import { commands, type CatalogHit } from "../../ipc";
 import { formatMilli } from "../../lib/decimal";
@@ -80,6 +83,7 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
     const open = hits.length > 0;
     return (
       <div className="search">
+        <Search />
         <input
           ref={input}
           type="search"

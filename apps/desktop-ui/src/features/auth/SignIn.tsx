@@ -1,3 +1,6 @@
+import {
+  Store,
+} from "../../ui/icons";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError, type Session, type SignInUser, type Workspace } from "../../ipc";
 import { describeError } from "../shell/errors";
@@ -67,6 +70,9 @@ function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedI
 
   return (
     <main className="signin">
+      <span className="brand-mark lg">
+        <Store />
+      </span>
       <h1>{workspace.businessName}</h1>
       <p className="small">
         {workspace.registerName} · {workspace.registerCode}

@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  FolderTree,
+} from "../../ui/icons";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { CategoryDto } from "../../ipc/bindings";
@@ -64,8 +68,12 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Categories</h1>
+        <h1 className="page-title">
+          <FolderTree />
+          Categories
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to products <kbd>Esc</kbd>
         </button>
       </header>
@@ -98,7 +106,14 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
         </p>
       )}
       <section className="card" aria-label="Category tree">
-        {tree.length === 0 && <p className="empty-state">No categories yet.</p>}
+        {tree.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <FolderTree />
+          </span>
+          <p>No categories yet.</p>
+        </div>
+      )}
         <ul className="plain-list">
           {tree.map(({ category: c, depth }) => (
             <li key={c.categoryId} data-testid="category-row" style={{ paddingLeft: `${(depth - 1) * 24}px` }}>

@@ -1,3 +1,6 @@
+import {
+  FileDown,
+} from "../../ui/icons";
 import { useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { PdfPaperDto } from "../../ipc/bindings";
@@ -24,9 +27,11 @@ export function SavePdf({ saleId, returnId }: { saleId: string | null; returnId:
   return (
     <div className="print-controls" aria-live="polite">
       <button type="button" className="secondary" disabled={busy} onClick={() => void save("receipt")}>
+        <FileDown />
         Save as PDF
       </button>
       <button type="button" className="secondary" disabled={busy} onClick={() => void save("a4")}>
+        <FileDown />
         Save A4 PDF
       </button>
       <span className="small" data-testid="pdf-status">

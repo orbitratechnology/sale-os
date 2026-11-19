@@ -1,3 +1,5 @@
+import type { LucideIcon } from "lucide-react";
+import { Banknote, CircleCheck, CreditCard, Landmark, QrCode, Wallet } from "../../ui/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type CartView, type IpcError } from "../../ipc";
 import type { CompletedSaleDto, TenderKind } from "../../ipc/bindings";
@@ -14,11 +16,11 @@ interface Tender {
   reference: string | null;
 }
 
-const METHODS: { kind: TenderKind; label: string }[] = [
-  { kind: "card_external", label: "Card (separate terminal)" },
-  { kind: "bank_transfer_external", label: "Bank transfer" },
-  { kind: "qr_external", label: "QR payment" },
-  { kind: "other_external", label: "Other" },
+const METHODS: { kind: TenderKind; label: string; icon: LucideIcon }[] = [
+  { kind: "card_external", label: "Card (separate terminal)", icon: CreditCard },
+  { kind: "bank_transfer_external", label: "Bank transfer", icon: Landmark },
+  { kind: "qr_external", label: "QR payment", icon: QrCode },
+  { kind: "other_external", label: "Other", icon: Wallet },
 ];
 /** Notes offered as quick cash amounts, in whole currency units. */
 const NOTES = [5n, 10n, 20n, 50n];
@@ -117,6 +119,9 @@ export function PaymentPanel({
     return (
       <div className="backdrop">
         <div role="dialog" aria-modal="true" aria-label="Sale completed" className="dialog card pay-done">
+          <span className="done-icon">
+            <CircleCheck />
+          </span>
           <p className="small">Change due</p>
           <output className="change-amount" data-testid="change">
             {money(done.changeMinor)}
@@ -199,6 +204,7 @@ export function PaymentPanel({
               </label>
               <div className="quick-cash">
                 <button type="button" disabled={busy || remaining === 0n} onClick={() => void complete([...tenders, { kind: "cash", amountMinor: remaining.toString(), reference: null }])}>
+                  <Banknote />
                   Exact {money(remaining)}
                 </button>
                 {quickAmounts(remaining, exp).map((n) => (
@@ -211,6 +217,7 @@ export function PaymentPanel({
             <div className="methods" role="group" aria-label="Other payment methods">
               {METHODS.map((m) => (
                 <button key={m.kind} type="button" className="secondary" disabled={busy || remaining === 0n} onClick={() => setMethod(m.kind)}>
+                  <m.icon />
                   {m.label}
                 </button>
               ))}

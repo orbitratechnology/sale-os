@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  Banknote,
+} from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type IpcError, type Session, type Workspace } from "../../ipc";
 import type { CashStateDto_Serialize as CashState, ClosedCashDto_Serialize as Closed, SessionTotalsDto } from "../../ipc/bindings";
@@ -85,8 +89,12 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
   const errorText = error === null ? null : typeof error === "string" ? error : describeError(error);
   const header = (
     <header className="returns-header">
-      <h1>Cash drawer</h1>
+      <h1 className="page-title">
+          <Banknote />
+          Cash drawer
+        </h1>
       <button type="button" className="secondary" onClick={onBack}>
+        <ArrowLeft />
         Back to till <kbd>Esc</kbd>
       </button>
     </header>
@@ -125,6 +133,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
           )}
           <div className="actions">
             <button type="button" onClick={onBack} autoFocus>
+              <ArrowLeft />
               Back to till <kbd>Enter</kbd>
             </button>
           </div>

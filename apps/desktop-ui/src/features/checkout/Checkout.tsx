@@ -1,3 +1,31 @@
+import {
+  BadgePercent,
+  Ban,
+  Banknote,
+  Boxes,
+  ChartColumn,
+  CircleExclamationPoint,
+  CirclePause,
+  ClipboardList,
+  FlaskConical,
+  Hash,
+  Info,
+  LayoutGrid,
+  ListX,
+  Lock,
+  Package,
+  PackageSearch,
+  Percent,
+  ReceiptText,
+  ScanBarcode,
+  Settings,
+  Store,
+  Tag,
+  Trash,
+  TriangleExclamationPoint,
+  Undo2,
+  Wallet,
+} from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
 import type { CashStateDto_Serialize as CashState, RecoveredCartDto } from "../../ipc/bindings";
@@ -303,6 +331,7 @@ export function Checkout({
     <div className="checkout">
       {workspace.mode === "sandbox" && (
         <div className="sandbox-banner" role="note">
+          <FlaskConical />
           SANDBOX: practice mode. Sales here are excluded from reports.
           {onWentLive && (
             <>
@@ -319,46 +348,60 @@ export function Checkout({
       )}
       <header className="topbar">
         <div className="brand">
-          <strong>{workspace.businessName}</strong>
-          <span>
-            {workspace.registerName} · {workspace.registerCode}
+          <span className="brand-mark">
+            <Store />
+          </span>
+          <span className="brand-text">
+            <strong>{workspace.businessName}</strong>
+            <span>
+              {workspace.registerName} · {workspace.registerCode}
+            </span>
           </span>
         </div>
         <nav className="screen-nav" aria-label="Screens">
           <button type="button" onClick={onProducts}>
+            <Package />
             Products <kbd>F6</kbd>
           </button>
           <button type="button" onClick={onSales}>
+            <ReceiptText />
             Sales <kbd>F8</kbd>
           </button>
           <button type="button" onClick={onReturns}>
+            <Undo2 />
             Returns <kbd>F7</kbd>
           </button>
           <button type="button" onClick={onDrawer}>
+            <Banknote />
             Drawer <kbd>F10</kbd>
           </button>
           {onStock && (
             <button type="button" onClick={onStock}>
+              <Boxes />
               Stock <kbd>F11</kbd>
             </button>
           )}
           {onReports && (
             <button type="button" onClick={onReports}>
+              <ChartColumn />
               Reports
             </button>
           )}
           {onSettings && (
             <button type="button" onClick={() => onSettings()}>
+              <Settings />
               Settings
             </button>
           )}
         </nav>
-        <button type="button" className="lock" onClick={() => void lock()}>
+        <button type="button" className="secondary lock" onClick={() => void lock()}>
+          <Lock />
           Lock <kbd>F12</kbd>
         </button>
       </header>
       <section className="entry" aria-label="Add items">
         <form onSubmit={submitCode} className="code-form">
+          <ScanBarcode />
           <input
             data-scan-field
             aria-label="Scan or type a code"
@@ -370,6 +413,7 @@ export function Checkout({
         </form>
         <SearchPanel ref={search} exponent={exponent} onPick={(hit) => void c.addVariant(hit.variantId)} />
         <button type="button" className="secondary quick-open" onClick={() => setModal("quick")}>
+          <LayoutGrid />
           Quick items <kbd>⇧F2</kbd>
         </button>
       </section>
@@ -420,15 +464,19 @@ export function Checkout({
           <h2 id="line-actions">This line</h2>
           <div className="actions-grid">
             <button type="button" className="secondary" disabled={!selectedLine || !!selectedLine.scaleLabel} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "qty" })}>
+              <Hash />
               Quantity <kbd>F3</kbd>
             </button>
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "discount" })}>
+              <Percent />
               Discount <kbd>F4</kbd>
             </button>
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => setModal("price")}>
+              <Tag />
               Change price
             </button>
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && void c.removeLine(c.selected)}>
+              <Trash />
               Remove <kbd>Del</kbd>
             </button>
           </div>
@@ -437,24 +485,30 @@ export function Checkout({
           <h2 id="sale-actions">This sale</h2>
           <div className="actions-grid">
             <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("orderDiscount")}>
+              <BadgePercent />
               Order discount
             </button>
             <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("park")}>
+              <CirclePause />
               Park <kbd>F5</kbd>
             </button>
             <button type="button" className="secondary wide" onClick={() => setModal("parked")}>
+              <ClipboardList />
               Parked ({parkedCount}) <kbd>⇧F5</kbd>
             </button>
             <button type="button" className="secondary quiet-danger" disabled={!hasLines} onClick={() => setModal("clear")}>
+              <ListX />
               Clear cart
             </button>
             <button type="button" className="secondary quiet-danger" disabled={!hasLines} onClick={() => setModal("void")}>
+              <Ban />
               Void sale
             </button>
           </div>
         </div>
         {drawerNeeded && (
           <p role="status" className="drawer-needed">
+            <TriangleExclamationPoint />
             Open the cash drawer before selling. <button type="button" className="link" onClick={onDrawer}>Open drawer (F10)</button>
           </p>
         )}
@@ -477,6 +531,7 @@ export function Checkout({
           }
         />
         <button type="button" className="pay" disabled={!hasLines} onClick={() => setModal("pay")}>
+          <Wallet />
           Pay <kbd>F9</kbd>
         </button>
       </aside>
@@ -696,7 +751,10 @@ function Notice({
         {n.kind === "notFound" && (
           <>
             <p>
-              No product with code <strong className="mono">{n.code}</strong>.
+              <PackageSearch />
+              <span>
+                No product with code <strong className="mono">{n.code}</strong>.
+              </span>
             </p>
             <button
               type="button"
@@ -721,10 +779,18 @@ function Notice({
         )}
         {n.kind === "error" && (
           <p>
-            {describeError(n.error)} <span className="mono small">ref {n.error.correlationId.slice(-8)}</span>
+            <CircleExclamationPoint />
+            <span>
+              {describeError(n.error)} <span className="mono small">ref {n.error.correlationId.slice(-8)}</span>
+            </span>
           </p>
         )}
-        {n.kind === "info" && <p>{n.text}</p>}
+        {n.kind === "info" && (
+          <p>
+            <Info />
+            <span>{n.text}</span>
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,3 +1,6 @@
+import {
+  ScanBarcode,
+} from "../../ui/icons";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import type { CartLine, CartView, Discount } from "../../ipc";
 import { formatMilli, ppmToPercent } from "../../lib/decimal";
@@ -37,6 +40,9 @@ export function CartTable({
   if (cart.lines.length === 0) {
     return (
       <div className="cart-empty">
+        <span className="empty-icon">
+          <ScanBarcode />
+        </span>
         <p>Scan an item, or press F2 to search.</p>
       </div>
     );

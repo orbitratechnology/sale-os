@@ -1,3 +1,12 @@
+import {
+  Banknote,
+  Cloud,
+  CloudOff,
+  HardDrive,
+  ScanLine,
+  Store,
+  User,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
 import type { CashStateDto_Serialize as CashState, SyncStatusDto } from "../../ipc/bindings";
@@ -51,15 +60,21 @@ export function StatusBar({
   return (
     <footer className="statusbar" aria-label="Status">
       <span>
+        <User />
         {session.displayName} <span className="role-badge">{session.role}</span>
       </span>
       <span>
+        <Store />
         {workspace.registerName} · <span className="mono">{workspace.registerCode}</span>
       </span>
       {workspace.mode === "sandbox" ? <span className="sandbox-tag">SANDBOX</span> : <span className="live-tag">LIVE</span>}
-      <span>{scannerReady ? "Scanner ready" : "Typing in a field"}</span>
+      <span>
+        <ScanLine />
+        {scannerReady ? "Scanner ready" : "Typing in a field"}
+      </span>
       {drawer && (
         <span data-testid="drawer-status">
+          <Banknote />
           {drawer.session ? (
             <>
               Drawer open · <span className="mono">{drawer.session.number}</span>
@@ -70,11 +85,12 @@ export function StatusBar({
         </span>
       )}
       <span data-testid="sync-status" data-state={sync?.indicator ?? "not_linked"}>
+        {!sync || sync.indicator === "not_linked" ? <HardDrive /> : sync.indicator === "offline" ? <CloudOff /> : <Cloud />}
         {sync ? indicatorText(sync) : "Not linked · saved on this computer"}
       </span>
       <button
         type="button"
-        className="link small"
+        className="link"
         title="A file for support: the till's state and its logs, without business records or secrets"
         onClick={() => void saveDiagnostics()}
       >

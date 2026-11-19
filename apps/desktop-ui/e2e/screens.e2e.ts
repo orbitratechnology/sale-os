@@ -492,7 +492,16 @@ describe("layout and accessibility (E09-T03, E09-T05)", () => {
       let bg = "rgba(0, 0, 0, 0)";
       for (let n: Element | null = el; n && /rgba\(.*, 0\)/.test(bg); n = n.parentElement) bg = getComputedStyle(n).backgroundColor;
       const s = getComputedStyle(el);
-      return { size: parseInt(s.fontSize, 10), color: s.color, bg };
+      // Computed colours may be oklch(); paint each on a canvas to read it back as sRGB.
+      const rgb = (css: string) => {
+        const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+        if (!ctx) return css;
+        ctx.fillStyle = css;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return `rgb(${r}, ${g}, ${b})`;
+      };
+      return { size: parseInt(s.fontSize, 10), color: rgb(s.color), bg: rgb(bg) };
     });
     expect(style.size).toBeGreaterThanOrEqual(48);
     const [hi, lo] = [luminance(style.color), luminance(style.bg)].sort((a, b) => b - a);

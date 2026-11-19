@@ -1,3 +1,11 @@
+import {
+  ArrowLeft,
+  FolderTree,
+  Package,
+  PackageSearch,
+  Plus,
+  Upload,
+} from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { CategoryDto, ProductRowDto_Serialize as ProductRowDto, ProductStatusDto } from "../../ipc/bindings";
@@ -192,24 +200,31 @@ export function ProductList({
     <main className="products">
       <header className="products-head">
         <button type="button" className="secondary" onClick={onBack}>
-          ← Till <kbd>Esc</kbd>
+          <ArrowLeft />
+          Till <kbd>Esc</kbd>
         </button>
-        <h1>Products</h1>
+        <h1 className="page-title">
+          <Package />
+          Products
+        </h1>
         <span className="small" aria-live="polite" data-testid="product-total">
           {total === null ? "" : `${total} ${total === 1 ? "product" : "products"}`}
         </span>
         {canEdit && onImport && (
           <button type="button" className="secondary" onClick={onImport}>
+            <Upload />
             Import CSV
           </button>
         )}
         {canEdit && onCategories && (
           <button type="button" className="secondary" onClick={onCategories}>
+            <FolderTree />
             Categories
           </button>
         )}
         {canEdit && (
           <button type="button" onClick={onNew}>
+            <Plus />
             New product
           </button>
         )}
@@ -276,7 +291,14 @@ export function ProductList({
         </div>
         <div ref={viewport} className="plist-viewport" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} data-testid="product-viewport">
           <div style={{ height: count * ROW_PX, position: "relative" }}>{visible}</div>
-          {total === 0 && <p className="cart-empty">No products match.</p>}
+          {total === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <PackageSearch />
+          </span>
+          <p>No products match.</p>
+        </div>
+      )}
         </div>
       </div>
     </main>

@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  CloudOff,
+} from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { ConflictDto } from "../../ipc/bindings";
@@ -69,8 +73,12 @@ export function ConflictsScreen({ onBack, currencyExponent }: { onBack: () => vo
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Sync conflicts</h1>
+        <h1 className="page-title">
+          <CloudOff />
+          Sync conflicts
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>

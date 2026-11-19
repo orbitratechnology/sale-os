@@ -1,3 +1,7 @@
+import {
+  ArrowRight,
+  Delete,
+} from "../../ui/icons";
 import { useEffect } from "react";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "ok"] as const;
@@ -60,7 +64,7 @@ export function PinPad({
               else if (value.length < MAX_PIN) onChange(value + k);
             }}
           >
-            {k === "clear" ? "⌫" : k === "ok" ? "OK" : k}
+            {k === "clear" ? <Delete /> : k === "ok" ? <ArrowRight /> : k}
           </button>
         ))}
       </div>

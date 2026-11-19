@@ -1,3 +1,6 @@
+import {
+  ArrowLeft,
+} from "../../ui/icons";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { BarcodeQualifier, CategoryDto, ProductType, TaxCategoryDto, Unit } from "../../ipc/bindings";
@@ -184,7 +187,8 @@ export function ProductEditor({
       <form onSubmit={(e) => void save(e)} noValidate aria-label="Product editor">
         <header className="products-head">
           <button type="button" className="secondary" onClick={onClose}>
-            ← Back <kbd>Esc</kbd>
+            <ArrowLeft />
+            Back <kbd>Esc</kbd>
           </button>
           <h1>{draft.productId ? draft.name || "Product" : "New product"}</h1>
           <span aria-live="polite" className="saved-note">

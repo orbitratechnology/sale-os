@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  ReceiptText,
+} from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commands, type IpcError, type SignInUser, type Workspace } from "../../ipc";
 import type { SaleRowDto, SalesFilterDto_Deserialize as SalesFilter, TenderKind } from "../../ipc/bindings";
@@ -99,8 +103,12 @@ export function SalesScreen({
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Sales</h1>
+        <h1 className="page-title">
+          <ReceiptText />
+          Sales
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>
@@ -197,7 +205,14 @@ export function SalesScreen({
             ))}
           </tbody>
         </table>
-        {loaded && rows.length === 0 && !error && <p className="empty-state">No sales match.</p>}
+        {loaded && rows.length === 0 && !error && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <ReceiptText />
+          </span>
+          <p>No sales match.</p>
+        </div>
+      )}
         {next && (
           <div className="actions">
             <button type="button" className="secondary" onClick={() => void load(filter, next)}>

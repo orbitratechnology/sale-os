@@ -1,3 +1,6 @@
+import {
+  Database,
+} from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { BackupCheckDto, BackupDto, BackupStatusDto } from "../../ipc/bindings";
@@ -248,7 +251,14 @@ export function BackupsPanel() {
           })}
         </tbody>
       </table>
-      {status.backups.length === 0 && <p className="empty-state">No backups yet. The first is made a minute after start-up.</p>}
+      {status.backups.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <Database />
+          </span>
+          <p>No backups yet. The first is made a minute after start-up.</p>
+        </div>
+      )}
       <section aria-label="Export all data">
         <h3>Export all data</h3>
         <p>

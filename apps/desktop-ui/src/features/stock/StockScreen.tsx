@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  Boxes,
+} from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { AdjustReason, DocumentType, PostedDocumentDto } from "../../ipc/bindings";
@@ -82,8 +86,12 @@ function StockHeader({
   return (
     <>
       <header className="returns-header">
-        <h1>Stock</h1>
+        <h1 className="page-title">
+          <Boxes />
+          Stock
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>

@@ -1,3 +1,6 @@
+import {
+  ShieldCheck,
+} from "../../ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { commands, type IpcError, type SignInUser } from "../../ipc";
 import type { AuditFilterDto, AuditRowDto } from "../../ipc/bindings";
@@ -127,7 +130,10 @@ export function AuditScreen({ onBack, onOpenProduct, onReturn }: { onBack: () =>
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Audit log</h1>
+        <h1 className="page-title">
+          <ShieldCheck />
+          Audit log
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
           Back <kbd>Esc</kbd>
         </button>
@@ -206,7 +212,14 @@ export function AuditScreen({ onBack, onOpenProduct, onReturn }: { onBack: () =>
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && !error && <p className="empty-state">Nothing recorded for these filters.</p>}
+        {rows.length === 0 && !error && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <ShieldCheck />
+          </span>
+          <p>Nothing recorded for these filters.</p>
+        </div>
+      )}
         {next && (
           <div className="actions">
             <button type="button" className="secondary" onClick={more}>

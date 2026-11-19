@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  Upload,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { Column, ImportCommitDto, ImportPreviewDto, ImportSummaryDto, MappingEntryDto, OnDuplicateDto } from "../../ipc/bindings";
@@ -115,8 +119,12 @@ export function ImportWizard({ onClose }: { onClose: (imported: boolean) => void
   return (
     <main className="sales import-wizard">
       <header className="returns-header">
-        <h1>Import products</h1>
+        <h1 className="page-title">
+          <Upload />
+          Import products
+        </h1>
         <button type="button" className="secondary" disabled={step.kind === "committing"} onClick={() => void close()}>
+          <ArrowLeft />
           {committed ? "Back to products" : "Cancel"} <kbd>Esc</kbd>
         </button>
       </header>

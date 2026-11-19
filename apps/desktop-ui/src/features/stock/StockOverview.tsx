@@ -1,3 +1,6 @@
+import {
+  Inbox,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { StockHistoryDto, StockReportDto } from "../../ipc/bindings";
@@ -115,7 +118,14 @@ export function StockOverview() {
           })}
         </tbody>
       </table>
-      {report && report.rows.length === 0 && <p className="empty-state">Nothing to show.</p>}
+      {report && report.rows.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <Inbox />
+          </span>
+          <p>Nothing to show.</p>
+        </div>
+      )}
 
       {open && (
         <div aria-label={`History: ${open.name}`} role="region">

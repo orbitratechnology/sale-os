@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  Undo2,
+} from "../../ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { commands, type ApprovalScope, type IpcError, type Session, type Workspace } from "../../ipc";
 import type {
@@ -211,6 +215,7 @@ export function ReturnScreen({
               Another return
             </button>
             <button type="button" onClick={onBack} autoFocus>
+              <ArrowLeft />
               Back to till <kbd>Enter</kbd>
             </button>
           </div>
@@ -222,8 +227,12 @@ export function ReturnScreen({
   return (
     <main className="returns">
       <header className="returns-header">
-        <h1>Returns</h1>
+        <h1 className="page-title">
+          <Undo2 />
+          Returns
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>
