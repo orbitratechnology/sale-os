@@ -155,8 +155,6 @@ mod tests {
 /// The completeness test fails if an action is neither emitted nor listed here, or if one
 /// listed here has started being emitted (keep the list honest).
 pub const PLANNED: &[(&str, &str)] = &[
-    ("cart.recovered", "E09-T02 cart recovery"),
-    ("cart.recovery_discarded", "E09-T02 cart recovery"),
     ("tender.status_changed", "E10-T04 payment provider integration"),
     ("sync.linked", "E16 cloud link (Stage 3)"),
     ("sync.device_revoked", "E16 device management (Stage 3)"),

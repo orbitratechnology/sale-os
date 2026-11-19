@@ -85,7 +85,7 @@ impl CheckoutService {
         let actor = ctx.actor()?.clone();
         // Hold the cart lock: no scan or edit can slip in between pricing and commit.
         let _guard = self.carts.exclusive().await;
-        let Loaded { cart, base } = self.carts.load(ctx).await?;
+        let Loaded { cart, base, .. } = self.carts.load(ctx).await?;
         if base.is_none() || cart.id != input.cart_id || cart.revision != input.revision {
             return Err(AppError::Validation(
                 "the cart changed since it was shown; check it and pay again".into(),

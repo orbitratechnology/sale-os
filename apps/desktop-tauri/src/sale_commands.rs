@@ -350,6 +350,63 @@ pub async fn cart_void(
     res
 }
 
+/// The cart the last run left open (E09-T02, POS-011), for the "Recovered cart" prompt.
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveredCartDto {
+    pub cart_id: pos_domain::CartId,
+    /// Send back with `cart_recovery_discard`.
+    pub revision: u32,
+    pub lines: u32,
+    /// At today's prices, minor units as a decimal string.
+    pub total_minor: String,
+    /// Lines whose price changed since they were added (marked after Resume).
+    pub repriced_lines: u32,
+}
+
+/// After sign-in: the cart the app was closed with, until it is resumed or discarded.
+/// `null` when there is nothing to offer (asked again later, it stays `null`).
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_recovery(services: State<'_, AppServices>) -> Result<Option<RecoveredCartDto>, IpcError> {
+    let ctx = services.context().await?;
+    let found = services.app()?.carts.recovery(&ctx).await.map_err(err)?;
+    Ok(found.map(|r| RecoveredCartDto {
+        cart_id: r.cart_id,
+        revision: u32::try_from(r.revision).unwrap_or(u32::MAX),
+        lines: u32::try_from(r.lines).unwrap_or(u32::MAX),
+        total_minor: r.total.minor().to_string(),
+        repriced_lines: u32::try_from(r.repriced).unwrap_or(u32::MAX),
+    }))
+}
+
+/// Resume: the recovered cart, priced as items sell now, with changed prices marked.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_recovery_resume(services: State<'_, AppServices>) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services.app()?.carts.resume_recovered(&ctx).await.map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// Discard: empties the recovered cart (needs the right to clear a cart), audited as
+/// `cart.recovery_discarded`. `revision` is the one the prompt showed.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_recovery_discard(
+    services: State<'_, AppServices>,
+    revision: u32,
+) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services
+        .app()?
+        .carts
+        .discard_recovered(&ctx, u64::from(revision))
+        .await
+        .map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
 /// A parked cart in the list (POS-012).
 #[derive(Debug, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]

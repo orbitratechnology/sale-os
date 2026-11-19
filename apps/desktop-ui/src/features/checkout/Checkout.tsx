@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
-import type { CashStateDto_Serialize as CashState } from "../../ipc/bindings";
+import type { CashStateDto_Serialize as CashState, RecoveredCartDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent, scaleDecimal, stepMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
@@ -10,6 +10,7 @@ import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
 import { Dialog } from "./Dialog";
 import { ParkedDialog } from "./ParkedDialog";
+import { RecoveryDialog } from "./RecoveryDialog";
 import { PaymentPanel } from "./PaymentPanel";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
@@ -24,6 +25,7 @@ type Modal =
   | "price"
   | "park"
   | "parked"
+  | "recovered"
   | { reason: string; then: (reason: string) => void }
   | null;
 
@@ -109,6 +111,19 @@ export function Checkout({
     void commands.cartParkedList().then((res) => res.status === "ok" && setParkedCount(res.data.length));
   }, []);
   useEffect(countParked, [countParked]);
+  // E09-T02: a sale left open when the till was closed is offered back once, after sign-in.
+  const [recovered, setRecovered] = useState<RecoveredCartDto | null>(null);
+  useEffect(() => {
+    let live = true;
+    void commands.cartRecovery().then((res) => {
+      if (!live || res.status !== "ok" || !res.data) return;
+      setRecovered(res.data);
+      setModal("recovered");
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
   const exponent = c.cart?.currencyExponent ?? 2;
   const money = (minor: string) => formatMoney(minor, { exponent });
   const selectedLine = c.line(c.selected);
@@ -470,6 +485,20 @@ export function Checkout({
             the next customer. Resume it from Parked (<kbd>⇧F5</kbd>); prices are checked again then.
           </p>
         </Dialog>
+      )}
+      {modal === "recovered" && recovered && (
+        <RecoveryDialog
+          recovered={recovered}
+          exponent={exponent}
+          onResume={() => {
+            setModal(null);
+            void c.resumeRecovered();
+          }}
+          onDiscard={() => {
+            setModal(null);
+            void c.discardRecovered(recovered.revision);
+          }}
+        />
       )}
       {modal === "parked" && (
         <ParkedDialog

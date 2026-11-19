@@ -100,7 +100,7 @@ impl CartService {
             },
             ScanSource::Manual => AddVia::ManualCode,
         };
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let change = match &label {
             None => cart.add(sellable, hit.scan_qty, via, ctx.ids.as_ref()),
             Some(l) => {

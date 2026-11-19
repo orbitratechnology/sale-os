@@ -171,6 +171,8 @@ pub struct StoredCartLine {
     pub added_via: pos_domain::cart::AddVia,
     /// BAR-009: set by a scale label.
     pub label: Option<pos_domain::cart::CartLabel>,
+    /// The catalogue price when the line was last saved (E09-T02); `None` before 0019.
+    pub price_seen: Option<pos_domain::Money>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

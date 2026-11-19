@@ -215,6 +215,9 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"scanEventId": UNKNOWN_ID, "raw": "NOPE", "source": "scanner"}),
         ),
         ("cart_current", Perm(SaleComplete), json!({})),
+        ("cart_recovery", Perm(SaleComplete), json!({})),
+        ("cart_recovery_resume", Perm(SaleComplete), json!({})),
+        ("cart_recovery_discard", Perm(CartClear), json!({"revision": 0})),
         (
             "cart_add_variant",
             Perm(SaleComplete),

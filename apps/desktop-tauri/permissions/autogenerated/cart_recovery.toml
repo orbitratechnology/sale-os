@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-recovery"
+description = "Enables the cart_recovery command without any pre-configured scope."
+commands.allow = ["cart_recovery"]
+
+[[permission]]
+identifier = "deny-cart-recovery"
+description = "Denies the cart_recovery command without any pre-configured scope."
+commands.deny = ["cart_recovery"]

@@ -917,6 +917,7 @@ async fn verify(dir: &Path, ack: &Path) -> Result<Verdict, String> {
 /// database to upgrade (0014 includes a data migration: the search index rows). Kept next to
 /// those files' contents; if a later edit breaks it, building the template fails loudly.
 const DOWN_TO_0013: &str = "
+ALTER TABLE cart_lines DROP COLUMN price_seen_minor;
 ALTER TABLE cart_lines DROP COLUMN label_price_minor;
 ALTER TABLE cart_lines DROP COLUMN label_kind;
 DROP INDEX ix_carts_parked;
@@ -930,7 +931,7 @@ ALTER TABLE sync_state DROP COLUMN link_progress;
 DROP TABLE search_index_rows;
 DROP INDEX ix_outbox_aggregate;
 ALTER TABLE sync_state DROP COLUMN bootstrap_page;
-DELETE FROM _sqlx_migrations WHERE version IN (14, 15, 16, 17, 18);
+DELETE FROM _sqlx_migrations WHERE version IN (14, 15, 16, 17, 18, 19);
 ";
 
 /// Opens (and so upgrades) the database, says so, and waits to be killed.
@@ -1062,7 +1063,7 @@ fn migrate_campaign(args: &[String]) -> Result<(), String> {
         sqlx::raw_sql(DOWN_TO_0013)
             .execute(&mut c)
             .await
-            .map_err(|e| format!("undoing 0014-0018: {e}"))?;
+            .map_err(|e| format!("undoing 0014-0019: {e}"))?;
         sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
             .execute(&mut c)
             .await

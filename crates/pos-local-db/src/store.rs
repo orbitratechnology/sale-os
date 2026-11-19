@@ -778,8 +778,8 @@ pub(crate) async fn run_ops(
                     sqlx::query(
                         "INSERT INTO cart_lines (cart_line_id, cart_id, position, variant_id, quantity_milli,
                            unit_price_override_minor, line_discount_json, added_via, last_scan_event_id, created_at, updated_at,
-                           label_kind, label_price_minor)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           label_kind, label_price_minor, price_seen_minor)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     )
                     .bind(l.id.to_string())
                     .bind(cart.id.to_string())
@@ -801,6 +801,7 @@ pub(crate) async fn run_ops(
                         Some(pos_domain::cart::CartLabel::Price { price }) => Some(price.minor()),
                         _ => None,
                     })
+                    .bind(l.variant.price.minor())
                     .execute(&mut *tx)
                     .await
                     .map_err(map_sqlx)?;

@@ -125,6 +125,18 @@ export const commands = {
 	scanSubmit: (scanEventId: ScanEventId, raw: string, source: ScanSourceDto) => typedError<ScanOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scan_submit", { scanEventId, raw, source })),
 	/**  The open cart, priced (also after a restart: POS-011). */
 	cartCurrent: () => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_current")),
+	/**
+	 *  After sign-in: the cart the app was closed with, until it is resumed or discarded.
+	 *  `null` when there is nothing to offer (asked again later, it stays `null`).
+	 */
+	cartRecovery: () => typedError<RecoveredCartDto | null, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery")),
+	/**  Resume: the recovered cart, priced as items sell now, with changed prices marked. */
+	cartRecoveryResume: () => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery_resume")),
+	/**
+	 *  Discard: empties the recovered cart (needs the right to clear a cart), audited as
+	 *  `cart.recovery_discarded`. `revision` is the one the prompt showed.
+	 */
+	cartRecoveryDiscard: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery_discard", { revision })),
 	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
 	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
 	/**  Zero is refused: use `cart_remove_line`. */
@@ -1697,6 +1709,18 @@ export type ReceiptDto = {
 export type ReceiptLineDto = {
 	text: string,
 	bold: boolean,
+};
+
+/**  The cart the last run left open (E09-T02, POS-011), for the "Recovered cart" prompt. */
+export type RecoveredCartDto = {
+	cartId: CartId,
+	/**  Send back with `cart_recovery_discard`. */
+	revision: number,
+	lines: number,
+	/**  At today's prices, minor units as a decimal string. */
+	totalMinor: string,
+	/**  Lines whose price changed since they were added (marked after Resume). */
+	repricedLines: number,
 };
 
 export type RepairAction = 

@@ -18,9 +18,8 @@ pub struct CartView {
     pub cart: Cart,
     pub priced: PricedCart,
     pub settings: PricingSettings,
-    /// Lines whose current catalogue price differs from what the cart was built with, for
-    /// highlighting after recovery (POS-011). Always empty until E09-T02 stores the
-    /// price-at-add snapshot needed to detect it.
+    /// Lines whose current catalogue price differs from the price the cashier last saw,
+    /// highlighted when a recovered or parked cart is resumed (E09-T02, POS-011).
     pub repriced_lines: Vec<CartLineId>,
     /// E11-T04: per stock-tracked variant whose quantity in the cart is more than the
     /// sellable stock on hand, that on-hand quantity ("Only 2 in stock"). A hint only: the
@@ -37,6 +36,29 @@ pub struct CartService {
     /// Serializes load → change → save. Tauri runs commands concurrently, and two fast scans
     /// must both count. The store's revision check is the backstop if this is bypassed.
     lock: Mutex<()>,
+    /// Whether the cart left open by the last run has been offered back (E09-T02). One
+    /// service lives as long as the app, so this is "since the app started".
+    recovery: std::sync::Mutex<Recovery>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Recovery {
+    /// Not looked yet: the first check after start decides.
+    Unchecked,
+    /// The open cart was left by the last run and waits for Resume or Discard.
+    Pending(pos_domain::CartId),
+    Done,
+}
+
+/// The cart the last run left open (POS-011), for the "Recovered cart" prompt.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecoveredCart {
+    pub cart_id: pos_domain::CartId,
+    pub revision: u64,
+    pub lines: usize,
+    pub total: Money,
+    /// Lines whose price changed since they were added.
+    pub repriced: usize,
 }
 
 /// A cart as read from storage, with the revision a save must be based on.
@@ -44,6 +66,8 @@ pub(crate) struct Loaded {
     pub cart: Cart,
     /// `None`: never saved (a fresh empty cart).
     pub base: Option<u64>,
+    /// Lines whose catalogue price changed since the cashier last saw them.
+    pub repriced: Vec<CartLineId>,
 }
 
 impl CartService {
@@ -58,6 +82,7 @@ impl CartService {
             catalog,
             stock: None,
             lock: Mutex::new(()),
+            recovery: std::sync::Mutex::new(Recovery::Unchecked),
         }
     }
 
@@ -113,6 +138,97 @@ impl CartService {
         self.view(ctx, loaded.cart, Vec::new()).await
     }
 
+    /// The cart the last run left open with items, until it is resumed or discarded
+    /// (E09-T02, POS-011). Asked once after sign-in; `None` when there is nothing to offer.
+    pub async fn recovery(&self, ctx: &CommandContext) -> Result<Option<RecoveredCart>, AppError> {
+        ctx.authorize(Permission::SaleComplete)?;
+        let _guard = self.exclusive().await;
+        let state = *self
+            .recovery
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let wanted = match state {
+            Recovery::Done => return Ok(None),
+            Recovery::Pending(id) => Some(id),
+            Recovery::Unchecked => None,
+        };
+        let loaded = self.load(ctx).await?;
+        let offer = !loaded.cart.lines.is_empty()
+            && loaded.base.is_some()
+            && wanted.is_none_or(|id| id == loaded.cart.id);
+        self.set_recovery(if offer {
+            Recovery::Pending(loaded.cart.id)
+        } else {
+            Recovery::Done
+        });
+        if !offer {
+            return Ok(None);
+        }
+        let repriced = loaded.repriced.len();
+        let view = self.view(ctx, loaded.cart, Vec::new()).await?;
+        Ok(Some(RecoveredCart {
+            cart_id: view.cart.id,
+            revision: view.cart.revision,
+            lines: view.cart.lines.len(),
+            total: view.priced.total,
+            repriced,
+        }))
+    }
+
+    /// Resume: the recovered cart becomes the sale in progress, priced as items sell now,
+    /// with the lines whose price changed marked.
+    pub async fn resume_recovered(&self, ctx: &CommandContext) -> Result<CartView, AppError> {
+        ctx.authorize(Permission::SaleComplete)?;
+        let _guard = self.exclusive().await;
+        let loaded = self.load(ctx).await?;
+        if loaded.base.is_some() && !loaded.cart.lines.is_empty() {
+            let entry = AuditEntry::new(ctx.ids.as_ref(), audit::CART_RECOVERED, "cart", loaded.cart.id)
+                .with_metadata(serde_json::json!({
+                    "lines": loaded.cart.lines.len(),
+                    "repriced": loaded.repriced.len(),
+                }));
+            self.store
+                .apply(WriteSet::builder(ctx.write_context()).audit(entry).build()?)
+                .await?;
+        }
+        self.set_recovery(Recovery::Done);
+        self.view(ctx, loaded.cart, loaded.repriced).await
+    }
+
+    /// Discard: empties the recovered cart, audited as `cart.recovery_discarded`. Needs the
+    /// same right as clearing a cart; `revision` is the one the prompt showed.
+    pub async fn discard_recovered(&self, ctx: &CommandContext, revision: u64) -> Result<CartView, AppError> {
+        ctx.authorize(Permission::CartClear)?;
+        let _guard = self.exclusive().await;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
+        let change = cart.clear(revision).map_err(cart_err)?;
+        let CartChange::Cleared { lines } = change else {
+            unreachable!("clear returns Cleared")
+        };
+        let view = self
+            .save(
+                ctx,
+                cart,
+                base,
+                Some(Audited::new(
+                    audit::CART_RECOVERY_DISCARDED,
+                    serde_json::json!({ "lines": lines }),
+                    None,
+                )),
+                None,
+            )
+            .await?;
+        self.set_recovery(Recovery::Done);
+        Ok(view)
+    }
+
+    fn set_recovery(&self, state: Recovery) {
+        *self
+            .recovery
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = state;
+    }
+
     pub(crate) async fn load(&self, ctx: &CommandContext) -> Result<Loaded, AppError> {
         let settings = self.carts.pricing_settings().await?;
         let date = self.today(ctx, &settings)?;
@@ -120,30 +236,40 @@ impl CartService {
             return Ok(Loaded {
                 cart: Cart::new(ctx.ids.as_ref()),
                 base: None,
+                repriced: Vec::new(),
             });
         };
         let revision = stored.revision;
-        let cart = self.to_cart(stored, date).await?;
+        let (cart, repriced) = self.to_cart(stored, date).await?;
         Ok(Loaded {
             cart,
             base: Some(revision),
+            repriced,
         })
     }
 
     /// A stored cart's lines, priced as they sell on `date` (current prices: a parked or
-    /// recovered cart picks up any price change).
+    /// recovered cart picks up any price change), and the lines whose catalogue price is
+    /// not the one last seen. A price override or a price label fixes the line, so those
+    /// never count as changed.
     async fn to_cart(
         &self,
         stored: crate::queries::StoredCart,
         date: BusinessDate,
-    ) -> Result<Cart, AppError> {
+    ) -> Result<(Cart, Vec<CartLineId>), AppError> {
         let mut lines = Vec::with_capacity(stored.lines.len());
+        let mut repriced = Vec::new();
         for l in stored.lines {
             let variant = self
                 .carts
                 .sellable(l.variant_id, date)
                 .await?
                 .ok_or(CatalogError::NotFound)?;
+            let fixed = l.price_override.is_some()
+                || matches!(l.label, Some(pos_domain::cart::CartLabel::Price { .. }));
+            if !fixed && l.price_seen.is_some_and(|seen| seen != variant.price) {
+                repriced.push(l.line_id);
+            }
             lines.push(CartLine {
                 id: l.line_id,
                 variant,
@@ -154,14 +280,15 @@ impl CartService {
                 label: l.label,
             });
         }
-        Ok(Cart {
+        let cart = Cart {
             id: stored.cart_id,
             status: CartStatus::Open,
             lines,
             order_discount: stored.order_discount,
             revision: stored.revision,
             void_reason: None,
-        })
+        };
+        Ok((cart, repriced))
     }
 
     pub(crate) async fn view(
@@ -242,7 +369,7 @@ impl CartService {
         ctx.authorize(Permission::SaleComplete)?;
         let sellable = self.sellable(ctx, variant).await?;
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let qty = qty.unwrap_or(Quantity::ONE);
         let change = cart.add(sellable, qty, via, ctx.ids.as_ref()).map_err(cart_err)?;
         Ok((self.save(ctx, cart, base, None, None).await?, change))
@@ -256,7 +383,7 @@ impl CartService {
     ) -> Result<CartView, AppError> {
         ctx.authorize(Permission::SaleComplete)?;
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         cart.set_quantity(line, qty).map_err(cart_err)?;
         self.save(ctx, cart, base, None, None).await
     }
@@ -264,7 +391,7 @@ impl CartService {
     pub async fn remove_line(&self, ctx: &CommandContext, line: CartLineId) -> Result<CartView, AppError> {
         ctx.authorize(Permission::SaleComplete)?;
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         cart.remove_line(line).map_err(cart_err)?;
         self.save(ctx, cart, base, None, None).await
     }
@@ -281,7 +408,7 @@ impl CartService {
     ) -> Result<CartView, AppError> {
         ctx.authorize(Permission::CartLineDiscount)?;
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let before = self.view(ctx, cart.clone(), Vec::new()).await?;
         cart.set_line_discount(line, discount.clone()).map_err(cart_err)?;
         let after = self.view(ctx, cart.clone(), Vec::new()).await?;
@@ -322,7 +449,7 @@ impl CartService {
     ) -> Result<CartView, AppError> {
         ctx.authorize(Permission::CartOrderDiscount)?;
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let before = self.view(ctx, cart.clone(), Vec::new()).await?;
         cart.set_order_discount(discount.clone()).map_err(cart_err)?;
         let after = self.view(ctx, cart.clone(), Vec::new()).await?;
@@ -361,7 +488,7 @@ impl CartService {
         reason: &str,
     ) -> Result<CartView, AppError> {
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let approver = ctx.authorize_with_approval(Permission::PriceOverride, cart.id, None)?;
         let reason = required_reason(reason, "a price change")?;
         let before = cart
@@ -390,7 +517,7 @@ impl CartService {
     pub async fn clear(&self, ctx: &CommandContext, revision: u64) -> Result<CartView, AppError> {
         ctx.authorize(Permission::CartClear)?;
         let _guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let change = cart.clear(revision).map_err(cart_err)?;
         let CartChange::Cleared { lines } = change else {
             unreachable!("clear returns Cleared")
@@ -414,7 +541,7 @@ impl CartService {
         reason: &str,
     ) -> Result<CartView, AppError> {
         let guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         // An empty cart is simply closed; a cart with lines needs CartVoid (cashier: approval).
         let approver = if cart.lines.is_empty() {
             ctx.authorize(Permission::SaleComplete)?;
@@ -468,7 +595,7 @@ impl CartService {
     ) -> Result<CartView, AppError> {
         ctx.authorize(Permission::SaleComplete)?;
         let guard = self.exclusive().await;
-        let Loaded { mut cart, base } = self.load(ctx).await?;
+        let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let label = label.map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned);
         if label
             .as_ref()
@@ -513,7 +640,7 @@ impl CartService {
         let policy = PricingPolicy::new(settings.tax_mode);
         let mut out = Vec::new();
         for p in self.carts.parked_carts(ctx.register.register_id).await? {
-            let cart = self.to_cart(p.cart, date).await?;
+            let (cart, _) = self.to_cart(p.cart, date).await?;
             let total = price_cart(&cart.pricing_lines(), cart.order_discount.as_ref(), &policy)
                 .map_err(|e| AppError::Validation(e.to_string(), pos_domain::HasErrorCode::error_code(&e)))?
                 .total;
@@ -553,6 +680,7 @@ impl CartService {
         let Loaded {
             cart: mut current,
             base,
+            ..
         } = self.load(ctx).await?;
         if !current.lines.is_empty() {
             return Err(AppError::Validation(
@@ -578,8 +706,10 @@ impl CartService {
         self.store
             .apply(b.resume_cart(cart_id).audit(entry).build()?)
             .await?;
+        // Priced as it sells now; the lines whose price changed while parked are marked.
+        let resumed = self.load(ctx).await?;
         drop(guard);
-        self.current(ctx).await
+        self.view(ctx, resumed.cart, resumed.repriced).await
     }
 
     /// POS-012: voids a parked cart without resuming it (a customer who never came back).

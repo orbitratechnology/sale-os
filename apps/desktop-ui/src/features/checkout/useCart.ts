@@ -154,6 +154,9 @@ export function useCart(onSignedOut: () => void) {
     void: (reason: string) => run((t) => commands.cartVoid(cart?.revision ?? 0, reason, t)),
     park: (label: string | null) => run(() => commands.cartPark(cart?.revision ?? 0, label)),
     resume: (cartId: string) => run(() => commands.cartResume(cartId)),
+    /** E09-T02: the cart the till was closed with. */
+    resumeRecovered: () => run(() => commands.cartRecoveryResume()),
+    discardRecovered: (revision: number) => run(() => commands.cartRecoveryDiscard(revision)),
   };
 }
 

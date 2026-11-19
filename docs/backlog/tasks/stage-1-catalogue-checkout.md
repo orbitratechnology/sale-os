@@ -327,8 +327,8 @@ hardware. It is measured by:
 ### E09-T02 · Cart recovery after restart
 - **Size** S · **Deps** E09-T01 · **PRD** POS-011
 - **Acceptance:**
-  - [ ] Kill the app with 5 lines in the cart and restart: after login, a "Recovered cart (5 items, 23.40)" prompt offers **Resume** or **Discard** (discard needs `CartClear` and is audited as `cart.recovery_discarded`).
-  - [ ] Prices are recomputed against the current catalogue on resume, and lines whose price changed are highlighted.
+  - [x] Kill the app with 5 lines in the cart and restart: after login, a "Recovered cart (5 items, 23.40)" prompt offers **Resume** or **Discard** (discard needs `CartClear` and is audited as `cart.recovery_discarded`).
+  - [x] Prices are recomputed against the current catalogue on resume, and lines whose price changed are highlighted.
 
 ### E09-T03 · Checkout screen layout and cart table
 - **Size** M · **Deps** E09-T01, E01-T02 · **PRD** §5, §5.1

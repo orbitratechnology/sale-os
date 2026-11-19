@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-recovery-discard"
+description = "Enables the cart_recovery_discard command without any pre-configured scope."
+commands.allow = ["cart_recovery_discard"]
+
+[[permission]]
+identifier = "deny-cart-recovery-discard"
+description = "Denies the cart_recovery_discard command without any pre-configured scope."
+commands.deny = ["cart_recovery_discard"]

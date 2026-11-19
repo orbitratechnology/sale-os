@@ -41,6 +41,9 @@ export interface FakeState {
   products: FakeProduct[];
   lines: { lineId: string; variantId: string; qtyMilli: bigint; discountPpm: number | null }[];
   orderDiscountPpm: number | null;
+  /** E09-T02: the cart was left open by the last run (offered once); these lines were repriced. */
+  recoverable?: boolean;
+  repricedOnRecovery?: string[];
   cartId: string;
   revision: number;
   /** ADR-023: the data is encrypted and this computer lacks the key. */
@@ -1471,6 +1474,27 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "cart_set_order_discount":
       needSession(s);
       s.orderDiscountPpm = (a.discount as { ratePpm: number } | null)?.ratePpm ?? null;
+      s.revision += 1;
+      return view(s);
+    case "cart_recovery": {
+      needSession(s);
+      if (!s.recoverable || s.lines.length === 0) {
+        s.recoverable = false;
+        return null;
+      }
+      const v = view(s);
+      return { cartId: s.cartId, revision: s.revision, lines: s.lines.length, totalMinor: v.totalMinor, repricedLines: s.repricedOnRecovery?.length ?? 0 };
+    }
+    case "cart_recovery_resume":
+      needSession(s);
+      s.recoverable = false;
+      return { ...view(s), repricedLines: s.repricedOnRecovery ?? [] };
+    case "cart_recovery_discard":
+      needSession(s);
+      if (a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
+      s.recoverable = false;
+      s.lines = [];
+      s.orderDiscountPpm = null;
       s.revision += 1;
       return view(s);
     case "cart_clear":

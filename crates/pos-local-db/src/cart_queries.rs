@@ -209,10 +209,11 @@ async fn stored_cart(
         Option<String>,
         Option<String>,
         Option<i64>,
+        Option<i64>,
     );
     let rows: Vec<LineRow> = sqlx::query_as(
             "SELECT cart_line_id, variant_id, quantity_milli, unit_price_override_minor, line_discount_json, added_via,
-                    last_scan_event_id, label_kind, label_price_minor
+                    last_scan_event_id, label_kind, label_price_minor, price_seen_minor
              FROM cart_lines WHERE cart_id = ? ORDER BY position",
         )
         .bind(&cart_id)
@@ -222,7 +223,7 @@ async fn stored_cart(
     let lines = rows
         .into_iter()
         .map(
-            |(id, variant, qty, over, disc, via, scan, label_kind, label_price)| {
+            |(id, variant, qty, over, disc, via, scan, label_kind, label_price, seen)| {
                 let added_via = match (via.as_str(), scan) {
                     ("scan", Some(e)) => AddVia::Scan {
                         event_id: e.parse().map_err(q)?,
@@ -245,6 +246,7 @@ async fn stored_cart(
                         }),
                         _ => None,
                     },
+                    price_seen: seen.map(Money::from_minor),
                 })
             },
         )

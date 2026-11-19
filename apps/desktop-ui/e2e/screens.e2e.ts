@@ -1437,6 +1437,69 @@ describe("business profile (E04-T03)", () => {
   });
 });
 
+describe("cart recovery (E09-T02, POS-011)", () => {
+  /** Signs in as Cal after the fake was given a cart left open by the last run. */
+  async function recovered(repriced: boolean): Promise<Page> {
+    const page = await open("signIn");
+    await page.evaluate((mark) => {
+      const f = window.__fake;
+      const [a, b] = f.products;
+      if (!a || !b) return;
+      f.lines = [
+        { lineId: crypto.randomUUID(), variantId: a.variantId, qtyMilli: 2000n, discountPpm: null },
+        { lineId: crypto.randomUUID(), variantId: b.variantId, qtyMilli: 1000n, discountPpm: null },
+      ];
+      f.recoverable = true;
+      f.repricedOnRecovery = mark ? [f.lines[1]?.lineId ?? ""] : [];
+    }, repriced);
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    return page;
+  }
+
+  it("after a restart the open sale is offered back; Resume keeps it and marks the changed price", async () => {
+    const page = await recovered(true);
+    const dialog = page.getByRole("dialog", { name: "Recovered cart" });
+    await dialog.waitFor();
+    expect(await dialog.getByRole("heading").textContent()).toMatch(/^Recovered cart \(2 items, .+\)$/);
+    expect(await dialog.getByTestId("recovery-repriced").textContent()).toContain("1 price has changed since");
+    // Scans wait while the prompt is open, and a scanner's Enter does not answer it.
+    await scan(page, CRISPS);
+    expect(await calls(page, "scan_submit")).toHaveLength(0);
+    expect(await dialog.count()).toBe(1);
+    // Resume has the focus when the prompt opens; Enter on it resumes.
+    await dialog.getByRole("button", { name: "Resume" }).focus();
+    await page.keyboard.press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    expect(await lines(page)).toHaveLength(2);
+    await page.getByRole("region", { name: "Cart lines" }).getByText("price changed").waitFor();
+    expect(await calls(page, "cart_recovery_resume")).toHaveLength(1);
+    // Offered once: locking and signing in again asks Rust, which has nothing to offer.
+    const asked = (await calls(page, "cart_recovery")).length;
+    await page.keyboard.press("F12");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await expect.poll(() => calls(page, "cart_recovery").then((c) => c.length)).toBeGreaterThan(asked);
+    expect(await page.getByRole("dialog", { name: "Recovered cart" }).count()).toBe(0);
+  });
+
+  it("Discard empties the cart with the revision the prompt showed", async () => {
+    const page = await recovered(false);
+    const dialog = page.getByRole("dialog", { name: "Recovered cart" });
+    await dialog.waitFor();
+    expect(await dialog.getByTestId("recovery-repriced").count()).toBe(0);
+    await dialog.getByRole("button", { name: "Discard" }).click();
+    await dialog.waitFor({ state: "detached" });
+    await expect.poll(() => lines(page).then((l) => l.length)).toBe(0);
+    const discards = await calls(page, "cart_recovery_discard");
+    expect(discards).toHaveLength(1);
+    expect(typeof discards[0]?.revision).toBe("number");
+  });
+});
+
 describe("staff (E05-T06)", () => {
   it("the owner adds, edits, resets a PIN and deactivates; mistakes are shown; the last owner stays", async () => {
     const page = await checkout();
