@@ -239,11 +239,15 @@ async fn at06_flapping_connection() {
     let Some(cloud) = cloud().await else { return };
     let schedule = Schedule::new(Action::Pass, 1);
     let (r, business) = offline_register(&cloud, &schedule).await;
-    // Down when the register first tries, then up and down.
+    // Down when the register first tries, then up and down. The flapping starts only once a
+    // push has been refused, so a slow first push (a busy machine) cannot miss the outage.
     schedule.offline.store(true, Ordering::SeqCst);
     let flap = {
         let s = schedule.clone();
         tokio::spawn(async move {
+            while s.faulted.load(Ordering::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
             loop {
                 tokio::time::sleep(Duration::from_millis(60)).await;
                 s.offline.store(false, Ordering::SeqCst);
