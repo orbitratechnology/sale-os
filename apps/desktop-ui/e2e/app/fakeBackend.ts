@@ -282,6 +282,7 @@ export function view(s: FakeState): CartView {
         const have = FAKE_STOCK[p.name];
         return have !== undefined && l.qtyMilli > have ? have.toString() : null;
       })(),
+      scaleLabel: null,
     };
   });
   const subtotal = lines.reduce((a, l) => a + BigInt(l.grossMinor), 0n);

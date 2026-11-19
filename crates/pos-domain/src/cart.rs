@@ -57,6 +57,20 @@ pub struct CartLine {
     pub price_override: Option<Money>,
     pub line_discount: Option<Discount>,
     pub added_via: AddVia,
+    /// Scanned from a scale label (BAR-009): its weight or price came from the label, so the
+    /// quantity cannot be changed and the line never merges with another.
+    #[serde(default)]
+    pub label: Option<CartLabel>,
+}
+
+/// What a scale label set on a line.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum CartLabel {
+    /// The quantity is the label's weight; the price is the shelf price per unit.
+    Weight,
+    /// The line costs exactly the label's price.
+    Price { price: Money },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +113,8 @@ pub enum CartError {
     ReasonRequired,
     #[error("prices cannot be negative")]
     NegativePrice,
+    #[error("this item's weight or price comes from its label: remove the line and scan it again")]
+    LabelledQuantity,
     #[error(transparent)]
     Arithmetic(#[from] ArithmeticError),
 }
@@ -175,6 +191,7 @@ impl Cart {
             .find(|l| l.variant.variant_id == variant.variant_id)
             && last.price_override.is_none()
             && last.line_discount.is_none()
+            && last.label.is_none()
         {
             last.quantity = last.quantity.checked_add(qty)?;
             // Keep the freshest catalogue snapshot (price edits made while the cart is open).
@@ -191,6 +208,38 @@ impl Cart {
             price_override: None,
             line_discount: None,
             added_via: via,
+            label: None,
+        });
+        self.touch();
+        Ok(CartChange::LineAdded(id))
+    }
+
+    /// BAR-009: one scale label is one line (labels never merge): `qty` is the label's weight,
+    /// or what its price buys; a price label also fixes the line's gross.
+    pub fn add_label(
+        &mut self,
+        variant: SellableVariant,
+        qty: Quantity,
+        label: CartLabel,
+        via: AddVia,
+        ids: &dyn IdGenerator,
+    ) -> Result<CartChange, CartError> {
+        self.ensure_open()?;
+        qty.validate_for_unit(variant.unit.allows_fraction())?;
+        if let CartLabel::Price { price } = label
+            && price.is_negative()
+        {
+            return Err(CartError::NegativePrice);
+        }
+        let id = CartLineId::generate(ids);
+        self.lines.push(CartLine {
+            id,
+            variant,
+            quantity: qty,
+            price_override: None,
+            line_discount: None,
+            added_via: via,
+            label: Some(label),
         });
         self.touch();
         Ok(CartChange::LineAdded(id))
@@ -200,6 +249,9 @@ impl Cart {
     pub fn set_quantity(&mut self, line: CartLineId, qty: Quantity) -> Result<CartChange, CartError> {
         self.ensure_open()?;
         let l = self.line_mut(line)?;
+        if l.label.is_some() {
+            return Err(CartError::LabelledQuantity);
+        }
         qty.validate_for_unit(l.variant.unit.allows_fraction())?;
         l.quantity = qty;
         self.touch();
@@ -297,6 +349,10 @@ impl Cart {
                 unit_price: l.price_override.unwrap_or(l.variant.price),
                 line_discount: l.line_discount.clone(),
                 taxes: l.variant.taxes.clone(),
+                fixed_gross: match l.label {
+                    Some(CartLabel::Price { price }) => Some(price),
+                    _ => None,
+                },
             })
             .collect()
     }

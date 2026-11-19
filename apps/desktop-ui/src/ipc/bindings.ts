@@ -685,6 +685,11 @@ export type CartLineDto_Deserialize = {
 	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
 	 */
 	onlyInStockMilli?: string | null,
+	/**
+	 *  BAR-009: `"weight"` or `"price"` when the line came from a scale label (its quantity
+	 *  cannot be changed).
+	 */
+	scaleLabel?: string | null,
 };
 
 export type CartLineDto_Serialize = {
@@ -712,6 +717,11 @@ export type CartLineDto_Serialize = {
 	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
 	 */
 	onlyInStockMilli: string | null,
+	/**
+	 *  BAR-009: `"weight"` or `"price"` when the line came from a scale label (its quantity
+	 *  cannot be changed).
+	 */
+	scaleLabel: string | null,
 };
 
 export type CartLineId = string;

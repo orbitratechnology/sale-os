@@ -182,7 +182,9 @@ export function Checkout({
           return;
         case "F3":
           e.preventDefault();
-          if (sel) setEditing({ lineId: sel, field: "qty" });
+          if (sel && c.line(sel)?.scaleLabel) {
+            c.setNotice({ kind: "info", text: "This item's weight or price comes from its scale label. Remove the line and scan the label again." });
+          } else if (sel) setEditing({ lineId: sel, field: "qty" });
           return;
         case "F4":
           e.preventDefault();
@@ -243,7 +245,7 @@ export function Checkout({
       } else if ((e.code === "NumpadAdd" || e.code === "NumpadSubtract") && sel) {
         e.preventDefault();
         const line = c.line(sel);
-        if (line && line.unit === "ea") void c.setQuantity(sel, stepMilli(line.quantityMilli, e.code === "NumpadAdd" ? 1 : -1));
+        if (line && line.unit === "ea" && !line.scaleLabel) void c.setQuantity(sel, stepMilli(line.quantityMilli, e.code === "NumpadAdd" ? 1 : -1));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -333,7 +335,7 @@ export function Checkout({
           </output>
         </div>
         <div className="actions-grid">
-          <button type="button" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "qty" })}>
+          <button type="button" disabled={!selectedLine || !!selectedLine.scaleLabel} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "qty" })}>
             Quantity <kbd>F3</kbd>
           </button>
           <button type="button" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "discount" })}>

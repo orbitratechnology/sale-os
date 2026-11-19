@@ -69,6 +69,24 @@ impl CartQueries for SqliteStore {
         Ok(out)
     }
 
+    async fn label_rules(&self) -> Result<Vec<pos_domain::catalog::variable_measure::LabelRule>, QueryError> {
+        let json: Option<String> = sqlx::query_scalar(
+            "SELECT value_json FROM business_settings WHERE key = 'scanner.label_rules' LIMIT 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        let lines: Vec<String> = json
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default();
+        Ok(
+            pos_domain::catalog::variable_measure::rules_from_lines(&lines).unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "scanner.label_rules is not valid; scale labels are not read");
+                Vec::new()
+            }),
+        )
+    }
+
     async fn sellable(
         &self,
         variant: VariantId,
@@ -189,10 +207,12 @@ async fn stored_cart(
         Option<String>,
         String,
         Option<String>,
+        Option<String>,
+        Option<i64>,
     );
     let rows: Vec<LineRow> = sqlx::query_as(
             "SELECT cart_line_id, variant_id, quantity_milli, unit_price_override_minor, line_discount_json, added_via,
-                    last_scan_event_id
+                    last_scan_event_id, label_kind, label_price_minor
              FROM cart_lines WHERE cart_id = ? ORDER BY position",
         )
         .bind(&cart_id)
@@ -201,24 +221,33 @@ async fn stored_cart(
         .map_err(q)?;
     let lines = rows
         .into_iter()
-        .map(|(id, variant, qty, over, disc, via, scan)| {
-            let added_via = match (via.as_str(), scan) {
-                ("scan", Some(e)) => AddVia::Scan {
-                    event_id: e.parse().map_err(q)?,
-                },
-                ("quick_select", _) => AddVia::QuickSelect,
-                ("manual_code", _) => AddVia::ManualCode,
-                _ => AddVia::Search,
-            };
-            Ok(StoredCartLine {
-                line_id: id.parse().map_err(q)?,
-                variant_id: variant.parse().map_err(q)?,
-                quantity: Quantity::from_milli(qty),
-                price_override: over.map(Money::from_minor),
-                line_discount: disc.map(|d| serde_json::from_str(&d)).transpose().map_err(q)?,
-                added_via,
-            })
-        })
+        .map(
+            |(id, variant, qty, over, disc, via, scan, label_kind, label_price)| {
+                let added_via = match (via.as_str(), scan) {
+                    ("scan", Some(e)) => AddVia::Scan {
+                        event_id: e.parse().map_err(q)?,
+                    },
+                    ("quick_select", _) => AddVia::QuickSelect,
+                    ("manual_code", _) => AddVia::ManualCode,
+                    _ => AddVia::Search,
+                };
+                Ok(StoredCartLine {
+                    line_id: id.parse().map_err(q)?,
+                    variant_id: variant.parse().map_err(q)?,
+                    quantity: Quantity::from_milli(qty),
+                    price_override: over.map(Money::from_minor),
+                    line_discount: disc.map(|d| serde_json::from_str(&d)).transpose().map_err(q)?,
+                    added_via,
+                    label: match (label_kind.as_deref(), label_price) {
+                        (Some("weight"), _) => Some(pos_domain::cart::CartLabel::Weight),
+                        (Some("price"), Some(p)) => Some(pos_domain::cart::CartLabel::Price {
+                            price: Money::from_minor(p),
+                        }),
+                        _ => None,
+                    },
+                })
+            },
+        )
         .collect::<Result<Vec<_>, QueryError>>()?;
     Ok(StoredCart {
         cart_id: cart_id.parse().map_err(q)?,

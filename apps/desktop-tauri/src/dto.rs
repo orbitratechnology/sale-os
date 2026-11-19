@@ -596,6 +596,9 @@ pub struct CartLineDto {
     /// E11-T04: set when the cart holds more of this item than is in stock: what is on hand
     /// (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
     pub only_in_stock_milli: Option<String>,
+    /// BAR-009: `"weight"` or `"price"` when the line came from a scale label (its quantity
+    /// cannot be changed).
+    pub scale_label: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -698,6 +701,13 @@ impl CartViewDto {
                     quantity_milli: qty(l.quantity),
                     unit_price_minor: money(l.price_override.unwrap_or(l.variant.price)),
                     price_overridden: l.price_override.is_some(),
+                    scale_label: l.label.map(|x| {
+                        match x {
+                            pos_domain::cart::CartLabel::Weight => "weight",
+                            pos_domain::cart::CartLabel::Price { .. } => "price",
+                        }
+                        .to_owned()
+                    }),
                     line_discount: l.line_discount.as_ref().map(DiscountDto::from_domain),
                     gross_minor: money(p.gross),
                     discount_minor: money(discount),

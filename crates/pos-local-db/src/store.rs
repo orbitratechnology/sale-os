@@ -777,8 +777,9 @@ pub(crate) async fn run_ops(
                     st.step()?;
                     sqlx::query(
                         "INSERT INTO cart_lines (cart_line_id, cart_id, position, variant_id, quantity_milli,
-                           unit_price_override_minor, line_discount_json, added_via, last_scan_event_id, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           unit_price_override_minor, line_discount_json, added_via, last_scan_event_id, created_at, updated_at,
+                           label_kind, label_price_minor)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     )
                     .bind(l.id.to_string())
                     .bind(cart.id.to_string())
@@ -791,6 +792,15 @@ pub(crate) async fn run_ops(
                     .bind(scan_id)
                     .bind(now)
                     .bind(now)
+                    .bind(match l.label {
+                        Some(pos_domain::cart::CartLabel::Weight) => Some("weight"),
+                        Some(pos_domain::cart::CartLabel::Price { .. }) => Some("price"),
+                        None => None,
+                    })
+                    .bind(match l.label {
+                        Some(pos_domain::cart::CartLabel::Price { price }) => Some(price.minor()),
+                        _ => None,
+                    })
                     .execute(&mut *tx)
                     .await
                     .map_err(map_sqlx)?;

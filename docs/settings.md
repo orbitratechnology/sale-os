@@ -42,4 +42,5 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `scanner.suffix` | one of "Enter", "Tab", "none" | `"Enter"` | **Key the scanner sends after a code.** Match the scanner's setting. "none" ends a code by the pause after it. |
+| `scanner.label_rules` | up to 10 lines × 24 chars | `[]` | **Scale labels (weight and price barcodes).** One layout per line: prefix, weight or price, item digits, and "check" if the scale prints a price check digit. E.g. "25 weight 5" reads 25 IIIII GGGGG C as item IIIII, GGGGG grams; "21 price 5" reads the price in pence or cents. Give the product the label's barcode with the weight or price as zeros. |
 | `scanner.max_key_gap_ms` | whole number 10–100 | `35` | **Fastest typing that counts as a scan (ms between keys).** Raise it for slow wireless scanners; people type far slower than any scanner. |

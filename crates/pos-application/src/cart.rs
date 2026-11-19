@@ -86,6 +86,13 @@ impl CartService {
             .ok_or(CatalogError::NotFound)?)
     }
 
+    /// `scanner.label_rules` (BAR-009).
+    pub(crate) async fn label_rules(
+        &self,
+    ) -> Result<Vec<pos_domain::catalog::variable_measure::LabelRule>, AppError> {
+        Ok(self.carts.label_rules().await?)
+    }
+
     pub(crate) async fn exclusive(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.lock.lock().await
     }
@@ -144,6 +151,7 @@ impl CartService {
                 price_override: l.price_override,
                 line_discount: l.line_discount,
                 added_via: l.added_via,
+                label: l.label,
             });
         }
         Ok(Cart {

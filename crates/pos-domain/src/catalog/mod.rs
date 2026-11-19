@@ -6,6 +6,7 @@ pub mod config;
 pub mod import;
 pub mod product;
 pub mod unit;
+pub mod variable_measure;
 
 pub use barcode::{BarcodeError, NormalizedBarcode, Symbology, gtin_check_digit, normalize_barcode};
 pub use product::{

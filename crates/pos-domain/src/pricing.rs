@@ -2,7 +2,7 @@
 //! ADR-004 (docs/backlog/03, 06 §3). Every step rounds once, to minor units, half away
 //! from zero by default. Totals are sums of rounded line values and are never re-rounded.
 //!
-//! 1. `gross = round(unit_price × qty)`
+//! 1. `gross = round(unit_price × qty)`, or the price on the item's label (BAR-009)
 //! 2. line discount: percent → `round(gross × p)`; fixed → the value (≤ gross)
 //! 3. `net1 = gross − line_discount`
 //! 4. order discount: percent → `round(Σ net1 × p)`; fixed → the value (≤ Σ net1)
@@ -110,6 +110,9 @@ pub struct PricingLine {
     pub line_discount: Option<Discount>,
     /// Rates already resolved for the business date. Empty = exempt.
     pub taxes: Vec<TaxRateSnapshot>,
+    /// A price printed on the item's label (BAR-009): the line's gross is exactly this,
+    /// not `unit_price × quantity`.
+    pub fixed_gross: Option<Money>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -225,7 +228,11 @@ pub fn price_cart(
         if l.unit_price.is_negative() {
             return Err(PricingError::Negative { line: l.line_id });
         }
-        let g = round_to_minor(dec(l.unit_price) * Decimal::new(l.quantity.milli(), 3), mode)?;
+        let g = match l.fixed_gross {
+            Some(f) if f.is_negative() => return Err(PricingError::Negative { line: l.line_id }),
+            Some(f) => f,
+            None => round_to_minor(dec(l.unit_price) * Decimal::new(l.quantity.milli(), 3), mode)?,
+        };
         let ld = match &l.line_discount {
             Some(d) => discount_amount(g, d, mode)?,
             None => Money::ZERO,
@@ -390,6 +397,7 @@ mod tests {
             unit_price: Money::from_minor(price),
             line_discount: None,
             taxes,
+            fixed_gross: None,
         }
     }
 

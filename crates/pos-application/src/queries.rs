@@ -169,6 +169,8 @@ pub struct StoredCartLine {
     pub price_override: Option<pos_domain::Money>,
     pub line_discount: Option<pos_domain::pricing::Discount>,
     pub added_via: pos_domain::cart::AddVia,
+    /// BAR-009: set by a scale label.
+    pub label: Option<pos_domain::cart::CartLabel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -215,6 +217,8 @@ pub trait CartQueries: Send + Sync {
         date: pos_domain::BusinessDate,
     ) -> Result<Option<pos_domain::cart::SellableVariant>, QueryError>;
     async fn pricing_settings(&self) -> Result<PricingSettings, QueryError>;
+    /// `scanner.label_rules`, parsed (BAR-009). Empty when unset or unreadable.
+    async fn label_rules(&self) -> Result<Vec<pos_domain::catalog::variable_measure::LabelRule>, QueryError>;
 }
 
 /// Stock reads for selling (E11-T04).

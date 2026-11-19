@@ -142,6 +142,17 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "Match the scanner's setting. \"none\" ends a code by the pause after it.",
     },
     SettingDef {
+        key: "scanner.label_rules",
+        kind: SettingKind::Lines {
+            max_lines: 10,
+            max_chars: 24,
+        },
+        default: "[]",
+        group: "Scanner",
+        label: "Scale labels (weight and price barcodes)",
+        help: "One layout per line: prefix, weight or price, item digits, and \"check\" if the scale prints a price check digit. E.g. \"25 weight 5\" reads 25 IIIII GGGGG C as item IIIII, GGGGG grams; \"21 price 5\" reads the price in pence or cents. Give the product the label's barcode with the weight or price as zeros.",
+    },
+    SettingDef {
         key: "scanner.max_key_gap_ms",
         kind: SettingKind::Int { min: 10, max: 100 },
         default: "35",
@@ -215,6 +226,15 @@ pub fn validate(key: &str, value: &Value) -> Result<&'static SettingDef, Setting
                     "up to {max_lines} lines of at most {max_chars} characters"
                 ));
             }
+        }
+    }
+    if d.key == "scanner.label_rules" {
+        let lines: Vec<&str> = value
+            .as_array()
+            .map(|a| a.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if let Err(e) = pos_domain::catalog::variable_measure::rules_from_lines(&lines) {
+            return wrong(e.to_string());
         }
     }
     Ok(d)

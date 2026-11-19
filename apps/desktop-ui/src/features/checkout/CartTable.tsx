@@ -89,6 +89,11 @@ export function CartTable({
                 <span data-testid="qty">
                   {formatMilli(l.quantityMilli)}
                   {l.unit !== "ea" && ` ${l.unit}`}
+                  {l.scaleLabel && (
+                    <span className="tag" title="From the scale label: scan another label instead of changing it">
+                      {l.scaleLabel === "price" ? "label price" : "label weight"}
+                    </span>
+                  )}
                 </span>
               )}
             </td>
