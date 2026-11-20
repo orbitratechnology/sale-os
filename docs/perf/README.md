@@ -16,3 +16,7 @@ A reduced suite (`--scale small`) runs weekly in CI (`.github/workflows/perf.yml
 when a median is more than 20% (and 0.5 ms) slower than the last good run on the same runner.
 
 `crash-harness.md` is the AT-05 crash-consistency report (E02-T04).
+
+`<date>-ui-latency.md` is the screen side (key press to painted frame), measured by
+`apps/desktop-ui/scripts/ui-latency.mjs`; on the pilot PC it runs against the real app
+(pilot runbook §11).

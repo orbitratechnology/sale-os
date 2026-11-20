@@ -47,6 +47,26 @@ jobs:
         run: pnpm tauri build
       - name: Pilot tools (performance suite)
         run: cargo build --release --locked -p pos-bench
+      - name: Pilot tools (UI latency kit)
+        # scripts/ui-latency.mjs with the Node runtime and playwright-core next to it, so the
+        # pilot PC needs nothing installed (pilot runbook §11). No browser is downloaded: it
+        # attaches to the app's own WebView2.
+        shell: pwsh
+        run: |
+          $kit = New-Item -ItemType Directory -Force -Path ui-latency-kit
+          Copy-Item apps/desktop-ui/scripts/ui-latency.mjs $kit
+          Copy-Item (Get-Command node).Source $kit
+          $version = (Get-Content apps/desktop-ui/package.json | ConvertFrom-Json).devDependencies.playwright
+          '{ "type": "module", "private": true }' | Set-Content -Encoding ascii "$kit/package.json"
+          Push-Location $kit
+          npm install --no-audit --no-fund --omit=dev "playwright-core@$version"
+          Pop-Location
+          @(
+            "Sale OS UI latency kit (pilot runbook section 11).",
+            "Close Sale OS, then in PowerShell in this folder:",
+            '  .\node.exe ui-latency.mjs --launch "<path to Sale OS.exe>" --codes <barcode>,<barcode>,<barcode> --search <letters> --json ui-latency.json'
+          ) | Set-Content -Encoding ascii "$kit/README.txt"
+          Compress-Archive -Path "$kit/*" -DestinationPath ui-latency.zip -Force
       - name: Collect, with checksums
         shell: pwsh
         run: |
@@ -55,6 +75,7 @@ jobs:
           Copy-Item target/release/bundle/msi/*.msi $out
           New-Item -ItemType Directory -Force -Path "$out/pilot-tools" | Out-Null
           Copy-Item target/release/pos-bench.exe "$out/pilot-tools/"
+          Copy-Item ui-latency.zip "$out/pilot-tools/"
           $lines = Get-ChildItem -Recurse -File $out | ForEach-Object {
             $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
             "$hash  $($_.FullName.Substring($out.FullName.Length + 1).Replace('\', '/'))"

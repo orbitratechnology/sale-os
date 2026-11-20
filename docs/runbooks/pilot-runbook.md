@@ -18,8 +18,8 @@ For whoever installs and supports Sale OS in a pilot shop. Restoring backups has
    - The pilot build comes from the GitHub Actions workflow "Release build (Windows)": the
      artefact `sale-os-windows-release-<commit>` holds the NSIS installer (`.exe`, per user,
      recommended), the `.msi`, `SHA256SUMS.txt` (compare it with `Get-FileHash` before
-     installing) and `pilot-tools/pos-bench.exe` for the reference performance run
-     (`pos-bench.exe --scale full`, E19-T01).
+     installing), and in `pilot-tools/` the two performance checks of §11: `pos-bench.exe`
+     (the database) and `ui-latency.zip` (the screen).
    - It includes WebView2 (ADR-021), so no internet is needed.
    - Installers are signed once E19-T06 is done. Until then, Windows SmartScreen warns about
      an unknown publisher: check the file came from us, then choose "Run anyway".
@@ -157,3 +157,55 @@ It holds no business records, PINs, tokens or card numbers.
 ## 10. Support and escalation
 
 See [`support-process.md`](support-process.md).
+
+## 11. Performance check (before going live)
+
+Run both checks on the pilot PC, with the shop's own catalogue, while the till is still in
+**SANDBOX** mode. Keep the files they write: they go into `docs/perf/` with the date.
+
+**1. The database:** `pilot-tools\pos-bench.exe --scale full` (E19-T01). It writes its own
+report.
+
+**2. The screen.** This measures what a cashier feels: from a key press (a scan, F9, an arrow,
+Esc) to the result drawn on screen, plus how long Sale OS takes to start and how much memory
+it uses.
+
+1. Close Sale OS (it must not be running).
+2. Unzip `pilot-tools\ui-latency.zip` into a folder, e.g. `C:\saleos-perf`. It contains its own
+   `node.exe`; nothing is installed.
+3. Find the program file: right-click Sale OS in the Start menu → **Open file location** →
+   right-click the shortcut → **Properties** → copy **Target**.
+4. Pick three barcodes of products in the catalogue, and the first two or three letters of a
+   product name.
+5. In PowerShell, in that folder:
+
+   ```powershell
+   .\node.exe ui-latency.mjs --launch "<Target>" --codes 5000159407236,4006381333931,7622210449283 --search co --json ui-latency-cold.json
+   ```
+
+6. Sign in when it says so. The till must be in SANDBOX mode with an **empty cart**, or the
+   tool stops without touching anything. It then scans the barcodes, moves along the cart,
+   opens and closes the payment window, opens Products and Sales and comes back, searches,
+   clears its cart and **closes Sale OS**. It takes about two minutes.
+7. Do it twice: once just after restarting the PC (**cold** start, `ui-latency-cold.json`), once
+   straight after (**warm** start, `ui-latency-warm.json`).
+8. Start Sale OS again from the Start menu.
+
+What it prints, and what to expect (PRD §14 and the measurements of 2026-11-20):
+
+| Line | Expect | If not |
+|---|---|---|
+| Scan → line and total painted | p95 under 100 ms (`NFR-add-to-cart`) | Escalate with both files |
+| Arrow, F9, Esc, typing | p95 under 100 ms | Escalate with both files |
+| Products / Sales screen and back | p95 under 150 ms | Note it; escalate if over 300 ms |
+| Cold start (launch → first screen) | Record it | Escalate if over 5 s |
+| Memory (working set, all processes) | Record it | Escalate if the PC has under 1 GB free while selling |
+
+**Safety.** For that run only, the tool starts Sale OS with the WebView2 debugging port open
+(on this PC only, 127.0.0.1), which lets a program on the PC drive the till; nothing on the PC
+is changed. The tool closes Sale OS at the end so the port closes. If the run is interrupted
+(Ctrl+C, an error), close Sale OS yourself and start it again from the Start menu. Never set
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` in Windows' own environment settings.
+
+If the tool says there is no DevTools endpoint, the WebView2 runtime ignored the argument:
+note it and send the output; the database check still counts.

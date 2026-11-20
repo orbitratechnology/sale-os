@@ -42,6 +42,8 @@ export function App() {
 
   const place: Place = !state ? "loading" : !state.setupComplete || !state.workspace ? "setup" : !state.session || state.session.mustChangePin ? "signIn" : screen.kind;
   useEffect(() => {
+    // Startup timing for scripts/ui-latency.mjs: the first screen a person can use is up.
+    if (place !== "loading" && performance.getEntriesByName(FIRST_SCREEN_MARK).length === 0) performance.mark(FIRST_SCREEN_MARK);
     // The window title names the screen (WCAG 2.4.2), for the taskbar and screen readers.
     document.title = `${TITLES[place]} · Sale OS`;
     // A new screen starts focus at its heading, unless it focused a field itself; the till keeps
@@ -347,6 +349,9 @@ export function App() {
 }
 
 type Place = Screen["kind"] | "loading" | "setup" | "signIn";
+
+/** Performance marks read by scripts/ui-latency.mjs (pilot measurements). */
+export const FIRST_SCREEN_MARK = "sale-os:first-screen";
 
 const TITLES: Record<Place, string> = {
   loading: "Starting",

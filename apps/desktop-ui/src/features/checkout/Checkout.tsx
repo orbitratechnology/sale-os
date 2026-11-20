@@ -174,6 +174,11 @@ export function Checkout({
     };
   }, []);
   const exponent = c.cart?.currencyExponent ?? 2;
+  // Startup timing for scripts/ui-latency.mjs: the till has its cart and can take a scan.
+  const loaded = c.cart !== null;
+  useEffect(() => {
+    if (loaded && performance.getEntriesByName("sale-os:till-ready").length === 0) performance.mark("sale-os:till-ready");
+  }, [loaded]);
   // E07-T04: the error cue. The message is always on screen; the tone is the setting's.
   const noticeKind = c.notice?.kind;
   useEffect(() => {

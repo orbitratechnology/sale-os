@@ -1,0 +1,101 @@
+{
+  "measures": {
+    "Scan (Enter) → line and total painted": {
+      "p50": 16.1,
+      "p95": 46.4,
+      "max": 46.4,
+      "n": 20,
+      "missed": 0
+    },
+    "Arrow key → selected line moves": {
+      "p50": 12.1,
+      "p95": 16,
+      "max": 16,
+      "n": 20,
+      "missed": 0
+    },
+    "F9 → payment dialog painted": {
+      "p50": 38.2,
+      "p95": 60,
+      "max": 60,
+      "n": 20,
+      "missed": 0
+    },
+    "Esc → dialog closed": {
+      "p50": 23.6,
+      "p95": 32.9,
+      "max": 32.9,
+      "n": 20,
+      "missed": 0
+    },
+    "Keystroke in the cash field → character painted": {
+      "p50": 13.3,
+      "p95": 19.6,
+      "max": 19.6,
+      "n": 20,
+      "missed": 0
+    },
+    "F6 → Products screen painted": {
+      "p50": 29,
+      "p95": 92.4,
+      "max": 92.4,
+      "n": 15,
+      "missed": 0
+    },
+    "Esc → back on the till (from Products)": {
+      "p50": 39.7,
+      "p95": 44.9,
+      "max": 44.9,
+      "n": 15,
+      "missed": 0
+    },
+    "F8 → Sales screen painted": {
+      "p50": 29.9,
+      "p95": 68.6,
+      "max": 68.6,
+      "n": 15,
+      "missed": 0
+    },
+    "Esc → back on the till (from Sales)": {
+      "p50": 37.2,
+      "p95": 48.8,
+      "max": 48.8,
+      "n": 15,
+      "missed": 0
+    },
+    "Search typing → results painted (incl. the 80 ms typing pause)": {
+      "p50": 96.1,
+      "p95": 107.4,
+      "max": 107.4,
+      "n": 15,
+      "missed": 0
+    }
+  },
+  "startup": {
+    "navigation → till ready (harness)": {
+      "p50": 272.5,
+      "p95": 535.8,
+      "max": 535.8,
+      "n": 5,
+      "missed": 0
+    }
+  },
+  "memory": {},
+  "slowInteractions": 352,
+  "longTasks": [
+    58,
+    54,
+    53
+  ],
+  "jsHeapMb": 11,
+  "environment": {
+    "mode": "harness (cpu 4x)",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "ramGb": 16,
+    "os": "Linux 6.18.44-fc-v726",
+    "date": "2026-11-20T06:04:59.418Z",
+    "samples": 20
+  }
+}
