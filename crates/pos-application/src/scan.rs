@@ -30,8 +30,8 @@ use crate::queries::CatalogHit;
 use crate::write::WriteError;
 use pos_domain::cart::{AddVia, CartChange};
 use pos_domain::catalog::{
-    CandidateSource, DecodedScan, LabelMeasure, MeasureKind, ScanDecodeConfig, ScanNote, decode_scan, label_line,
-    variable_measure_rules,
+    CandidateSource, DecodedScan, LabelMeasure, MeasureKind, ScanDecodeConfig, ScanNote, decode_scan,
+    label_line, variable_measure_rules,
 };
 use pos_domain::{ErrorCode, HasErrorCode, Permission, ScanEventId};
 
@@ -61,14 +61,9 @@ pub enum ScanOutcome {
         hint: Option<ScanHint>,
     },
     /// This delivery was already processed. The cart is unchanged.
-    Duplicate {
-        view: CartView,
-    },
+    Duplicate { view: CartView },
     /// No barcode or SKU matches. The cart is unchanged; the UI offers search or create.
-    NotFound {
-        code: String,
-        hint: Option<ScanHint>,
-    },
+    NotFound { code: String, hint: Option<ScanHint> },
 }
 
 /// Longest scan accepted: 2D codes (GS1 DataMatrix, Digital Link URLs) are long.
@@ -155,15 +150,19 @@ impl CartService {
             ));
         }
         let rules = variable_measure_rules(&self.carts.scan_rules().await?).unwrap_or_default();
-        let decoded = decode_scan(code, None, &ScanDecodeConfig {
-            variable_measure: rules,
-        });
+        let decoded = decode_scan(
+            code,
+            None,
+            &ScanDecodeConfig {
+                variable_measure: rules,
+            },
+        );
         let guard = self.exclusive().await;
         let mut found: Option<(CatalogHit, CandidateSource)> = None;
         if let Ok(d) = &decoded {
             let values: Vec<String> = d.candidates.iter().map(|c| c.value.clone()).collect();
             if let Some((i, h)) = self.catalog.lookup_barcodes(&values).await? {
-                found = Some((h, d.candidates[i].via.clone()));
+                found = Some((h, d.candidates[i].via));
             }
         }
         if found.is_none() && !code.contains(GS) {

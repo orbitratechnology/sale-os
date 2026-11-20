@@ -115,7 +115,8 @@ async fn scanning_builds_a_priced_cart() {
     assert_eq!(
         scan(&t, "999999").await,
         ScanOutcome::NotFound {
-            code: "999999".into()
+            code: "999999".into(),
+            hint: None,
         }
     );
     assert_eq!(t.carts.current(ctx).await.unwrap().cart.revision, 4);

@@ -180,6 +180,30 @@ impl CatalogQueries for SqliteStore {
                 return Ok(Some((i, h)));
             }
         }
+        // Codabar: the shop registered `A40156B` but the scanner strips start/stop (or the
+        // other way round, handled by the decoder). Only the not-found path pays for this
+        // unindexed match, and only an unambiguous single product counts.
+        if let Some(first) = values.first()
+            && !first.is_empty()
+            && first.len() <= 60
+            && first
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b"$:/.+-".contains(&b))
+        {
+            let ids: Vec<String> = sqlx::query_scalar(
+                "SELECT DISTINCT b.value_normalized FROM product_barcodes b
+                 WHERE b.status = 'active' AND b.value_normalized GLOB '[ABCD]' || ?1 || '[ABCD]' LIMIT 2",
+            )
+            .bind(first)
+            .fetch_all(self.db().readers())
+            .await
+            .map_err(q)?;
+            if let [only] = ids.as_slice()
+                && let Some(h) = self.barcode_hit(only).await?
+            {
+                return Ok(Some((0, h)));
+            }
+        }
         Ok(None)
     }
 
@@ -399,25 +423,23 @@ impl CatalogQueries for SqliteStore {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::fts_query;
-
-    #[test]
-    fn fts_queries_are_sanitised_prefix_terms() {
-        assert_eq!(fts_query("Coca cola").as_deref(), Some("\"coca\"* \"cola\"*"));
-        assert_eq!(
-            fts_query("name:x OR \"y\" NEAR(a b)").as_deref(),
-            Some("\"name\"* \"x\"* \"or\"* \"y\"* \"near\"* \"a\"* \"b\"*")
-        );
-        assert_eq!(fts_query("  -- ").as_deref(), None);
-    }
-}
-
 impl SqliteStore {
     /// The active product with this canonical barcode value, if any.
     async fn barcode_hit(&self, value: &str) -> Result<Option<CatalogHit>, QueryError> {
-        let row: Option<(String, String, String, String, Option<String>, i64, String, bool, i64, String, i64)> =
+        type BarcodeHitRow = (
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            i64,
+            String,
+            bool,
+            i64,
+            String,
+            i64,
+        );
+        let row: Option<BarcodeHitRow> =
             sqlx::query_as(&format!(
                 "SELECT {HIT_COLUMNS}, b.qualifier, b.pack_qty_milli
                  FROM product_barcodes b JOIN product_variants v USING (variant_id) JOIN products p USING (product_id)
@@ -433,5 +455,20 @@ impl SqliteStore {
             hit(base, MatchedBy::Barcode, pack)
         })
         .transpose()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fts_query;
+
+    #[test]
+    fn fts_queries_are_sanitised_prefix_terms() {
+        assert_eq!(fts_query("Coca cola").as_deref(), Some("\"coca\"* \"cola\"*"));
+        assert_eq!(
+            fts_query("name:x OR \"y\" NEAR(a b)").as_deref(),
+            Some("\"name\"* \"x\"* \"or\"* \"y\"* \"near\"* \"a\"* \"b\"*")
+        );
+        assert_eq!(fts_query("  -- ").as_deref(), None);
     }
 }

@@ -1147,10 +1147,15 @@ fn parse_digital_link(t: &str) -> Option<Gs1Parse> {
     Some(out)
 }
 
-/// Without any GS1 signal, a run of digits is read as an element string only when it starts
-/// with a check-digit-valid AI 01 and parses completely.
+/// Without any GS1 signal (no AIM id, no GS, keyboard wedges drop both), a string is read
+/// as an element string only when it starts with a check-digit-valid AI 01 and parses
+/// completely. What follows the GTIN may be alphanumeric (batch, serial), as on most
+/// GS1-128 labels.
 fn looks_like_gs1(t: &str) -> bool {
-    t.len() >= 16 && t.starts_with("01") && digits(t).is_some_and(|d| gtin_valid(&d[2..16]))
+    t.len() >= 16
+        && t.is_ascii()
+        && t.starts_with("01")
+        && digits(&t[..16]).is_some_and(|d| gtin_valid(&d[2..16]))
 }
 
 // ---------------------------------------------------------------------------------------------

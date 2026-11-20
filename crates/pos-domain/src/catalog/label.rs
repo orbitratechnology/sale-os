@@ -258,11 +258,29 @@ mod tests {
             }
         );
         // 1.00 at 3.00/kg: 0.333 kg, and 0.999 rounds back to 1.00 at the catalogue price.
-        let one = LabelMeasure::Price { value: 100, decimals: 2 };
+        let one = LabelMeasure::Price {
+            value: 100,
+            decimals: 2,
+        };
         let line = label_line(one, Unit::Kg, m(300), 2).unwrap();
-        assert_eq!(line, LabelLine { quantity: Quantity::from_milli(333), price_override: None });
+        assert_eq!(
+            line,
+            LabelLine {
+                quantity: Quantity::from_milli(333),
+                price_override: None
+            }
+        );
         // 0.07 at 9.99/kg: 0.007 kg × 9.99 = 0.07 exactly (0.06993 → 0.07).
-        let tiny = label_line(LabelMeasure::Price { value: 7, decimals: 2 }, Unit::Kg, m(999), 2).unwrap();
+        let tiny = label_line(
+            LabelMeasure::Price {
+                value: 7,
+                decimals: 2,
+            },
+            Unit::Kg,
+            m(999),
+            2,
+        )
+        .unwrap();
         assert_eq!(tiny.quantity, Quantity::from_milli(7));
         // Sold by the each: one at the label price.
         assert_eq!(

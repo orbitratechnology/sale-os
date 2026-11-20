@@ -430,7 +430,11 @@ pub(crate) struct Audited {
 }
 
 impl Audited {
-    pub(crate) fn new(action: audit::AuditAction, metadata: serde_json::Value, approver: Option<UserId>) -> Self {
+    pub(crate) fn new(
+        action: audit::AuditAction,
+        metadata: serde_json::Value,
+        approver: Option<UserId>,
+    ) -> Self {
         Self {
             action,
             metadata,
