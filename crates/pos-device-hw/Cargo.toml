@@ -1,0 +1,39 @@
+[package]
+name = "pos-device-hw"
+description = "Real hardware adapters: ESC/POS and Star receipt printers, cash drawers and serial barcode scanners over network, serial/COM/Bluetooth SPP, device files and the OS spooler."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Derive specta::Type for the IPC-facing configuration types (used by the desktop shell only).
+specta = ["dep:specta"]
+
+[dependencies]
+async-trait.workspace = true
+pos-device-ports.workspace = true
+pos-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serialport.workspace = true
+specta = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "rt"] }
+tracing.workspace = true
+
+# O_NONBLOCK for device files (/dev/usb/lp0 …), so a dead printer can never hang a thread.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+# Windows spooler RAW printing (winspool). Never on unix: there it links CUPS.
+[target.'cfg(windows)'.dependencies]
+printers.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros", "time"] }
+
+[lints]
+workspace = true
