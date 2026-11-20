@@ -521,6 +521,21 @@ pub struct StockDocumentLine {
     pub unit_cost: Option<pos_domain::Money>,
 }
 
+/// A tax invoice to record (D-02). The number is allocated by the store:
+/// `{number_prefix}{register code}_{seq:05}`, e.g. `26NOV_` + `R01` + `_00042`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaxInvoiceRecord {
+    pub id: pos_domain::TaxInvoiceId,
+    pub sale_id: pos_domain::SaleId,
+    /// `YYMMM_` from the invoice date in the business's time zone.
+    pub number_prefix: String,
+    pub purchaser_tin: String,
+    pub purchaser_name: String,
+    pub purchaser_address: Vec<String>,
+    pub issued_by: pos_domain::UserId,
+    pub issued_at: Timestamp,
+}
+
 // ---------- cash sessions (E15-T02) ----------
 
 #[derive(Clone, Debug, PartialEq, Eq)]

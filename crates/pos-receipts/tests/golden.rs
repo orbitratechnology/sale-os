@@ -475,3 +475,102 @@ fn golden_z_summary() {
     let back: ReceiptDocument = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
     assert_eq!(render(&back, COLUMNS_80MM), render(&doc, COLUMNS_80MM));
 }
+
+/// D-02 (Sri Lanka): a tax invoice for a VAT-registered buyer, Gazette 2481/22. Two VAT lines
+/// at 18% (prices exclusive), one exempt line left off and counted.
+fn tax_invoice_doc() -> ReceiptDocument {
+    use pos_receipts::{Meta, TaxInvoiceLine, TaxInvoiceSection};
+    let mut ctx = context();
+    ctx.business_name = "Lanka Traders (Pvt) Ltd".into();
+    ctx.address_lines = vec!["12 Galle Road".into(), "Colombo 03".into()];
+    ctx.phone = Some("011 234 5678".into());
+    let line = |description: &str, quantity: &str, unit: i64, amount: i64| TaxInvoiceLine {
+        description: description.into(),
+        quantity: quantity.into(),
+        unit_price: Money::from_minor(unit),
+        amount: Money::from_minor(amount),
+    };
+    pos_receipts::tax_invoice(
+        &ctx,
+        Meta {
+            receipt_number: "26NOV_R01_00001".into(),
+            local_time: "2026-11-20 10:15".into(),
+            register_name: "Till 1".into(),
+            register_code: "R01".into(),
+            cashier_name: "Nimal".into(),
+        },
+        false,
+        2,
+        TaxInvoiceSection {
+            supplier_tin: "104567890".into(),
+            purchaser_tin: "114223344".into(),
+            purchaser_name: "Ceylon Office Supplies (Pvt) Ltd".into(),
+            purchaser_address: vec!["45 Duplication Road".into(), "Colombo 04".into()],
+            invoice_date: "11/20/2026".into(),
+            supply_date: "11/20/2026".into(),
+            sale_receipt: "R01-000042".into(),
+            lines: vec![
+                line(
+                    "A4 copy paper, 80 gsm, ream of 500 sheets",
+                    "10",
+                    185_000,
+                    1_850_000,
+                ),
+                line("Ballpoint pen, blue (box of 50)", "2", 120_000, 240_000),
+            ],
+            value_of_supply: Money::from_minor(2_090_000),
+            vat: vec![pos_receipts::document::TaxRow {
+                name: "VAT 18%".into(),
+                amount: Money::from_minor(376_200),
+            }],
+            total: Money::from_minor(2_466_200),
+            payment: vec!["Bank transfer".into()],
+            omitted_lines: 1,
+        },
+    )
+}
+
+#[test]
+fn golden_tax_invoice() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let doc = tax_invoice_doc();
+    check(
+        dir.join("tax_invoice.json"),
+        &serde_json::to_string_pretty(&doc).unwrap(),
+    );
+    for cols in [COLUMNS_58MM, COLUMNS_80MM] {
+        let lines = render(&doc, cols);
+        assert!(lines.iter().all(|l| l.text.chars().count() <= cols));
+        let text = to_plain_text(&lines);
+        // The gazette's particulars, in order.
+        let order = [
+            "TAX INVOICE",
+            "Supplier TIN: 104567890",
+            "Purchaser TIN: 114223344",
+            "26NOV_R01_00001",
+            "11/20/2026",
+            "Total value of supply",
+            "VAT 18%",
+            "TOTAL INCL. VAT",
+        ];
+        let at: Vec<usize> = order
+            .iter()
+            .map(|s| text.find(s).unwrap_or_else(|| panic!("{s} missing")))
+            .collect();
+        assert!(
+            at.windows(2).all(|w| w[0] < w[1]),
+            "out of order at {cols} columns"
+        );
+        check(dir.join(format!("tax_invoice.{cols}.txt")), &text);
+        check_bytes(dir.join(format!("tax_invoice.{cols}.bin")), &to_escpos(&lines));
+    }
+    // Value of supply + VAT = total, and stored then read back it renders the same.
+    let ti = doc.tax_invoice.as_ref().unwrap();
+    let vat: i64 = ti.vat.iter().map(|r| r.amount.minor()).sum();
+    assert_eq!(ti.value_of_supply.minor() + vat, ti.total.minor());
+    let back: ReceiptDocument = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+    assert_eq!(render(&back, COLUMNS_80MM), render(&doc, COLUMNS_80MM));
+    // The A4 PDF renders.
+    let pdf = pos_receipts::pdf::render_pdf(&doc, pos_receipts::pdf::PdfFormat::A4).unwrap();
+    assert!(pdf.starts_with(b"%PDF"));
+}

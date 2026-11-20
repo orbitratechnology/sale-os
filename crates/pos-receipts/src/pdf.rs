@@ -301,7 +301,11 @@ pub fn render_pdf_with_logo(
     let layout = match format {
         PdfFormat::Receipt58 => roll(doc, 58.0, COLUMNS_58MM, logo),
         PdfFormat::Receipt80 => roll(doc, 80.0, COLUMNS_80MM, logo),
-        PdfFormat::A4 if doc.kind == DocumentKind::CashSession => a4_grid(doc),
+        // The Z summary and the tax invoice are laid out as text on A4 (their particulars in
+        // the order the text renderer gives them).
+        PdfFormat::A4 if matches!(doc.kind, DocumentKind::CashSession | DocumentKind::TaxInvoice) => {
+            a4_grid(doc)
+        }
         PdfFormat::A4 => a4_invoice(doc, logo),
     };
     draw(&layout, doc, logo)
@@ -764,6 +768,7 @@ fn draw(
         DocumentKind::Sale => format!("Receipt {}", doc.meta.receipt_number),
         DocumentKind::Return => format!("Refund receipt {}", doc.meta.receipt_number),
         DocumentKind::CashSession => format!("Z summary {}", doc.meta.receipt_number),
+        DocumentKind::TaxInvoice => format!("Tax invoice {}", doc.meta.receipt_number),
     };
     document.set_metadata(
         krilla::metadata::Metadata::new()

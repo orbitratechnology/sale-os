@@ -861,6 +861,88 @@ pub async fn exchange_complete(
     res
 }
 
+/// D-02: issues the VAT tax invoice of a sale for a registered buyer (TIN, name, address as
+/// on their certificate). One per sale; numbered `YYMMM_<register>_XXXXX`.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_issue(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    purchaser_tin: String,
+    purchaser_name: String,
+    purchaser_address: Vec<String>,
+) -> Result<crate::dto::ReceiptDto, IpcError> {
+    let ctx = services.context().await?;
+    let r = services
+        .app()?
+        .tax_invoices
+        .issue(
+            &ctx,
+            sale_id,
+            pos_application::tax_invoice::Purchaser {
+                tin: purchaser_tin,
+                name: purchaser_name,
+                address: purchaser_address,
+            },
+        )
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::ReceiptDto::from_rendered(&r))
+}
+
+/// A sale's tax invoice as issued, for 58 or 80 mm paper; `null` if none was issued.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_get(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    width_mm: Option<u32>,
+) -> Result<Option<crate::dto::ReceiptDto>, IpcError> {
+    let ctx = services.context().await?;
+    let r = services
+        .app()?
+        .tax_invoices
+        .get(&ctx, sale_id, width_mm)
+        .await
+        .map_err(err)?;
+    Ok(r.as_ref().map(crate::dto::ReceiptDto::from_rendered))
+}
+
+/// Prints a sale's tax invoice; later copies are marked as copies.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_print(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+) -> Result<crate::dto::PrintJobDto, IpcError> {
+    let ctx = services.context().await?;
+    let job = services
+        .app()?
+        .prints
+        .print_tax_invoice(&ctx, sale_id)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::PrintJobDto::from_record(&job))
+}
+
+/// Saves a sale's tax invoice as a PDF (receipt width or A4) where the user chooses.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_export_pdf(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    paper: crate::dto::PdfPaperDto,
+) -> Result<Option<crate::dto::SavedFileDto>, IpcError> {
+    let ctx = services.context().await?;
+    save_pdf(
+        &services,
+        &ctx,
+        pos_application::receipts::ReceiptOf::TaxInvoice(sale_id),
+        paper,
+    )
+    .await
+}
+
 /// A return's refund receipt as stored, rendered for 58 or 80 mm paper.
 #[tauri::command]
 #[specta::specta]
@@ -920,40 +1002,7 @@ pub async fn receipt_export_pdf(
             )));
         }
     };
-    let app = services.app()?;
-    let logo = crate::config_commands::stored_logo(&services).await;
-    let pdf = app
-        .receipt_pdfs
-        .render(&ctx, of, paper.into_domain(), logo.as_ref())
-        .await
-        .map_err(err)?;
-    let chosen = services
-        .file_dialog
-        .ask(&pdf.file_name, ("PDF", &["pdf"]))
-        .await
-        .ok()
-        .flatten();
-    let Some(path) = chosen else {
-        return Ok(None);
-    };
-    let path = if path.extension().is_some() {
-        path
-    } else {
-        path.with_extension("pdf")
-    };
-    write_replacing(&path, &pdf.bytes).map_err(IpcError::internal)?;
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    app.receipt_pdfs
-        .record(&ctx, &pdf, &file_name)
-        .await
-        .map_err(err)?;
-    Ok(Some(crate::dto::SavedFileDto {
-        path: path.display().to_string(),
-        file_name,
-    }))
+    save_pdf(&services, &ctx, of, paper).await
 }
 
 /// Writes `bytes` to `path` (the dialog has already asked about replacing an existing
@@ -1095,4 +1144,48 @@ pub async fn stock_history(
         .await
         .map_err(err)?;
     Ok(crate::dto::StockHistoryDto::list(&rows))
+}
+
+/// Renders a receipt, refund or tax invoice as a PDF, asks where to save it (Rust opens the
+/// dialog: the WebView never names a path), writes it and records the export.
+async fn save_pdf(
+    services: &AppServices,
+    ctx: &pos_application::context::CommandContext,
+    of: pos_application::receipts::ReceiptOf,
+    paper: crate::dto::PdfPaperDto,
+) -> Result<Option<crate::dto::SavedFileDto>, IpcError> {
+    let app = services.app()?;
+    let logo = crate::config_commands::stored_logo(services).await;
+    let pdf = app
+        .receipt_pdfs
+        .render(ctx, of, paper.into_domain(), logo.as_ref())
+        .await
+        .map_err(err)?;
+    let chosen = services
+        .file_dialog
+        .ask(&pdf.file_name, ("PDF", &["pdf"]))
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = chosen else {
+        return Ok(None);
+    };
+    let path = if path.extension().is_some() {
+        path
+    } else {
+        path.with_extension("pdf")
+    };
+    write_replacing(&path, &pdf.bytes).map_err(IpcError::internal)?;
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    app.receipt_pdfs
+        .record(ctx, &pdf, &file_name)
+        .await
+        .map_err(err)?;
+    Ok(Some(crate::dto::SavedFileDto {
+        path: path.display().to_string(),
+        file_name,
+    }))
 }

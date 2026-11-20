@@ -1,0 +1,33 @@
+    Lanka Traders (Pvt) Ltd
+         12 Galle Road
+           Colombo 03
+        Tel 011 234 5678
+          TAX INVOICE
+--------------------------------
+Supplier TIN: 104567890
+Purchaser
+Ceylon Office Supplies (Pvt) Ltd
+45 Duplication Road
+Colombo 04
+Purchaser TIN: 114223344
+--------------------------------
+Invoice no.      26NOV_R01_00001
+Date of invoice       11/20/2026
+Date of supply        11/20/2026
+Receipt               R01-000042
+--------------------------------
+Description            Excl. VAT
+A4 copy paper, 80 gsm, ream of
+500 sheets
+  10 x 1,850.00        18,500.00
+Ballpoint pen, blue (box of 50)
+  2 x 1,200.00          2,400.00
+--------------------------------
+Total value of supply  20,900.00
+VAT 18%                 3,762.00
+TOTAL INCL. VAT        24,662.00
+Mode of payment: Bank transfer
+1 item without VAT not on this
+invoice.
+--------------------------------
+        26NOV_R01_00001

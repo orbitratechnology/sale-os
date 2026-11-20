@@ -1332,6 +1332,41 @@ pub(crate) async fn run_ops(
                 }
                 applied.receipt_numbers.insert(*number_slot, number);
             }
+            WriteOp::InsertTaxInvoice { invoice, number_slot } => {
+                // The register's next number. One writer at a time (ADR-008), so max + 1 is
+                // safe; UNIQUE (register_id, invoice_seq) backs it up.
+                st.step()?;
+                let (seq, code): (i64, String) = sqlx::query_as(
+                    "SELECT coalesce((SELECT max(invoice_seq) FROM tax_invoices WHERE register_id = ?1), 0) + 1,
+                       (SELECT code FROM registers WHERE register_id = ?1)",
+                )
+                .bind(ctx.register_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                let number = format!("{}{code}_{seq:05}", invoice.number_prefix);
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO tax_invoices (tax_invoice_id, business_id, register_id, sale_id, invoice_seq, invoice_number,
+                       purchaser_tin, purchaser_name, purchaser_address, issued_by, issued_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(invoice.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(invoice.sale_id.to_string())
+                .bind(seq)
+                .bind(&number)
+                .bind(&invoice.purchaser_tin)
+                .bind(&invoice.purchaser_name)
+                .bind(serde_json::to_string(&invoice.purchaser_address).map_err(|e| WriteError::Io(e.to_string()))?)
+                .bind(invoice.issued_by.to_string())
+                .bind(invoice.issued_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                applied.receipt_numbers.insert(*number_slot, number);
+            }
             WriteOp::PutPrintJob { job, detail } => {
                 st.step()?;
                 sqlx::query(

@@ -944,6 +944,45 @@ describe("sales history (E12-T03)", () => {
 
   const receipts = (page: Page) => page.getByTestId("sale-row").locator("button.link").allTextContents();
 
+  it("a VAT-registered buyer gets a tax invoice from the sale detail: TINs checked, one per sale (D-02)", async () => {
+    const page = await twoSales();
+    await page.getByRole("button", { name: "R01-000001" }).click();
+    const detail = page.getByRole("region", { name: "Sale detail" });
+    await detail.waitFor();
+    const panel = detail.getByRole("region", { name: "Tax invoice" });
+    await panel.getByRole("button", { name: "Issue tax invoice" }).click();
+    const dialog = page.getByRole("dialog", { name: "Issue a tax invoice" });
+    // Focus starts on the TIN.
+    await page.waitForFunction(() => document.activeElement?.getAttribute("inputmode") === "numeric");
+    await page.keyboard.type("12345");
+    await dialog.getByLabel("Buyer's name").fill("Ceylon Office Supplies (Pvt) Ltd");
+    await dialog.getByLabel(/Buyer's address/).fill("45 Duplication Road\nColombo 04");
+    await dialog.getByRole("button", { name: "Issue tax invoice" }).click();
+    await dialog.getByRole("alert").waitFor();
+    await dialog.getByLabel(/Buyer's TIN/).fill("114-223-344");
+    await dialog.getByRole("button", { name: "Issue tax invoice" }).click();
+    await dialog.waitFor({ state: "detached" });
+    expect(await panel.getByTestId("tax-invoice-number").textContent()).toBe("26NOV_R01_00001");
+    expect((await calls(page, "tax_invoice_issue")).at(-1)).toMatchObject({
+      purchaserTin: "114-223-344",
+      purchaserName: "Ceylon Office Supplies (Pvt) Ltd",
+      purchaserAddress: ["45 Duplication Road", "Colombo 04"],
+    });
+    // Shown, printed and saved like a receipt.
+    const shown = panel.getByRole("figure", { name: "Tax invoice 26NOV_R01_00001" });
+    expect(await shown.getByTestId("receipt-text").textContent()).toContain("Purchaser TIN: 114223344");
+    await panel.getByRole("button", { name: "Print receipt" }).click();
+    await panel.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
+    expect(await calls(page, "tax_invoice_print")).toHaveLength(1);
+    await panel.getByRole("button", { name: "Save A4 PDF" }).click();
+    await panel.getByTestId("pdf-status").filter({ hasText: "Saved tax-invoice-26NOV_R01_00001.pdf." }).waitFor();
+    // Coming back to the sale, the invoice is there and cannot be issued twice.
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "R01-000001" }).click();
+    await page.getByRole("region", { name: "Tax invoice" }).getByTestId("tax-invoice-number").waitFor();
+    expect(await page.getByRole("button", { name: "Issue tax invoice" }).count()).toBe(0);
+  });
+
   it("newest first; filters by payment and receipt number; detail, reprint and return", async () => {
     const page = await twoSales();
     await page.getByTestId("sale-row").nth(1).waitFor();

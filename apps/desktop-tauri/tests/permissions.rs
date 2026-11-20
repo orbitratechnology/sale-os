@@ -330,6 +330,29 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}],
                    "reason": "changed_mind", "note": null, "refunds": [{"kind": "cash", "amountMinor": "100", "reference": null}], "approvalTokenId": null}),
         ),
+        // D-02 tax invoices: issuing is part of selling; reading, printing and saving need
+        // sales access.
+        (
+            "tax_invoice_issue",
+            Perm(SaleComplete),
+            json!({"saleId": UNKNOWN_ID, "purchaserTin": "114223344", "purchaserName": "Buyer Ltd",
+                   "purchaserAddress": ["1 Road"]}),
+        ),
+        (
+            "tax_invoice_get",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "widthMm": null}),
+        ),
+        (
+            "tax_invoice_print",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID}),
+        ),
+        (
+            "tax_invoice_export_pdf",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "paper": "a4"}),
+        ),
         // Same rule as a return: a cashier gets APPROVAL_REQUIRED.
         (
             "exchange_complete",

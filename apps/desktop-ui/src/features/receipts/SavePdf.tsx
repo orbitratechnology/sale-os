@@ -10,7 +10,16 @@ import { describeError } from "../shell/errors";
  * Save a receipt as a PDF (E13-T04): no printer needed. Rust renders the stored receipt,
  * opens the system "Save as" dialog and writes the file; cancelling the dialog does nothing.
  */
-export function SavePdf({ saleId, returnId }: { saleId: string | null; returnId: string | null }) {
+export function SavePdf({
+  saleId,
+  returnId,
+  taxInvoiceOf,
+}: {
+  saleId: string | null;
+  returnId: string | null;
+  /** The sale whose tax invoice to save (D-02), instead of a receipt. */
+  taxInvoiceOf?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
@@ -18,7 +27,7 @@ export function SavePdf({ saleId, returnId }: { saleId: string | null; returnId:
   async function save(paper: PdfPaperDto) {
     setBusy(true);
     setError(null);
-    const res = await commands.receiptExportPdf(saleId, returnId, paper);
+    const res = taxInvoiceOf ? await commands.taxInvoiceExportPdf(taxInvoiceOf, paper) : await commands.receiptExportPdf(saleId, returnId, paper);
     setBusy(false);
     if (res.status === "error") return setError(res.error);
     if (res.data) setSaved(res.data.fileName);

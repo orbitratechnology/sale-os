@@ -102,10 +102,14 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `sales_list` / `sales_get` | SalesView | `{ filter: { from?, to?, receipt?, cashierUserId?, tender? }, after?, limit? } → { rows, next? }`; `{ saleId } → SaleDetailDto`. Finding by receipt number is the `receipt` filter (full number or its digits), and `return_find` for returns, so there is no separate `sales_find_by_receipt` | E12-T03 |
 | `return_preview` | ReturnCreate | `{ saleId, lines } → ReturnPlanDto` | E12-T01 |
 | `return_create` | ReturnCreate (+ approval) | `ReturnRequest → ReturnDto` | E12-T02 |
+| `exchange_complete` | ReturnCreate (+ approval), SaleComplete (+ ExternalTenderRecord when needed) | `{ saleId, lines, reason, note?, refunds, approvalTokenId?, cartId, revision, tenders } → { return: ReturnDto, sale: CompletedSaleDto }`: the return and the sale of the cart in one transaction; the returned value is a cash refund and a cash payment of the same amount | E12-T02 |
+| `tax_invoice_issue` / `tax_invoice_get` | SaleComplete / SalesView | D-02 (Sri Lanka): `{ saleId, purchaserTin, purchaserName, purchaserAddress[] } → ReceiptDto` (one per sale, numbered `YYMMM_<register>_XXXXX`; audited `tax_invoice.issued`); `{ saleId, widthMm? } → ReceiptDto \| null` | D-02 |
+| `tax_invoice_print` / `tax_invoice_export_pdf` | SalesView | `{ saleId } → PrintJobDto`; `{ saleId, paper } → { path, fileName } \| null` | D-02 |
 | `inventory_overview` / `inventory_history` | InventoryView | | E11-T05 |
 | `inventory_post_document` | InventoryReceive (opening/receipt) / InventoryAdjust (adjustment/write_off) | `InventoryDocumentDraft → DocumentDto` | E11-T02/T03 |
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
 | `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
+| `stock_document_get` | InventoryView | `{ documentId } → { documentNo, docType, reason?, supplierName?, reference?, note?, localTime, actorName, approverName?, lines[] }` | E11-T05 |
 | `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
 | `settings_get` / `settings_update` | SettingsEdit (owner) | `→ [{ key, group, label, help, kind, valueJson, defaultJson, version }]`; `{ key, valueJson, baseVersion } → setting` (unknown key or wrong type: `VALIDATION_FAILED`; stale version: `CONFLICT_VERSION`). Registry and defaults: docs/settings.md (generated) | E04-T03 |
 | `business_profile_get` / `business_profile_update` | SettingsEdit (owner) | `→ BusinessProfileDto` (name, legal name, tax registration no., address lines, phone, email, this till's name; country, time zone, currency and tax mode read-only); `{ input, businessVersion, registerVersion } → BusinessProfileDto`. Only what changed is written; `business.updated` (audit metadata: the names of the changed fields) and `register.upserted` (audit `register.updated` from/to). Invalid input: `VALIDATION_FAILED` with `details.field` (and `details.value` = the maximum length) | E04-T03 |
@@ -337,7 +341,7 @@ catalog.product_created, catalog.product_updated, catalog.product_archived, cata
 tax.config_updated,
 cart.cleared, cart.voided, cart.parked, cart.resumed, cart.parked_discarded, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
 sale.completed, tender.recorded_external, tender.status_changed,
-return.completed, refund.recorded,
+return.completed, refund.recorded, tax_invoice.issued,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
 cash_session.opened, cash_session.closed,

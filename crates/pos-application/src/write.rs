@@ -184,6 +184,13 @@ pub enum WriteOp {
     CloseCashSession {
         closed: pos_domain::cash::ClosedSession,
     },
+    /// Records a tax invoice (D-02): the store gives it the register's next sequence and the
+    /// number `{prefix}{register code}_{seq:05}`, reported in `receipt_numbers` under
+    /// `number_slot` (so its document, inserted after it, carries the number). Local only.
+    InsertTaxInvoice {
+        invoice: crate::records::TaxInvoiceRecord,
+        number_slot: NumberSlot,
+    },
     /// Creates or updates a print job and appends its state change to `print_job_events`
     /// (E13-T06). Local only.
     PutPrintJob {
@@ -329,6 +336,7 @@ impl WriteOp {
             | WriteOp::RebuildStockBalances
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
+            | WriteOp::InsertTaxInvoice { .. }
             | WriteOp::CloseCart { .. }
             | WriteOp::ParkCart { .. }
             | WriteOp::ResumeCart { .. }
@@ -780,6 +788,14 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn insert_tax_invoice(
+        mut self,
+        invoice: crate::records::TaxInvoiceRecord,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertTaxInvoice { invoice, number_slot });
+        self
+    }
     pub fn put_print_job(mut self, job: crate::records::PrintJobRecord, detail: serde_json::Value) -> Self {
         self.ops.push(WriteOp::PutPrintJob { job, detail });
         self
@@ -1026,6 +1042,7 @@ impl WriteSetBuilder {
             | WriteOp::RebuildStockBalances
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
+            | WriteOp::InsertTaxInvoice { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }

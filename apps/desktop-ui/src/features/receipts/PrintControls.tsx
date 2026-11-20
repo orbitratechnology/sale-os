@@ -88,6 +88,7 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
       </div>
       {source.kind === "sale" && source.id && <SavePdf saleId={source.id} returnId={null} />}
       {source.kind === "return" && <SavePdf saleId={null} returnId={source.id} />}
+      {source.kind === "taxInvoice" && <SavePdf saleId={null} returnId={null} taxInvoiceOf={source.id} />}
     </>
   );
 }

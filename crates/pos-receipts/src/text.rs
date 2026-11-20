@@ -2,7 +2,9 @@
 //! 58 mm paper, 48 for 80 mm. The preview shows exactly these lines, and the ESC/POS
 //! encoder prints them, so what the cashier sees is what prints.
 
-use crate::document::{CopyKind, DocumentKind, ReceiptDocument, ZSection, amount, tender_label};
+use crate::document::{
+    CopyKind, DocumentKind, ReceiptDocument, TaxInvoiceSection, ZSection, amount, tender_label,
+};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub const COLUMNS_58MM: usize = 32;
@@ -68,6 +70,31 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
     }
     for l in &doc.header.lines {
         centered(&mut out, l);
+    }
+    if let Some(ti) = &doc.tax_invoice {
+        out.push(TextLine {
+            text: "TAX INVOICE".into(),
+            style: Style::Bold,
+        });
+        if doc.copy == CopyKind::Reprint {
+            centered(&mut out, "*** COPY ***");
+        }
+        if doc.sandbox {
+            centered(&mut out, "*** SANDBOX - PRACTICE ***");
+        }
+        rule(&mut out);
+        render_tax_invoice(&mut out, doc, ti, width);
+        rule(&mut out);
+        centered(&mut out, &doc.barcode);
+        for l in &mut out {
+            if l.style == Style::Centered {
+                l.text = center(&l.text, width);
+            }
+            if l.text == "TAX INVOICE" {
+                l.text = center(&l.text, width);
+            }
+        }
+        return out;
     }
     let refund = doc.kind == DocumentKind::Return;
     if refund {
@@ -317,6 +344,69 @@ fn render_z(out: &mut Vec<TextLine>, doc: &ReceiptDocument, z: &ZSection, width:
     if let Some(n) = &z.note {
         for l in wrap(&format!("Note: {n}"), width) {
             pair(&l, "", Style::Normal);
+        }
+    }
+}
+
+/// The tax invoice's particulars in the gazette's order: supplier, purchaser, invoice, lines
+/// (excluding VAT), totals, mode of payment.
+fn render_tax_invoice(out: &mut Vec<TextLine>, doc: &ReceiptDocument, ti: &TaxInvoiceSection, width: usize) {
+    let m = |v: pos_domain::Money| amount(v, doc.currency_exponent);
+    let mut push = |text: String, style: Style| out.push(TextLine { text, style });
+    let wrapped = |s: &str| wrap(s, width);
+    push(format!("Supplier TIN: {}", ti.supplier_tin), Style::Bold);
+    push("Purchaser".into(), Style::Normal);
+    for l in wrapped(&ti.purchaser_name) {
+        push(l, Style::Normal);
+    }
+    for a in &ti.purchaser_address {
+        for l in wrapped(a) {
+            push(l, Style::Normal);
+        }
+    }
+    push(format!("Purchaser TIN: {}", ti.purchaser_tin), Style::Bold);
+    push("-".repeat(width), Style::Normal);
+    push(
+        columns("Invoice no.", &doc.meta.receipt_number, width),
+        Style::Normal,
+    );
+    push(columns("Date of invoice", &ti.invoice_date, width), Style::Normal);
+    push(columns("Date of supply", &ti.supply_date, width), Style::Normal);
+    push(columns("Receipt", &ti.sale_receipt, width), Style::Normal);
+    push("-".repeat(width), Style::Normal);
+    push(columns("Description", "Excl. VAT", width), Style::Bold);
+    for l in &ti.lines {
+        for d in wrapped(&l.description) {
+            push(d, Style::Normal);
+        }
+        push(
+            columns(
+                &format!("  {} x {}", l.quantity, m(l.unit_price)),
+                &m(l.amount),
+                width,
+            ),
+            Style::Normal,
+        );
+    }
+    push("-".repeat(width), Style::Normal);
+    push(
+        columns("Total value of supply", &m(ti.value_of_supply), width),
+        Style::Normal,
+    );
+    for r in &ti.vat {
+        push(columns(&r.name, &m(r.amount), width), Style::Normal);
+    }
+    push(columns("TOTAL INCL. VAT", &m(ti.total), width), Style::Bold);
+    if !ti.payment.is_empty() {
+        for l in wrapped(&format!("Mode of payment: {}", ti.payment.join(", "))) {
+            push(l, Style::Normal);
+        }
+    }
+    if ti.omitted_lines > 0 {
+        let n = ti.omitted_lines;
+        let s = if n == 1 { "item" } else { "items" };
+        for l in wrapped(&format!("{n} {s} without VAT not on this invoice.")) {
+            push(l, Style::Normal);
         }
     }
 }

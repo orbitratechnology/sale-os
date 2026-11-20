@@ -34,6 +34,7 @@ pub mod setup;
 pub mod staff;
 pub mod stock;
 pub mod sync;
+pub mod tax_invoice;
 pub mod write;
 
 pub use write::{

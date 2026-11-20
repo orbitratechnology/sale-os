@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tax-invoice-get"
+description = "Enables the tax_invoice_get command without any pre-configured scope."
+commands.allow = ["tax_invoice_get"]
+
+[[permission]]
+identifier = "deny-tax-invoice-get"
+description = "Denies the tax_invoice_get command without any pre-configured scope."
+commands.deny = ["tax_invoice_get"]

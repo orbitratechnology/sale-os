@@ -80,6 +80,7 @@ id_type!(
     ConflictId,
     ApprovalId,
     ImportJobId,
+    TaxInvoiceId,
 );
 
 #[cfg(test)]

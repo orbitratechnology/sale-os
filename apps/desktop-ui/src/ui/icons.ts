@@ -26,6 +26,7 @@ export {
   Delete,
   Download,
   FileDown,
+  FileText,
   FlaskConical,
   FolderTree,
   Hash,

@@ -361,16 +361,31 @@ accountant confirm them before anything is built.
 - Firms integrating through the API before the end of 2026 may leave out the `YYMMM_QQQQ_`
   part of the serial number.
 
-**Work this implies (after confirmation)**
+**Work this implies**
 
-1. **A "no VAT" business:** set up without a VAT registration; receipts then show no tax.
-2. **Tax invoices:** a setting for the supplier TIN; at the till, "Tax invoice" asks for the
-   buyer's TIN, name and address. A new `tax_invoice` number counter per register gives
-   `YYMMM_<register code>_XXXXX` (it does not replace the receipt number). Through the E13-T02
-   `ComplianceProfile` hook, an `lk` profile prints and saves the PDF in the gazette's layout,
-   at 80 mm and A4, with goldens.
-3. **Per-document VAT rounding** (`TaxRoundingMode::PerDocument`) for the `lk` profile, with
-   scenarios in the E08-T03 tax suite.
-4. **Retention:** 5 years after the end of the taxable period (E19-T10).
-5. **Optional:** an SSCL estimate line in the daily and Z reports.
+1. **A "no VAT" business:** done before this draft. The setup wizard accepts no tax rates
+   and receipts then show no tax. The wizard now says so, and Sri Lanka's locale guesses
+   LKR.
+2. **Tax invoices:** built 2026-11-20 (status: "Sri Lanka tax invoice").
+   - The supplier TIN is the business's tax registration no. (Settings > Business).
+   - In the sale detail, "Issue tax invoice" asks for the buyer's TIN, name and address.
+   - Each register numbers its own invoices `YYMMM_<register code>_XXXXX`, beside the
+     receipt number. The sequence is never restarted.
+   - It prints, saves as a PDF at receipt width or A4, and is stored immutably with a
+     golden of its layout.
+   - One per sale.
+   - Local to the till for now.
+3. **Per-document VAT rounding** (`TaxRoundingMode::PerDocument`) for Sri Lanka: **not built,
+   waiting for the accountant.**
+   - Today the invoice states the VAT the sale recorded (rounded per line, ADR-004), which can
+     differ by a cent from "value of supply × rate".
+   - If the IRD requires the latter, add the variant and use it for the `lk` profile, with
+     scenarios in the E08-T03 tax suite.
+4. **Retention:** `docs/policies/data-retention.md` now states the five years and what they
+   mean for a till and for the cloud. Nothing is deleted on the till.
+5. **Not built:**
+   - an SSCL estimate line in the reports (optional);
+   - credit and debit notes for a return against an invoiced sale;
+   - syncing tax invoices to the cloud;
+   - e-invoicing (RAMIS).
 

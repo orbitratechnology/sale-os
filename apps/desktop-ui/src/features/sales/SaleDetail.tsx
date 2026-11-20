@@ -12,6 +12,7 @@ import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 import { REASON_LABEL, TENDER_LABEL } from "./labels";
 import { SaleSyncMark } from "../sync/SaleSyncMark";
+import { TaxInvoicePanel } from "./TaxInvoicePanel";
 
 /**
  * One completed sale as recorded (E12-T03): lines, discounts, tax, tenders with who
@@ -189,6 +190,7 @@ export function SaleDetail({
 
         <PrintControls source={{ kind: "sale", id: sale.saleId }} autoPrint={false} />
         {showReceipt && <ReceiptPreview source={{ kind: "sale", id: sale.saleId }} />}
+        <TaxInvoicePanel saleId={sale.saleId} hasVat={sale.taxTotalMinor !== "0"} />
         <div className="actions">
           <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
             {showReceipt ? "Hide receipt" : "Show receipt"}

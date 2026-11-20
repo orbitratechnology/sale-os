@@ -340,6 +340,11 @@ pub trait ReceiptQueries: Send + Sync {
         &self,
         ret: pos_domain::ReturnId,
     ) -> Result<Option<(pos_domain::ReceiptId, String)>, QueryError>;
+    /// The stored tax invoice of a sale (D-02), if one was issued: its document as JSON text.
+    async fn tax_invoice_receipt(
+        &self,
+        sale: pos_domain::SaleId,
+    ) -> Result<Option<(pos_domain::ReceiptId, String)>, QueryError>;
     /// The most recent sale on this register, for "last receipt".
     async fn last_sale(
         &self,

@@ -70,7 +70,14 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
         "tender_status_events",
         "local history; tender.status_changed waits for E10-T04",
     ),
-    ("receipts", "rendered from the sale or return, which travel"),
+    (
+        "receipts",
+        "rendered from the sale or return, which travel (a tax invoice's document stays with it)",
+    ),
+    (
+        "tax_invoices",
+        "D-02: kept on the till for now (backups and the full export carry them); syncing is a follow-up",
+    ),
     ("print_jobs", "this printer"),
     ("print_job_events", "this printer"),
     ("import_jobs", "import staging (the products travel)"),

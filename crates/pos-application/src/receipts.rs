@@ -95,6 +95,8 @@ impl ReceiptService {
 pub enum ReceiptOf {
     Sale(SaleId),
     Return(ReturnId),
+    /// The sale's tax invoice (D-02).
+    TaxInvoice(SaleId),
 }
 
 /// The paper of a PDF: the receipt as printed (the till's paper width), or an A4 page.
@@ -136,6 +138,7 @@ impl ReceiptPdfService {
         let stored = match of {
             ReceiptOf::Sale(id) => self.receipts.sale_receipt(id).await?,
             ReceiptOf::Return(id) => self.receipts.return_receipt(id).await?,
+            ReceiptOf::TaxInvoice(id) => self.receipts.tax_invoice_receipt(id).await?,
         };
         let (receipt_id, json) = stored.ok_or_else(|| {
             AppError::Validation("there is no receipt to save".into(), ErrorCode::ValidationFailed)
@@ -163,11 +166,12 @@ impl ReceiptPdfService {
             .meta
             .receipt_number
             .chars()
-            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
             .collect();
         let kind = match of {
             ReceiptOf::Sale(_) => "receipt",
             ReceiptOf::Return(_) => "refund",
+            ReceiptOf::TaxInvoice(_) => "tax-invoice",
         };
         let suffix = if format == PdfFormat::A4 { "-A4" } else { "" };
         Ok(ReceiptPdf {

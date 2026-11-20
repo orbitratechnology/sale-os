@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tax-invoice-issue"
+description = "Enables the tax_invoice_issue command without any pre-configured scope."
+commands.allow = ["tax_invoice_issue"]
+
+[[permission]]
+identifier = "deny-tax-invoice-issue"
+description = "Denies the tax_invoice_issue command without any pre-configured scope."
+commands.deny = ["tax_invoice_issue"]

@@ -246,6 +246,17 @@ export const commands = {
 	 *  is paid back other than as change. Same approval rule as a return.
 	 */
 	exchangeComplete: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null, cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedExchangeDto, IpcError_Serialize>(__TAURI_INVOKE("exchange_complete", { saleId, lines, reason, note, refunds, approvalTokenId, cartId, revision, tenders })),
+	/**
+	 *  D-02: issues the VAT tax invoice of a sale for a registered buyer (TIN, name, address as
+	 *  on their certificate). One per sale; numbered `YYMMM_<register>_XXXXX`.
+	 */
+	taxInvoiceIssue: (saleId: SaleId, purchaserTin: string, purchaserName: string, purchaserAddress: string[]) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_issue", { saleId, purchaserTin, purchaserName, purchaserAddress })),
+	/**  A sale's tax invoice as issued, for 58 or 80 mm paper; `null` if none was issued. */
+	taxInvoiceGet: (saleId: SaleId, widthMm: number | null) => typedError<ReceiptDto | null, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_get", { saleId, widthMm })),
+	/**  Prints a sale's tax invoice; later copies are marked as copies. */
+	taxInvoicePrint: (saleId: SaleId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_print", { saleId })),
+	/**  Saves a sale's tax invoice as a PDF (receipt width or A4) where the user chooses. */
+	taxInvoiceExportPdf: (saleId: SaleId, paper: PdfPaperDto) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_export_pdf", { saleId, paper })),
 	/**  A return's refund receipt as stored, rendered for 58 or 80 mm paper. */
 	returnReceiptGet: (returnId: ReturnId, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_get", { returnId, widthMm })),
 	/**  Prints a return's refund receipt (later copies are reprints). */

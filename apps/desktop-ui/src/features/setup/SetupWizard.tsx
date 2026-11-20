@@ -189,7 +189,9 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
                 Exclude tax (tax is added at the till)
               </label>
             </fieldset>
-            <p className="small">Up to {MAX_RATES} rates now; more in settings. Leave empty if you do not charge tax.</p>
+            <p className="small">
+              Up to {MAX_RATES} rates now; more in settings. Not registered for VAT? Leave the rates empty: receipts then show no tax.
+            </p>
             {draft.rates.map((r, i) => (
               <div className="row" key={i}>
                 <Field label={`Rate ${i + 1} name`}>

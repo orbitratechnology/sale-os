@@ -59,6 +59,7 @@ actions! {
     TENDER_RECORDED_EXTERNAL = "tender.recorded_external",
     TENDER_STATUS_CHANGED = "tender.status_changed",
     RETURN_COMPLETED = "return.completed",
+    TAX_INVOICE_ISSUED = "tax_invoice.issued",
     REFUND_RECORDED = "refund.recorded",
     INVENTORY_OPENING_POSTED = "inventory.opening_posted",
     INVENTORY_RECEIPT_POSTED = "inventory.receipt_posted",

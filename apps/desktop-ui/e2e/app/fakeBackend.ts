@@ -143,6 +143,8 @@ export interface FakeSale {
   totalMinor: bigint;
   changeMinor: bigint;
   returns: { returnId: string; returnNumber: string; totalMinor: bigint; reason: string; refunds: string[] }[];
+  /** D-02: the tax invoice issued for it, if any. */
+  taxInvoice?: { number: string; purchaserTin: string; purchaserName: string; purchaserAddress: string[] };
 }
 
 export type Preset = "fresh" | "signIn" | "checkout" | "locked";
@@ -1334,6 +1336,48 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const text = ["Corner Shop".padStart(Math.floor((cols + 11) / 2)), "*** REFUND ***", "-".repeat(cols), `Return ${r.number}`, pad("REFUND TOTAL", amount)];
       return { receiptNumber: r.number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t.startsWith("REFUND TOTAL") })) };
     }
+    case "tax_invoice_issue":
+    case "tax_invoice_get": {
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      if (cmd === "tax_invoice_issue") {
+        // The same rules as pos_application::tax_invoice::issue.
+        if (sale.taxInvoice) fail("VALIDATION_FAILED");
+        const tin = String(a.purchaserTin).replace(/[ -]/g, "");
+        if (!/^\d{9}$/.test(tin)) fail("VALIDATION_FAILED");
+        const address = (a.purchaserAddress as string[]).map((l) => l.trim()).filter(Boolean);
+        if (!String(a.purchaserName).trim() || address.length === 0 || address.length > 4) fail("VALIDATION_FAILED");
+        const seq = s.sales.filter((x) => x.taxInvoice).length + 1;
+        sale.taxInvoice = { number: `26NOV_R01_${String(seq).padStart(5, "0")}`, purchaserTin: tin, purchaserName: String(a.purchaserName).trim(), purchaserAddress: address };
+      }
+      const ti = sale.taxInvoice;
+      if (!ti) return null;
+      const cols = a.widthMm === 58 ? 32 : 48;
+      const pad = (l: string, r: string) => l + " ".repeat(Math.max(1, cols - l.length - r.length)) + r;
+      const money = (m: bigint) => `${m / 100n}.${String(m % 100n).padStart(2, "0")}`;
+      const vat = div(sale.totalMinor, 6n);
+      const text = [
+        "TAX INVOICE",
+        "Supplier TIN: 104567890",
+        ti.purchaserName,
+        ...ti.purchaserAddress,
+        `Purchaser TIN: ${ti.purchaserTin}`,
+        pad("Invoice no.", ti.number),
+        pad("Date of invoice", "11/20/2026"),
+        pad("Total value of supply", money(sale.totalMinor - vat)),
+        pad("VAT 20%", money(vat)),
+        pad("TOTAL INCL. VAT", money(sale.totalMinor)),
+      ];
+      return { receiptNumber: ti.number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t === "TAX INVOICE" || t.startsWith("TOTAL") })) };
+    }
+    case "tax_invoice_export_pdf": {
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      if (!sale.taxInvoice) fail("VALIDATION_FAILED");
+      const answer = s.saveAs.length ? s.saveAs.shift() : `tax-invoice-${sale.taxInvoice.number}.pdf`;
+      return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
+    }
+    case "tax_invoice_print":
     case "cash_session_z_print":
     case "return_receipt_print":
     case "receipt_print":
@@ -1342,7 +1386,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       let jobId = String(a.jobId ?? "");
       let job = s.printJobs.get(jobId);
-      if (cmd === "receipt_print" || cmd === "return_receipt_print" || cmd === "cash_session_z_print") {
+      if (cmd === "receipt_print" || cmd === "return_receipt_print" || cmd === "cash_session_z_print" || cmd === "tax_invoice_print") {
         jobId = id();
         job = { status: "queued", reprint: s.printed > 0, errorCode: null, attempts: 0 };
         s.printJobs.set(jobId, job);

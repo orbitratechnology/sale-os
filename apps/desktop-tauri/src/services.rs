@@ -111,6 +111,7 @@ pub(crate) struct Services {
     pub receipts: ReceiptService,
     pub receipt_pdfs: ReceiptPdfService,
     pub returns: ReturnService,
+    pub tax_invoices: pos_application::tax_invoice::TaxInvoiceService,
     pub sales: SalesService,
     pub cash: CashService,
     pub stock: StockService,
@@ -323,6 +324,12 @@ impl AppServices {
                     returns: a.clone(),
                     setup: a.clone(),
                     receipts: a.clone(),
+                    pricing: a.clone(),
+                },
+                tax_invoices: pos_application::tax_invoice::TaxInvoiceService {
+                    store: a.clone(),
+                    receipts: a.clone(),
+                    sales: a.clone(),
                     pricing: a.clone(),
                 },
                 prints: PrintService {

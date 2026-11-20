@@ -79,6 +79,21 @@ impl PrintService {
         self.print_receipt(ctx, receipt).await
     }
 
+    /// Prints a sale's tax invoice (D-02), with the same original/copy rules.
+    pub async fn print_tax_invoice(
+        &self,
+        ctx: &CommandContext,
+        sale: SaleId,
+    ) -> Result<PrintJobRecord, AppError> {
+        ctx.authorize(Permission::SalesView)?;
+        let (receipt, _) = self
+            .receipts
+            .tax_invoice_receipt(sale)
+            .await?
+            .ok_or_else(|| invalid("this sale has no tax invoice"))?;
+        self.print_receipt(ctx, receipt).await
+    }
+
     /// Prints a stored receipt (the caller has checked who may print it).
     pub async fn print_receipt(
         &self,

@@ -9,6 +9,6 @@ pub mod pdf;
 pub mod text;
 
 pub use document::{
-    CONTENT_VERSION, CopyKind, DocumentKind, ReceiptContext, ReceiptDocument, ZContext, ZSection,
-    return_receipt, sale_receipt, z_summary,
+    CONTENT_VERSION, CopyKind, DocumentKind, Meta, ReceiptContext, ReceiptDocument, TaxInvoiceLine,
+    TaxInvoiceSection, ZContext, ZSection, return_receipt, sale_receipt, tax_invoice, z_summary,
 };
