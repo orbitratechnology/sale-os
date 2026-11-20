@@ -80,6 +80,7 @@
     "allow-return-find",
     "allow-return-preview",
     "allow-return-create",
+    "allow-exchange-complete",
     "allow-return-receipt-get",
     "allow-return-receipt-print",
     "allow-receipt-export-pdf",

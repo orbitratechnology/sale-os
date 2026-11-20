@@ -107,6 +107,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::return_find,
         sale_commands::return_preview,
         sale_commands::return_create,
+        sale_commands::exchange_complete,
         sale_commands::return_receipt_get,
         sale_commands::return_receipt_print,
         sale_commands::receipt_export_pdf,

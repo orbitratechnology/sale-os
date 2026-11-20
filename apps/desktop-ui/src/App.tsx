@@ -14,6 +14,7 @@ import { ProductList } from "./features/catalog/ProductList";
 import { CategoriesScreen } from "./features/catalog/CategoriesScreen";
 import { ImportWizard } from "./features/catalog/ImportWizard";
 import { ReturnScreen } from "./features/returns/ReturnScreen";
+import type { ExchangeCredit } from "./features/returns/exchange";
 import { SalesScreen } from "./features/sales/SalesScreen";
 import { DrawerScreen } from "./features/cash/DrawerScreen";
 import { StockScreen } from "./features/stock/StockScreen";
@@ -39,6 +40,8 @@ export function App() {
   const [screen, setScreen] = useState<Screen>({ kind: "till" });
   /** E04-T02: the wizard just finished; the till offers "Getting started" once. */
   const [gettingStarted, setGettingStarted] = useState(false);
+  /** A return taken to the till as credit for new items; recorded when the exchange is settled. */
+  const [exchange, setExchange] = useState<ExchangeCredit | null>(null);
 
   const place: Place = !state ? "loading" : !state.setupComplete || !state.workspace ? "setup" : !state.session || state.session.mustChangePin ? "signIn" : screen.kind;
   useEffect(() => {
@@ -174,6 +177,10 @@ export function App() {
             session={state.session}
             {...(screen.receipt ? { initialReceipt: screen.receipt } : {})}
             onBack={() => setScreen({ kind: "till" })}
+            onExchange={(credit) => {
+              setExchange(credit);
+              setScreen({ kind: "till" });
+            }}
           />
         );
       case "conflicts":
@@ -322,6 +329,8 @@ export function App() {
                 : null
             }
             errorSound={errorSound}
+            exchange={exchange}
+            onExchangeEnd={() => setExchange(null)}
             gettingStarted={gettingStarted}
             onGettingStartedSeen={() => setGettingStarted(false)}
             onConflicts={

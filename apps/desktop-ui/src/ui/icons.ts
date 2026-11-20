@@ -7,6 +7,7 @@
 export {
   ArrowLeft,
   ArrowRight,
+  ArrowRightLeft,
   Ban,
   BadgePercent,
   Banknote,

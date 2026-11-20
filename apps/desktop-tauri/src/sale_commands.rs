@@ -29,7 +29,12 @@ pub async fn catalog_new_product_defaults(
     services: State<'_, AppServices>,
 ) -> Result<crate::dto::NewProductDefaultsDto, IpcError> {
     let ctx = services.context().await?;
-    let d = services.app()?.catalog.new_product_defaults(&ctx).await.map_err(err)?;
+    let d = services
+        .app()?
+        .catalog
+        .new_product_defaults(&ctx)
+        .await
+        .map_err(err)?;
     Ok(crate::dto::NewProductDefaultsDto {
         unit: d.unit.code().to_owned(),
         track_stock: d.track_stock,
@@ -792,6 +797,66 @@ pub async fn return_create(
         .await
         .map(|done| crate::dto::CompletedReturnDto::from_completed(&done))
         .map_err(err);
+    services.settle(token, &res);
+    res
+}
+
+/// An exchange: the return and the sale of the current cart in one transaction. The
+/// returned value pays for the cart (recorded as a cash refund and a cash payment of the same
+/// amount); `tenders` is what the customer pays on top, `refunds` what of the returned value
+/// is paid back other than as change. Same approval rule as a return.
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+pub async fn exchange_complete(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    lines: Vec<crate::dto::ReturnLineInputDto>,
+    reason: pos_domain::returns::ReturnReason,
+    note: Option<String>,
+    refunds: Vec<TenderInputDto>,
+    approval_token_id: Option<ApprovalId>,
+    cart_id: pos_domain::CartId,
+    revision: u32,
+    tenders: Vec<TenderInputDto>,
+) -> Result<crate::dto::CompletedExchangeDto, IpcError> {
+    let lines = lines
+        .into_iter()
+        .map(crate::dto::ReturnLineInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let refunds = refunds
+        .into_iter()
+        .map(TenderInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let tenders = tenders
+        .into_iter()
+        .map(TenderInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let app = services.app()?;
+    let res = pos_application::exchange::complete(
+        &app.returns,
+        &app.checkout,
+        &ctx,
+        pos_application::exchange::CreateExchange {
+            ret: pos_application::returns::CreateReturn {
+                sale_id,
+                lines,
+                reason,
+                note,
+                refunds,
+            },
+            cart_id,
+            revision: u64::from(revision),
+            tenders,
+        },
+    )
+    .await
+    .map(|done| crate::dto::CompletedExchangeDto {
+        ret: crate::dto::CompletedReturnDto::from_completed(&done.ret),
+        sale: CompletedSaleDto::from_completed(&done.sale),
+    })
+    .map_err(err);
     services.settle(token, &res);
     res
 }

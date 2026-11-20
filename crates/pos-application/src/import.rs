@@ -619,10 +619,17 @@ impl ImportService {
     /// How far the commit has got. Each chunk of `CHUNK` products is one transaction, so this
     /// moves a chunk at a time; it reads committed rows, so a commit resumed after a crash
     /// starts where it stopped.
-    pub async fn progress(&self, ctx: &CommandContext, job_id: ImportJobId) -> Result<ImportProgress, AppError> {
+    pub async fn progress(
+        &self,
+        ctx: &CommandContext,
+        job_id: ImportJobId,
+    ) -> Result<ImportProgress, AppError> {
         ctx.authorize(Permission::CatalogImport)?;
         let (rows_done, rows_total) = self.imports.import_progress(job_id).await?;
-        Ok(ImportProgress { rows_done, rows_total })
+        Ok(ImportProgress {
+            rows_done,
+            rows_total,
+        })
     }
 
     /// The rows that were not imported, as CSV: the original columns and an `error` column.

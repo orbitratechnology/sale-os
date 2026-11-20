@@ -548,7 +548,10 @@ async fn only_roles_that_import_may_and_cancel_changes_nothing() {
 #[tokio::test]
 async fn rows_without_a_unit_or_track_stock_take_the_new_product_defaults() {
     let shop = common::shop().await;
-    for (key, value) in [("catalog.default_unit", "\"kg\""), ("catalog.default_track_stock", "false")] {
+    for (key, value) in [
+        ("catalog.default_unit", "\"kg\""),
+        ("catalog.default_track_stock", "false"),
+    ] {
         sqlx::query(
             "INSERT OR REPLACE INTO business_settings (business_id, key, value_json, updated_at)
              SELECT business_id, ?, ?, 0 FROM businesses",

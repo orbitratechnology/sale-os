@@ -23,7 +23,7 @@ use pos_domain::{ErrorCode, Permission, RefundId, ReturnId, ReturnLineId, SaleId
 use serde::Serialize;
 use std::sync::Arc;
 
-const RETURN_NUMBER: NumberSlot = NumberSlot("return");
+pub(crate) const RETURN_NUMBER: NumberSlot = NumberSlot("return");
 
 pub struct ReturnService {
     pub store: Arc<dyn LocalStore>,
@@ -41,6 +41,16 @@ pub struct CreateReturn {
     pub reason: ReturnReason,
     pub note: Option<String>,
     pub refunds: Vec<TenderInput>,
+}
+
+/// A return that passed its checks and was planned, not yet written.
+pub(crate) struct PlannedReturn {
+    /// The return's id, known before it is written (an exchange's sale names it).
+    pub(crate) id: ReturnId,
+    approver: Option<pos_domain::UserId>,
+    sale: ReturnableSale,
+    mode: SaleMode,
+    pub(crate) plan: ReturnPlan,
 }
 
 #[derive(Clone, Debug)]
@@ -99,11 +109,12 @@ impl ReturnService {
         Ok(plan_return(&sale, self.mode().await?, lines)?)
     }
 
-    pub async fn create(
+    /// Checks who may make the return (with the approval rule) and plans it. No writes.
+    pub(crate) async fn plan(
         &self,
         ctx: &CommandContext,
-        input: CreateReturn,
-    ) -> Result<CompletedReturn, AppError> {
+        input: &CreateReturn,
+    ) -> Result<PlannedReturn, AppError> {
         let actor = ctx.actor()?.clone();
         // A cashier needs a manager's approval unless the shop has turned that off.
         let approver = if role_has(actor.role, Permission::ReturnCreate)
@@ -124,7 +135,35 @@ impl ReturnService {
             .ok_or_else(not_found)?;
         let mode = self.mode().await?;
         let plan = plan_return(&sale, mode, &input.lines)?;
-        let refunds = settle_refunds(plan.total, &input.refunds)?;
+        Ok(PlannedReturn {
+            id: ReturnId::generate(ctx.ids.as_ref()),
+            approver,
+            sale,
+            mode,
+            plan,
+        })
+    }
+
+    /// Adds the return's writes to `set`: the return with its lines and `refunds` (already
+    /// settled to the return's total), stock movements, the refund receipt, the audit rows and
+    /// `return.completed`. `exchange` links the audit row to the sale it was exchanged for.
+    pub(crate) async fn stage(
+        &self,
+        ctx: &CommandContext,
+        planned: PlannedReturn,
+        input: CreateReturn,
+        refunds: Vec<pos_domain::settlement::SettledTender>,
+        set: crate::write::WriteSetBuilder,
+        exchange: Option<SaleId>,
+    ) -> Result<(crate::write::WriteSetBuilder, ReturnSnapshot), AppError> {
+        let actor = ctx.actor()?.clone();
+        let PlannedReturn {
+            id,
+            approver,
+            sale,
+            mode,
+            plan,
+        } = planned;
         // Cash paid out in live mode comes from the open drawer session.
         let require_session = mode == SaleMode::Live
             && refunds.iter().any(|r| r.kind.is_cash())
@@ -137,7 +176,7 @@ impl ReturnService {
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
         let ret = ReturnSnapshot {
-            id: ReturnId::generate(ids),
+            id,
             original_sale: sale.sale_id,
             original_receipt_number: sale.receipt_number.clone(),
             reason: input.reason,
@@ -190,13 +229,16 @@ impl ReturnService {
         };
         let event = OutboxDraft::new(ids, "return.completed", 1, aggregate.clone(), None, &payload)?
             .with_receipt_number(RETURN_NUMBER);
-        let mut entry = AuditEntry::new(ids, audit::RETURN_COMPLETED, "return", ret.id).with_metadata(
-            serde_json::json!({
-                "originalSale": ret.original_sale,
-                "totalMinor": ret.total.minor().to_string(),
-                "reason": ret.reason.as_str(),
-            }),
-        );
+        let mut metadata = serde_json::json!({
+            "originalSale": ret.original_sale,
+            "totalMinor": ret.total.minor().to_string(),
+            "reason": ret.reason.as_str(),
+        });
+        if let Some(sale) = exchange {
+            metadata["exchangeSale"] = serde_json::json!(sale);
+        }
+        let mut entry =
+            AuditEntry::new(ids, audit::RETURN_COMPLETED, "return", ret.id).with_metadata(metadata);
         if let Some(a) = approver {
             entry = entry.with_approver(a);
         }
@@ -212,7 +254,7 @@ impl ReturnService {
                 )
             })
             .collect();
-        let mut set = WriteSet::builder(ctx.write_context())
+        let mut set = set
             .allocate_number(Counter::Return, RETURN_NUMBER)
             .insert_return(ret.clone(), RETURN_NUMBER, require_session)
             .append_movements(movements, aggregate)
@@ -228,6 +270,26 @@ impl ReturnService {
         for r in refunds {
             set = set.audit(r);
         }
+        Ok((set, ret))
+    }
+
+    pub async fn create(
+        &self,
+        ctx: &CommandContext,
+        input: CreateReturn,
+    ) -> Result<CompletedReturn, AppError> {
+        let planned = self.plan(ctx, &input).await?;
+        let refunds = settle_refunds(planned.plan.total, &input.refunds)?;
+        let (set, ret) = self
+            .stage(
+                ctx,
+                planned,
+                input,
+                refunds,
+                WriteSet::builder(ctx.write_context()),
+                None,
+            )
+            .await?;
         let applied = self.store.apply(set.build()?).await?;
         let return_number = applied
             .receipt_numbers

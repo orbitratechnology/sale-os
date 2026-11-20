@@ -123,11 +123,19 @@ impl StockQueries for SqliteStore {
         .fetch_optional(self.db().readers())
         .await
         .map_err(q)?;
-        let Some((no, doc_type, reason, supplier, reference, note, at, actor, approver, zone)) = head
-        else {
+        let Some((no, doc_type, reason, supplier, reference, note, at, actor, approver, zone)) = head else {
             return Ok(None);
         };
-        type Line = (String, String, String, Option<String>, String, String, i64, Option<i64>);
+        type Line = (
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            i64,
+            Option<i64>,
+        );
         let lines: Vec<Line> = sqlx::query_as(
             "SELECT m.variant_id, p.name, v.label, v.sku, m.movement_type, m.bucket, m.quantity_delta_milli, m.unit_cost_minor
              FROM stock_movements m
@@ -145,7 +153,11 @@ impl StockQueries for SqliteStore {
             .map(|(v, name, label, sku, kind, bucket, delta, cost)| {
                 Ok(pos_application::records::StockDocumentLine {
                     variant_id: v.parse().map_err(q)?,
-                    name: if label.is_empty() { name } else { format!("{name} · {label}") },
+                    name: if label.is_empty() {
+                        name
+                    } else {
+                        format!("{name} · {label}")
+                    },
                     sku,
                     movement_type: kind,
                     bucket,

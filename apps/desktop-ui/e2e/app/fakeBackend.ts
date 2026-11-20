@@ -769,6 +769,24 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         })),
       };
     }
+    case "exchange_complete": {
+      // The same rules as pos_application::exchange::complete; Rust records both in one
+      // transaction, the fake checks everything before writing either.
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      approve(s, "return_create", null, a.approvalTokenId, sale.saleId);
+      const plan = handle(s, "return_preview", { saleId: a.saleId, lines: a.lines }) as { totalMinor: string };
+      const refunds = a.refunds as { kind: string; amountMinor: string; reference: string | null }[];
+      const tenders = a.tenders as { kind: string; amountMinor: string; reference: string | null }[];
+      const credit = BigInt(plan.totalMinor) - refunds.reduce((t, r) => t + BigInt(r.amountMinor), 0n);
+      if (credit <= 0n) fail("VALIDATION_FAILED");
+      if (tenders.length > 0 && credit >= BigInt(view(s).totalMinor)) fail("VALIDATION_FAILED");
+      const cash = { kind: "cash", amountMinor: credit.toString(), reference: null };
+      const sold = handle(s, "checkout_complete", { cartId: a.cartId, revision: a.revision, tenders: [cash, ...tenders] });
+      const ret = handle(s, "exchange_return", { ...a, refunds: [cash, ...refunds] });
+      return { return: ret, sale: sold };
+    }
+    case "exchange_return":
     case "return_preview":
     case "return_create": {
       needSession(s);

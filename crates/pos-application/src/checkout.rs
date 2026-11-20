@@ -73,8 +73,33 @@ impl CheckoutService {
         ctx: &CommandContext,
         input: CompleteSale,
     ) -> Result<CompletedSale, AppError> {
+        self.authorize_tenders(ctx, &input.tenders).await?;
+        // Hold the cart lock: no scan or edit can slip in between pricing and commit.
+        let _guard = self.carts.exclusive().await;
+        let view = self.priced_cart(ctx, input.cart_id, input.revision).await?;
+        let policy = PricingPolicy::new(view.settings.tax_mode);
+        let settlement = settle(view.priced.total, &input.tenders, &policy)?;
+        let (b, staged) = self
+            .stage_sale(
+                ctx,
+                view,
+                settlement,
+                WriteSet::builder(ctx.write_context()),
+                None,
+            )
+            .await?;
+        let applied = self.store.apply(b.build()?).await?;
+        staged.completed(&applied, 0)
+    }
+
+    /// May this person complete a sale with these tenders?
+    pub(crate) async fn authorize_tenders(
+        &self,
+        ctx: &CommandContext,
+        tenders: &[TenderInput],
+    ) -> Result<(), AppError> {
         ctx.authorize(Permission::SaleComplete)?;
-        if input.tenders.iter().any(|t| !t.kind.is_cash()) {
+        if tenders.iter().any(|t| !t.kind.is_cash()) {
             ctx.authorize(Permission::ExternalTenderRecord)?;
             // The shop may keep card and other external payments to managers and owners.
             if ctx.actor()?.role == pos_domain::Role::Cashier && !self.setup.cashier_external_tender().await?
@@ -82,11 +107,18 @@ impl CheckoutService {
                 return Err(AppError::PermissionDenied(Permission::ExternalTenderRecord));
             }
         }
-        let actor = ctx.actor()?.clone();
-        // Hold the cart lock: no scan or edit can slip in between pricing and commit.
-        let _guard = self.carts.exclusive().await;
+        Ok(())
+    }
+
+    /// The cart the cashier saw (`cart_id` at `revision`), priced. Call with the cart lock held.
+    pub(crate) async fn priced_cart(
+        &self,
+        ctx: &CommandContext,
+        cart_id: CartId,
+        revision: u64,
+    ) -> Result<crate::cart::CartView, AppError> {
         let Loaded { cart, base, .. } = self.carts.load(ctx).await?;
-        if base.is_none() || cart.id != input.cart_id || cart.revision != input.revision {
+        if base.is_none() || cart.id != cart_id || cart.revision != revision {
             return Err(AppError::Validation(
                 "the cart changed since it was shown; check it and pay again".into(),
                 ErrorCode::CartRevisionMismatch,
@@ -98,10 +130,22 @@ impl CheckoutService {
                 ErrorCode::CartEmpty,
             ));
         }
+        self.carts.view(ctx, cart, Vec::new()).await
+    }
 
-        let view = self.carts.view(ctx, cart.clone(), Vec::new()).await?;
-        let policy = PricingPolicy::new(view.settings.tax_mode);
-        let settlement = settle(view.priced.total, &input.tenders, &policy)?;
+    /// Adds the sale's writes to `b`: the receipt number, sale, receipt, stock movements,
+    /// closing the cart, the audit rows and `sale.completed`. `exchange` links the audit row
+    /// to the return it was exchanged for.
+    pub(crate) async fn stage_sale(
+        &self,
+        ctx: &CommandContext,
+        view: crate::cart::CartView,
+        settlement: pos_domain::settlement::Settlement,
+        b: crate::write::WriteSetBuilder,
+        exchange: Option<pos_domain::ReturnId>,
+    ) -> Result<(crate::write::WriteSetBuilder, StagedSale), AppError> {
+        let actor = ctx.actor()?.clone();
+        let cart = view.cart.clone();
         let mode = match self.setup.device_identity().await?.map(|d| d.mode) {
             Some(RegisterMode::Live) => SaleMode::Live,
             _ => SaleMode::Sandbox,
@@ -149,16 +193,20 @@ impl CheckoutService {
         let require_session = mode == SaleMode::Live && self.setup.cash_session_required().await?;
         let event = OutboxDraft::new(ids, "sale.completed", 1, aggregate.clone(), None, &payload)?
             .with_receipt_number(RECEIPT);
+        let mut metadata = serde_json::json!({
+            "totalMinor": sale.total.minor().to_string(),
+            "lines": sale.lines.len(),
+            "tenders": sale.tenders.iter().map(|t| t.tender.kind.as_str()).collect::<Vec<_>>(),
+        });
+        if let Some(ret) = exchange {
+            metadata["exchangeReturn"] = serde_json::json!(ret);
+        }
         let mut completed =
-            AuditEntry::new(ids, audit::SALE_COMPLETED, "sale", sale.id).with_metadata(serde_json::json!({
-                "totalMinor": sale.total.minor().to_string(),
-                "lines": sale.lines.len(),
-                "tenders": sale.tenders.iter().map(|t| t.tender.kind.as_str()).collect::<Vec<_>>(),
-            }));
+            AuditEntry::new(ids, audit::SALE_COMPLETED, "sale", sale.id).with_metadata(metadata);
         if let Some(a) = sale.approver {
             completed = completed.with_approver(a);
         }
-        let mut b = WriteSet::builder(ctx.write_context())
+        let mut b = b
             .allocate_number(Counter::Receipt, RECEIPT)
             .insert_sale(sale.clone(), RECEIPT, require_session)
             .insert_receipt(
@@ -190,19 +238,48 @@ impl CheckoutService {
                 ),
             );
         }
-        let applied = self.store.apply(b.build()?).await?;
+        Ok((
+            b,
+            StagedSale {
+                sale,
+                negative,
+                auto_print: info.auto_print,
+            },
+        ))
+    }
+}
+
+/// A sale's writes staged in a write set; [`StagedSale::completed`] reads its number after
+/// the apply.
+pub(crate) struct StagedSale {
+    pub(crate) sale: SaleSnapshot,
+    negative: Vec<NegativeStockFlag>,
+    auto_print: bool,
+}
+
+impl StagedSale {
+    /// `event_index`: the position of `sale.completed` among the write set's outbox events.
+    pub(crate) fn completed(
+        self,
+        applied: &crate::write::AppliedWriteSet,
+        event_index: usize,
+    ) -> Result<CompletedSale, AppError> {
         let receipt_number = applied
             .receipt_numbers
             .get(&RECEIPT)
             .cloned()
             .ok_or_else(|| AppError::Internal("the store did not report the receipt number".into()))?;
-        let outbox_sequence = applied.outbox.first().map(|(_, seq)| *seq).unwrap_or_default();
+        let outbox_sequence = applied
+            .outbox
+            .get(event_index)
+            .map(|(_, seq)| *seq)
+            .unwrap_or_default();
         Ok(CompletedSale {
-            sale,
+            sale: self.sale,
             receipt_number,
             outbox_sequence,
-            negative_stock: negative,
-            auto_print: info.auto_print,
+            negative_stock: self.negative,
+            auto_print: self.auto_print,
         })
     }
 }

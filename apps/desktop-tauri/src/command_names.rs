@@ -75,6 +75,7 @@ pub const COMMANDS: &[&str] = &[
     "return_find",
     "return_preview",
     "return_create",
+    "exchange_complete",
     "return_receipt_get",
     "return_receipt_print",
     "receipt_export_pdf",

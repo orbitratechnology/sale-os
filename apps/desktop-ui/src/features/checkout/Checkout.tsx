@@ -25,6 +25,7 @@ import {
   TriangleExclamationPoint,
   Undo2,
   Wallet,
+  ArrowRightLeft,
 } from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
@@ -43,6 +44,7 @@ import { RecoveryDialog } from "./RecoveryDialog";
 import { errorBeep } from "../../lib/beep";
 import { GettingStarted } from "../setup/GettingStarted";
 import { PaymentPanel } from "./PaymentPanel";
+import type { ExchangeCredit } from "../returns/exchange";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
 import { useCart } from "./useCart";
@@ -107,7 +109,13 @@ export function Checkout({
   gettingStarted = false,
   onGettingStartedSeen,
   errorSound = true,
+  exchange = null,
+  onExchangeEnd,
 }: {
+  /** A return brought here as credit for new items (from the return screen). */
+  exchange?: ExchangeCredit | null;
+  /** The exchange was settled or cancelled. */
+  onExchangeEnd?: () => void;
   /**
    * The till stays mounted while another screen is open (coming back is then instant). While
    * inactive it is hidden: no scanning, no keys, no dialogs; on return it refreshes its data.
@@ -561,6 +569,19 @@ export function Checkout({
             </button>
           </div>
         </div>
+        {exchange && (
+          <div className="exchange-banner" role="status" data-testid="exchange-banner">
+            <ArrowRightLeft />
+            <p>
+              <strong>Exchange</strong> · {exchange.items} from <span className="mono">{exchange.receiptNumber}</span>
+              <br />
+              Credit <strong>{formatMoney(exchange.creditMinor, { exponent: workspace.currencyExponent })}</strong> towards the new items
+            </p>
+            <button type="button" className="link" onClick={onExchangeEnd}>
+              Cancel exchange
+            </button>
+          </div>
+        )}
         {drawerNeeded && (
           <p role="status" className="drawer-needed">
             <TriangleExclamationPoint />
@@ -586,8 +607,8 @@ export function Checkout({
           }
         />
         <button type="button" className="pay" disabled={!hasLines} onClick={() => setModal("pay")}>
-          <Wallet />
-          Pay <kbd>F9</kbd>
+          {exchange ? <ArrowRightLeft /> : <Wallet />}
+          {exchange ? "Settle exchange" : "Pay"} <kbd>F9</kbd>
         </button>
       </aside>
 
@@ -596,9 +617,12 @@ export function Checkout({
       {shown === "pay" && cart && (
         <PaymentPanel
           cart={cart}
+          exchange={exchange}
+          requesterId={session.userId}
           onClose={() => setModal(null)}
           onDone={() => {
             setModal(null);
+            if (exchange) onExchangeEnd?.();
             void c.refresh();
           }}
         />

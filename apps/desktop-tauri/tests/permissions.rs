@@ -330,6 +330,14 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}],
                    "reason": "changed_mind", "note": null, "refunds": [{"kind": "cash", "amountMinor": "100", "reference": null}], "approvalTokenId": null}),
         ),
+        // Same rule as a return: a cashier gets APPROVAL_REQUIRED.
+        (
+            "exchange_complete",
+            Perm(ReturnCreate),
+            json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}],
+                   "reason": "wrong_item", "note": null, "refunds": [], "approvalTokenId": null,
+                   "cartId": UNKNOWN_ID, "revision": 1, "tenders": []}),
+        ),
         (
             "return_receipt_get",
             Perm(SalesView),
@@ -1340,11 +1348,17 @@ fn a_products_import_over_ipc() {
         (Some(22), Some(20))
     );
     let before = invoke(&w, "import_products_progress", json!({"jobId": job})).unwrap();
-    assert_eq!((before["rowsDone"].as_u64(), before["rowsTotal"].as_u64()), (Some(0), Some(22)));
+    assert_eq!(
+        (before["rowsDone"].as_u64(), before["rowsTotal"].as_u64()),
+        (Some(0), Some(22))
+    );
     let done = invoke(&w, "import_products_commit", json!({"jobId": job})).unwrap();
     assert_eq!(done["productsCreated"], 20);
     let after = invoke(&w, "import_products_progress", json!({"jobId": job})).unwrap();
-    assert_eq!((after["rowsDone"].as_u64(), after["rowsTotal"].as_u64()), (Some(22), Some(22)));
+    assert_eq!(
+        (after["rowsDone"].as_u64(), after["rowsTotal"].as_u64()),
+        (Some(22), Some(22))
+    );
     let list = invoke(
         &w,
         "product_list",

@@ -51,9 +51,9 @@ async fn another_register_pulls_the_day_in_pages_and_resumes_from_its_cursor() {
             break;
         }
     }
-    // 24 master changes (business, location, register, staff, a rate, a category, 14
+    // 26 master changes (business, location, register, staff, a rate, a category, 16
     // settings, 4 products) and 19 facts; the audit-free day has nothing else.
-    assert_eq!(seen.len(), 43);
+    assert_eq!(seen.len(), 45);
     assert_eq!(pages, 5);
     let seqs: Vec<i64> = seen.iter().map(|c| c.server_seq).collect();
     assert!(seqs.windows(2).all(|w| w[0] < w[1]), "in feed order: {seqs:?}");
@@ -100,8 +100,8 @@ async fn a_bootstrap_pages_through_every_aggregate_and_resumes_from_a_token() {
         token = page.next_page;
     }
     // Business, location, register 1 (register 2 has no snapshot yet), a rate, a category,
-    // 14 settings, the owner and 4 products; references first.
-    assert_eq!(entities.len(), 24);
+    // 16 settings, the owner and 4 products; references first.
+    assert_eq!(entities.len(), 26);
     let types: Vec<&str> = entities.iter().map(|e| e.aggregate_type.as_str()).collect();
     assert_eq!(&types[..3], ["business", "location", "register"]);
     assert_eq!(*types.last().unwrap(), "product");
@@ -109,7 +109,7 @@ async fn a_bootstrap_pages_through_every_aggregate_and_resumes_from_a_token() {
         .iter()
         .map(|e| (e.aggregate_type.as_str(), e.aggregate_id.as_str()))
         .collect();
-    assert_eq!(ids.len(), 24, "no aggregate twice");
+    assert_eq!(ids.len(), 26, "no aggregate twice");
     for e in &entities {
         assert!(e.version >= 1);
         pos_sync::parse_payload(&e.event_type, e.schema_version, &e.snapshot).unwrap();

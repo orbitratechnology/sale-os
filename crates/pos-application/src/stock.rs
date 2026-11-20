@@ -69,15 +69,12 @@ impl StockService {
         document: pos_domain::InventoryDocumentId,
     ) -> Result<crate::records::StockDocumentView, AppError> {
         ctx.authorize(Permission::InventoryView)?;
-        self.stock
-            .stock_document(document)
-            .await?
-            .ok_or_else(|| {
-                AppError::Validation(
-                    "no such stock document on this device".into(),
-                    pos_domain::ErrorCode::ValidationFailed,
-                )
-            })
+        self.stock.stock_document(document).await?.ok_or_else(|| {
+            AppError::Validation(
+                "no such stock document on this device".into(),
+                pos_domain::ErrorCode::ValidationFailed,
+            )
+        })
     }
 
     /// E11-T06 verify: balances that differ from their movements. Empty is healthy.

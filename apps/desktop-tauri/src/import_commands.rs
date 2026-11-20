@@ -3,7 +3,8 @@
 
 use crate::app_commands::err;
 use crate::dto::{
-    ImportCommitDto, ImportPreviewDto, ImportProgressDto, ImportSummaryDto, MappingEntryDto, OnDuplicateDto, SavedFileDto,
+    ImportCommitDto, ImportPreviewDto, ImportProgressDto, ImportSummaryDto, MappingEntryDto, OnDuplicateDto,
+    SavedFileDto,
 };
 use crate::{AppServices, IpcError};
 use pos_domain::{ImportJobId, Permission};
@@ -98,7 +99,12 @@ pub async fn import_products_progress(
     job_id: ImportJobId,
 ) -> Result<ImportProgressDto, IpcError> {
     let ctx = services.context().await?;
-    let p = services.app()?.imports.progress(&ctx, job_id).await.map_err(err)?;
+    let p = services
+        .app()?
+        .imports
+        .progress(&ctx, job_id)
+        .await
+        .map_err(err)?;
     Ok(ImportProgressDto {
         rows_done: p.rows_done,
         rows_total: p.rows_total,

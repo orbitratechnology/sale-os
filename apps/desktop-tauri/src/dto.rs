@@ -1035,6 +1035,15 @@ impl ReturnPlanDto {
     }
 }
 
+/// An exchange's two records.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletedExchangeDto {
+    #[serde(rename = "return")]
+    pub ret: CompletedReturnDto,
+    pub sale: CompletedSaleDto,
+}
+
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletedReturnDto {

@@ -797,6 +797,92 @@ describe("returns (E12-T04)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 
+  it("an exchange: colas back, other items taken, only the difference paid; both recorded together", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await sellThreeColas(page);
+
+    // Two colas (2.40) come back; nothing is recorded on this screen.
+    await findSale(page, "R01-000001");
+    await page.getByText("Sale R01-000001").waitFor();
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("2");
+    await page.getByTestId("refund-total").filter({ hasText: "2.40" }).waitFor();
+    await page.getByLabel("Reason").selectOption("wrong_item");
+    await page.getByRole("button", { name: "Exchange for other items" }).click();
+    const banner = page.getByTestId("exchange-banner");
+    await banner.waitFor();
+    expect(await banner.textContent()).toContain("Cola 330ml ×2 from R01-000001");
+    expect(await banner.textContent()).toContain("Credit 2.40");
+    expect(await calls(page, "return_create")).toEqual([]);
+
+    // Three bags of crisps (2.55): 0.15 to pay.
+    for (let i = 0; i < 3; i++) await scan(page, CRISPS);
+    await page.waitForFunction(() => document.querySelector("[data-testid=cart-line] [data-testid=qty]")?.textContent === "3");
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Settle the exchange" });
+    expect(await pay.getByTestId("exchange-credit").textContent()).toBe("-2.40");
+    expect(await pay.getByTestId("remaining").textContent()).toBe("0.15");
+    await page.keyboard.press("Enter"); // exact cash
+
+    // A cashier: the manager approves the return part.
+    const approval = page.getByRole("dialog", { name: "Manager approval" });
+    await approval.getByText("a return").waitFor();
+    await approval.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+
+    const done = page.getByRole("dialog", { name: "Exchange completed" });
+    await done.waitFor();
+    expect(await done.getByTestId("exchange-return").textContent()).toContain("R01-R-000001");
+    // Focus starts on "New sale", so Enter finishes.
+    await page.waitForFunction(() => document.activeElement?.textContent?.startsWith("New sale") === true);
+    await done.getByText("R01-000002").waitFor();
+    const sent = await calls(page, "exchange_complete");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({
+      lines: [{ quantityMilli: "2000", disposition: "restock" }],
+      reason: "wrong_item",
+      refunds: [],
+      tenders: [{ kind: "cash", amountMinor: "15", reference: null }],
+      approvalTokenId: expect.any(String),
+    });
+    expect(await calls(page, "checkout_complete")).toHaveLength(1); // the colas, not the exchange
+    await page.keyboard.press("Enter");
+    await done.waitFor({ state: "detached" });
+    // The exchange is over: the banner is gone and Pay is Pay again.
+    expect(await page.getByTestId("exchange-banner").count()).toBe(0);
+    await page.getByRole("button", { name: /^Pay/ }).waitFor();
+  });
+
+  it("the returned value covers the new items: the rest is given back; cancelling records nothing", async () => {
+    const page = await checkout();
+    await sellThreeColas(page);
+    await findSale(page, "R01-000001");
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("3");
+    await page.getByTestId("refund-total").filter({ hasText: "3.60" }).waitFor();
+    await page.getByRole("button", { name: "Exchange for other items" }).click();
+    // Changed their mind: nothing was recorded.
+    await page.getByTestId("exchange-banner").getByRole("button", { name: "Cancel exchange" }).click();
+    expect(await page.getByTestId("exchange-banner").count()).toBe(0);
+
+    await findSale(page, "R01-000001");
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("3");
+    await page.getByTestId("refund-total").filter({ hasText: "3.60" }).waitFor();
+    await page.getByRole("button", { name: "Exchange for other items" }).click();
+    await scan(page, CRISPS); // 0.85
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Settle the exchange" });
+    expect(await pay.getByTestId("give-back").textContent()).toBe("2.75");
+    await pay.getByRole("button", { name: "Complete exchange" }).click();
+    const done = page.getByRole("dialog", { name: "Exchange completed" });
+    expect(await done.getByTestId("change").textContent()).toBe("2.75");
+    expect((await calls(page, "exchange_complete"))[0]).toMatchObject({ refunds: [], tenders: [] });
+  });
+
   it("an owner refunds to a card with no approval; the screen passes axe", async () => {
     const page = await checkout();
     await sellThreeColas(page);

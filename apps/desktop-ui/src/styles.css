@@ -775,6 +775,27 @@
     block-size: var(--icon);
     margin-block-start: 0.0625rem;
   }
+  /* An exchange in progress at the till: the credit and what came back. */
+  .exchange-banner {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: flex-start;
+    margin: 0;
+    padding: var(--sp-3);
+    border-radius: var(--r-lg);
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    font-size: var(--fs-sm);
+  }
+  .exchange-banner > .lucide {
+    flex: none;
+    inline-size: var(--icon-lg);
+    block-size: var(--icon-lg);
+  }
+  .exchange-banner p {
+    margin: 0;
+    flex: 1;
+  }
   .drawer-needed button.link {
     color: inherit;
   }

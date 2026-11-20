@@ -2,8 +2,10 @@ import { Modal } from "../../ui/Modal";
 import type { LucideIcon } from "lucide-react";
 import { Banknote, CircleCheck, CreditCard, Landmark, QrCode, Wallet } from "../../ui/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { commands, type CartView, type IpcError } from "../../ipc";
-import type { CompletedSaleDto, TenderKind } from "../../ipc/bindings";
+import { commands, type ApprovalScope, type CartView, type IpcError } from "../../ipc";
+import type { CompletedReturnDto, CompletedSaleDto, TenderKind } from "../../ipc/bindings";
+import { ApprovalDialog } from "../auth/ApprovalDialog";
+import type { ExchangeCredit } from "../returns/exchange";
 import { scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { PrintControls } from "../receipts/PrintControls";
@@ -36,10 +38,19 @@ const label = (k: TenderKind) => (k === "cash" ? "Cash" : (METHODS.find((m) => m
  */
 export function PaymentPanel({
   cart,
+  exchange = null,
+  requesterId,
   onDone,
   onClose,
 }: {
   cart: CartView;
+  /**
+   * Settling an exchange: the returned value pays first; the customer pays only the rest, or
+   * gets the difference back as change. The return and the sale are recorded together.
+   */
+  exchange?: ExchangeCredit | null;
+  /** Who asks when a manager must approve (a cashier's exchange, like a return). */
+  requesterId: string;
   /** After the cashier closes the "completed" view. */
   onDone: () => void;
   onClose: () => void;
@@ -51,12 +62,18 @@ export function PaymentPanel({
   const [error, setError] = useState<IpcError | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<CompletedSaleDto | null>(null);
+  const [returned, setReturned] = useState<CompletedReturnDto | null>(null);
+  const [approval, setApproval] = useState<{ scope: ApprovalScope; tenders: Tender[] } | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const cashInput = useRef<HTMLInputElement | null>(null);
   const exp = cart.currencyExponent;
   const money = (minor: bigint | string) => formatMoney(minor.toString(), { exponent: exp });
 
-  const total = BigInt(cart.totalMinor);
+  const credit = exchange ? BigInt(exchange.creditMinor) : 0n;
+  // What the customer pays: the new items less what came back (never below zero; the
+  // difference the other way is given back as change).
+  const total = BigInt(cart.totalMinor) > credit ? BigInt(cart.totalMinor) - credit : 0n;
+  const giveBack = credit > BigInt(cart.totalMinor) ? credit - BigInt(cart.totalMinor) : 0n;
   const paid = tenders.reduce((a, t) => a + BigInt(t.amountMinor), 0n);
   const remaining = total - paid > 0n ? total - paid : 0n;
   const change = paid > total ? paid - total : 0n;
@@ -69,6 +86,7 @@ export function PaymentPanel({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (approval) return; // the approval dialog owns Esc while open
         e.preventDefault();
         e.stopPropagation();
         if (done) onDone();
@@ -78,16 +96,40 @@ export function PaymentPanel({
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [done, method, onClose, onDone]);
+  }, [approval, done, method, onClose, onDone]);
 
-  async function complete(list: Tender[]) {
+  async function complete(list: Tender[], approvalTokenId: string | null = null) {
     setBusy(true);
     setError(null);
+    if (exchange) {
+      const x = exchange;
+      const res = await commands.exchangeComplete(x.saleId, x.lines, x.reason, x.note, [], approvalTokenId, cart.cartId, cart.revision, list);
+      setBusy(false);
+      if (res.status === "ok") {
+        setReturned(res.data.return);
+        return setDone(res.data.sale);
+      }
+      if (res.error.code === "APPROVAL_REQUIRED" && res.error.details?.scope) return setApproval({ scope: res.error.details.scope, tenders: list });
+      return setError(res.error);
+    }
     const res = await commands.checkoutComplete(cart.cartId, cart.revision, list);
     setBusy(false);
     if (res.status === "ok") setDone(res.data);
     else setError(res.error);
   }
+
+  const approvalDialog = approval && (
+    <ApprovalDialog
+      scope={approval.scope}
+      requesterId={requesterId}
+      onCancel={() => setApproval(null)}
+      onApproved={(token) => {
+        const list = approval.tenders;
+        setApproval(null);
+        void complete(list, token);
+      }}
+    />
+  );
 
   /** Cash: an empty field means "exact"; Enter then completes (the cash-exact flow). */
   function addCash(e: FormEvent) {
@@ -118,11 +160,17 @@ export function PaymentPanel({
 
   if (done) {
     return (
-      <Modal label="Sale completed" className="pay-done">
+      // Its own key: a new dialog, so focus starts on "New sale" (Enter), not on the page.
+      <Modal key="done" label={returned ? "Exchange completed" : "Sale completed"} className="pay-done">
           <span className="done-icon">
             <CircleCheck />
           </span>
-          <p className="small">Change due</p>
+          {returned && (
+            <p data-testid="exchange-return">
+              Return <strong className="mono">{returned.returnNumber}</strong> · {money(returned.totalMinor)} back, spent on the new items
+            </p>
+          )}
+          <p className="small">{returned ? "Give back" : "Change due"}</p>
           <output className="change-amount" data-testid="change">
             {money(done.changeMinor)}
           </output>
@@ -141,6 +189,7 @@ export function PaymentPanel({
             </p>
           )}
           <PrintControls source={{ kind: "sale", id: done.saleId }} autoPrint={done.autoPrint} />
+          {returned && <PrintControls source={{ kind: "return", id: returned.returnId }} autoPrint={false} />}
           {showReceipt && <ReceiptPreview source={{ kind: "sale", id: done.saleId }} />}
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
@@ -155,10 +204,18 @@ export function PaymentPanel({
   }
 
   return (
-    <Modal label="Payment" className="pay">
+    <Modal key="pay" label={exchange ? "Settle the exchange" : "Payment"} className="pay">
+        {exchange && (
+          <dl className="totals" aria-label="Exchange">
+            <dt>New items</dt>
+            <dd>{money(cart.totalMinor)}</dd>
+            <dt>Returned ({exchange.receiptNumber})</dt>
+            <dd data-testid="exchange-credit">-{money(credit)}</dd>
+          </dl>
+        )}
         <div className="pay-head">
           <div>
-            <p className="small">Total</p>
+            <p className="small">{exchange ? "To pay" : "Total"}</p>
             <output className="pay-total">{money(total)}</output>
           </div>
           <div>
@@ -171,6 +228,14 @@ export function PaymentPanel({
             <div>
               <p className="small">Change</p>
               <output className="pay-remaining">{money(change)}</output>
+            </div>
+          )}
+          {giveBack > 0n && (
+            <div>
+              <p className="small">Give back (cash)</p>
+              <output className="pay-remaining" data-testid="give-back">
+                {money(giveBack)}
+              </output>
             </div>
           )}
         </div>
@@ -250,10 +315,18 @@ export function PaymentPanel({
           <button type="button" className="secondary" onClick={onClose} disabled={busy}>
             Back to cart <kbd>Esc</kbd>
           </button>
-          <button type="button" disabled={busy || remaining > 0n || tenders.length === 0} onClick={() => void complete(tenders)}>
-            {busy ? "Saving…" : "Complete sale"}
-          </button>
+          {exchange && total === 0n ? (
+            // The returned value covers the new items: nothing to pay, only a difference to give back.
+            <button type="button" data-autofocus disabled={busy} onClick={() => void complete([])}>
+              {busy ? "Saving…" : "Complete exchange"}
+            </button>
+          ) : (
+            <button type="button" disabled={busy || remaining > 0n || tenders.length === 0} onClick={() => void complete(tenders)}>
+              {busy ? "Saving…" : exchange ? "Complete exchange" : "Complete sale"}
+            </button>
+          )}
         </div>
+        {approvalDialog}
     </Modal>
   );
 }

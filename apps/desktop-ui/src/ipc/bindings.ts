@@ -239,6 +239,13 @@ export const commands = {
 	 *  carries the scope) unless the shop turned that off.
 	 */
 	returnCreate: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null) => typedError<CompletedReturnDto, IpcError_Serialize>(__TAURI_INVOKE("return_create", { saleId, lines, reason, note, refunds, approvalTokenId })),
+	/**
+	 *  An exchange: the return and the sale of the current cart in one transaction. The
+	 *  returned value pays for the cart (recorded as a cash refund and a cash payment of the same
+	 *  amount); `tenders` is what the customer pays on top, `refunds` what of the returned value
+	 *  is paid back other than as change. Same approval rule as a return.
+	 */
+	exchangeComplete: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null, cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedExchangeDto, IpcError_Serialize>(__TAURI_INVOKE("exchange_complete", { saleId, lines, reason, note, refunds, approvalTokenId, cartId, revision, tenders })),
 	/**  A return's refund receipt as stored, rendered for 58 or 80 mm paper. */
 	returnReceiptGet: (returnId: ReturnId, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_get", { returnId, widthMm })),
 	/**  Prints a return's refund receipt (later copies are reprints). */
@@ -1067,6 +1074,12 @@ export type CloudSalesReportDto_Serialize = {
 
 /**  What a column of the file means. */
 export type Column = "name" | "variant" | "parent_sku" | "sku" | "barcode" | "price" | "cost" | "unit" | "tax_category" | "category" | "track_stock" | "low_stock_threshold" | "scan_quantity" | "status";
+
+/**  An exchange's two records. */
+export type CompletedExchangeDto = {
+	return: CompletedReturnDto,
+	sale: CompletedSaleDto,
+};
 
 export type CompletedReturnDto = {
 	returnId: ReturnId,
