@@ -1074,6 +1074,7 @@ components:
             - CASH_SESSION_ALREADY_OPEN
             - PRINT_ADAPTER_UNAVAILABLE
             - PRINT_UNKNOWN_OUTCOME
+            - DEVICE_UNAVAILABLE
             - STORE_BUSY
             - STORE_IO
             - STORE_CORRUPT

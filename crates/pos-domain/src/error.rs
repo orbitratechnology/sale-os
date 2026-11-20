@@ -387,7 +387,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 44);
+        assert_eq!(seen.len(), 45);
     }
 
     #[test]
