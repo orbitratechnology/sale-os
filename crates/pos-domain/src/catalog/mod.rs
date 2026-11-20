@@ -4,11 +4,13 @@
 pub mod barcode;
 pub mod config;
 pub mod import;
+pub mod label;
 pub mod product;
 pub mod scan;
 pub mod unit;
 
 pub use barcode::{BarcodeError, NormalizedBarcode, Symbology, gtin_check_digit, normalize_barcode};
+pub use label::{LabelError, LabelLine, LabelMeasure, label_line};
 pub use product::{
     Barcode, BarcodeInput, BarcodeQualifier, CatalogError, Product, ProductInput, ProductType, Variant,
     VariantInput,

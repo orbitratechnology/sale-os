@@ -196,6 +196,33 @@ impl Cart {
         Ok(CartChange::LineAdded(id))
     }
 
+    /// Adds a line of its own that later adds never merge into by quantity: a weight, count
+    /// or price read from a scale or GS1 label (E21-T02) belongs to that one label.
+    pub fn add_separate(
+        &mut self,
+        variant: SellableVariant,
+        qty: Quantity,
+        via: AddVia,
+        ids: &dyn IdGenerator,
+    ) -> Result<CartChange, CartError> {
+        self.ensure_open()?;
+        qty.validate_for_unit(variant.unit.allows_fraction())?;
+        if !qty.is_positive() {
+            return Err(CartError::Quantity(crate::quantity::QuantityError::NotPositive));
+        }
+        let id = CartLineId::generate(ids);
+        self.lines.push(CartLine {
+            id,
+            variant,
+            quantity: qty,
+            price_override: None,
+            line_discount: None,
+            added_via: via,
+        });
+        self.touch();
+        Ok(CartChange::LineAdded(id))
+    }
+
     /// POS-003. Zero is not a quantity: use `remove_line`.
     pub fn set_quantity(&mut self, line: CartLineId, qty: Quantity) -> Result<CartChange, CartError> {
         self.ensure_open()?;

@@ -42,5 +42,6 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
+| `scanner.variable_measure_rules` | up to 10 lines × 64 chars | `[]` | **Scale and price labels.** One rule per line: prefixes, layout, price|weight|count, decimals. E.g. `21 PPIIIIIVVVVVC price 2` or `2 PIIIIIXVVVVC price 2` (US). P prefix, I item, V value, X price check, C check digit. |
 | `scanner.suffix` | one of "Enter", "Tab", "none" | `"Enter"` | **Key the scanner sends after a code.** Match the scanner's setting. "none" ends a code by the pause after it. |
 | `scanner.max_key_gap_ms` | whole number 10–100 | `35` | **Fastest typing that counts as a scan (ms between keys).** Raise it for slow wireless scanners; people type far slower than any scanner. |

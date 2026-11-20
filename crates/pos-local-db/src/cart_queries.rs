@@ -147,6 +147,17 @@ impl CartQueries for SqliteStore {
         }))
     }
 
+    async fn scan_rules(&self) -> Result<Vec<String>, QueryError> {
+        let v: Option<String> = sqlx::query_scalar(
+            "SELECT value_json FROM business_settings WHERE key = 'scanner.variable_measure_rules' LIMIT 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        Ok(v.and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+            .unwrap_or_default())
+    }
+
     async fn pricing_settings(&self) -> Result<PricingSettings, QueryError> {
         let (inclusive, code, exponent, timezone): (bool, String, i64, String) = sqlx::query_as(
             "SELECT prices_include_tax, currency_code, currency_exponent, timezone FROM businesses LIMIT 1",

@@ -384,6 +384,10 @@ impl ReceiptOutputPort for HwPrinter {
         self.transport.adapter()
     }
 
+    fn target(&self) -> Option<String> {
+        Some(self.transport.describe())
+    }
+
     fn capabilities(&self) -> PrinterCapabilities {
         self.caps.clone()
     }

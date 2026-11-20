@@ -30,7 +30,7 @@ pub struct CartView {
 
 pub struct CartService {
     store: Arc<dyn LocalStore>,
-    carts: Arc<dyn CartQueries>,
+    pub(crate) carts: Arc<dyn CartQueries>,
     pub(crate) catalog: Arc<dyn CatalogQueries>,
     /// Stock on hand for the "only N in stock" hint; none means no hints.
     stock: Option<Arc<dyn crate::queries::StockQueries>>,
@@ -430,7 +430,7 @@ pub(crate) struct Audited {
 }
 
 impl Audited {
-    fn new(action: audit::AuditAction, metadata: serde_json::Value, approver: Option<UserId>) -> Self {
+    pub(crate) fn new(action: audit::AuditAction, metadata: serde_json::Value, approver: Option<UserId>) -> Self {
         Self {
             action,
             metadata,

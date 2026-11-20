@@ -174,24 +174,21 @@ impl CatalogQueries for SqliteStore {
         row.map(|s| s.parse().map_err(q)).transpose()
     }
 
+    async fn lookup_barcodes(&self, values: &[String]) -> Result<Option<(usize, CatalogHit)>, QueryError> {
+        for (i, value) in values.iter().enumerate() {
+            if let Some(h) = self.barcode_hit(value).await? {
+                return Ok(Some((i, h)));
+            }
+        }
+        Ok(None)
+    }
+
     async fn lookup_code(&self, raw: &str) -> Result<Option<CatalogHit>, QueryError> {
         let r = self.db().readers();
-        if let Ok(n) = normalize_barcode(raw, None) {
-            let row: Option<(String, String, String, String, Option<String>, i64, String, bool, i64, String, i64)> =
-                sqlx::query_as(&format!(
-                    "SELECT {HIT_COLUMNS}, b.qualifier, b.pack_qty_milli
-                     FROM product_barcodes b JOIN product_variants v USING (variant_id) JOIN products p USING (product_id)
-                     WHERE b.value_normalized = ? AND b.status = 'active' AND v.status = 'active' AND p.status = 'active'"
-                ))
-                .bind(&n.value)
-                .fetch_optional(r)
-                .await
-                .map_err(q)?;
-            if let Some(row) = row {
-                let pack = (row.9 == "pack").then_some(row.10);
-                let base = (row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8);
-                return hit(base, MatchedBy::Barcode, pack).map(Some);
-            }
+        if let Ok(n) = normalize_barcode(raw, None)
+            && let Some(h) = self.barcode_hit(&n.value).await?
+        {
+            return Ok(Some(h));
         }
         let row: Option<HitRow> = sqlx::query_as(&format!(
             "SELECT {HIT_COLUMNS} FROM product_variants v JOIN products p USING (product_id)
@@ -414,5 +411,27 @@ mod tests {
             Some("\"name\"* \"x\"* \"or\"* \"y\"* \"near\"* \"a\"* \"b\"*")
         );
         assert_eq!(fts_query("  -- ").as_deref(), None);
+    }
+}
+
+impl SqliteStore {
+    /// The active product with this canonical barcode value, if any.
+    async fn barcode_hit(&self, value: &str) -> Result<Option<CatalogHit>, QueryError> {
+        let row: Option<(String, String, String, String, Option<String>, i64, String, bool, i64, String, i64)> =
+            sqlx::query_as(&format!(
+                "SELECT {HIT_COLUMNS}, b.qualifier, b.pack_qty_milli
+                 FROM product_barcodes b JOIN product_variants v USING (variant_id) JOIN products p USING (product_id)
+                 WHERE b.value_normalized = ? AND b.status = 'active' AND v.status = 'active' AND p.status = 'active'"
+            ))
+            .bind(value)
+            .fetch_optional(self.db().readers())
+            .await
+            .map_err(q)?;
+        row.map(|row| {
+            let pack = (row.9 == "pack").then_some(row.10);
+            let base = (row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8);
+            hit(base, MatchedBy::Barcode, pack)
+        })
+        .transpose()
     }
 }

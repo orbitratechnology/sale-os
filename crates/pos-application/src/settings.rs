@@ -142,6 +142,17 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "Up to 5 lines, e.g. the returns policy.",
     },
     SettingDef {
+        key: "scanner.variable_measure_rules",
+        kind: SettingKind::Lines {
+            max_lines: 10,
+            max_chars: 64,
+        },
+        default: "[]",
+        group: "Scanner",
+        label: "Scale and price labels",
+        help: "One rule per line: prefixes, layout, price|weight|count, decimals. E.g. `21 PPIIIIIVVVVVC price 2` or `2 PIIIIIXVVVVC price 2` (US). P prefix, I item, V value, X price check, C check digit.",
+    },
+    SettingDef {
         key: "scanner.suffix",
         kind: SettingKind::Choice(&["\"Enter\"", "\"Tab\"", "\"none\""]),
         default: "\"Enter\"",
@@ -223,6 +234,15 @@ pub fn validate(key: &str, value: &Value) -> Result<&'static SettingDef, Setting
                     "up to {max_lines} lines of at most {max_chars} characters"
                 ));
             }
+        }
+    }
+    if d.key == "scanner.variable_measure_rules" {
+        let lines: Vec<String> = value
+            .as_array()
+            .map(|a| a.iter().filter_map(|l| l.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        if let Err(e) = pos_domain::catalog::variable_measure_rules(&lines) {
+            return wrong(format!("valid label rules ({e})"));
         }
     }
     Ok(d)
