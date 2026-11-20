@@ -196,7 +196,7 @@ impl HwPrinter {
     /// periodic re-check.
     fn should_query(&self) -> bool {
         let silent = self.silent_jobs.load(Ordering::SeqCst);
-        self.can_query() && (silent < 2 || silent % STATUS_REPROBE_EVERY == 0)
+        self.can_query() && (silent < 2 || silent.is_multiple_of(STATUS_REPROBE_EVERY))
     }
 
     /// One query: the reply byte if it is a valid status byte.

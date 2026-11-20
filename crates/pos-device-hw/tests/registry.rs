@@ -38,14 +38,34 @@ fn the_registry_is_valid() {
     assert!(!r.entries.is_empty());
     for e in &r.entries {
         let what = format!("{} {}", e.vendor, e.model);
-        assert!(!e.vendor.trim().is_empty() && !e.model.trim().is_empty(), "{what}");
         assert!(
-            ["receipt_printer", "scanner", "payment_terminal", "cash_drawer", "customer_display", "scale"].contains(&e.kind.as_str()),
+            !e.vendor.trim().is_empty() && !e.model.trim().is_empty(),
+            "{what}"
+        );
+        assert!(
+            [
+                "receipt_printer",
+                "scanner",
+                "payment_terminal",
+                "cash_drawer",
+                "customer_display",
+                "scale"
+            ]
+            .contains(&e.kind.as_str()),
             "{what}: kind {}",
             e.kind
         );
         assert!(
-            ["network", "serial", "device_file", "spooler", "usb_hid_keyboard", "bluetooth", "virtual"].contains(&e.connection.as_str()),
+            [
+                "network",
+                "serial",
+                "device_file",
+                "spooler",
+                "usb_hid_keyboard",
+                "bluetooth",
+                "virtual"
+            ]
+            .contains(&e.connection.as_str()),
             "{what}: connection {}",
             e.connection
         );
@@ -60,13 +80,22 @@ fn the_registry_is_valid() {
             "{what}: tested_on must be YYYY-MM-DD"
         );
         assert!(!e.capabilities.is_empty(), "{what}");
-        assert!(!e.os.is_empty() && !e.adapter.is_empty() && !e.tester.is_empty() && !e.evidence.is_empty(), "{what}");
+        assert!(
+            !e.os.is_empty() && !e.adapter.is_empty() && !e.tester.is_empty() && !e.evidence.is_empty(),
+            "{what}"
+        );
         let _ = (&e.firmware, &e.notes);
         if let Some(id) = &e.profile_id {
-            assert!(pos_device_hw::profile(id).is_some(), "{what}: unknown profile {id}");
+            assert!(
+                pos_device_hw::profile(id).is_some(),
+                "{what}: unknown profile {id}"
+            );
         }
         if e.result != "emulator-pass" {
-            assert!(e.firmware != "n/a", "{what}: a real-hardware entry records its firmware");
+            assert!(
+                e.firmware != "n/a",
+                "{what}: a real-hardware entry records its firmware"
+            );
         }
     }
 }
