@@ -159,9 +159,11 @@ It holds no business records, PINs, tokens or card numbers.
 
 See [`support-process.md`](support-process.md).
 
-## 11. Performance check (before going live)
+## 11. Performance check (optional)
 
-Run both checks on the pilot PC, with the shop's own catalogue, while the till is still in
+Not required before going live: the owner decided to skip the reference-PC run (D-12 in
+`docs/backlog/03-decisions.md`). Run it when a shop PC is available, or when a till feels
+slow. Run both checks on that PC, with the shop's own catalogue, while the till is still in
 **SANDBOX** mode. Keep the files they write: they go into `docs/perf/` with the date.
 
 **1. The database:** `pilot-tools\pos-bench.exe --scale full` (E19-T01). It writes its own
