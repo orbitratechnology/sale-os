@@ -112,17 +112,17 @@ pub fn gtin_check_digit(body: &[u8]) -> u8 {
     ((10 - sum % 10) % 10) as u8
 }
 
-fn digits(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn digits(s: &str) -> Option<Vec<u8>> {
     s.bytes().map(|b| b.is_ascii_digit().then(|| b - b'0')).collect()
 }
 
-fn gtin_valid(d: &[u8]) -> bool {
+pub(crate) fn gtin_valid(d: &[u8]) -> bool {
     d.len() >= 2 && gtin_check_digit(&d[..d.len() - 1]) == d[d.len() - 1]
 }
 
 /// UPC-E (number system, 6 digits, check) → UPC-A (12 digits), per the GS1 zero-suppression
 /// rules. Returns `None` for a number system other than 0 or 1.
-fn upce_to_upca(d: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn upce_to_upca(d: &[u8]) -> Option<Vec<u8>> {
     let (ns, x, check) = (d[0], &d[1..7], d[7]);
     if ns > 1 {
         return None;
@@ -138,7 +138,7 @@ fn upce_to_upca(d: &[u8]) -> Option<Vec<u8>> {
     Some(upca)
 }
 
-fn text(d: &[u8]) -> String {
+pub(crate) fn text(d: &[u8]) -> String {
     d.iter().map(|x| char::from(b'0' + x)).collect()
 }
 
