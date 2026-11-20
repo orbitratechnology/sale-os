@@ -1,3 +1,4 @@
+import { TabList, tabPanelProps } from "../../ui/Tabs";
 import {
   ArrowLeft,
   Boxes,
@@ -56,7 +57,13 @@ export function StockScreen({ workspace, canPost, onBack }: { workspace: Workspa
     return (
       <main className="sales">
         <StockHeader canPost={canPost} view="onHand" onView={setView} onBack={onBack} />
-        <StockOverview />
+        {canPost ? (
+          <div className="stack" {...tabPanelProps("stock", "onHand")}>
+            <StockOverview />
+          </div>
+        ) : (
+          <StockOverview />
+        )}
       </main>
     );
   }
@@ -96,14 +103,17 @@ function StockHeader({
         </button>
       </header>
       {canPost && (
-        <div className="receipt-widths" role="tablist" aria-label="Stock">
-          <button type="button" role="tab" aria-selected={view === "post"} className={view === "post" ? "" : "secondary"} onClick={() => onView("post")}>
-            Receive and adjust
-          </button>
-          <button type="button" role="tab" aria-selected={view === "onHand"} className={view === "onHand" ? "" : "secondary"} onClick={() => onView("onHand")}>
-            On hand
-          </button>
-        </div>
+        <TabList
+          label="Stock"
+          idBase="stock"
+          className="receipt-widths"
+          tabs={[
+            { value: "post", label: "Receive and adjust" },
+            { value: "onHand", label: "On hand" },
+          ]}
+          selected={view}
+          onSelect={onView}
+        />
       )}
     </>
   );
@@ -133,7 +143,11 @@ function PostDocument({
   const signed = kind === "adjustment" && (reason === "count_correction" || reason === "other");
   const postLabel = KINDS.find((k) => k.value === kind)?.post ?? "Post";
 
-  useEffect(() => codeInput.current?.focus(), []);
+  // Ready for the first scan, unless the user arrived here by arrowing along the view tabs:
+  // then focus stays on the tab, so the arrow keys keep working.
+  useEffect(() => {
+    if (document.activeElement?.getAttribute("role") !== "tab") codeInput.current?.focus();
+  }, []);
 
   const add = useCallback(async (raw: string) => {
     const text = raw.trim();
@@ -207,26 +221,33 @@ function PostDocument({
   return (
     <main className="sales">
       <StockHeader canPost view="post" onView={onView} onBack={onBack} />
+      <div className="stack" {...tabPanelProps("stock", "post")}>
       <section className="card return-form" aria-label="Stock document">
-        <div className="receipt-widths" role="radiogroup" aria-label="What are you doing?">
+        {/* Native radios: one Tab stop, arrow keys move between them, announced as a group. */}
+        <fieldset className="segmented">
+          <legend className="visually-hidden">What are you doing?</legend>
           {KINDS.map((k) => (
-            <button
-              key={k.value}
-              type="button"
-              role="radio"
-              aria-checked={kind === k.value}
-              className={kind === k.value ? "" : "secondary"}
-              onClick={() => {
-                setKind(k.value);
-                setPosted(null);
-                setError(null);
-                codeInput.current?.focus(); // ready for the next scan
-              }}
-            >
+            <label key={k.value}>
+              <input
+                type="radio"
+                name="stock-kind"
+                value={k.value}
+                checked={kind === k.value}
+                onChange={() => {
+                  setKind(k.value);
+                  setPosted(null);
+                  setError(null);
+                }}
+                onClick={(e) => {
+                  // A pointer click readies the code field for the next scan; arrow keys
+                  // (which also fire click, with detail 0) keep focus in the group.
+                  if (e.detail > 0) codeInput.current?.focus();
+                }}
+              />
               {k.label}
-            </button>
+            </label>
           ))}
-        </div>
+        </fieldset>
         {kind === "adjustment" && (
           <label>
             Reason
@@ -341,6 +362,7 @@ function PostDocument({
           </button>
         </div>
       </section>
+      </div>
     </main>
   );
 }

@@ -1,3 +1,4 @@
+import { Modal } from "../../ui/Modal";
 import type { LucideIcon } from "lucide-react";
 import { Banknote, CircleCheck, CreditCard, Landmark, QrCode, Wallet } from "../../ui/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -117,8 +118,7 @@ export function PaymentPanel({
 
   if (done) {
     return (
-      <div className="backdrop">
-        <div role="dialog" aria-modal="true" aria-label="Sale completed" className="dialog card pay-done">
+      <Modal label="Sale completed" className="pay-done">
           <span className="done-icon">
             <CircleCheck />
           </span>
@@ -146,18 +146,16 @@ export function PaymentPanel({
             <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
               {showReceipt ? "Hide receipt" : "Show receipt"}
             </button>
-            <button type="button" autoFocus onClick={onDone}>
+            <button type="button" data-autofocus onClick={onDone}>
               New sale <kbd>Enter</kbd>
             </button>
           </div>
-        </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Payment" className="dialog card pay">
+    <Modal label="Payment" className="pay">
         <div className="pay-head">
           <div>
             <p className="small">Total</p>
@@ -256,8 +254,7 @@ export function PaymentPanel({
             {busy ? "Saving…" : "Complete sale"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -1,3 +1,4 @@
+import { Modal } from "../../ui/Modal";
 import { useEffect, useRef } from "react";
 import type { RecoveredCartDto } from "../../ipc/bindings";
 import { formatMoney } from "../../lib/money";
@@ -37,8 +38,7 @@ export function RecoveryDialog({
 
   const items = `${recovered.lines} ${recovered.lines === 1 ? "item" : "items"}`;
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Recovered cart" className="dialog card">
+    <Modal label="Recovered cart">
         <h2>
           Recovered cart ({items}, {formatMoney(recovered.totalMinor, { exponent })})
         </h2>
@@ -57,7 +57,6 @@ export function RecoveryDialog({
             Resume
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

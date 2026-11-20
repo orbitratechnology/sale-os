@@ -29,7 +29,7 @@ import {
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
 import type { CashStateDto_Serialize as CashState, RecoveredCartDto } from "../../ipc/bindings";
-import { percentToPpm, ppmToPercent, scaleDecimal, stepMilli } from "../../lib/decimal";
+import { formatMilli, percentToPpm, ppmToPercent, scaleDecimal, stepMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
 import { GoLiveDialog } from "../setup/GoLiveDialog";
@@ -329,6 +329,9 @@ export function Checkout({
 
   return (
     <div className="checkout">
+      {/* Landmarks: header (mode banner and screens), main (adding items and the cart), aside
+          (totals and actions), footer (status). The wrappers lay out as their children. */}
+      <header className="till-head">
       {workspace.mode === "sandbox" && (
         <div className="sandbox-banner" role="note">
           <FlaskConical />
@@ -346,7 +349,7 @@ export function Checkout({
           )}
         </div>
       )}
-      <header className="topbar">
+      <div className="topbar">
         <div className="brand">
           <span className="brand-mark">
             <Store />
@@ -398,7 +401,15 @@ export function Checkout({
           <Lock />
           Lock <kbd>F12</kbd>
         </button>
+      </div>
       </header>
+      <main className="till-main">
+      <h1 className="visually-hidden">Till</h1>
+      {/* Arrow keys move the selected line without moving focus (the page keeps it for the
+          scanner): say which line is selected, for screen-reader users. */}
+      <p className="visually-hidden" aria-live="polite" data-testid="selected-line">
+        {selectedLine ? `Selected: ${selectedLine.name}, quantity ${formatMilli(selectedLine.quantityMilli)}, ${money(selectedLine.totalMinor)}` : ""}
+      </p>
       <section className="entry" aria-label="Add items">
         <form onSubmit={submitCode} className="code-form">
           <ScanBarcode />
@@ -431,6 +442,7 @@ export function Checkout({
           />
         )}
       </section>
+      </main>
 
       <aside className="side" aria-label="Totals and actions">
         {cart && (

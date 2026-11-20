@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Modal } from "../../ui/Modal";
+import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { ParkedCartDto } from "../../ipc/bindings";
 import { formatMoney } from "../../lib/money";
@@ -40,7 +41,6 @@ export function ParkedDialog({
   const [selected, setSelected] = useState(0);
   const [discarding, setDiscarding] = useState<ParkedCartDto | null>(null);
   const [reason, setReason] = useState("");
-  const panel = useRef<HTMLDivElement | null>(null);
 
   const show = useCallback(
     (rows: ParkedCartDto[]) => {
@@ -53,7 +53,6 @@ export function ParkedDialog({
 
   useEffect(() => {
     void commands.cartParkedList().then((res) => (res.status === "ok" ? show(res.data) : setError(res.error)));
-    panel.current?.focus();
   }, [show]);
 
   const discard = async (cart: ParkedCartDto, why: string, token: string | null): Promise<boolean> => {
@@ -99,7 +98,9 @@ export function ParkedDialog({
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setSelected((s) => Math.max(s - 1, 0));
-      } else if (e.key === "Enter" && canResume && rows[selected]) {
+      } else if (e.key === "Enter" && canResume && rows[selected] && !isControl(e.target)) {
+        // Enter on a focused button (Discard…, Close) does what that button says; only Enter
+        // on the list itself resumes the selected cart.
         e.preventDefault();
         onResume(rows[selected].cartId);
       }
@@ -109,8 +110,7 @@ export function ParkedDialog({
   }, [list, selected, canResume, discarding, paused, onClose, onResume]);
 
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Parked carts" className="dialog card wide" tabIndex={-1} ref={panel}>
+    <Modal label="Parked carts" className="wide" focusSelf>
         <h2>Parked carts</h2>
         {error && (
           <p role="alert" className="field-error">
@@ -198,7 +198,11 @@ export function ParkedDialog({
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
+}
+
+/** A control that handles Enter itself: the dialog's own keys leave it alone. */
+function isControl(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("button, input, select, textarea, a[href]") !== null;
 }

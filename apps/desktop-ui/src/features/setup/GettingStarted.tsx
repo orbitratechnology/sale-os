@@ -1,3 +1,4 @@
+import { Modal } from "../../ui/Modal";
 import { useEffect, useRef } from "react";
 
 /**
@@ -32,8 +33,7 @@ export function GettingStarted({
   }, [onClose]);
 
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Getting started" className="dialog card wide">
+    <Modal label="Getting started" className="wide">
         <h2>Getting started</h2>
         <p>The till is ready to sell in practice (SANDBOX) mode. When you have a moment:</p>
         <ol className="getting-started">
@@ -87,7 +87,6 @@ export function GettingStarted({
             Later
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

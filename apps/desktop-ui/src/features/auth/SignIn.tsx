@@ -1,7 +1,7 @@
 import {
   Store,
 } from "../../ui/icons";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type IpcError, type Session, type SignInUser, type Workspace } from "../../ipc";
 import { describeError } from "../shell/errors";
 import { PinPad } from "./PinPad";
@@ -25,7 +25,13 @@ export function SignIn({
 
 function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedIn: (s: Session) => void }) {
   const [users, setUsers] = useState<SignInUser[] | null>(null);
+  const firstTile = useRef<HTMLButtonElement | null>(null);
   const [user, setUser] = useState<SignInUser | null>(null);
+  // The staff list is the first thing to do here: start keyboard focus on its first tile
+  // (and come back to it from "Not …?").
+  useEffect(() => {
+    if (users && !user) firstTile.current?.focus();
+  }, [users, user]);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<IpcError | null>(null);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
@@ -82,9 +88,9 @@ function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedI
         <section aria-label="Who is signing in?" className="who">
           <h2>Who is signing in?</h2>
           <ul className="user-grid">
-            {users?.map((u) => (
+            {users?.map((u, i) => (
               <li key={u.userId}>
-                <button type="button" className="user-tile" onClick={() => setUser(u)}>
+                <button type="button" className="user-tile" ref={i === 0 ? firstTile : undefined} onClick={() => setUser(u)}>
                   <span className="avatar" aria-hidden="true">
                     {u.displayName.trim().charAt(0).toUpperCase()}
                   </span>

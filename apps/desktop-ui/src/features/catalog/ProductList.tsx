@@ -6,7 +6,7 @@ import {
   Plus,
   Upload,
 } from "../../ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { CategoryDto, ProductRowDto_Serialize as ProductRowDto, ProductStatusDto } from "../../ipc/bindings";
 import { formatMilli } from "../../lib/decimal";
@@ -147,15 +147,50 @@ export function ProductList({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
+  /**
+   * Keyboard movement through the whole list, not just the rows rendered: scroll the target row
+   * into view, then focus its button once it has rendered (and its page has loaded).
+   */
+  const focusRow = (i: number) => {
+    const vp = viewport.current;
+    if (!vp || count === 0) return;
+    const row = Math.min(Math.max(i, 0), count - 1);
+    const top = row * ROW_PX;
+    if (top < vp.scrollTop) vp.scrollTop = top;
+    else if (top + ROW_PX > vp.scrollTop + vp.clientHeight) vp.scrollTop = top + ROW_PX - vp.clientHeight;
+    let tries = 30;
+    const attempt = () => {
+      const button = vp.querySelector<HTMLButtonElement>(`[data-row="${row}"] .plist-open`);
+      if (button) button.focus();
+      else if (tries-- > 0) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  };
+  const onListKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const at = (e.target as HTMLElement).closest<HTMLElement>("[data-row]")?.dataset.row;
+    if (at === undefined) return;
+    const i = parseInt(at, 10); // a row index, not money
+    const page = Math.max(1, Math.floor((viewport.current?.clientHeight ?? ROW_PX) / ROW_PX) - 1);
+    const to =
+      e.key === "ArrowDown" ? i + 1 : e.key === "ArrowUp" ? i - 1 : e.key === "PageDown" ? i + page : e.key === "PageUp" ? i - page : e.key === "Home" ? 0 : e.key === "End" ? count - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    focusRow(to);
+  };
+
   const visible = [];
   for (let i = first; i < last; i++) {
     const r = rows.get(i);
     visible.push(
-      <div key={i} role="row" aria-rowindex={i + 2} className="plist-row" style={{ transform: `translateY(${i * ROW_PX}px)` }}>
+      <div key={i} role="row" aria-rowindex={i + 2} data-row={i} className="plist-row plist-cols" style={{ transform: `translateY(${i * ROW_PX}px)` }}>
         {r ? (
-          <button type="button" className="plist-open" onClick={() => onOpen(r.productId)} data-testid="product-row">
+          <>
+            {/* Cells are the row's own children (table semantics); the name opens the product, and
+                its button stretches over the whole row so a click anywhere on it opens it too. */}
             <span role="cell" className="item-name">
-              {r.name}
+              <button type="button" className="plist-open" onClick={() => onOpen(r.productId)} data-testid="product-row">
+                {r.name}
+              </button>
               {r.archived && <span className="tag">archived</span>}
             </span>
             <span role="cell" className="mono">
@@ -186,7 +221,7 @@ export function ProductList({
                 </>
               )}
             </span>
-          </button>
+          </>
         ) : (
           <span role="cell" className="small">
             Loading…
@@ -275,7 +310,7 @@ export function ProductList({
         </p>
       )}
       <div role="table" aria-label="Products" aria-rowcount={count + 1} className="plist">
-        <div role="row" aria-rowindex={1} className="plist-head">
+        <div role="row" aria-rowindex={1} className="plist-head plist-cols">
           <span role="columnheader">Name</span>
           <span role="columnheader">SKU</span>
           <span role="columnheader" className="num">
@@ -289,7 +324,7 @@ export function ProductList({
           </span>
           <span role="columnheader">Stock</span>
         </div>
-        <div ref={viewport} className="plist-viewport" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} data-testid="product-viewport">
+        <div ref={viewport} className="plist-viewport" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} onKeyDown={onListKey} data-testid="product-viewport">
           <div style={{ height: count * ROW_PX, position: "relative" }}>{visible}</div>
           {total === 0 && (
         <div className="empty-state">

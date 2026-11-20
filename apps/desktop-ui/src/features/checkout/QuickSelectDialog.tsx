@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { TabList } from "../../ui/Tabs";
+import { Modal } from "../../ui/Modal";
+import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { QuickProductDto, QuickSelectPageDto } from "../../ipc/bindings";
 import { formatMoney } from "../../lib/money";
@@ -28,7 +30,6 @@ export function QuickSelectDialog({
   const [error, setError] = useState<IpcError | null>(null);
   const [choosing, setChoosing] = useState<QuickProductDto | null>(null);
   const [added, setAdded] = useState<string | null>(null);
-  const panel = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -43,7 +44,6 @@ export function QuickSelectDialog({
       live = false;
     };
   }, [tab, offset]);
-  useEffect(() => panel.current?.focus(), []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -76,27 +76,20 @@ export function QuickSelectDialog({
   const total = page?.total ?? 0;
 
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Quick items" className="dialog card wide quick-select" tabIndex={-1} ref={panel}>
+    <Modal label="Quick items" className="wide quick-select" focusSelf>
         <h2>Quick items</h2>
-        <div className="receipt-widths" role="tablist" aria-label="Categories">
-          {tabs.map((t) => (
-            <button
-              key={t.categoryId ?? "all"}
-              type="button"
-              role="tab"
-              aria-selected={t.categoryId === tab}
-              className={t.categoryId === tab ? "" : "secondary"}
-              onClick={() => {
-                setTab(t.categoryId);
-                setOffset(0);
-                setChoosing(null);
-              }}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
+        <TabList
+          label="Categories"
+          idBase="quick"
+          className="receipt-widths"
+          tabs={tabs.map((t) => ({ value: t.categoryId, label: t.name }))}
+          selected={tab}
+          onSelect={(value) => {
+            setTab(value);
+            setOffset(0);
+            setChoosing(null);
+          }}
+        />
         {error && (
           <p role="alert" className="field-error">
             {describeError(error)}
@@ -163,7 +156,6 @@ export function QuickSelectDialog({
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

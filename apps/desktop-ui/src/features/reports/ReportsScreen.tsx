@@ -1,3 +1,4 @@
+import { TabList, tabPanelProps } from "../../ui/Tabs";
 import {
   ArrowLeft,
   ChartColumn,
@@ -210,13 +211,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           ))}
         </div>
       ) : (
-      <div className="receipt-widths" role="tablist" aria-label="Report">
-        {TABS.map((t) => (
-          <button key={t.value} type="button" role="tab" aria-selected={tab === t.value} className={tab === t.value ? "" : "secondary"} onClick={() => setTab(t.value)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabList label="Report" idBase="report" className="receipt-widths" tabs={TABS} selected={tab} onSelect={setTab} />
       )}
       {(where === "cloud" || tab !== "stock") && (
         <form className="card sales-filters" aria-label="Dates" onSubmit={(e) => e.preventDefault()}>
@@ -284,7 +279,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           </button>
         ))}
       </section>
-      <section className="card" aria-label={TABS.find((t) => t.value === tab)?.label}>
+      <section className="card" {...tabPanelProps("report", tab)}>
         {tab === "sales" && sales && <SalesReport s={sales} money={money} />}
         {tab === "payments" && mix && <PaymentsReport m={mix} money={money} />}
         {tab === "top" && top && (

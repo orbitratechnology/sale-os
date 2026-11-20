@@ -1193,7 +1193,7 @@ describe("reports (E14-T03)", () => {
     await page.getByRole("button", { name: "Reports" }).click();
     await page.getByRole("heading", { name: "Reports" }).waitFor();
     await page.getByTestId("scope-badge").filter({ hasText: "This device only" }).waitFor();
-    const sales = page.getByRole("region", { name: "Daily sales" });
+    const sales = page.getByRole("tabpanel", { name: "Daily sales" });
     expect(await sales.getByTestId("sales-total").textContent()).toBe("3.04");
     expect(await sales.getByTestId("net-incl").textContent()).toBe("3.04");
     expect(await sales.getByTestId("day-row").count()).toBe(1);
@@ -1209,7 +1209,7 @@ describe("reports (E14-T03)", () => {
     expect(week.to).toBe(range.to);
 
     await page.getByRole("tab", { name: "Payments" }).click();
-    const mix = page.getByRole("region", { name: "Payments" });
+    const mix = page.getByRole("tabpanel", { name: "Payments" });
     await mix.getByTestId("mix-row").nth(1).waitFor();
     const rows = await mix.getByTestId("mix-row").allTextContents();
     expect(rows[0]).toContain("Card");
@@ -1219,12 +1219,12 @@ describe("reports (E14-T03)", () => {
     await page.getByTestId("scope-badge").filter({ hasText: "This device only" }).waitFor();
 
     await page.getByRole("tab", { name: "Top products" }).click();
-    const top = page.getByRole("region", { name: "Top products" });
+    const top = page.getByRole("tabpanel", { name: "Top products" });
     await top.getByTestId("top-row").nth(2).waitFor();
     expect(await top.getByTestId("top-row").first().textContent()).toContain("Cola 330ml");
 
     await page.getByRole("tab", { name: "Stock" }).click();
-    const stock = page.getByRole("region", { name: "Stock" });
+    const stock = page.getByRole("tabpanel", { name: "Stock" });
     await stock.getByText("calculated from recorded movements").waitFor();
     await stock.getByTestId("stock-row").nth(2).waitFor();
     await stock.getByLabel("Low and negative only").check();
@@ -1396,7 +1396,7 @@ describe("settings (E04-T03)", () => {
     await page.getByRole("tab", { name: "Receipts" }).click();
     const footer = page.getByLabel(/Lines at the bottom of receipts/);
     await footer.fill("Thank you\n\nNo refunds without a receipt");
-    await page.getByRole("region", { name: "Receipts" }).getByRole("button", { name: "Save" }).click();
+    await page.getByRole("tabpanel", { name: "Receipts" }).getByRole("button", { name: "Save" }).click();
     await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 3);
     expect(await calls(page, "settings_update")).toEqual([
       { key: "inventory.allow_negative", valueJson: "false", baseVersion: 1 },
@@ -1630,7 +1630,7 @@ describe("staff (E05-T06)", () => {
     const table = page.getByRole("table", { name: "Staff" });
     await expect.poll(() => table.getByTestId("role-badge").allTextContents()).toEqual(["Owner", "Manager", "Cashier"]);
     const add = page.getByRole("form", { name: "Add a staff member" });
-    const panel = page.getByRole("region", { name: "Staff" });
+    const panel = page.getByRole("tabpanel", { name: "Staff" });
     // A taken name, then two PINs that differ: refused with the reason.
     await add.getByLabel("Name").fill("mia");
     await add.getByLabel("PIN (4–8 digits)").fill("5555");

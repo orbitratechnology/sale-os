@@ -653,51 +653,67 @@
     border-block-end: 0;
   }
 
-  /* Dialogs: shadcn's Dialog (black/45 overlay, zoom-in content). */
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    background: var(--c-backdrop);
-    display: grid;
-    place-items: center;
-    padding: var(--sp-4);
-    z-index: 10;
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .backdrop {
-      animation: fade-in 150ms ease-out both;
-    }
-    .backdrop > .dialog {
-      animation: zoom-in 150ms ease-out both;
-    }
-  }
-  .dialog {
-    inline-size: min(28rem, 100%);
+  /*
+   * Dialogs: the native <dialog> opened with showModal() (ui/Modal.tsx), styled after shadcn's
+   * Dialog. The browser centres it in the top layer and makes the rest of the app inert.
+   * `display` only applies while open, so a closed dialog stays hidden.
+   */
+  dialog.dialog {
+    inline-size: min(28rem, calc(100% - 2 * var(--sp-4)));
+    max-inline-size: none;
     max-block-size: calc(100vh - 2 * var(--sp-8));
     overflow: auto;
-    display: grid;
+    overscroll-behavior: contain;
+    margin: auto;
     gap: var(--sp-4);
     background: var(--c-surface);
+    color: var(--c-text);
     border: 1px solid var(--c-border);
     border-radius: var(--r-xl);
     padding: var(--sp-6);
     box-shadow: var(--sh-3);
   }
-  .dialog > h2 {
+  dialog.dialog[open] {
+    display: grid;
+  }
+  dialog.dialog::backdrop {
+    background: oklch(0 0 0 / 0.45);
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
+  /* A dialog that is itself focused (it drives its own keys) shows no ring around the panel. */
+  dialog.dialog:focus-visible {
+    outline: none;
+  }
+  /* A form wrapping a dialog's content takes part in the dialog's grid. */
+  .dialog-form {
+    display: contents;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    dialog.dialog[open] {
+      animation: zoom-in 150ms ease-out both;
+    }
+    dialog.dialog[open]::backdrop {
+      animation: fade-in 150ms ease-out both;
+    }
+  }
+  .dialog > h2,
+  .dialog-form > h2 {
     font-size: var(--fs-lg);
     margin: 0;
   }
-  .dialog > h2 + p {
+  .dialog > h2 + p,
+  .dialog-form > h2 + p {
     color: var(--c-text-muted);
   }
   .dialog .actions {
     margin-block-start: var(--sp-2);
   }
-  .dialog.wide {
-    inline-size: min(52rem, 100%);
+  dialog.dialog.wide {
+    inline-size: min(52rem, calc(100% - 2 * var(--sp-4)));
   }
-  .dialog.pay {
-    inline-size: min(40rem, 100%);
+  dialog.dialog.pay {
+    inline-size: min(40rem, calc(100% - 2 * var(--sp-4)));
   }
   .dialog label {
     color: var(--c-text);
@@ -886,6 +902,59 @@
     min-inline-size: 20rem;
     font-family: var(--font-mono);
   }
+  /* A wrapper (such as a tab panel) holding several cards of a page. */
+  .stack {
+    display: grid;
+    gap: var(--sp-5);
+  }
+
+  /* A segmented choice built from native radios (one Tab stop, arrow keys between options). */
+  fieldset.segmented {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 3px;
+    border: 0;
+    margin: 0;
+    background: var(--c-surface-2);
+    border-radius: var(--r-lg);
+    inline-size: fit-content;
+    max-inline-size: 100%;
+  }
+  .segmented label {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 2rem;
+    padding: var(--sp-1) var(--sp-3);
+    border-radius: var(--r-md);
+    color: var(--c-text-muted);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+  }
+  .segmented label:hover {
+    color: var(--c-text);
+  }
+  /* The radio stays in the accessibility tree and focus order; the label shows its state. */
+  .segmented input {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .segmented label:has(:checked) {
+    background: light-dark(var(--c-surface), var(--c-surface-3));
+    color: var(--c-text);
+    box-shadow: var(--sh-1);
+  }
+  .segmented label:has(:focus-visible) {
+    outline: 2px solid var(--c-focus);
+    outline-offset: 2px;
+  }
+
   /* Settings: a sidebar of pages (shadcn's settings layout) beside the chosen page. */
   .settings-layout {
     display: grid;
@@ -1156,6 +1225,11 @@
     grid-template-areas: "banner banner" "top top" "entry side" "cart side" "status status";
     overflow: hidden;
     background: var(--c-bg);
+  }
+  /* Landmark wrappers that must not disturb the till's grid. */
+  .till-head,
+  .till-main {
+    display: contents;
   }
   .sandbox-banner {
     grid-area: banner;
@@ -1719,8 +1793,7 @@
     box-shadow: var(--sh-1);
     overflow: hidden;
   }
-  .plist-head,
-  .plist-open {
+  .plist-cols {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1.2fr) 5rem 5rem 8rem;
     gap: var(--sp-3);
@@ -1746,31 +1819,48 @@
     inset-block-start: 0;
     inset-inline: 0;
     block-size: 44px; /* ROW_PX in ProductList.tsx */
+    border-block-end: 1px solid var(--c-border);
   }
+  .plist-row:hover {
+    background: var(--c-selected);
+  }
+  .plist-row > [role="cell"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The name's button is the row's one control; its ::after covers the row for pointer users. */
   .plist-open {
-    inline-size: 100%;
-    block-size: 44px;
+    display: inline;
     min-block-size: 0;
-    background: transparent;
+    padding: 0;
+    background: none;
     color: var(--c-text);
     border: 0;
-    border-block-end: 1px solid var(--c-border);
-    border-radius: 0;
+    box-shadow: none;
+    font: inherit;
+    font-weight: var(--fw-medium);
     text-align: start;
-    font-weight: var(--fw-regular);
-    justify-content: stretch;
+  }
+  .plist-open::after {
+    content: "";
+    position: absolute;
+    inset: 0;
   }
   .plist-open:hover:not(:disabled) {
-    background: var(--c-selected);
-    box-shadow: none;
+    background: none;
   }
   .plist-open:active:not(:disabled) {
     scale: none;
   }
-  .plist-open > span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* The whole row shows keyboard focus, not just the name. */
+  .plist-open:focus-visible {
+    outline: none;
+  }
+  .plist-row:has(.plist-open:focus-visible) {
+    outline: 2px solid var(--c-focus);
+    outline-offset: -2px;
+    background: var(--c-selected);
   }
   .editor form {
     display: grid;
@@ -2012,13 +2102,50 @@
   .muted {
     color: var(--c-text-muted);
   }
-  .visually-hidden {
+  /* Kept for screen readers, hidden on screen; focusable content inside shows when focused. */
+  .visually-hidden:where(:not(:focus-within, :active)) {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+
+  /* A heading focused by script when a screen opens is a starting point, not a control. */
+  :is(h1, h2)[tabindex="-1"]:focus {
+    outline: none;
+  }
+
+  /*
+   * Windows high contrast (forced colours): the browser drops backgrounds and box-shadows, so
+   * the field focus halo and the raised selected tab would vanish. Use system colours instead.
+   */
+  @media (forced-colors: active) {
+    :where(input, select, textarea):focus-visible,
+    .plist-row:has(.plist-open:focus-visible),
+    .segmented label:has(:focus-visible) {
+      outline: 2px solid Highlight;
+      outline-offset: 1px;
+    }
+    [role="tab"][aria-selected="true"],
+    .segmented label:has(:checked) {
+      forced-color-adjust: none;
+      background: SelectedItem;
+      color: SelectedItemText;
+    }
+    .cart-table tr.selected,
+    .sales-table tr.selected {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+    button:disabled {
+      color: GrayText;
+      border-color: GrayText;
+    }
   }
 }
 

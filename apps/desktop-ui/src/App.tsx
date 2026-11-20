@@ -40,6 +40,24 @@ export function App() {
   /** E04-T02: the wizard just finished; the till offers "Getting started" once. */
   const [gettingStarted, setGettingStarted] = useState(false);
 
+  const place: Place = !state ? "loading" : !state.setupComplete || !state.workspace ? "setup" : !state.session || state.session.mustChangePin ? "signIn" : screen.kind;
+  useEffect(() => {
+    // The window title names the screen (WCAG 2.4.2), for the taskbar and screen readers.
+    document.title = `${TITLES[place]} · Sale OS`;
+    // A new screen starts focus at its heading, unless it focused a field itself; the till keeps
+    // focus on the page, where the scanner types (scanner-ready mode).
+    if (place === "till" || place === "loading") return;
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const heading = document.querySelector<HTMLElement>("main h1");
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [place]);
+
   const apply = useCallback((res: Result<BootstrapState>) => {
     if (res.status === "ok") {
       setState(res.data);
@@ -316,6 +334,27 @@ export function App() {
     </ScanPreferences.Provider>
   );
 }
+
+type Place = Screen["kind"] | "loading" | "setup" | "signIn";
+
+const TITLES: Record<Place, string> = {
+  loading: "Starting",
+  setup: "Set up",
+  signIn: "Sign in",
+  till: "Till",
+  products: "Products",
+  categories: "Categories",
+  import: "Import products",
+  returns: "Returns",
+  sales: "Sales",
+  drawer: "Cash drawer",
+  stock: "Stock",
+  reports: "Reports",
+  audit: "Audit log",
+  settings: "Settings",
+  conflicts: "Sync conflicts",
+  editor: "Product",
+};
 
 type Screen =
   | { kind: "till" }

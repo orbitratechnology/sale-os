@@ -1,3 +1,4 @@
+import { Modal } from "../../ui/Modal";
 import {
   ArrowLeft,
   Banknote,
@@ -204,8 +205,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
       )}
 
       {confirming && (
-        <div className="backdrop">
-          <div role="dialog" aria-modal="true" aria-label="Close the drawer?" className="dialog card">
+        <Modal label="Close the drawer?">
             <h2>Close the drawer?</h2>
             <p>
               Counted {money(scaleDecimal(amount || "0", exp) ?? "0")}. Closing is final: the session cannot be reopened.
@@ -214,12 +214,11 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
               <button type="button" className="secondary" onClick={() => setConfirming(false)}>
                 Cancel
               </button>
-              <button type="button" className="pay" onClick={() => void close()} autoFocus>
+              <button type="button" className="pay" onClick={() => void close()} data-autofocus>
                 Close drawer
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </main>
   );

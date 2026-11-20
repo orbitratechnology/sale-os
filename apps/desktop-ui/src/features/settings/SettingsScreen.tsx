@@ -1,3 +1,4 @@
+import { TabList, tabPanelProps } from "../../ui/Tabs";
 import type { LucideIcon } from "lucide-react";
 import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Percent, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
@@ -78,39 +79,37 @@ export function SettingsScreen({
         </p>
       )}
       <div className="settings-layout">
-      <div className="side-nav" role="tablist" aria-label="Settings pages" aria-orientation="vertical">
-        {groups.map((g) => {
-          const Icon = GROUP_ICONS[g] ?? Settings;
-          return (
-            <button key={g} type="button" role="tab" aria-selected={g === group} className={g === group ? "" : "secondary"} onClick={() => setGroup(g)}>
-              <Icon />
-              {g}
-            </button>
-          );
-        })}
-      </div>
+      <TabList
+        label="Settings pages"
+        idBase="settings"
+        className="side-nav"
+        vertical
+        tabs={groups.map((g) => ({ value: g, label: g, icon: GROUP_ICONS[g] ?? Settings }))}
+        selected={group}
+        onSelect={setGroup}
+      />
       {group === BUSINESS ? (
-        <section className="card settings-list" aria-label={BUSINESS}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <BusinessPanel onChanged={onChanged} />
         </section>
       ) : group === STAFF ? (
-        <section className="card settings-list" aria-label={STAFF}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <StaffPanel />
         </section>
       ) : group === TAXES ? (
-        <section className="card settings-list" aria-label={TAXES}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <TaxesPanel />
         </section>
       ) : group === CLOUD ? (
-        <section className="card settings-list" aria-label={CLOUD}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <CloudPanel onRelinked={onRelinked} />
         </section>
       ) : group === BACKUPS ? (
-        <section className="card settings-list" aria-label={BACKUPS}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <BackupsPanel />
         </section>
       ) : (
-        <section className="card settings-list" aria-label={group ?? "Settings"}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           {(settings ?? [])
             .filter((s) => s.group === group)
             .map((s) => (
