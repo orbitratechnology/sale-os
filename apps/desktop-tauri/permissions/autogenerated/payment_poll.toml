@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-payment-poll"
+description = "Enables the payment_poll command without any pre-configured scope."
+commands.allow = ["payment_poll"]
+
+[[permission]]
+identifier = "deny-payment-poll"
+description = "Denies the payment_poll command without any pre-configured scope."
+commands.deny = ["payment_poll"]

@@ -96,6 +96,20 @@
     "allow-sync-repair-action",
     "allow-sale-sync-state",
     "allow-sync-conflicts-list",
-    "allow-sync-conflict-resolve"
+    "allow-sync-conflict-resolve",
+    "allow-devices-list",
+    "allow-device-save",
+    "allow-device-remove",
+    "allow-printer-status",
+    "allow-printer-test",
+    "allow-printer-profiles",
+    "allow-devices-discover",
+    "allow-drawer-open",
+    "allow-payment-start",
+    "allow-payment-poll",
+    "allow-payment-cancel",
+    "allow-payment-resolve",
+    "allow-payment-reverse",
+    "allow-payment-attempts"
   ]
 }

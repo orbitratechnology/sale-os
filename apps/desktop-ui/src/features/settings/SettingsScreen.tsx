@@ -5,12 +5,14 @@ import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
 import { BusinessPanel } from "./BusinessPanel";
 import { CloudPanel } from "./CloudPanel";
+import { DevicesPanel } from "./DevicesPanel";
 import { TaxesPanel } from "./TaxesPanel";
 
 /** The business and tax pages sit beside the registry groups; they are not registry settings. */
 const BUSINESS = "Business";
 const TAXES = "Taxes";
 const CLOUD = "Cloud";
+const DEVICES = "Devices";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
@@ -50,7 +52,7 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, CLOUD];
+  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, DEVICES, CLOUD];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -78,6 +80,10 @@ export function SettingsScreen({
       ) : group === TAXES ? (
         <section className="card settings-list" aria-label={TAXES}>
           <TaxesPanel />
+        </section>
+      ) : group === DEVICES ? (
+        <section className="card settings-list" aria-label={DEVICES}>
+          <DevicesPanel />
         </section>
       ) : group === CLOUD ? (
         <section className="card settings-list" aria-label={CLOUD}>

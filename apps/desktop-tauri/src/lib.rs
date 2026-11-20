@@ -6,9 +6,11 @@ mod cash_commands;
 mod command_names;
 mod commands;
 mod config_commands;
+mod device_commands;
 mod dto;
 mod error;
 mod import_commands;
+mod payment_commands;
 mod report_commands;
 mod sale_commands;
 mod services;
@@ -119,6 +121,20 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sync_commands::sale_sync_state,
         sync_commands::sync_conflicts_list,
         sync_commands::sync_conflict_resolve,
+        device_commands::devices_list,
+        device_commands::device_save,
+        device_commands::device_remove,
+        device_commands::printer_status,
+        device_commands::printer_test,
+        device_commands::printer_profiles,
+        device_commands::devices_discover,
+        device_commands::drawer_open,
+        payment_commands::payment_start,
+        payment_commands::payment_poll,
+        payment_commands::payment_cancel,
+        payment_commands::payment_resolve,
+        payment_commands::payment_reverse,
+        payment_commands::payment_attempts,
     ])
 }
 
@@ -155,6 +171,28 @@ pub fn run() {
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
             let services = tauri::async_runtime::block_on(AppServices::start(&dir, log))
                 .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())));
+            // Serial scanners (E21-T04): every scan and health change goes to the window, which
+            // submits scans exactly like keyboard-wedge ones.
+            if let Some((mut scans, mut health)) = services.scanner_events() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    loop {
+                        tokio::select! {
+                            s = scans.recv() => match s {
+                                Ok(scan) => { let _ = handle.emit("scanner://scan", scan); }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(_) => break,
+                            },
+                            h = health.recv() => match h {
+                                Ok(h) => { let _ = handle.emit("scanner://status", h); }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(_) => break,
+                            },
+                        }
+                    }
+                });
+            }
             app.manage(services);
             Ok(())
         })

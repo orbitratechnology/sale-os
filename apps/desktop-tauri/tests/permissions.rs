@@ -255,7 +255,7 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         (
             "checkout_complete",
             Perm(SaleComplete),
-            json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}]}),
+            json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}], "terminal": null}),
         ),
         (
             "receipt_get",
@@ -377,6 +377,64 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             "cash_session_z_print",
             Perm(CashSessionViewVariance),
             json!({"sessionId": null}),
+        ),
+        // Devices (E20-T11, ADR-023). No real device in tests: allowed calls reach the
+        // virtual printer or report DEVICE_UNAVAILABLE.
+        ("devices_list", Perm(DeviceConfigure), json!({})),
+        (
+            "device_save",
+            Perm(DeviceConfigure),
+            json!({"input": {"deviceId": null, "kind": "payment_terminal", "role": null, "name": "", "configJson": "{\"provider\":\"nope\"}", "enabled": true, "baseVersion": null}}),
+        ),
+        (
+            "device_remove",
+            Perm(DeviceConfigure),
+            json!({"deviceId": UNKNOWN_ID}),
+        ),
+        ("printer_status", Session, json!({})),
+        ("printer_test", Perm(DeviceConfigure), json!({})),
+        ("printer_profiles", Perm(DeviceConfigure), json!({})),
+        (
+            "devices_discover",
+            Perm(DeviceConfigure),
+            json!({"subnet": null, "port": null}),
+        ),
+        // A cashier gets APPROVAL_REQUIRED (no sale needs a manager).
+        (
+            "drawer_open",
+            Perm(DrawerOpen),
+            json!({"reason": "harness", "approvalTokenId": null}),
+        ),
+        // Card terminal (E22-T02): none configured, so allowed calls get DEVICE_UNAVAILABLE.
+        (
+            "payment_start",
+            Perm(SaleComplete),
+            json!({"cartId": UNKNOWN_ID, "amountMinor": "100"}),
+        ),
+        (
+            "payment_poll",
+            Perm(SaleComplete),
+            json!({"attemptId": UNKNOWN_ID}),
+        ),
+        (
+            "payment_cancel",
+            Perm(SaleComplete),
+            json!({"attemptId": UNKNOWN_ID}),
+        ),
+        (
+            "payment_attempts",
+            Perm(SaleComplete),
+            json!({"cartId": UNKNOWN_ID}),
+        ),
+        (
+            "payment_resolve",
+            Perm(CartVoid),
+            json!({"attemptId": UNKNOWN_ID, "resolution": {"outcome": "declined", "reference": null}, "reason": "harness", "approvalTokenId": null}),
+        ),
+        (
+            "payment_reverse",
+            Perm(CartVoid),
+            json!({"attemptId": UNKNOWN_ID, "reason": "harness", "approvalTokenId": null}),
         ),
     ]
 }

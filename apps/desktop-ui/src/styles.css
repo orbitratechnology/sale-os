@@ -273,3 +273,12 @@ button.link { background: none; border: none; color: var(--accent, #1d4ed8); pad
 .import-counts dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
 .import-wizard fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; }
 .import-wizard fieldset .check { display: block; margin: 6px 0; }
+
+/* Settings → Devices (E20-T11) */
+.devices { display: grid; gap: 16px; }
+.device-section h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.device-section + .device-section { border-top: 1px solid var(--border); padding-top: 12px; }
+.device-form { display: grid; gap: 8px; max-width: 760px; }
+.device-form .row, .device-section .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.device-form label, .device-section .row label { display: grid; gap: 4px; }
+.device-discovery { margin-top: 8px; }

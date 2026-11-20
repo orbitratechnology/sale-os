@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
-import type { CashStateDto_Serialize as CashState, SyncStatusDto } from "../../ipc/bindings";
+import type { CashStateDto_Serialize as CashState, PrinterStatusDto, SyncStatusDto } from "../../ipc/bindings";
 import { indicatorText } from "../sync/syncText";
 
 /** How often the status bar asks Rust where sync stands. */
 const SYNC_POLL_MS = 10_000;
+/** How often it asks how the receipt printer is (DEV-006). */
+const PRINTER_POLL_MS = 15_000;
 
 /**
  * Always visible, never modal (E09-T06): who is signed in, which till, sandbox or live,
@@ -27,6 +29,20 @@ export function StatusBar({
   onConflicts?: (() => void) | null;
 }) {
   const [sync, setSync] = useState<SyncStatusDto | null>(null);
+  const [printer, setPrinter] = useState<PrinterStatusDto | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      void commands.printerStatus().then((res) => {
+        if (live && res.status === "ok") setPrinter(res.data);
+      });
+    load();
+    const timer = window.setInterval(load, PRINTER_POLL_MS);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
   useEffect(() => {
     let live = true;
     const load = () =>
@@ -59,6 +75,14 @@ export function StatusBar({
           ) : (
             "Drawer closed"
           )}
+        </span>
+      )}
+      {printer?.configured && (
+        <span data-testid="printer-status" data-state={printer.state} title={printer.target ?? undefined}>
+          {printer.state === "ready" && "Printer ready"}
+          {printer.state === "unknown" && "Printer set up"}
+          {printer.state === "warning" && `Printer: ${printer.message ?? "check it"}`}
+          {printer.state === "offline" && <strong>Printer: {printer.message ?? "offline"}</strong>}
         </span>
       )}
       <span data-testid="sync-status" data-state={sync?.indicator ?? "not_linked"}>

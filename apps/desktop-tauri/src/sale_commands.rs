@@ -159,20 +159,30 @@ pub async fn scan_submit(
         .await
         .map_err(err)?;
     Ok(match outcome {
-        ScanOutcome::Added { view, change } => {
+        ScanOutcome::Added { view, change, hint } => {
             let cart = CartViewDto::from_view(&view)?;
+            let hint = crate::dto::scan_hint(&hint);
             match change {
-                CartChange::QuantityIncreased { line, .. } => {
-                    ScanOutcomeDto::Incremented { cart, line_id: line }
-                }
-                CartChange::LineAdded(line) => ScanOutcomeDto::Added { cart, line_id: line },
+                CartChange::QuantityIncreased { line, .. } => ScanOutcomeDto::Incremented {
+                    cart,
+                    line_id: line,
+                    hint,
+                },
+                CartChange::LineAdded(line) => ScanOutcomeDto::Added {
+                    cart,
+                    line_id: line,
+                    hint,
+                },
                 other => return Err(IpcError::internal(format!("unexpected scan change {other:?}"))),
             }
         }
         ScanOutcome::Duplicate { view } => ScanOutcomeDto::Duplicate {
             cart: CartViewDto::from_view(&view)?,
         },
-        ScanOutcome::NotFound { code } => ScanOutcomeDto::NotFound { code },
+        ScanOutcome::NotFound { code, hint } => ScanOutcomeDto::NotFound {
+            code,
+            hint: crate::dto::scan_hint(&hint),
+        },
     })
 }
 
@@ -352,6 +362,8 @@ pub async fn cart_void(
 
 /// Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
 /// stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
+/// `terminal`: approved card-terminal payments to include (E22-T02). Afterwards the cash
+/// drawer opens when cash was taken and `drawer.open_on_cash_sale` is on (E20-T05).
 #[tauri::command]
 #[specta::specta]
 pub async fn checkout_complete(
@@ -359,26 +371,58 @@ pub async fn checkout_complete(
     cart_id: pos_domain::CartId,
     revision: u32,
     tenders: Vec<TenderInputDto>,
+    terminal: Option<Vec<crate::payment_commands::TerminalTenderDto>>,
 ) -> Result<CompletedSaleDto, IpcError> {
     let ctx = services.context().await?;
     let tenders = tenders
         .into_iter()
         .map(TenderInputDto::into_domain)
         .collect::<Result<Vec<_>, _>>()?;
-    let done = services
-        .app()?
-        .checkout
-        .complete_sale(
-            &ctx,
-            pos_application::checkout::CompleteSale {
-                cart_id,
-                revision: u64::from(revision),
-                tenders,
-            },
-        )
+    let took_cash = tenders
+        .iter()
+        .any(|t| t.kind == pos_domain::settlement::TenderKind::Cash);
+    let input = pos_application::checkout::CompleteSale {
+        cart_id,
+        revision: u64::from(revision),
+        tenders,
+    };
+    let app = services.app()?;
+    let terminal = terminal.unwrap_or_default();
+    let done = if terminal.is_empty() {
+        app.checkout.complete_sale(&ctx, input).await.map_err(err)?
+    } else {
+        let provider = crate::payment_commands::provider_tenders(&terminal)?;
+        crate::payment_commands::flow(&services)
+            .await?
+            .complete_sale(&ctx, &app.checkout, input, &provider)
+            .await
+            .map_err(err)?
+    };
+    let mut dto = CompletedSaleDto::from_completed(&done);
+    let open_on_cash = setting_bool(&app.queries, "drawer.open_on_cash_sale", true).await;
+    dto.drawer = match app
+        .devices
+        .after_sale(&ctx, done.sale.id, took_cash, open_on_cash)
         .await
-        .map_err(err)?;
-    Ok(CompletedSaleDto::from_completed(&done))
+    {
+        pos_application::devices::DrawerKick::Opened => "opened".into(),
+        pos_application::devices::DrawerKick::NotNeeded | pos_application::devices::DrawerKick::NoDrawer => {
+            "none".into()
+        }
+        pos_application::devices::DrawerKick::Failed(why) => format!("failed: {why}"),
+    };
+    Ok(dto)
+}
+
+/// A boolean business setting, `default` when unset or unreadable.
+pub(crate) async fn setting_bool(q: &pos_local_db::SqliteStore, key: &str, default: bool) -> bool {
+    use pos_application::settings::SettingsQueries;
+    q.stored_settings()
+        .await
+        .ok()
+        .and_then(|all| all.into_iter().find(|(k, ..)| k == key))
+        .and_then(|(_, v, _)| v.as_bool())
+        .unwrap_or(default)
 }
 
 /// A sale's receipt as stored at completion, rendered for 58 or 80 mm paper (E13-T03).

@@ -3,7 +3,7 @@ import { commands, type ApprovalScope, type CartView, type DiscountInput, type I
 
 export type Notice =
   | { kind: "error"; error: IpcError }
-  | { kind: "notFound"; code: string }
+  | { kind: "notFound"; code: string; hint: string | null }
   | { kind: "info"; text: string };
 
 /** A command that needs a manager's approval: what to approve, and how to retry with it. */
@@ -117,11 +117,12 @@ export function useCart(onSignedOut: () => void) {
       if (res.status === "error") return failed(res.error);
       const out = res.data;
       if (out.outcome === "notFound") {
-        setNotice({ kind: "notFound", code: out.code });
+        setNotice({ kind: "notFound", code: out.code, hint: out.hint });
       } else if (out.outcome === "duplicate") {
         apply(out.cart, seq);
       } else {
-        setNotice(null);
+        // Found, but through a set-up workaround: say how to fix the scanner (E21-T03).
+        setNotice(out.hint ? { kind: "info", text: scanHintText(out.hint) } : null);
         apply(out.cart, seq, out.lineId);
       }
     },
@@ -156,3 +157,14 @@ export function useCart(onSignedOut: () => void) {
 }
 
 export type CartApi = ReturnType<typeof useCart>;
+
+/** What a scan hint from Rust means for the cashier (E21-T01/T03). */
+export function scanHintText(hint: string): string {
+  if (hint.startsWith("keyboard_layout:")) {
+    const layout = hint.slice("keyboard_layout:".length);
+    const names: Record<string, string> = { azerty_fr: "French AZERTY", azerty_be: "Belgian AZERTY", qwertz_de: "German QWERTZ" };
+    return `The scanner types as if the keyboard were US while Windows uses ${names[layout] ?? layout}. Scans still work, but set the scanner's keyboard country to match (see its manual's setup barcodes).`;
+  }
+  if (hint === "check_digit") return "That barcode's check digit is wrong: probably a misread. Scan it again or type it.";
+  return hint;
+}

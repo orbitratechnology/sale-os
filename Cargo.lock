@@ -1167,6 +1167,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "pos-application",
+ "pos-device-hw",
+ "pos-device-ports",
  "pos-device-virtual",
  "pos-domain",
  "pos-local-db",
@@ -3911,6 +3913,7 @@ dependencies = [
  "async-trait",
  "jsonschema",
  "pos-application",
+ "pos-device-hw",
  "pos-device-ports",
  "pos-device-virtual",
  "pos-domain",
