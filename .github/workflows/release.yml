@@ -1,6 +1,6 @@
 name: Release build (Windows)
 
-# Production (release-profile) Windows installers for the pilot, plus the tools for the pilot
+# Production (release-profile) Windows installer (NSIS) for the pilot, plus the tools for the pilot
 # PC's reference runs. Run it from the Actions tab ("Run workflow", once this file is on the
 # default branch), by pushing a tag v*, or by changing this file on any branch.
 #
@@ -43,8 +43,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: tauri build (release, NSIS + MSI)
-        run: pnpm tauri build
+      - name: tauri build (release, NSIS)
+        # NSIS only: the per-user setup .exe the pilot runbook uses. Each installer carries the
+        # whole offline WebView2 installer (about 300 MB, ADR-021), so an MSI beside it doubled
+        # the download. CI still builds the MSI, so it can come back if IT deploys with MSI.
+        run: pnpm tauri build --bundles nsis
       - name: Pilot tools (performance suite)
         run: cargo build --release --locked -p pos-bench
       - name: Pilot tools (UI latency kit)
@@ -72,7 +75,6 @@ jobs:
         run: |
           $out = New-Item -ItemType Directory -Force -Path dist-release
           Copy-Item target/release/bundle/nsis/*.exe $out
-          Copy-Item target/release/bundle/msi/*.msi $out
           New-Item -ItemType Directory -Force -Path "$out/pilot-tools" | Out-Null
           Copy-Item target/release/pos-bench.exe "$out/pilot-tools/"
           Copy-Item ui-latency.zip "$out/pilot-tools/"
