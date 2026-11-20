@@ -330,3 +330,23 @@ describe("the product list with the keyboard", () => {
     await page.close();
   });
 });
+
+describe("the till stays loaded under other screens", () => {
+  it("ignores scans and keys while another screen is open, and is back at once with its lines", async () => {
+    const page = await till();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F8");
+    await page.getByRole("heading", { name: "Sales", level: 1 }).waitFor();
+    // A scan and the till's keys on the Sales screen do nothing to the hidden till.
+    await scan(page, CRISPS);
+    await page.keyboard.press("F9");
+    expect(await page.locator("dialog").count()).toBe(0);
+    await page.keyboard.press("Escape");
+    // Back: the same cart, at once (it was never unloaded), with no stray line added.
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await page.locator("[data-testid=cart-line]").count()).toBe(1);
+    expect(await page.title()).toBe("Till · Sale OS");
+    await page.close();
+  });
+});

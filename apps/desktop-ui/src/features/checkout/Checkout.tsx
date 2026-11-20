@@ -89,6 +89,7 @@ function inTextField(): boolean {
  * quantities and discounts inline, clear or void. Totals come from Rust; the UI formats.
  */
 export function Checkout({
+  active = true,
   workspace,
   session,
   onSignedOut,
@@ -107,6 +108,11 @@ export function Checkout({
   onGettingStartedSeen,
   errorSound = true,
 }: {
+  /**
+   * The till stays mounted while another screen is open (coming back is then instant). While
+   * inactive it is hidden: no scanning, no keys, no dialogs; on return it refreshes its data.
+   */
+  active?: boolean;
   workspace: Workspace;
   session: Session;
   onSignedOut: () => void;
@@ -184,10 +190,12 @@ export function Checkout({
       void c.scan(scan.raw, scan.scanEventId, "scanner");
     },
     {},
-    modal === null && c.approval === null,
+    active && modal === null && c.approval === null,
   );
 
   useEffect(() => {
+    // Only while the till is showing: hidden, it does no work at all.
+    if (!active) return;
     const update = () => setScannerReady(!inTextField());
     // On focusout the next element is not focused yet: check after the event.
     const later = () => setTimeout(update, 0);
@@ -197,7 +205,7 @@ export function Checkout({
       document.removeEventListener("focusin", update);
       document.removeEventListener("focusout", later);
     };
-  }, []);
+  }, [active]);
 
   const lock = useCallback(async () => {
     await commands.authLogout();
@@ -235,7 +243,7 @@ export function Checkout({
   // Global keys. Ignored while a dialog is open (the dialog owns Esc and Enter).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (modal || c.approval || e.defaultPrevented) return;
+      if (!active || modal || c.approval || e.defaultPrevented) return;
       const typing = inTextField();
       const sel = c.selected;
       switch (e.key) {
@@ -314,7 +322,37 @@ export function Checkout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock]);
+  }, [active, c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock]);
+
+  // Leaving the till closes what was open on it (adjusted while rendering, the React way to
+  // reset state when a prop changes).
+  const [wasActive, setWasActive] = useState(active);
+  if (wasActive !== active) {
+    setWasActive(active);
+    if (!active) {
+      setModal(null);
+      setEditing(null);
+      c.setNotice(null);
+    }
+  }
+  // Coming back shows the last state at once, then refreshes it: another screen may have
+  // changed the cart (a return, a new product), the drawer or the parked carts.
+  const returned = useRef(false);
+  const { refresh } = c;
+  useEffect(() => {
+    if (!active) {
+      returned.current = true;
+      return;
+    }
+    if (!returned.current) return;
+    returned.current = false;
+    void refresh();
+    countParked();
+    void commands.cashSessionCurrent().then((res) => res.status === "ok" && setDrawer(res.data));
+  }, [active, refresh, countParked]);
+  // Dialogs only ever show on the active till: a modal in the hidden till would block the
+  // screen that is open.
+  const shown = active ? modal : null;
 
   const submitCode = (e: FormEvent) => {
     e.preventDefault();
@@ -550,7 +588,7 @@ export function Checkout({
 
       <StatusBar workspace={workspace} session={session} scannerReady={scannerReady} drawer={drawer} onConflicts={onConflicts} />
 
-      {modal === "pay" && cart && (
+      {shown === "pay" && cart && (
         <PaymentPanel
           cart={cart}
           onClose={() => setModal(null)}
@@ -560,7 +598,7 @@ export function Checkout({
           }}
         />
       )}
-      {modal === "goLive" && onWentLive && (
+      {shown === "goLive" && onWentLive && (
         <GoLiveDialog
           onCancel={() => setModal(null)}
           onDone={() => {
@@ -569,7 +607,7 @@ export function Checkout({
           }}
         />
       )}
-      {modal === "clear" && (
+      {shown === "clear" && (
         <Dialog
           title="Clear the cart?"
           confirmLabel="Clear cart"
@@ -583,7 +621,7 @@ export function Checkout({
           <p>All {cart?.lines.length} lines will be removed.</p>
         </Dialog>
       )}
-      {modal === "void" && (
+      {shown === "void" && (
         <Dialog
           title="Void this sale?"
           confirmLabel="Void sale"
@@ -598,7 +636,7 @@ export function Checkout({
           <p>The cart is closed and kept for the audit trail. A new, empty cart opens.</p>
         </Dialog>
       )}
-      {modal === "park" && (
+      {shown === "park" && (
         <Dialog
           title="Park this cart?"
           confirmLabel="Park"
@@ -615,7 +653,7 @@ export function Checkout({
           </p>
         </Dialog>
       )}
-      {modal === "start" && onSettings && (
+      {shown === "start" && onSettings && (
         <GettingStarted
           onProducts={() => {
             onGettingStartedSeen?.();
@@ -639,10 +677,10 @@ export function Checkout({
           }}
         />
       )}
-      {modal === "quick" && (
+      {shown === "quick" && (
         <QuickSelectDialog exponent={exponent} onPick={(variantId) => c.addQuick(variantId)} onClose={() => setModal(null)} />
       )}
-      {modal === "recovered" && recovered && (
+      {shown === "recovered" && recovered && (
         <RecoveryDialog
           recovered={recovered}
           exponent={exponent}
@@ -656,7 +694,7 @@ export function Checkout({
           }}
         />
       )}
-      {modal === "parked" && (
+      {shown === "parked" && (
         <ParkedDialog
           exponent={exponent}
           canResume={!hasLines}
@@ -670,7 +708,7 @@ export function Checkout({
           }}
         />
       )}
-      {modal === "orderDiscount" && (
+      {shown === "orderDiscount" && (
         <Dialog
           title="Order discount"
           confirmLabel="Apply"
@@ -687,7 +725,7 @@ export function Checkout({
           }}
         />
       )}
-      {modal === "price" && selectedLine && (
+      {shown === "price" && selectedLine && (
         <Dialog
           title={`New price for ${selectedLine.name}`}
           confirmLabel="Change price"
@@ -702,19 +740,19 @@ export function Checkout({
           }}
         />
       )}
-      {modal !== null && typeof modal === "object" && (
+      {shown !== null && typeof shown === "object" && (
         <Dialog
-          title={modal.reason}
+          title={shown.reason}
           confirmLabel="Continue"
           input={{ label: "Reason (kept in the audit log)" }}
           onCancel={() => setModal(null)}
           onConfirm={(reason) => {
             setModal(null);
-            modal.then(reason);
+            shown.then(reason);
           }}
         />
       )}
-      {c.approval && (
+      {active && c.approval && (
         <ApprovalDialog
           scope={c.approval.scope}
           requesterId={session.userId}

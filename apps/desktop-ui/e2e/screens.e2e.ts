@@ -1059,14 +1059,14 @@ describe("stock (E11-T02/T03)", () => {
     await page.keyboard.type(COLA, { delay: 5 });
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => (document.querySelector("[aria-label='Quantity: Cola 330ml']") as HTMLInputElement | null)?.value === "2");
-    await page.getByLabel("Scan or type a code").fill("CASE12");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CASE12");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => (document.querySelector("[aria-label='Quantity: Cola 330ml']") as HTMLInputElement | null)?.value === "14");
-    await page.getByLabel("Scan or type a code").fill("CRISP");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CRISP");
     await page.keyboard.press("Enter");
     await page.getByLabel("Quantity: Crisps").fill("24");
     await page.getByLabel("Unit cost: Crisps").fill("0.40");
-    await page.getByLabel("Scan or type a code").fill("NOPE");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("NOPE");
     await page.keyboard.press("Enter");
     await page.getByRole("alert").filter({ hasText: "No item has the code NOPE" }).waitFor();
     await page.getByLabel("Supplier (optional)").fill("Wholesale Ltd");
@@ -1088,7 +1088,7 @@ describe("stock (E11-T02/T03)", () => {
     // An "other" adjustment needs a note; a count correction may be negative.
     await page.getByRole("radio", { name: "Adjust stock" }).click();
     await page.getByLabel("Reason").selectOption("other");
-    await page.getByLabel("Scan or type a code").fill("CHOC");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CHOC");
     await page.keyboard.press("Enter");
     await page.getByLabel("Quantity: Chocolate bar").fill("-1");
     expect(await page.getByLabel("Unit cost: Chocolate bar").count()).toBe(0);
@@ -1102,7 +1102,7 @@ describe("stock (E11-T02/T03)", () => {
     });
     // A loss cannot be negative: refused on the screen before Rust.
     await page.getByLabel("Reason").selectOption("loss");
-    await page.getByLabel("Scan or type a code").fill("CHOC");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CHOC");
     await page.keyboard.press("Enter");
     await page.getByLabel("Quantity: Chocolate bar").fill("-1");
     await page.getByRole("button", { name: "Post adjustment" }).click();
@@ -1147,7 +1147,7 @@ describe("stock (E11-T02/T03)", () => {
     const onHand = page.getByRole("region", { name: "Stock on hand" });
     await onHand.getByText("calculated from recorded movements").waitFor();
     expect(await page.getByRole("tab", { name: "Receive and adjust" }).count()).toBe(0);
-    expect(await page.getByLabel("Scan or type a code").count()).toBe(0);
+    expect(await page.getByRole("main").getByLabel("Scan or type a code").count()).toBe(0);
     await onHand.getByTestId("onhand-row").nth(2).waitFor();
     expect(await onHand.getByTestId("onhand-row").nth(0).textContent()).toContain("Negative");
     await onHand.getByRole("button", { name: "Cola 330ml" }).click();
@@ -1669,7 +1669,7 @@ describe("staff (E05-T06)", () => {
     await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
     await page.getByTestId("staff-inactive").filter({ hasText: "Deactivated: Cal" }).waitFor();
     // No PIN is ever shown back.
-    expect(await page.locator("main").textContent()).not.toContain("9999");
+    expect(await page.getByRole("main").textContent()).not.toContain("9999");
     const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
     await page.addScriptTag({ path: axePath });
     const violations = await page.evaluate(async () => {

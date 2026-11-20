@@ -48,9 +48,12 @@ export function App() {
     // focus on the page, where the scanner types (scanner-ready mode).
     if (place === "till" || place === "loading") return;
     const frame = requestAnimationFrame(() => {
+      // Focus left on a control that is no longer shown (the till hides as a screen opens over
+      // it) counts as no focus.
       const active = document.activeElement;
-      if (active && active !== document.body) return;
-      const heading = document.querySelector<HTMLElement>("main h1");
+      if (active && active !== document.body && active.getClientRects().length > 0) return;
+      // The visible screen's heading (the till stays in the page, hidden, with its own).
+      const heading = [...document.querySelectorAll<HTMLElement>("main h1")].find((h) => h.getClientRects().length > 0);
       if (!heading) return;
       heading.tabIndex = -1;
       heading.focus();
@@ -158,6 +161,7 @@ export function App() {
   const workspace = state.workspace;
   // UI hiding only: Rust refuses edits by roles without CatalogEdit regardless.
   const canEdit = state.session.role !== "cashier";
+  const tillActive = screen.kind === "till";
   const view = (() => {
     switch (screen.kind) {
       case "returns":
@@ -286,8 +290,14 @@ export function App() {
           />
         );
       default:
-        return (
+        return null;
+    }
+  })();
+  // The till stays mounted under the other screens, hidden, so going back to it is instant
+  // (its cart, totals and layout are already there; it refreshes in the background).
+  const till = (
           <Checkout
+            active={tillActive}
             key={
               workspace.mode /* going live re-reads the drawer and the banner */
             }
@@ -325,11 +335,12 @@ export function App() {
               })
             }
           />
-        );
-    }
-  })();
+  );
   return (
     <ScanPreferences.Provider value={scanPrefs}>
+      <div className="till-host" hidden={!tillActive}>
+        {till}
+      </div>
       {view}
     </ScanPreferences.Provider>
   );
