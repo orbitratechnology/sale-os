@@ -207,7 +207,8 @@ pub async fn encrypt_in_place(path: &Path, key: &DbKey) -> Result<(), StoreError
     for suffix in ["-wal", "-shm"] {
         let _ = std::fs::remove_file(sibling(path, suffix));
     }
-    crate::replace_file(&target, path).map_err(|e| StoreError::io("put encrypted database in place", e))?;
+    crate::replace_file_patient(&target, path)
+        .map_err(|e| StoreError::io("put encrypted database in place", e))?;
     Ok(())
 }
 

@@ -95,20 +95,49 @@ pub(crate) fn sync_file(path: &Path) -> std::io::Result<()> {
 }
 
 /// Renames `from` over `to`. On Windows a file another process has just opened (the virus
-/// scanner looking at a file we just wrote) cannot be replaced for a moment ("Access is
-/// denied"): try again for up to about two seconds before giving up.
+/// scanner or search indexing looking at a file we just wrote) cannot be replaced for a moment
+/// ("Access is denied"): try again for up to about five seconds before giving up. Routine work
+/// (backups, exports) uses this while the till is selling, so it must not wait long.
 pub(crate) fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    replace_file_within(from, to, Duration::from_secs(5))
+}
+
+/// The same for steps that run while nothing else does (encrypting the database at start-up,
+/// putting a restored database in place): they happen once and nothing waits on them, so give
+/// a busy virus scanner up to 30 seconds rather than fail the step.
+pub(crate) fn replace_file_patient(from: &Path, to: &Path) -> std::io::Result<()> {
+    replace_file_within(from, to, Duration::from_secs(30))
+}
+
+fn replace_file_within(from: &Path, to: &Path, budget: Duration) -> std::io::Result<()> {
+    let started = std::time::Instant::now();
     let mut wait = Duration::from_millis(20);
-    for _ in 0..8 {
+    let mut warned = false;
+    loop {
         match std::fs::rename(from, to) {
             Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied => {
-                std::thread::sleep(wait);
-                wait *= 2;
+                let waited = started.elapsed();
+                if waited >= budget {
+                    return Err(std::io::Error::new(
+                        e.kind(),
+                        format!(
+                            "{e}: {} could not replace {} for {} s; another program (often the virus scanner or search indexing) was holding one of them",
+                            from.display(),
+                            to.display(),
+                            waited.as_secs()
+                        ),
+                    ));
+                }
+                if !warned && waited >= Duration::from_secs(1) {
+                    warned = true;
+                    tracing::warn!(file = %to.display(), "another program is holding the file; waiting to replace it");
+                }
+                std::thread::sleep(wait.min(budget.saturating_sub(waited)));
+                wait = (wait * 2).min(Duration::from_secs(1));
             }
             other => return other,
         }
     }
-    std::fs::rename(from, to)
 }
 
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);

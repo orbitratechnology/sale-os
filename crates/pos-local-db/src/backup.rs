@@ -477,7 +477,7 @@ pub async fn restore(opts: &DbOptions, backup: &Path) -> Result<RestoreReport, S
             std::fs::remove_file(&p).map_err(io("remove old journal"))?;
         }
     }
-    crate::replace_file(&incoming, &opts.path).map_err(io("put restored database in place"))?;
+    crate::replace_file_patient(&incoming, &opts.path).map_err(io("put restored database in place"))?;
     tracing::warn!(
         backup = %backup.display(),
         outbox_sequence = restored.outbox_sequence,
