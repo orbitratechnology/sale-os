@@ -229,7 +229,19 @@ reference PC is skipped at the owner's request (D-12): this CI run is the accept
 
 Stage 4 is done in code apart from what needs people or keys: E19-T06 (code-signing
 certificate and update key), E19-T08 (usability sessions in shops), and the open decisions
-(D-02 country, D-06 hosting, the external penetration test, the on-call rota). The run on the
+(D-06 hosting, the external penetration test, the on-call rota).
+
+**D-02: Sri Lanka** (owner, 2026-11-20). The compliance profile is drafted in
+`03-decisions.md` from Gazette 2481/22 and IRD Circular SEC/2026/E/03; the owner and the
+shop's accountant are to confirm it. It implies:
+- a no-VAT mode for unregistered shops;
+- a "TAX INVOICE" for VAT-registered buyers (`YYMMM_QQQQ_XXXXX` serial, MM/DD/YYYY dates,
+  supplier and buyer TIN);
+- per-document VAT rounding;
+- five years' retention.
+
+SSCL is a levy on the shop's turnover, not a tax line on sales, so no compound tax is
+needed. The run on the
 pilot reference PC is skipped at the owner's request (D-12, 2026-11-20): the Windows CI runner
 is the evidence, and what that leaves unmeasured is listed there.
 

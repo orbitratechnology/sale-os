@@ -271,7 +271,7 @@ is the latest point at which a different answer stops being cheap.
 | ID | Question | Recommended default | Blocks | Needed by |
 |---|---|---|---|---|
 | D-01 | Product name and branding | Keep the codename `sale-os` in code. Product name only in `tauri.conf.json`, installer, and the UI title. | E19-T06 (installer signing identity) | Start of Stage 4 |
-| D-02 | Pilot country and its tax/invoice compliance profile | Build a generic VAT/GST engine (ADR-004), tax-inclusive or tax-exclusive, multiple rates per category, no compounding. Fiscal/e-invoicing integration is out of scope until the country is known. | E08-T01 rounding variant; receipt mandatory fields (E13-T02); retention (E19-T10) | **End of Stage 1** |
+| D-02 | Pilot country and its tax/invoice compliance profile | **Sri Lanka (owner, 2026-11-20). Profile drafted below, to be confirmed by the owner and the shop's accountant.** Build a generic VAT/GST engine (ADR-004), tax-inclusive or tax-exclusive, multiple rates per category, no compounding. Fiscal/e-invoicing integration is out of scope until the country is known. | E08-T01 rounding variant; receipt mandatory fields (E13-T02); retention (E19-T10) | **End of Stage 1** |
 | D-03 | One or several concurrent registers per location for the pilot | Support several in the data model and sync. The pilot runs **one register per location**, and the multi-register offline stock caveat (PRD §11.5) is documented in the UI. | E17 test matrix scope | Start of Stage 3 |
 | D-04 | Cloud account before the first sale, or linked later? | **Linked later.** Local-first setup works with no account (ADR-009). | E04-T02 wizard flow | Start of Stage 1 |
 | D-05 | Supported Windows versions and minimum hardware | Windows 11 23H2+ x64. Reference machine: 4-core CPU (≈ i3-12100 class), 8 GB RAM, SSD, 1366×768 minimum display. | E19-T01 benchmarks | Start of Stage 4 |
@@ -282,3 +282,95 @@ is the latest point at which a different answer stops being cheap.
 | D-10 | *(new)* Can owners join an **existing** cloud business from a register that already has local data? | **No, not in the MVP.** Linking either creates a new cloud business from the local workspace, or joins an existing one from an empty local database (bootstrap). Merging two populated workspaces is post-MVP. | E17-T08 | Start of Stage 3 |
 | D-11 | *(new)* Are cash sessions (open float / count / close) in the MVP? | **Yes**, minimal version (DER-001). They are needed for the "reconciled operating day" exit gate. | E15-T02 | Start of Stage 2 |
 | D-12 | *(new)* Must the pilot reference PC run (acceptance, `pos-bench --scale full`, UI latency, Narrator and high contrast) pass before release? | **Decided 2026-11-20 by the owner: skipped.** The evidence is the Windows CI runner instead: the MVP acceptance suite 13/13 (`MVP acceptance suite (windows-latest)`), the Windows Rust and browser tests, and the harness baselines (`docs/perf/2026-11-17.md`, `2026-11-19-encryption.md`, `2026-11-20-ui-latency.md`). Not measured as a result: PRD §14 on the D-05 reference machine, WebView2 cold start, memory and on-screen latency on real hardware, and a manual screen-reader and high-contrast pass. The tools stay ready (pilot runbook §11) for whenever a shop PC is available. | — | Decided |
+
+### D-02 draft: Sri Lanka compliance profile (2026-11-20, to be confirmed)
+
+The owner chose Sri Lanka for the pilot. This draft reads the primary sources:
+
+- Gazette Extraordinary No. 2481/22 of 27 March 2026, the tax invoice specification under
+  section 20 of the VAT Act No. 14 of 2002;
+- IRD Circular SEC/2026/E/03 of 20 May 2026.
+
+Figures that come only from secondary sources are marked *(secondary)*. Have the shop's
+accountant confirm them before anything is built.
+
+**Business and VAT**
+
+- Country LK, currency LKR (2 decimals), time zone Asia/Colombo. All three are already in the
+  tables.
+- VAT standard rate 18% *(secondary)*. Registration is required above LKR 60 million of
+  taxable supplies a year, or LKR 15 million a quarter *(secondary)*. Many small shops are
+  under it and charge no VAT.
+  - **A non-registered shop must be able to run with no VAT at all:** no VAT lines on
+    receipts, and no "Tax Invoice".
+- **SSCL is not a tax line on sales.** The Social Security Contribution Levy is 2.5% of the
+  shop's liable turnover, and liable turnover for retail is 50% of turnover *(secondary)*.
+  - It is the business's own levy, not something added to each receipt.
+  - The IRD invoice specification lists only the value of supply excluding VAT, the VAT
+    charged and the total including VAT; SSCL does not appear in it.
+  - So the tax engine needs **no compound (tax-on-tax) step**. A shop that passes SSCL on
+    does it through its shelf prices.
+  - An SSCL estimate (50% × 2.5% of turnover) can be an optional line in reports. The
+    accountant files the return.
+
+**Receipts and tax invoices**
+
+- An ordinary till receipt stays as it is. The circular separates a tax invoice from
+  "quotations, proforma invoices, or receipts".
+- A **"TAX INVOICE"** is issued when a VAT-registered shop sells to a VAT-registered buyer, or
+  when one is asked for. It must have, in force since 1 July 2026:
+  - the title "TAX INVOICE", prominent;
+  - **supplier:** TIN (9 digits), registered name and address, as on the VAT certificate;
+    telephone optional;
+  - **purchaser** (when VAT-registered): TIN, name and address;
+  - **serial number `YYMMM_QQQQ_XXXXX`:**
+    - `YY` is the year, `MMM` the month in capitals (`JUL`);
+    - `QQQQ` is 1–15 letters or digits (for example the register code);
+    - `XXXXX` is digits only, continuing from the last number issued; it may restart each
+      month or year;
+    - no spaces, at most 40 characters;
+    - a till number such as `26NOV_R01_00042` fits;
+  - **invoice date and date of supply**, both written MM/DD/YYYY;
+  - **each line:** a description specific enough to identify the goods, quantity with its
+    unit, unit price, and amount excluding VAT;
+  - **totals in LKR to 2 decimals:** total value of supply (excluding VAT), VAT amount
+    ("Total Value of Supply @ VAT Rate"), and total including VAT;
+  - **VAT-taxable supplies only.** Exempt or out-of-scope items are left off, unless they are
+    an integral part of a taxable supply, in which case they are shown separately;
+  - **optional:** mode of payment, place of supply, total in words, logo and notes.
+- **Rounding.** The specification computes VAT on the invoice total ("Total Value of Supply
+  @ VAT Rate"), while ADR-004 rounds per line. With prices including VAT the two can differ
+  by a cent.
+  - Proposal: add the `TaxRoundingMode::PerDocument` variant that ADR-004 already reserves,
+    and use it for the Sri Lanka profile.
+  - The accountant should confirm the IRD requires this rather than accepting line rounding.
+
+**Retention**
+
+- Tax invoices, duplicates and all records are kept for **five years from the end of the
+  taxable period** (VAT Act, and the record-keeping rules referred to by Gazette 2463/05).
+  The E19-T10 retention default becomes 5 years after the period ends.
+
+**E-invoicing**
+
+- IRD is rolling out e-invoicing through a RAMIS Web API *(secondary)*:
+  - a pilot is under way;
+  - all VAT-registered persons are targeted from late 2026;
+  - retail B2C comes last, when POS systems are linked for real-time reporting.
+- Out of scope for the pilot. Watch the IRD notices.
+- Firms integrating through the API before the end of 2026 may leave out the `YYMMM_QQQQ_`
+  part of the serial number.
+
+**Work this implies (after confirmation)**
+
+1. **A "no VAT" business:** set up without a VAT registration; receipts then show no tax.
+2. **Tax invoices:** a setting for the supplier TIN; at the till, "Tax invoice" asks for the
+   buyer's TIN, name and address. A new `tax_invoice` number counter per register gives
+   `YYMMM_<register code>_XXXXX` (it does not replace the receipt number). Through the E13-T02
+   `ComplianceProfile` hook, an `lk` profile prints and saves the PDF in the gazette's layout,
+   at 80 mm and A4, with goldens.
+3. **Per-document VAT rounding** (`TaxRoundingMode::PerDocument`) for the `lk` profile, with
+   scenarios in the E08-T03 tax suite.
+4. **Retention:** 5 years after the end of the taxable period (E19-T10).
+5. **Optional:** an SSCL estimate line in the daily and Z reports.
+
