@@ -1408,12 +1408,15 @@ describe("taxes (E06-T05)", () => {
     expect(violations).toEqual([]);
   });
 
-  it("a manager has no Taxes page; Settings is the owner's", async () => {
+  it("a manager has no Taxes page: Settings shows them only Devices (DeviceConfigure)", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Mia/ }).click();
     await page.keyboard.type("2222");
     await page.keyboard.press("Enter");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
-    expect(await page.getByRole("button", { name: "Settings" }).count()).toBe(0);
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("heading", { name: "Receipt printer", exact: true }).waitFor();
+    expect(await page.getByRole("tab").allTextContents()).toEqual(["Devices"]);
+    expect(await page.getByRole("alert").count()).toBe(0);
   });
 });

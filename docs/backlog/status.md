@@ -191,13 +191,48 @@ as agreed.
 | AT-11 | A cashier cannot do manager-only operations by direct IPC | `permissions.rs::each_role_gets_exactly_what_the_matrix_grants` (every command × every role; an unclassified command fails the build) | **Pass** |
 | AT-06, AT-07, AT-12, AT-13 | Sync, conflicts, tenant isolation, sync labels | Stage 3 | Not started |
 
+## Stage 5 started (2026-11-20): universal device support (PRD §12.7, ADR-023)
+
+A hardware check against a TCP 9100 ESC/POS emulator, the escpos-tools parser, the
+escpos-printer-db model database and a keyboard-wedge emulator found:
+- no real printer path at all;
+- `?` for every non-ASCII character;
+- 48 columns wrapping on 42-column printers;
+- no scannable receipt barcode;
+- 13 kinds of scan that never found their product;
+- slow scanners losing every scan silently;
+- no payment port.
+
+The PRD gained §12.7 (DEV-001…009, BAR-010…013, PAY-009/010) and the backlog gained
+E20-T08…T12, E21 and E22. None of the work below has touched real hardware yet: every
+"verified" is against emulators, PTY null-modems or in-test devices
+(`docs/hardware/registry.yaml` says so per entry).
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E20-T08 Printer transports | **Done (emulated)** | `pos-device-hw`: raw TCP, serial (serialport, no libudev), device files, OS spooler (winspool via `printers` on Windows, `lp -o raw` on CUPS). 50 tests: an in-test TCP printer (printed; paper out and cover open failed before sending; unreachable failed; never reads or dropped mid-job uncertain; paper out after the job uncertain; serialised jobs) and PTY pairs. **Found and fixed:** a printer that ignores `DLE EOT` and drops idle links failed every job as "disconnected". Silence now means "status unknown"; a link lost before any job byte reconnects; a silent printer stops being asked (re-checked every 20 jobs) | Real devices (D-07). The Windows spooler type-checks only (`cargo check --target x86_64-pc-windows-gnu`). `lp` is not installed here, so CUPS is untested |
+| E20-T09 Profiles and identification | **Done (data)** | 74 profiles: 47 from escpos-printer-db (CC BY 4.0, attributed), 8 generic, 19 hand-added common models flagged `verified: false`. `GS I` identification picks the profile. TM-T88V = 42 columns, TM-T20III = 48. Star TSP100/143 flagged image-only and refused | Hand-added column counts and code pages need checking on hardware |
+| E20-T10 Encoder dialects, code pages, barcodes | **Done** | `pos-receipts`: ESC/POS, Star Line Mode and plain text. 30 code pages generated from Python's codecs. A code page is chosen per run, then transliteration (deunicode), never `?`. CODE128/QR receipt number; cut modes; drawer kick. The byte goldens are unchanged under default options. End-to-end: `Café`, `Größe`, `Ąę`, `£€` print via CP1252/CP1257 on an in-test TM-T88V with no `?` and every line within 42 columns | Star Line commands written from the spec and unverified, especially `ESC b` and QR. CJK, Arabic shaping and Devanagari on thermal paper need a raster path (PDF covers them today) |
+| E20-T11 Devices per till, status, test print, drawer | **Done (Chromium + IPC)** | Migration 0017: local-only `devices`; `print_jobs.adapter` widened, rows kept and the FK rewritten (checked by upgrading a 0001–0015 database). `DeviceService` behind a `DeviceDriver` port. A switchable printer is swapped without a restart and falls back to the virtual printer when a stored device no longer opens. Print and preview use the printer's columns. "No sale" needs `DrawerOpen` (cashier: approval) and a reason, audited `cash_drawer.opened`. The drawer opens after cash sales only (`drawer.open_on_cash_sale`). New permission `DeviceConfigure` (managers; Settings shows them Devices only), code `DEVICE_UNAVAILABLE`. 14 IPC commands in the ACL and the permission harness. IPC test: save a network printer (a bad host refused at `connection.host`), cash sale with drawer pulse, 42-column preview, receipt with `é` over TCP, remove → virtual. 7 device-service tests; 7 Chromium tests (discovery fills address and model, queues and COM ports, image-only model disabled, status bar, No sale, drawer after cash) | Live status is polled every 15 s; there is no automatic status back (ASB) yet |
+| E20-T12 Discovery | **Done (emulated)** | COM ports with USB vendor labels, spooler queues, device files; /24 network scan on 9100 with `GS I` identification; larger ranges refused | The vendor-ID table mixes sure and best-guess entries |
+| E21-T01 Scan decoding | **Done** | `decode_scan`: AIM ids; UPC-E↔UPC-A; add-ons; ISBN-10/ISSN; Code 39 start/stop and check character; Codabar start/stop (plus an unambiguous lookup of a stored `A…B`); GS1 AIs (GS or parenthesised, with check digits); Digital Link; AZERTY/QWERTZ remaps. Candidates are tried in order and the exact form comes first. 27 decoder tests with proptests. Every not-found case from the matrix now finds its product (`scan_decoding.rs`) | — |
+| E21-T02 Variable-measure items | **Done** | `scanner.variable_measure_rules` (validated). A weight sets the quantity; a price label costs exactly the label amount (proptest), audited as a `barcode_label` override; GS1 310n/392n/30 work the same way; label lines never merge | — |
+| E21-T03 Wedge robustness | **Done (Chromium)** | Slow scanners (40–120 ms per character) recognised by rhythm; 2–3-character codes with a suffix, but never right after a discarded burst; GS from Ctrl+]; a missing-suffix hint; keyboard-layout and check-digit hints at the till. 34 unit tests, Chromium e2e run 4 times in a row | WebView2 timing on Windows (E20-T02) |
+| E21-T04 Serial scanners | **Done (PTY)** | `SerialScanner` (CR, LF, CRLF or ETX, timeout, prefix strip, GS kept, reconnect with backoff, health) started from Settings → Devices. Scans reach the window as `scanner://scan` and go through the wedge path | USB HID-POS scanners (raw HID) not supported |
+| E22-T01 Payment port and attempt state machine | **Done** | `PaymentPort` and `MockPaymentProvider` (every E10-T02 scenario, idempotent initiate). `payment_attempts` (0016) with an append-only history. `ProviderPaymentFlow`. Checkout takes approved attempts in the sale's own transaction, and a sale is refused while its cart has an open attempt. 37 tests, including a fault at every statement and card numbers refused in every field | — |
+| E22-T02 Terminal payment in the till | **Done (Chromium, sandbox)** | "Card (terminal)": waiting, approve, decline, or an unknown outcome settled by the operator (manager approval for cashiers). The sandbox terminal works only in sandbox mode (.01 declines, .02 times out, .03 delays). 3 Chromium tests | — |
+| E22-T03 Provider connectors | Not started | — | Gated on agreements and credentials (PRD §17) |
+| E20-T01 Compatibility registry | **Started** | `docs/hardware/registry.yaml`, validated by `pos-device-hw/tests/registry.rs` (known values, real profile ids, firmware required for real-hardware entries); `docs/hardware/README.md` set-up and troubleshooting guide | Only emulator entries until D-07 devices are tested. The JSON copy for "verified" badges in the app is still to do |
+
 ### Next up
 
-Stage 3 (cloud sync) per 00-roadmap, starting with E16 (cloud API, auth, device link) and
-E17 (outbox push, pull, idempotent ingestion).
+Real-device validation of the E20/E21 work (D-07 purchase list), then E22-T03 once a provider
+agreement exists. Raster printing (for CJK, Arabic and Devanagari on thermal printers), HID-POS
+scanners, scales (E20-T06) and customer displays are the remaining device gaps.
 
 **Build note:** a debug build with full debug info fills the session disk (28 GB). Use
-`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs.
+`CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0` (2 GB) for local test runs, and
+`CARGO_INCREMENTAL=0` (the incremental cache alone reached 11 GB in a full workspace run).
 
 **Known flaky:** `e2e/scanCapture.e2e.ts` "delivers 20 scans typed at 5 ms/key" failed once in a full
 run on a loaded machine and passed 3/3 on its own (2026-11-07). It types at 5 ms per key, so it is

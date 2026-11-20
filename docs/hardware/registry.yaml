@@ -1,0 +1,95 @@
+# Hardware compatibility registry (E20-T01, PRD §12.6). One entry per device tested.
+# Validated by crates/pos-device-hw/tests/registry.rs (run in CI with the workspace tests).
+#
+# result:
+#   pass          - tested on the real device, every listed capability worked
+#   partial       - real device, some capabilities failed (see notes)
+#   fail          - real device, does not work
+#   emulator-pass - passed against an emulator or in-test device only; NOT a hardware claim
+# Real-hardware entries replace emulator ones as devices are bought and tested (D-07).
+schema: 1
+entries:
+  - vendor: Generic
+    model: ESC/POS network printer (in-test emulator, Epson TM-T88V profile)
+    kind: receipt_printer
+    connection: network
+    profile_id: TM-T88V
+    os: Linux (CI container)
+    adapter: pos-device-hw escpos_net
+    firmware: n/a
+    capabilities: [print, cut, code_pages, barcode, drawer_kick, status, paper_out, cover_open, uncertain_outcome]
+    result: emulator-pass
+    tested_on: 2026-11-20
+    tester: engineering (automated)
+    evidence: crates/pos-local-db/tests/hardware_printing.rs, crates/pos-device-hw/tests/tcp_printer.rs, apps/desktop-tauri/tests/permissions.rs
+    notes: CP1252/CP1257 selected per run; 42 columns; status silence and dropped idle links handled.
+  - vendor: Generic
+    model: ESC/POS serial printer (PTY null-modem)
+    kind: receipt_printer
+    connection: serial
+    profile_id: generic-escpos-80mm-48
+    os: Linux (CI container)
+    adapter: pos-device-hw escpos_serial
+    firmware: n/a
+    capabilities: [print, status, flow_control]
+    result: emulator-pass
+    tested_on: 2026-11-20
+    tester: engineering (automated)
+    evidence: crates/pos-device-hw/tests/serial.rs
+    notes: Bluetooth SPP and USB-COM printers use the same path.
+  - vendor: Generic
+    model: Device-file printer (Linux usblp / parallel, temp file)
+    kind: receipt_printer
+    connection: device_file
+    profile_id: generic-escpos-58mm-32
+    os: Linux (CI container)
+    adapter: pos-device-hw escpos_file
+    firmware: n/a
+    capabilities: [print]
+    result: emulator-pass
+    tested_on: 2026-11-20
+    tester: engineering (automated)
+    evidence: crates/pos-device-hw/tests/device_file_and_discovery.rs
+    notes: Real /dev/usb/lp0 not tested.
+  - vendor: Generic
+    model: Serial barcode scanner (PTY null-modem)
+    kind: scanner
+    connection: serial
+    profile_id: null
+    os: Linux (CI container)
+    adapter: pos-device-hw SerialScanner
+    firmware: n/a
+    capabilities: [cr_lf_etx_terminators, timeout_terminator, gs_kept, prefix_strip, reconnect]
+    result: emulator-pass
+    tested_on: 2026-11-20
+    tester: engineering (automated)
+    evidence: crates/pos-device-hw/tests/serial.rs
+    notes: ""
+  - vendor: Generic
+    model: Keyboard-wedge scanner (Chromium key events, 5/20/50 ms per character)
+    kind: scanner
+    connection: usb_hid_keyboard
+    profile_id: null
+    os: Linux (Chromium)
+    adapter: desktop-ui useScanCapture
+    firmware: n/a
+    capabilities: [ean13, ean8, upca, upce, itf, code39, codabar, code93, code11, msi, code128, gs1, qr, datamatrix, pdf417, slow_scanner, short_codes, keyboard_layout_hint]
+    result: emulator-pass
+    tested_on: 2026-11-20
+    tester: engineering (automated)
+    evidence: apps/desktop-ui/e2e/scanCapture.e2e.ts, crates/pos-local-db/tests/scan_decoding.rs
+    notes: WebView2 on Windows still to be measured (E20-T02).
+  - vendor: Sale OS
+    model: Sandbox card terminal (mock provider)
+    kind: payment_terminal
+    connection: virtual
+    profile_id: null
+    os: any
+    adapter: desktop-tauri SandboxTerminal
+    firmware: n/a
+    capabilities: [approve, decline, timeout_reconcile, delayed, cancel, reverse, idempotent_initiate]
+    result: emulator-pass
+    tested_on: 2026-11-20
+    tester: engineering (automated)
+    evidence: crates/pos-local-db/tests/payments.rs, apps/desktop-ui/e2e/devices.e2e.ts
+    notes: Practice mode only. Real connectors need agreements (E22-T03).

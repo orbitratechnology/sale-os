@@ -32,10 +32,19 @@ export function SettingsScreen({
   const [settings, setSettings] = useState<SettingDto[] | null>(null);
   const [group, setGroup] = useState<string | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
+  /** A manager: only the Devices page (the rest is the owner's). */
+  const [limited, setLimited] = useState(false);
 
   const load = useCallback(() => {
     void commands.settingsGet().then((res) => {
-      if (res.status !== "ok") return setError(res.error);
+      if (res.status !== "ok") {
+        if (res.error.code === "PERMISSION_DENIED") {
+          setLimited(true);
+          setGroup(DEVICES);
+          return;
+        }
+        return setError(res.error);
+      }
       setSettings(res.data);
       setGroup((g) => g ?? res.data[0]?.group ?? null);
     });
@@ -52,7 +61,7 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, DEVICES, CLOUD];
+  const groups = limited ? [DEVICES] : [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, DEVICES, CLOUD];
   return (
     <main className="sales">
       <header className="returns-header">

@@ -3860,6 +3860,7 @@ dependencies = [
  "printers",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "serialport",
  "specta",
  "tempfile",
