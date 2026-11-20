@@ -1,6 +1,12 @@
 import { useContext, useEffect, useRef } from "react";
 import { ScanPreferences } from "./preferences";
-import { DEFAULT_SCAN_CONFIG, ScanDetector, type DetectedScan, type ScanDetectorConfig } from "./scanDetector";
+import {
+  DEFAULT_SCAN_CONFIG,
+  ScanDetector,
+  type DetectedScan,
+  type ScanDetectorConfig,
+  type ScanDiagnostic,
+} from "./scanDetector";
 
 export interface CapturedScan extends DetectedScan {
   /** Unique per physical scan; Rust de-duplicates repeated *delivery* by this id (BAR-007). */
@@ -11,6 +17,13 @@ export interface CapturedScan extends DetectedScan {
 }
 
 const NUMPAD_COMMANDS = new Set(["NumpadAdd", "NumpadSubtract"]);
+
+/** ASCII GS: the GS1 FNC1 separator. Wedge scanners type it as Ctrl+]. */
+const GS = "\x1d";
+
+function isGroupSeparator(e: KeyboardEvent): boolean {
+  return e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "BracketRight" || e.key === "]" || e.key === GS);
+}
 
 function isEditable(el: Element | null): boolean {
   if (!el) return false;
@@ -35,10 +48,14 @@ export function useScanCapture(
    * pad): a fast-typed PIN would otherwise look exactly like a scan.
    */
   enabled = true,
+  /** Near-misses worth explaining to the cashier (e.g. the scanner's suffix is wrong). */
+  onDiagnostic?: (d: ScanDiagnostic) => void,
 ): void {
   const onScanRef = useRef(onScan);
+  const onDiagnosticRef = useRef(onDiagnostic);
   useEffect(() => {
     onScanRef.current = onScan;
+    onDiagnosticRef.current = onDiagnostic;
   });
   const shop = useContext(ScanPreferences);
   const merged: ScanDetectorConfig = { ...DEFAULT_SCAN_CONFIG, ...shop, ...config };
@@ -49,13 +66,16 @@ export function useScanCapture(
     if (!enabled) return;
     const cfg = JSON.parse(configKey) as ScanDetectorConfig;
     let inScanField = false;
-    const detector = new ScanDetector(cfg, (scan) =>
-      onScanRef.current({ ...scan, scanEventId: crypto.randomUUID(), source: "wedge", inScanField }),
+    const detector = new ScanDetector(
+      cfg,
+      (scan) => onScanRef.current({ ...scan, scanEventId: crypto.randomUUID(), source: "wedge", inScanField }),
+      (d) => onDiagnosticRef.current?.(d),
     );
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+      const gs = isGroupSeparator(e);
+      if ((!gs && (e.ctrlKey || e.altKey || e.metaKey)) || e.isComposing) return;
       // Numpad +/- are till commands (quantity), never scanner output: wedge scanners send
       // main-row keys. Letting them through keeps them usable in scanner-ready mode.
       if (NUMPAD_COMMANDS.has(e.code)) return;
@@ -65,7 +85,9 @@ export function useScanCapture(
       if (editable && !field) return;
       inScanField = field !== null;
 
-      const verdict = detector.key(e.key, e.timeStamp);
+      // GS only counts inside a burst: a lone Ctrl+] from a person stays a shortcut.
+      if (gs && !detector.pending()) return;
+      const verdict = detector.key(gs ? GS : e.key, e.timeStamp);
       if (verdict === "scan" || (verdict === "buffered" && !editable)) {
         e.preventDefault();
         if (verdict === "scan") e.stopPropagation();

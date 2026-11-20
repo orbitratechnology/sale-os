@@ -98,3 +98,48 @@ describe("scan field", () => {
     await page.close();
   }, 30_000);
 });
+
+describe("E21-T03: robustness with real key events", () => {
+  it("delivers every scan from a slow scanner (50 ms/char) instead of losing them silently", async () => {
+    const page = await open("Enter");
+    const codes = ["4006381333931", "036000291452", "ABC-1234", "10012345678902"];
+    for (const code of codes) {
+      await page.keyboard.type(code, { delay: 50 });
+      await page.keyboard.press("Enter", { delay: 0 });
+      await page.waitForTimeout(300);
+    }
+    expect(await page.evaluate(() => window.__scans.map((s) => [s.raw, s.speed]))).toEqual(
+      codes.map((c) => [c, "slow"]),
+    );
+    await page.close();
+  }, 60_000);
+
+  it("delivers a 3-character code ended by the suffix", async () => {
+    const page = await open("Enter");
+    await page.keyboard.type("A12", { delay: 5 });
+    await page.keyboard.press("Enter");
+    expect(await scans(page)).toEqual(["A12"]);
+    await page.close();
+  }, 30_000);
+
+  it("keeps the GS1 separator a wedge scanner types as Ctrl+]", async () => {
+    const page = await open("Enter");
+    await page.keyboard.type("0109501101530003", { delay: 5 });
+    await page.keyboard.press("Control+BracketRight", { delay: 0 });
+    await page.keyboard.type("10AB12", { delay: 5 });
+    await page.keyboard.press("Enter");
+    expect(await scans(page)).toEqual(["0109501101530003\x1d10AB12"]);
+    await page.close();
+  }, 30_000);
+
+  it("still never captures human typing in scanner-ready mode at a person's rhythm", async () => {
+    const page = await open("Enter");
+    for (const [c, d] of [["a", 0], ["b", 90], ["c", 40], ["d", 160], ["e", 70], ["f", 30], ["g", 110]] as const) {
+      await page.waitForTimeout(d);
+      await page.keyboard.press(c);
+    }
+    await page.keyboard.press("Enter");
+    expect(await scans(page)).toEqual([]);
+    await page.close();
+  }, 30_000);
+});

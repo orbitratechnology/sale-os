@@ -112,6 +112,13 @@ export function Checkout({
     },
     {},
     modal === null && c.approval === null,
+    (d) => {
+      if (d === "missing_suffix")
+        c.setNotice({
+          kind: "info",
+          text: "That looked like a scan, but the scanner did not end it with the key set in Settings → Scanner. Match the setting to the scanner, or set it to “none”.",
+        });
+    },
   );
 
   useEffect(() => {
