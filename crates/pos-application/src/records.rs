@@ -324,6 +324,27 @@ pub struct PrintJobRecord {
     pub updated_at: Timestamp,
 }
 
+/// Who caused a payment attempt's change (`payment_attempt_events.source`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AttemptEventSource {
+    /// A staff member: cancel from the till, resolve, start.
+    Operator,
+    /// The terminal or provider's answer.
+    Provider,
+    /// The till itself (e.g. the terminal could not be reached).
+    System,
+}
+
+impl AttemptEventSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            AttemptEventSource::Operator => "operator",
+            AttemptEventSource::Provider => "provider",
+            AttemptEventSource::System => "system",
+        }
+    }
+}
+
 // ---------- sales history (E12-T03) ----------
 
 /// One row of the sales list.
