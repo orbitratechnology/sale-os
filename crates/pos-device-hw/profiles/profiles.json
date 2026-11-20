@@ -1,0 +1,8976 @@
+{
+ "attribution": "Profiles with \"source\": \"escpos-printer-db\" are derived from escpos-printer-db (https://github.com/receipt-print-hq/escpos-printer-db, dist/capabilities.json at commit e5bd45da2ae535d3874f9da94f355b4db4733344), (c) its contributors, licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Changes: customer displays removed; only id, vendor, name, font A/B columns, nominal paper width, code pages (Unknown and repeated names dropped), cut, drawer pulse, QR, barcode and Star-command flags kept; field names and layout changed. \"generic\" and \"manual\" profiles are this project's own.",
+ "profiles": [
+  {
+   "id": "generic-escpos-80mm-48",
+   "vendor": "Generic",
+   "name": "ESC/POS 80 mm, 48 columns",
+   "source": "generic",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "notes": "Most 80 mm thermal printers at 203 dpi (576 dots, 12x24 font)."
+  },
+  {
+   "id": "generic-escpos-80mm-42",
+   "vendor": "Generic",
+   "name": "ESC/POS 80 mm, 42 columns",
+   "source": "generic",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "notes": "80 mm printers at 180 dpi (512 dots), e.g. Epson TM-T88 family, or 48-column printers set to 42."
+  },
+  {
+   "id": "generic-escpos-58mm-32",
+   "vendor": "Generic",
+   "name": "ESC/POS 58 mm, 32 columns",
+   "source": "generic",
+   "dialect": "escPos",
+   "fontAColumns": 32,
+   "fontBColumns": 42,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": false,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": true,
+   "notes": "58 mm printers (384 dots). Many have no cutter and no drawer port: feed only."
+  },
+  {
+   "id": "generic-escpos-76mm-impact-40",
+   "vendor": "Generic",
+   "name": "ESC/POS 76 mm impact, 40 columns",
+   "source": "generic",
+   "dialect": "escPos",
+   "fontAColumns": 40,
+   "fontBColumns": 33,
+   "paperWidthMm": 76,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true,
+   "notes": "Dot-matrix receipt printers (Epson TM-U220 class). No native QR or barcode.",
+   "feedBeforeCut": 5
+  },
+  {
+   "id": "star-line-80mm-48",
+   "vendor": "Generic",
+   "name": "Star Line Mode 80 mm, 48 columns",
+   "source": "generic",
+   "dialect": "starLine",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": false,
+   "notes": "Star TSP650/TSP700/TSP800 class in Star Line Mode (native)."
+  },
+  {
+   "id": "star-line-58mm-32",
+   "vendor": "Generic",
+   "name": "Star Line Mode 58 mm, 32 columns",
+   "source": "generic",
+   "dialect": "starLine",
+   "fontAColumns": 32,
+   "fontBColumns": 42,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": false,
+   "notes": "Star 58 mm printers in Star Line Mode (native)."
+  },
+  {
+   "id": "plain-text-80",
+   "vendor": "Generic",
+   "name": "Plain text, 80 columns",
+   "source": "generic",
+   "dialect": "plainText",
+   "fontAColumns": 80,
+   "codePages": [],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": false,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": false,
+   "notes": "Line printers and the Windows \"Generic / Text Only\" driver: text and line feeds only."
+  },
+  {
+   "id": "plain-text-40",
+   "vendor": "Generic",
+   "name": "Plain text, 40 columns",
+   "source": "generic",
+   "dialect": "plainText",
+   "fontAColumns": 40,
+   "codePages": [],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": false,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": false,
+   "notes": "Narrow line printers and text-only drivers: text and line feeds only."
+  },
+  {
+   "id": "CT-S651",
+   "vendor": "Citizen",
+   "name": "CT-S651",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP852"
+    ],
+    [
+     7,
+     "CP866"
+    ],
+    [
+     8,
+     "CP857"
+    ],
+    [
+     9,
+     "CP1252"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     40,
+     "CP864"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "ITPP047",
+   "vendor": "Munbyn",
+   "name": "ITPP047",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "KR-306",
+   "vendor": "Kefar",
+   "name": "KR-306",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP1252"
+    ],
+    [
+     12,
+     "CP866"
+    ],
+    [
+     13,
+     "CP852"
+    ],
+    [
+     14,
+     "CP858"
+    ],
+    [
+     19,
+     "CP747"
+    ],
+    [
+     23,
+     "CP864"
+    ],
+    [
+     27,
+     "CP1255"
+    ],
+    [
+     34,
+     "CP861"
+    ],
+    [
+     38,
+     "CP855"
+    ],
+    [
+     39,
+     "CP857"
+    ],
+    [
+     40,
+     "CP862"
+    ],
+    [
+     42,
+     "CP737"
+    ],
+    [
+     43,
+     "CP851"
+    ],
+    [
+     44,
+     "CP869"
+    ],
+    [
+     45,
+     "CP928"
+    ],
+    [
+     46,
+     "CP772"
+    ],
+    [
+     47,
+     "CP774"
+    ],
+    [
+     48,
+     "CP874"
+    ],
+    [
+     50,
+     "CP1250"
+    ],
+    [
+     51,
+     "CP1251"
+    ],
+    [
+     52,
+     "CP3840"
+    ],
+    [
+     53,
+     "CP3841"
+    ],
+    [
+     54,
+     "CP3843"
+    ],
+    [
+     55,
+     "CP3844"
+    ],
+    [
+     56,
+     "CP3845"
+    ],
+    [
+     57,
+     "CP3846"
+    ],
+    [
+     58,
+     "CP3847"
+    ],
+    [
+     59,
+     "CP3848"
+    ],
+    [
+     60,
+     "CP1001"
+    ],
+    [
+     61,
+     "CP2001"
+    ],
+    [
+     62,
+     "CP3001"
+    ],
+    [
+     63,
+     "CP3002"
+    ],
+    [
+     64,
+     "CP3011"
+    ],
+    [
+     65,
+     "CP3012"
+    ],
+    [
+     66,
+     "CP3021"
+    ],
+    [
+     67,
+     "CP3041"
+    ],
+    [
+     70,
+     "CP1256"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "NT-5890K",
+   "vendor": "Netum",
+   "name": "NT-5890K",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 32,
+   "fontBColumns": 42,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     24,
+     "CP747"
+    ],
+    [
+     25,
+     "CP1257"
+    ],
+    [
+     27,
+     "CP1258"
+    ],
+    [
+     28,
+     "CP864"
+    ],
+    [
+     32,
+     "CP1255"
+    ],
+    [
+     56,
+     "CP861"
+    ],
+    [
+     60,
+     "CP855"
+    ],
+    [
+     61,
+     "CP857"
+    ],
+    [
+     62,
+     "CP862"
+    ],
+    [
+     64,
+     "CP737"
+    ],
+    [
+     65,
+     "CP851"
+    ],
+    [
+     66,
+     "CP869"
+    ],
+    [
+     68,
+     "CP772"
+    ],
+    [
+     69,
+     "CP774"
+    ],
+    [
+     72,
+     "CP1250"
+    ],
+    [
+     73,
+     "CP1251"
+    ],
+    [
+     74,
+     "CP3840"
+    ],
+    [
+     76,
+     "CP3843"
+    ],
+    [
+     77,
+     "CP3844"
+    ],
+    [
+     78,
+     "CP3845"
+    ],
+    [
+     79,
+     "CP3846"
+    ],
+    [
+     80,
+     "CP3847"
+    ],
+    [
+     81,
+     "CP3848"
+    ],
+    [
+     83,
+     "CP2001"
+    ],
+    [
+     84,
+     "CP3001"
+    ],
+    [
+     85,
+     "CP3002"
+    ],
+    [
+     86,
+     "CP3011"
+    ],
+    [
+     87,
+     "CP3012"
+    ],
+    [
+     88,
+     "CP3021"
+    ],
+    [
+     89,
+     "CP3041"
+    ],
+    [
+     90,
+     "CP1253"
+    ],
+    [
+     91,
+     "CP1254"
+    ],
+    [
+     92,
+     "CP1256"
+    ],
+    [
+     93,
+     "CP720"
+    ],
+    [
+     95,
+     "CP775"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true
+  },
+  {
+   "id": "NT-80-V-UL",
+   "vendor": "Netum",
+   "name": "80-V-UL",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 12,
+   "fontBColumns": 9,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     22,
+     "ISO_8859-6"
+    ],
+    [
+     24,
+     "CP747"
+    ],
+    [
+     25,
+     "CP1257"
+    ],
+    [
+     28,
+     "CP864"
+    ],
+    [
+     32,
+     "CP1255"
+    ],
+    [
+     56,
+     "CP861"
+    ],
+    [
+     60,
+     "CP855"
+    ],
+    [
+     61,
+     "CP857"
+    ],
+    [
+     62,
+     "CP862"
+    ],
+    [
+     64,
+     "CP737"
+    ],
+    [
+     65,
+     "CP851"
+    ],
+    [
+     66,
+     "CP869"
+    ],
+    [
+     68,
+     "CP772"
+    ],
+    [
+     69,
+     "CP774"
+    ],
+    [
+     72,
+     "CP1250"
+    ],
+    [
+     73,
+     "CP1251"
+    ],
+    [
+     74,
+     "CP3840"
+    ],
+    [
+     76,
+     "CP3843"
+    ],
+    [
+     77,
+     "CP3844"
+    ],
+    [
+     78,
+     "CP3845"
+    ],
+    [
+     79,
+     "CP3846"
+    ],
+    [
+     80,
+     "CP3847"
+    ],
+    [
+     81,
+     "CP3848"
+    ],
+    [
+     83,
+     "CP2001"
+    ],
+    [
+     84,
+     "CP3001"
+    ],
+    [
+     85,
+     "CP3002"
+    ],
+    [
+     86,
+     "CP3011"
+    ],
+    [
+     87,
+     "CP3012"
+    ],
+    [
+     88,
+     "CP3021"
+    ],
+    [
+     89,
+     "CP3041"
+    ],
+    [
+     90,
+     "CP1253"
+    ],
+    [
+     91,
+     "CP1254"
+    ],
+    [
+     92,
+     "CP1256"
+    ],
+    [
+     93,
+     "CP720"
+    ],
+    [
+     94,
+     "CP1258"
+    ],
+    [
+     95,
+     "CP775"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "P822D",
+   "vendor": "PBM",
+   "name": "P822D",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     24,
+     "CP747"
+    ],
+    [
+     25,
+     "CP1257"
+    ],
+    [
+     28,
+     "CP864"
+    ],
+    [
+     29,
+     "CP1001"
+    ],
+    [
+     32,
+     "CP1255"
+    ],
+    [
+     33,
+     "CP720"
+    ],
+    [
+     34,
+     "CP1256"
+    ],
+    [
+     56,
+     "CP861"
+    ],
+    [
+     60,
+     "CP855"
+    ],
+    [
+     61,
+     "CP857"
+    ],
+    [
+     62,
+     "CP862"
+    ],
+    [
+     64,
+     "CP737"
+    ],
+    [
+     65,
+     "CP851"
+    ],
+    [
+     66,
+     "CP869"
+    ],
+    [
+     67,
+     "CP928"
+    ],
+    [
+     68,
+     "CP772"
+    ],
+    [
+     69,
+     "CP774"
+    ],
+    [
+     70,
+     "CP874"
+    ],
+    [
+     72,
+     "CP1250"
+    ],
+    [
+     73,
+     "CP1251"
+    ],
+    [
+     74,
+     "CP3840"
+    ],
+    [
+     75,
+     "CP3841"
+    ],
+    [
+     76,
+     "CP3843"
+    ],
+    [
+     77,
+     "CP3844"
+    ],
+    [
+     78,
+     "CP3845"
+    ],
+    [
+     79,
+     "CP3846"
+    ],
+    [
+     80,
+     "CP3847"
+    ],
+    [
+     81,
+     "CP3848"
+    ],
+    [
+     83,
+     "CP2001"
+    ],
+    [
+     84,
+     "CP3001"
+    ],
+    [
+     85,
+     "CP3002"
+    ],
+    [
+     86,
+     "CP3011"
+    ],
+    [
+     87,
+     "CP3012"
+    ],
+    [
+     88,
+     "CP3021"
+    ],
+    [
+     89,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "POS-5890",
+   "vendor": "Zjiang",
+   "name": "POS5890 Series",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 32,
+   "fontBColumns": 42,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     24,
+     "CP747"
+    ],
+    [
+     25,
+     "CP1257"
+    ],
+    [
+     27,
+     "CP1258"
+    ],
+    [
+     28,
+     "CP864"
+    ],
+    [
+     32,
+     "CP1255"
+    ],
+    [
+     56,
+     "CP861"
+    ],
+    [
+     60,
+     "CP855"
+    ],
+    [
+     61,
+     "CP857"
+    ],
+    [
+     62,
+     "CP862"
+    ],
+    [
+     64,
+     "CP737"
+    ],
+    [
+     65,
+     "CP851"
+    ],
+    [
+     66,
+     "CP869"
+    ],
+    [
+     68,
+     "CP772"
+    ],
+    [
+     69,
+     "CP774"
+    ],
+    [
+     72,
+     "CP1250"
+    ],
+    [
+     73,
+     "CP1251"
+    ],
+    [
+     74,
+     "CP3840"
+    ],
+    [
+     76,
+     "CP3843"
+    ],
+    [
+     77,
+     "CP3844"
+    ],
+    [
+     78,
+     "CP3845"
+    ],
+    [
+     79,
+     "CP3846"
+    ],
+    [
+     80,
+     "CP3847"
+    ],
+    [
+     81,
+     "CP3848"
+    ],
+    [
+     83,
+     "CP2001"
+    ],
+    [
+     84,
+     "CP3001"
+    ],
+    [
+     85,
+     "CP3002"
+    ],
+    [
+     86,
+     "CP3011"
+    ],
+    [
+     87,
+     "CP3012"
+    ],
+    [
+     88,
+     "CP3021"
+    ],
+    [
+     89,
+     "CP3041"
+    ],
+    [
+     90,
+     "CP1253"
+    ],
+    [
+     91,
+     "CP1254"
+    ],
+    [
+     92,
+     "CP1256"
+    ],
+    [
+     93,
+     "CP720"
+    ],
+    [
+     95,
+     "CP775"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true
+  },
+  {
+   "id": "RP-F10-58mm",
+   "vendor": "Seiko",
+   "name": "RP-F10",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 36,
+   "fontBColumns": 54,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "RP-F10-80mm",
+   "vendor": "Seiko",
+   "name": "RP-F10",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 72,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "RP326",
+   "vendor": "Rongta",
+   "name": "RP326",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP1251"
+    ],
+    [
+     7,
+     "CP866"
+    ],
+    [
+     15,
+     "CP862"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP1253"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     23,
+     "ISO_8859-1"
+    ],
+    [
+     24,
+     "CP737"
+    ],
+    [
+     25,
+     "CP1257"
+    ],
+    [
+     27,
+     "CP720"
+    ],
+    [
+     28,
+     "CP855"
+    ],
+    [
+     29,
+     "CP857"
+    ],
+    [
+     30,
+     "CP1250"
+    ],
+    [
+     31,
+     "CP775"
+    ],
+    [
+     32,
+     "CP1254"
+    ],
+    [
+     33,
+     "CP1255"
+    ],
+    [
+     34,
+     "CP1256"
+    ],
+    [
+     35,
+     "CP1258"
+    ],
+    [
+     36,
+     "ISO_8859-2"
+    ],
+    [
+     37,
+     "ISO_8859-3"
+    ],
+    [
+     38,
+     "ISO_8859-4"
+    ],
+    [
+     39,
+     "ISO_8859-5"
+    ],
+    [
+     40,
+     "ISO_8859-6"
+    ],
+    [
+     41,
+     "ISO_8859-7"
+    ],
+    [
+     42,
+     "ISO_8859-8"
+    ],
+    [
+     43,
+     "ISO_8859-9"
+    ],
+    [
+     44,
+     "ISO_8859-15"
+    ],
+    [
+     46,
+     "CP856"
+    ],
+    [
+     47,
+     "CP874"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "RP332",
+   "vendor": "Rongta",
+   "name": "RP332",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP1251"
+    ],
+    [
+     7,
+     "CP866"
+    ],
+    [
+     15,
+     "CP862"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP1253"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     22,
+     "CP864"
+    ],
+    [
+     23,
+     "ISO_8859-1"
+    ],
+    [
+     24,
+     "CP737"
+    ],
+    [
+     25,
+     "CP1257"
+    ],
+    [
+     27,
+     "CP720"
+    ],
+    [
+     28,
+     "CP855"
+    ],
+    [
+     29,
+     "CP857"
+    ],
+    [
+     30,
+     "CP1250"
+    ],
+    [
+     31,
+     "CP775"
+    ],
+    [
+     32,
+     "CP1254"
+    ],
+    [
+     34,
+     "CP1256"
+    ],
+    [
+     35,
+     "CP1258"
+    ],
+    [
+     36,
+     "ISO_8859-2"
+    ],
+    [
+     37,
+     "ISO_8859-3"
+    ],
+    [
+     38,
+     "ISO_8859-4"
+    ],
+    [
+     39,
+     "ISO_8859-5"
+    ],
+    [
+     40,
+     "ISO_8859-6"
+    ],
+    [
+     41,
+     "ISO_8859-7"
+    ],
+    [
+     42,
+     "ISO_8859-8"
+    ],
+    [
+     43,
+     "ISO_8859-9"
+    ],
+    [
+     44,
+     "ISO_8859-15"
+    ],
+    [
+     46,
+     "CP856"
+    ],
+    [
+     47,
+     "CP874"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": false,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "SP2000",
+   "vendor": "Star Micronics",
+   "name": "SP2000 Series",
+   "source": "escpos-printer-db",
+   "dialect": "starLine",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": false
+  },
+  {
+   "id": "SRP-S300",
+   "vendor": "Bixolon",
+   "name": "SRP-S300",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "Sunmi-V2",
+   "vendor": "Sunmi",
+   "name": "Sunmi V2",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 32,
+   "fontBColumns": 42,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "T-1",
+   "vendor": "Metapace",
+   "name": "T-1",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TEP-200M",
+   "vendor": "EPOS",
+   "name": "TEP200M Series",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TH230",
+   "vendor": "Wincor Nixdorf",
+   "name": "TH230",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 44,
+   "fontBColumns": 57,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP850"
+    ],
+    [
+     2,
+     "CP852"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP858"
+    ],
+    [
+     7,
+     "CP866"
+    ],
+    [
+     8,
+     "CP1252"
+    ],
+    [
+     9,
+     "CP862"
+    ],
+    [
+     10,
+     "CP737"
+    ],
+    [
+     11,
+     "CP874"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     16,
+     "CP1254"
+    ],
+    [
+     17,
+     "CP1250"
+    ],
+    [
+     22,
+     "CP864"
+    ],
+    [
+     23,
+     "CP720"
+    ],
+    [
+     24,
+     "CP1256"
+    ],
+    [
+     26,
+     "KATAKANA"
+    ],
+    [
+     27,
+     "CP775"
+    ],
+    [
+     28,
+     "CP1257"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TH230Plus",
+   "vendor": "Wincor Nixdorf",
+   "name": "TH230+",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 44,
+   "fontBColumns": 57,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP850"
+    ],
+    [
+     2,
+     "CP852"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP858"
+    ],
+    [
+     7,
+     "CP866"
+    ],
+    [
+     8,
+     "CP1252"
+    ],
+    [
+     9,
+     "CP862"
+    ],
+    [
+     10,
+     "CP737"
+    ],
+    [
+     11,
+     "CP874"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     16,
+     "CP1254"
+    ],
+    [
+     17,
+     "CP1250"
+    ],
+    [
+     22,
+     "CP864"
+    ],
+    [
+     23,
+     "CP720"
+    ],
+    [
+     24,
+     "CP1256"
+    ],
+    [
+     26,
+     "KATAKANA"
+    ],
+    [
+     27,
+     "CP775"
+    ],
+    [
+     28,
+     "CP1257"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-L90",
+   "vendor": "Epson",
+   "name": "TM-L90",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-P80",
+   "vendor": "Epson",
+   "name": "TM-P80",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-P80-42col",
+   "vendor": "Epson",
+   "name": "TM-P80 (42 column mode)",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 60,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T20II",
+   "vendor": "Epson",
+   "name": "TM-T20II",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T20II-42col",
+   "vendor": "Epson",
+   "name": "TM-T20II (42 column mode)",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 60,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T20III",
+   "vendor": "Epson",
+   "name": "TM-T20III",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T70",
+   "vendor": "Epson",
+   "name": "TM-T70",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T70-SA",
+   "vendor": "Epson",
+   "name": "TM-T70 South Asia",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T70II",
+   "vendor": "Epson",
+   "name": "TM-T70II",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T70II-CH",
+   "vendor": "Epson",
+   "name": "TM-T70II Chinese",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T70II-CH-58mm",
+   "vendor": "Epson",
+   "name": "TM-T70II Traditional Chinese",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 34,
+   "fontBColumns": 46,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T70II-SA",
+   "vendor": "Epson",
+   "name": "TM-T70II South Asia",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88II",
+   "vendor": "Epson",
+   "name": "TM-T88II",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88III",
+   "vendor": "Epson",
+   "name": "TM-T88III",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     6,
+     "CP1251"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP862"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88IV",
+   "vendor": "Epson",
+   "name": "TM-T88IV",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88IV-SA",
+   "vendor": "Epson",
+   "name": "TM-T88IV South Asia",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88V",
+   "vendor": "Epson",
+   "name": "TM-T88V",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-U220",
+   "vendor": "Epson",
+   "name": "TM-U220",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-U220B",
+   "vendor": "Epson",
+   "name": "TM-U220B",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-m30III",
+   "vendor": "Epson",
+   "name": "TM-m30III",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 57,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TSP600",
+   "vendor": "Star Micronics",
+   "name": "TSP600 Series",
+   "source": "escpos-printer-db",
+   "dialect": "starLine",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": false
+  },
+  {
+   "id": "TSP800",
+   "vendor": "Star Micronics",
+   "name": "TSP800 Series",
+   "source": "escpos-printer-db",
+   "dialect": "starLine",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 104,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": false
+  },
+  {
+   "id": "TUP500",
+   "vendor": "Star Micronics",
+   "name": "TUP500 Series",
+   "source": "escpos-printer-db",
+   "dialect": "starLine",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": false
+  },
+  {
+   "id": "YHD-8390",
+   "vendor": "YHDAA Shenzhen Yuhengda Technology Co., Ltd.",
+   "name": "YHD-8390",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "KATAKANA"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP1252"
+    ],
+    [
+     12,
+     "CP866"
+    ],
+    [
+     13,
+     "CP852"
+    ],
+    [
+     14,
+     "CP858"
+    ],
+    [
+     18,
+     "CP1251"
+    ],
+    [
+     20,
+     "CP1257"
+    ],
+    [
+     22,
+     "CP864"
+    ],
+    [
+     23,
+     "CP1001"
+    ],
+    [
+     24,
+     "CP857"
+    ],
+    [
+     25,
+     "CP862"
+    ],
+    [
+     27,
+     "CP869"
+    ],
+    [
+     28,
+     "CP851"
+    ],
+    [
+     29,
+     "CP737"
+    ],
+    [
+     30,
+     "CP871"
+    ],
+    [
+     31,
+     "CP1256"
+    ],
+    [
+     32,
+     "CP1258"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "ZJ-5870",
+   "vendor": "ZiJiang",
+   "name": "ZJ-5870 Thermal Receipt Printer",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 32,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true
+  },
+  {
+   "id": "default",
+   "vendor": "Generic",
+   "name": "Default",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     42,
+     "CP774"
+    ],
+    [
+     43,
+     "CP772"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "mcPrint",
+   "vendor": "Star Micronics",
+   "name": "Star mcPrint2/mcPrint3",
+   "source": "escpos-printer-db",
+   "dialect": "starLine",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     1,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": false
+  },
+  {
+   "id": "safe",
+   "vendor": "Generic",
+   "name": "Safe",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "simple",
+   "vendor": "Generic",
+   "name": "Simple",
+   "source": "escpos-printer-db",
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88VI",
+   "vendor": "Epson",
+   "name": "TM-T88VI",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T88VII",
+   "vendor": "Epson",
+   "name": "TM-T88VII",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     11,
+     "CP851"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-T82",
+   "vendor": "Epson",
+   "name": "TM-T82",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "TM-T82II"
+   ]
+  },
+  {
+   "id": "TM-T82III",
+   "vendor": "Epson",
+   "name": "TM-T82III",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "TM-T82IIIL"
+   ]
+  },
+  {
+   "id": "TM-m30",
+   "vendor": "Epson",
+   "name": "TM-m30",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "TM-m30II",
+   "vendor": "Epson",
+   "name": "TM-m30II",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "TM-m30II-H",
+    "TM-m30II-NT",
+    "TM-m30II-S",
+    "TM-m30II-SL"
+   ]
+  },
+  {
+   "id": "TM-T20",
+   "vendor": "Epson",
+   "name": "TM-T20",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     12,
+     "CP853"
+    ],
+    [
+     13,
+     "CP857"
+    ],
+    [
+     14,
+     "CP737"
+    ],
+    [
+     15,
+     "ISO_8859-7"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ],
+    [
+     30,
+     "TCVN-3-1"
+    ],
+    [
+     31,
+     "TCVN-3-2"
+    ],
+    [
+     32,
+     "CP720"
+    ],
+    [
+     33,
+     "CP775"
+    ],
+    [
+     34,
+     "CP855"
+    ],
+    [
+     35,
+     "CP861"
+    ],
+    [
+     36,
+     "CP862"
+    ],
+    [
+     37,
+     "CP864"
+    ],
+    [
+     38,
+     "CP869"
+    ],
+    [
+     39,
+     "ISO_8859-2"
+    ],
+    [
+     40,
+     "ISO_8859-15"
+    ],
+    [
+     41,
+     "CP1098"
+    ],
+    [
+     44,
+     "CP1125"
+    ],
+    [
+     45,
+     "CP1250"
+    ],
+    [
+     46,
+     "CP1251"
+    ],
+    [
+     47,
+     "CP1253"
+    ],
+    [
+     48,
+     "CP1254"
+    ],
+    [
+     49,
+     "CP1255"
+    ],
+    [
+     50,
+     "CP1256"
+    ],
+    [
+     51,
+     "CP1257"
+    ],
+    [
+     52,
+     "CP1258"
+    ],
+    [
+     53,
+     "RK1048"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true
+  },
+  {
+   "id": "star-tsp100",
+   "vendor": "Star Micronics",
+   "name": "TSP100 / TSP143 (up to III)",
+   "source": "manual",
+   "verified": false,
+   "dialect": "starLine",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": false,
+   "aliases": [
+    "TSP100",
+    "TSP143",
+    "TSP143II",
+    "TSP143III",
+    "TSP100III"
+   ],
+   "textSupported": false,
+   "notes": "futurePRNT raster-only printer: no ESC/POS and no Star Line text mode. Use the Star driver through the OS spooler with a rendered (PDF/bitmap) receipt."
+  },
+  {
+   "id": "star-tsp650ii",
+   "vendor": "Star Micronics",
+   "name": "TSP650II",
+   "source": "manual",
+   "verified": false,
+   "dialect": "starLine",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": false,
+   "aliases": [
+    "TSP654II",
+    "TSP650"
+   ]
+  },
+  {
+   "id": "star-tsp700ii",
+   "vendor": "Star Micronics",
+   "name": "TSP700II",
+   "source": "manual",
+   "verified": false,
+   "dialect": "starLine",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": false,
+   "aliases": [
+    "TSP743II",
+    "TSP700"
+   ]
+  },
+  {
+   "id": "star-mc-print3",
+   "vendor": "Star Micronics",
+   "name": "mC-Print3",
+   "source": "manual",
+   "verified": false,
+   "dialect": "starLine",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": false,
+   "aliases": [
+    "MCP31",
+    "MCP30"
+   ],
+   "notes": "StarPRNT; Star Line Mode compatible for text, cut and drawer."
+  },
+  {
+   "id": "star-sp700",
+   "vendor": "Star Micronics",
+   "name": "SP700 (impact)",
+   "source": "manual",
+   "verified": false,
+   "dialect": "starLine",
+   "fontAColumns": 42,
+   "fontBColumns": 35,
+   "paperWidthMm": 76,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     2,
+     "CP932"
+    ],
+    [
+     4,
+     "CP858"
+    ],
+    [
+     5,
+     "CP852"
+    ],
+    [
+     6,
+     "CP860"
+    ],
+    [
+     7,
+     "CP861"
+    ],
+    [
+     8,
+     "CP863"
+    ],
+    [
+     9,
+     "CP865"
+    ],
+    [
+     10,
+     "CP866"
+    ],
+    [
+     11,
+     "CP855"
+    ],
+    [
+     12,
+     "CP857"
+    ],
+    [
+     13,
+     "CP862"
+    ],
+    [
+     14,
+     "CP864"
+    ],
+    [
+     15,
+     "CP737"
+    ],
+    [
+     16,
+     "CP851"
+    ],
+    [
+     17,
+     "CP869"
+    ],
+    [
+     18,
+     "CP928"
+    ],
+    [
+     19,
+     "CP772"
+    ],
+    [
+     20,
+     "CP774"
+    ],
+    [
+     21,
+     "CP874"
+    ],
+    [
+     32,
+     "CP1252"
+    ],
+    [
+     33,
+     "CP1250"
+    ],
+    [
+     34,
+     "CP1251"
+    ],
+    [
+     64,
+     "CP3840"
+    ],
+    [
+     65,
+     "CP3841"
+    ],
+    [
+     66,
+     "CP3843"
+    ],
+    [
+     67,
+     "CP3844"
+    ],
+    [
+     68,
+     "CP3845"
+    ],
+    [
+     69,
+     "CP3846"
+    ],
+    [
+     70,
+     "CP3847"
+    ],
+    [
+     71,
+     "CP3848"
+    ],
+    [
+     72,
+     "CP1001"
+    ],
+    [
+     73,
+     "CP2001"
+    ],
+    [
+     74,
+     "CP3001"
+    ],
+    [
+     75,
+     "CP3002"
+    ],
+    [
+     76,
+     "CP3011"
+    ],
+    [
+     77,
+     "CP3012"
+    ],
+    [
+     78,
+     "CP3021"
+    ],
+    [
+     79,
+     "CP3041"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": false,
+   "barcode": false,
+   "statusQuery": false,
+   "aliases": [
+    "SP742",
+    "SP712"
+   ],
+   "feedBeforeCut": 5
+  },
+  {
+   "id": "bixolon-srp-350iii",
+   "vendor": "Bixolon",
+   "name": "SRP-350III",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 42,
+   "fontBColumns": 56,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "SRP-350IIIK",
+    "SRP-350plusIII"
+   ]
+  },
+  {
+   "id": "bixolon-srp-330ii",
+   "vendor": "Bixolon",
+   "name": "SRP-330II",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "SRP-330IICOSK"
+   ]
+  },
+  {
+   "id": "citizen-ct-s310ii",
+   "vendor": "Citizen",
+   "name": "CT-S310II",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "CT-S310"
+   ]
+  },
+  {
+   "id": "xprinter-xp-58",
+   "vendor": "Xprinter",
+   "name": "XP-58",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 32,
+   "fontBColumns": 42,
+   "paperWidthMm": 58,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": false,
+   "drawer": true,
+   "qr": false,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "XP-58IIH",
+    "XP-58III"
+   ],
+   "notes": "Most XP-58 units have no cutter; some revisions lack QR."
+  },
+  {
+   "id": "xprinter-xp-80",
+   "vendor": "Xprinter",
+   "name": "XP-80",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "XP-80C",
+    "XP-N160II",
+    "XP-Q80"
+   ]
+  },
+  {
+   "id": "sunmi-80mm",
+   "vendor": "Sunmi",
+   "name": "80 mm (T2 / NT311 / Cloud Printer)",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": false,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "NT311",
+    "T2"
+   ]
+  },
+  {
+   "id": "hprt-tp805",
+   "vendor": "HPRT",
+   "name": "TP805",
+   "source": "manual",
+   "verified": false,
+   "dialect": "escPos",
+   "fontAColumns": 48,
+   "fontBColumns": 64,
+   "paperWidthMm": 80,
+   "codePages": [
+    [
+     0,
+     "CP437"
+    ],
+    [
+     1,
+     "CP932"
+    ],
+    [
+     2,
+     "CP850"
+    ],
+    [
+     3,
+     "CP860"
+    ],
+    [
+     4,
+     "CP863"
+    ],
+    [
+     5,
+     "CP865"
+    ],
+    [
+     16,
+     "CP1252"
+    ],
+    [
+     17,
+     "CP866"
+    ],
+    [
+     18,
+     "CP852"
+    ],
+    [
+     19,
+     "CP858"
+    ]
+   ],
+   "fullCut": true,
+   "partialCut": true,
+   "drawer": true,
+   "qr": true,
+   "barcode": true,
+   "statusQuery": true,
+   "aliases": [
+    "TP805L"
+   ]
+  }
+ ]
+}
