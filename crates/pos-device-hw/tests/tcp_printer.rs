@@ -247,3 +247,43 @@ async fn concurrent_jobs_are_serialised() {
         assert!(job.iter().all(|b| *b == job[0]), "jobs must not interleave");
     }
 }
+
+/// A printer that never answers `DLE EOT` and closes a connection after a short idle time
+/// (common on cheap clones and some print servers): the job still prints, on a fresh
+/// connection, and after two such jobs the printer is no longer asked at all.
+#[tokio::test]
+async fn a_printer_that_ignores_status_and_drops_idle_links_still_prints() {
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let jobs = Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let sink = jobs.clone();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut c) = conn else { continue };
+            c.set_read_timeout(Some(Duration::from_millis(100))).ok();
+            let mut data = Vec::new();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = c.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buf[..n]);
+            }
+            sink.lock().unwrap().push(data);
+        }
+    });
+    let p = printer(port);
+    for _ in 0..3 {
+        assert_eq!(p.submit("R1", JOB).await, PrintResult::Printed);
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let all = jobs.lock().unwrap().clone();
+    let with_job: Vec<_> = all
+        .iter()
+        .filter(|d| d.windows(JOB.len()).any(|w| w == JOB))
+        .collect();
+    assert_eq!(with_job.len(), 3, "three receipts printed");
+    // The third job skipped the query: its connection carries the job only.
+    assert_eq!(with_job[2].as_slice(), JOB);
+}

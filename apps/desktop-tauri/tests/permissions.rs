@@ -1445,3 +1445,127 @@ fn at01_new_business_twenty_products_and_a_cash_sale() {
     assert!(text.iter().any(|l| l.trim() == "Corner Shop"), "{text:?}");
     assert!(text.iter().any(|l| l.contains("Tax no. GB123456789")), "{text:?}");
 }
+
+#[test]
+fn a_network_printer_saved_over_ipc_prints_the_next_receipt_and_kicks_the_drawer() {
+    // E20-T11 through the shell: Settings → Devices saves a network printer (the profile's
+    // 42 columns), the next sale's receipt reaches it over TCP, the cash sale pulses the
+    // drawer, and the status bar sees it. A small TCP printer stands in for the hardware.
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let received = Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let sink = received.clone();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut c) = conn else { continue };
+            c.set_read_timeout(Some(std::time::Duration::from_millis(300)))
+                .ok();
+            let mut data = Vec::new();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = c.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buf[..n]);
+            }
+            if !data.is_empty() {
+                sink.lock().unwrap().push(data);
+            }
+        }
+    });
+
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let status = invoke(&w, "printer_status", json!({})).unwrap();
+    assert_eq!(status["configured"], false);
+
+    // A bad address is refused at its field and nothing is stored.
+    let bad = invoke(
+        &w,
+        "device_save",
+        json!({"input": {"deviceId": null, "kind": "receipt_printer", "role": null, "name": "Front",
+            "configJson": "{\"connection\":{\"kind\":\"network\",\"host\":\"\",\"port\":9100},\"profileId\":\"TM-T88V\"}",
+            "enabled": true, "baseVersion": null}}),
+    )
+    .unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    assert_eq!(bad["details"]["field"], "connection.host");
+
+    let config =
+        json!({"connection": {"kind": "network", "host": "127.0.0.1", "port": port}, "profileId": "TM-T88V"});
+    let saved = invoke(
+        &w,
+        "device_save",
+        json!({"input": {"deviceId": null, "kind": "receipt_printer", "role": null, "name": "Front",
+            "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+    )
+    .unwrap();
+    assert_eq!(saved["version"], 1);
+    let status = invoke(&w, "printer_status", json!({})).unwrap();
+    assert_eq!(status["configured"], true);
+    assert_eq!(status["adapter"], "escpos_net");
+    assert_eq!(status["drawer"], true);
+
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Café crème");
+    product["product"]["variants"][0]["sku"] = json!("CAFE");
+    invoke(&w, "product_create", product).unwrap();
+    let cart = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-00000000000b", "raw": "CAFE", "source": "manual"}),
+    )
+    .unwrap()["cart"]
+        .clone();
+    let done = invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}], "terminal": null}),
+    )
+    .unwrap();
+    assert_eq!(done["drawer"], "opened", "{done}");
+    // The preview uses the printer's width.
+    let receipt = invoke(
+        &w,
+        "receipt_get",
+        json!({"saleId": done["saleId"], "widthMm": null}),
+    )
+    .unwrap();
+    assert_eq!(receipt["columns"], 42);
+    let job = invoke(&w, "receipt_print", json!({"saleId": done["saleId"]})).unwrap();
+    assert_eq!(job["status"], "completed", "{job}");
+    // Give the in-test printer a moment to record the connection's bytes.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let jobs = received.lock().unwrap().clone();
+    // The drawer pulse (ESC p) and the receipt (with "Caf" + an accented byte, not '?').
+    assert!(
+        jobs.iter().any(|j| j.windows(2).any(|w| w == [0x1b, b'p'])),
+        "drawer pulse sent"
+    );
+    let receipt_job = jobs
+        .iter()
+        .find(|j| j.windows(4).any(|w| w == b"Caf\x82" || w == b"Caf\xe9"))
+        .expect("receipt with é");
+    assert!(!receipt_job.windows(4).any(|w| w == b"Caf?"));
+    // Removing it goes back to the virtual printer.
+    invoke(&w, "device_remove", json!({"deviceId": saved["deviceId"]})).unwrap();
+    assert_eq!(
+        invoke(&w, "printer_status", json!({})).unwrap()["configured"],
+        false
+    );
+}

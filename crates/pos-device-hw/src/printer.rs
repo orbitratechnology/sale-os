@@ -119,7 +119,14 @@ pub struct HwPrinter {
     profile_id: Option<String>,
     /// One exchange at a time per printer.
     turn: tokio::sync::Mutex<()>,
+    /// Jobs in a row whose status query got no answer. Many ESC/POS clones never answer
+    /// `DLE EOT`; after two silent jobs the printer is treated as one-way (no 0.8 s wait per
+    /// receipt), and asked again every [`STATUS_REPROBE_EVERY`] jobs in case it was busy.
+    silent_jobs: std::sync::atomic::AtomicU32,
 }
+
+/// How often a printer that stopped answering status queries is asked again.
+const STATUS_REPROBE_EVERY: u32 = 20;
 
 impl HwPrinter {
     pub fn new(transport: Arc<dyn Transport>, caps: PrinterCapabilities) -> Self {
@@ -131,6 +138,7 @@ impl HwPrinter {
             timeouts: PrinterTimeouts::default(),
             profile_id: None,
             turn: tokio::sync::Mutex::new(()),
+            silent_jobs: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -184,6 +192,13 @@ impl HwPrinter {
             && self.transport.bidirectional()
     }
 
+    /// Whether to ask this job: not while the printer is known to stay silent, except for a
+    /// periodic re-check.
+    fn should_query(&self) -> bool {
+        let silent = self.silent_jobs.load(Ordering::SeqCst);
+        self.can_query() && (silent < 2 || silent % STATUS_REPROBE_EVERY == 0)
+    }
+
     /// One query: the reply byte if it is a valid status byte.
     async fn ask(
         &self,
@@ -192,7 +207,12 @@ impl HwPrinter {
         timeout: Duration,
     ) -> Result<Option<u8>, TransportError> {
         link.write_all(cmd, timeout).await?;
-        let reply = link.read(1, timeout).await?;
+        // No answer in time is not a broken link: the printer does not do real-time status.
+        let reply = match link.read(1, timeout).await {
+            Ok(r) => r,
+            Err(TransportError::Timeout { .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
         Ok(reply.first().copied().filter(|b| escpos::is_status_byte(*b)))
     }
 
@@ -276,13 +296,18 @@ impl HwPrinter {
             Err(e) => return failed_before_job(&e),
         };
         link.set_title(name);
-        let query = self.can_query();
+        let query = self.should_query();
+        if !query && self.can_query() {
+            // Known silent: count the skipped job towards the periodic re-check.
+            self.silent_jobs.fetch_add(1, Ordering::SeqCst);
+        }
         // The pre-flight answered, so the post-job query is expected to answer too.
         let mut answered = false;
         if query {
             match self.query(link.as_mut(), self.timeouts.status).await {
                 Ok(Some(b)) => {
                     answered = true;
+                    self.silent_jobs.store(0, Ordering::SeqCst);
                     let st = b.to_status(self.drawer_level);
                     if let Some(f) = st.blocking_failure() {
                         tracing::info!(target: "pos_device_hw", printer = %self.target(), failure = f.code(), "not printing");
@@ -290,7 +315,19 @@ impl HwPrinter {
                     }
                 }
                 Ok(None) => {
+                    self.silent_jobs.fetch_add(1, Ordering::SeqCst);
                     tracing::debug!(target: "pos_device_hw", printer = %self.target(), "no status answer; sending anyway");
+                }
+                // The link died while asking (some printers close an idle connection quickly).
+                // No job byte was sent, so a fresh connection without the query is safe.
+                Err(e) if e.sent() == 0 => {
+                    tracing::debug!(target: "pos_device_hw", printer = %self.target(), error = %e, "link lost during status; reconnecting");
+                    self.silent_jobs.fetch_add(1, Ordering::SeqCst);
+                    link = match self.transport.open(self.timeouts.connect).await {
+                        Ok(l) => l,
+                        Err(e) => return failed_before_job(&e),
+                    };
+                    link.set_title(name);
                 }
                 Err(e) => return failed_before_job(&e),
             }
