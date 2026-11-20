@@ -33,6 +33,7 @@ pub enum ErrorCode {
     CashSessionAlreadyOpen,
     PrintAdapterUnavailable,
     PrintUnknownOutcome,
+    DeviceUnavailable,
     StoreBusy,
     StoreIo,
     StoreCorrupt,
@@ -89,6 +90,7 @@ impl ErrorCode {
             CashSessionAlreadyOpen => "CASH_SESSION_ALREADY_OPEN",
             PrintAdapterUnavailable => "PRINT_ADAPTER_UNAVAILABLE",
             PrintUnknownOutcome => "PRINT_UNKNOWN_OUTCOME",
+            DeviceUnavailable => "DEVICE_UNAVAILABLE",
             StoreBusy => "STORE_BUSY",
             StoreIo => "STORE_IO",
             StoreCorrupt => "STORE_CORRUPT",
@@ -217,6 +219,10 @@ impl ErrorCode {
             PrintUnknownOutcome => (
                 "The printer did not confirm the job.",
                 "Ask whether it printed; reprint only on request.",
+            ),
+            DeviceUnavailable => (
+                "A printer, drawer, scanner or terminal is not set up, not connected, or did not answer. The message says which and why.",
+                "Show the message and a link to Settings → Devices.",
             ),
             StoreBusy => (
                 "The local database is briefly busy. Retryable.",

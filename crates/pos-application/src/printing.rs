@@ -180,6 +180,7 @@ impl PrintService {
             job_id: PrintJobId::generate(ctx.ids.as_ref()),
             receipt_id: receipt,
             adapter: self.printer.adapter(),
+            target: self.printer.target(),
             reprint,
             status: PrintStatus::Queued,
             attempt_count: 0,

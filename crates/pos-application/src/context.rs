@@ -153,6 +153,12 @@ pub enum AppError {
     WriteSet(#[from] WriteSetError),
     #[error("could not read local data: {0}")]
     Query(String),
+    /// A device setting is invalid; `field` names the input (`host`, `port`, `baud`…).
+    #[error("{message}")]
+    DeviceConfig { field: String, message: String },
+    /// A device is not set up, not reachable, or refused the operation.
+    #[error("{0}")]
+    Device(String),
     /// A domain rule failed; carries its catalogued code (cart, pricing...).
     #[error("{0}")]
     Validation(String, ErrorCode),
@@ -182,6 +188,8 @@ impl HasErrorCode for AppError {
             AppError::Write(e) => e.error_code(),
             AppError::WriteSet(e) => e.error_code(),
             AppError::Query(_) => ErrorCode::StoreIo,
+            AppError::DeviceConfig { .. } => ErrorCode::ValidationFailed,
+            AppError::Device(_) => ErrorCode::DeviceUnavailable,
             AppError::Validation(_, code) => *code,
             AppError::Internal(_) => ErrorCode::Internal,
         }

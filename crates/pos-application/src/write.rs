@@ -184,6 +184,10 @@ pub enum WriteOp {
     CloseCashSession {
         closed: pos_domain::cash::ClosedSession,
     },
+    /// Creates or replaces a device attached to this till (local only, ADR-023).
+    PutDevice(crate::records::DeviceRecord),
+    /// Removes a device from this till.
+    RemoveDevice(pos_domain::DeviceId),
     /// Creates or updates a print job and appends its state change to `print_job_events`
     /// (E13-T06). Local only.
     PutPrintJob {
@@ -310,6 +314,8 @@ impl WriteOp {
             | WriteOp::RebuildStockBalances
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
+            | WriteOp::PutDevice(_)
+            | WriteOp::RemoveDevice(_)
             | WriteOp::CloseCart { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::PutLoginThrottle(_)
@@ -734,6 +740,14 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn put_device(mut self, device: crate::records::DeviceRecord) -> Self {
+        self.ops.push(WriteOp::PutDevice(device));
+        self
+    }
+    pub fn remove_device(mut self, device: pos_domain::DeviceId) -> Self {
+        self.ops.push(WriteOp::RemoveDevice(device));
+        self
+    }
     pub fn put_print_job(mut self, job: crate::records::PrintJobRecord, detail: serde_json::Value) -> Self {
         self.ops.push(WriteOp::PutPrintJob { job, detail });
         self
@@ -941,6 +955,8 @@ impl WriteSetBuilder {
             | WriteOp::RebuildStockBalances
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
+            | WriteOp::PutDevice(_)
+            | WriteOp::RemoveDevice(_)
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }

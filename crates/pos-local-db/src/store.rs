@@ -1275,12 +1275,43 @@ pub(crate) async fn run_ops(
                 }
                 applied.receipt_numbers.insert(*number_slot, number);
             }
+            WriteOp::PutDevice(d) => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO devices (device_id, register_id, kind, role, name, config_json, enabled, version,
+                       created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ON CONFLICT (device_id) DO UPDATE SET role = ?4, name = ?5, config_json = ?6, enabled = ?7,
+                       version = ?8, updated_at = ?10",
+                )
+                .bind(d.device_id.to_string())
+                .bind(d.register_id.to_string())
+                .bind(d.kind.as_str())
+                .bind(&d.role)
+                .bind(&d.name)
+                .bind(d.config.to_string())
+                .bind(d.enabled)
+                .bind(i64::try_from(d.version).unwrap_or(i64::MAX))
+                .bind(d.created_at.as_millis())
+                .bind(d.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::RemoveDevice(id) => {
+                st.step()?;
+                sqlx::query("DELETE FROM devices WHERE device_id = ?")
+                    .bind(id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
             WriteOp::PutPrintJob { job, detail } => {
                 st.step()?;
                 sqlx::query(
                     "INSERT INTO print_jobs (job_id, receipt_id, adapter, target, copy_kind, status, attempt_count, last_error_code,
                        requested_by, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     VALUES (?1, ?2, ?3, ?11, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT (job_id) DO UPDATE SET status = ?5, attempt_count = ?6, last_error_code = ?7, updated_at = ?10",
                 )
                 .bind(job.job_id.to_string())
@@ -1293,6 +1324,7 @@ pub(crate) async fn run_ops(
                 .bind(job.requested_by.to_string())
                 .bind(job.created_at.as_millis())
                 .bind(job.updated_at.as_millis())
+                .bind(&job.target)
                 .execute(&mut *tx)
                 .await
                 .map_err(map_sqlx)?;

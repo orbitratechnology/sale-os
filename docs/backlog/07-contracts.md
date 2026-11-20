@@ -51,6 +51,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | ReportsView, ReportsExport | ✓ | ✓ | – | |
 | AuditView, SettingsEdit, StaffManage, DeviceLink, SyncManage | ✓ | – | – | |
 | ConflictResolve | ✓ | ✓ | – | |
+| DeviceConfigure | ✓ | ✓ | – | This till's printers, scanners and terminals; test print (ADR-023) |
+| DrawerOpen | ✓ | ✓ | approval | "No sale": opens the cash drawer with a reason, audited as `cash_drawer.opened` (E20-T05) |
 | DevtoolsUse | debug builds only | | | |
 
 "approval" means the command fails with `APPROVAL_REQUIRED` unless the call carries a valid
@@ -337,6 +339,7 @@ sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
+device.saved, device.removed, device.test_printed, cash_drawer.opened,
 cash_session.opened, cash_session.closed,
 report.exported, data.exported, backup.created, backup.restored,
 sync.linked, sync.device_revoked, sync.conflict_resolved, sync.event_rejected

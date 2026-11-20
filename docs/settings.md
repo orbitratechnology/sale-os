@@ -18,6 +18,7 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `cash.require_session_for_sale` | true / false | `true` | **Sales need an open drawer.** In live mode, a sale or a cash refund needs an open cash drawer session. Practice sales never do. |
+| `drawer.open_on_cash_sale` | true / false | `true` | **Open the drawer after a cash sale.** Sends the opening pulse through the receipt printer when cash is taken. Never for card-only sales. |
 
 ## Security
 

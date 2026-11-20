@@ -72,6 +72,10 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
     ),
     ("receipts", "rendered from the sale or return, which travel"),
     ("print_jobs", "this printer"),
+    (
+        "devices",
+        "printers, scanners and terminals attached to this till (ADR-023)",
+    ),
     ("print_job_events", "this printer"),
     ("import_jobs", "import staging (the products travel)"),
     ("import_rows", "import staging"),

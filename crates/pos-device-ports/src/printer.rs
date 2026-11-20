@@ -154,6 +154,11 @@ pub trait ReceiptOutputPort: Send + Sync {
     /// Which adapter this is, as stored in `print_jobs.adapter`.
     fn adapter(&self) -> &'static str;
 
+    /// Which printer, in words ("192.168.1.50:9100", "COM3 @ 9600"), for the job history.
+    fn target(&self) -> Option<String> {
+        None
+    }
+
     /// What the encoder may use. The default is the conservative ESC/POS profile.
     fn capabilities(&self) -> PrinterCapabilities {
         PrinterCapabilities::default()

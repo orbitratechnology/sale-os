@@ -14,6 +14,7 @@ pub mod cloud_reports;
 pub mod config;
 pub mod conflict;
 pub mod context;
+pub mod devices;
 pub mod export;
 pub mod import;
 pub mod link;

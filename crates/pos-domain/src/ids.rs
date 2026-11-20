@@ -80,6 +80,7 @@ id_type!(
     ConflictId,
     ApprovalId,
     ImportJobId,
+    DeviceId,
 );
 
 #[cfg(test)]

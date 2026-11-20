@@ -64,6 +64,14 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "In live mode, a sale or a cash refund needs an open cash drawer session. Practice sales never do.",
     },
     SettingDef {
+        key: "drawer.open_on_cash_sale",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Cash drawer",
+        label: "Open the drawer after a cash sale",
+        help: "Sends the opening pulse through the receipt printer when cash is taken. Never for card-only sales.",
+    },
+    SettingDef {
         key: "discount.cashier_max_ppm",
         kind: SettingKind::Ppm,
         default: "100000",
