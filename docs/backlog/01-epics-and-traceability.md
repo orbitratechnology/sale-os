@@ -24,7 +24,9 @@
 | E17 | Sync engine | 3 | Event contracts, push worker, idempotent ingestion, master-data versioning, pull, linking, fault suite | T01–T10 |
 | E18 | Conflict resolution | 3 | Field-level conflict review and audited resolution | T01–T02 |
 | E19 | Pilot hardening | 4 | Performance, crash and power-loss resilience, backup and restore, security, signing and updates, diagnostics, usability, acceptance suite | T01–T12 |
-| E20 | Hardware validation | 5 | Compatibility registry, HID scanner, OS and ESC/POS printers, drawer, conditional scale and payments | T01–T07 |
+| E20 | Hardware validation and printer support | 5 | Compatibility registry, HID scanner, OS and ESC/POS printers, drawer, conditional scale and payments; transports, profiles, dialects, device settings, discovery (PRD §12.7) | T01–T12 |
+| E21 | Universal barcode input | 5 | Scan decoding (GS1, AIM, UPC-E, add-ons, ISBN, variable measure), wedge robustness, serial scanners | T01–T04 |
+| E22 | Payment terminals | 5 | Payment port, attempt state machine, mock provider, till flow, provider connectors | T01–T03 |
 
 ### Epic dependency graph
 
@@ -53,6 +55,8 @@ graph LR
   E19 --> PILOT((Pilot))
   E13 --> E20
   E07 --> E20
+  E06 --> E21
+  E10 --> E22
 ```
 
 ## 2. Requirement → task traceability (all P0)
@@ -237,6 +241,26 @@ pulled forward because they cost little:
 
 - **CAT-009** (catalogue CSV export) in E14-T04
 - a minimal **REP-008** in E14-T05
+
+### Universal device support (P1, PRD §12.7)
+
+| Req | Tasks |
+|---|---|
+| DEV-001 | E20-T08 |
+| DEV-002 | E20-T09 |
+| DEV-003 | E20-T10 |
+| DEV-004 | E20-T09, E20-T11 |
+| DEV-005 | E20-T10 |
+| DEV-006 | E20-T08, E20-T11 |
+| DEV-007 | E20-T05, E20-T11 |
+| DEV-008 | E20-T12 |
+| DEV-009 | E20-T11 |
+| BAR-010 | E21-T01 |
+| BAR-011 | E21-T01, E21-T02 |
+| BAR-012 | E21-T03 |
+| BAR-013 | E21-T04 |
+| PAY-009 | E22-T01, E22-T02, E22-T03 |
+| PAY-010 | E22-T01 |
 
 ## 3. Derived requirements
 

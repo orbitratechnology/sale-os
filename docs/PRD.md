@@ -704,6 +704,37 @@ Simulate approved, declined, timed out, duplicate callback, delayed confirmation
 
 Maintain a hardware compatibility registry containing vendor, model, connection type, OS, adapter version, tested capabilities, firmware, and test date.
 
+## 12.7 Universal device support (added 2026-11-20)
+
+The sequence in §12.6 names one device of each kind. A retail POS is only useful if it works with the hardware a shop *already owns*, which is often old, cheap or bought from whichever vendor was nearest. This section raises the goal from "one validated device per kind" to "every common device, connected every common way". Each kind sits behind the ports in §12.2, so none of it reaches the domain. The design is recorded in ADR-023.
+
+**Principles.**
+- **Connection-agnostic.** Every printer path (network, USB, serial/COM, Bluetooth, parallel, OS spooler) carries the same encoded job. Every scanner path (keyboard wedge, serial/COM, Bluetooth SPP) ends in the same scan command.
+- **Profile-driven.** What a device can do (columns, code pages, cutter, drawer, barcode/QR, status) comes from a model profile, can be overridden per till, and is detected automatically where the device can identify itself.
+- **Honest outcomes.** Before anything is sent, a failure is "failed" and safe to retry. Once any byte may have reached the paper or the card may have been charged, the outcome is "unknown" or "reconciliation required" and is never retried automatically (RCP-007, PAY-004).
+- **Degrade, don't break.** A character a printer cannot print is transliterated, not dropped. A printer without a cutter feeds instead. A printer without native barcodes prints the number as text. A scan in an unexpected format is decoded to every plausible lookup key before "not found".
+- **Self-diagnosing.** Devices show live health where they can report it, and common set-up mistakes (scanner keyboard layout, too-slow scanner, Star printer in the wrong emulation, wrong column count) are detected and explained, not left as silent failures.
+
+| ID | Priority | Requirement |
+|---|---|---|
+| DEV-001 | P1 | Receipt printers over raw TCP (port 9100), serial/COM (incl. USB virtual COM and Bluetooth SPP), device files (Linux USB `usblp`, parallel), and the operating-system spooler in RAW mode (any printer with a Windows driver, CUPS on Linux/macOS). |
+| DEV-002 | P1 | Printer model profiles (columns per font, code pages, cutter, drawer kick, barcode/QR, status support) for the common Epson, Star, Bixolon, Citizen, Seiko, Sunmi, Xprinter/Zjiang/Rongta/Munbyn-class models, plus generic ESC/POS, Star Line Mode and plain-text profiles. Automatic model identification where the printer answers `GS I`. |
+| DEV-003 | P1 | Command dialects ESC/POS, Star Line Mode and plain text. Code-page selection per character with transliteration fallback, so accented, Cyrillic, Greek, Turkish, Hebrew, Arabic (CP864) and other characters print wherever the printer has the page. |
+| DEV-004 | P1 | Configurable characters per line (any 24–64) so 42-column printers (e.g. Epson TM-T88) lay out correctly. The receipt preview uses the same width. |
+| DEV-005 | P1 | The receipt number prints as a scannable CODE128 barcode (or QR) where the printer supports it, so returns can scan it. |
+| DEV-006 | P1 | Real-time printer status (online, paper out/near end, cover open, drawer sensor) before each job where the connection is two-way, a live device health indicator, a test print, and a status explanation for every failure. |
+| DEV-007 | P1 | Cash drawer kick through the printer (pin 2 or pin 5), automatically on cash sales (setting) and on demand as an audited "no sale". |
+| DEV-008 | P1 | Device discovery: serial/USB ports labelled by vendor, printer queues, device files, and a bounded scan of the local /24 network for port 9100. |
+| DEV-009 | P1 | Device configuration is per till, local, validated field by field, audited, and takes effect without a restart. |
+| BAR-010 | P1 | Scan decoding to ordered lookup keys: AIM symbology identifiers, UPC-E ↔ UPC-A, EAN/UPC add-ons, ISBN-10/ISSN, Code 39 start/stop and check characters, Codabar start/stop, GS1 element strings (GS1-128, DataBar, DataMatrix, QR; GS-separated or parenthesised) and GS1 Digital Link URLs. Covers every common 1D/2D retail and legacy symbology a scanner can transmit (EAN/UPC, Code 39, Code 93, Code 11, Codabar, ITF, MSI, Code 128, GS1 DataBar, QR, DataMatrix, PDF417, Aztec). |
+| BAR-011 | P1 | Variable-measure (price- or weight-embedded) barcodes from configurable per-shop rules, adding the weighed quantity or the label price to the cart. |
+| BAR-012 | P1 | Keyboard-wedge robustness: FNC1/GS preserved, short codes accepted with a suffix, slow (wireless/older) scanners recognised by their regular timing, and keyboard-layout mismatches remapped and explained. |
+| BAR-013 | P1 | Serial (RS-232, USB-COM, Bluetooth SPP) scanners with terminator/prefix handling and automatic reconnection. |
+| PAY-009 | P1 | A provider-neutral payment terminal port with a persisted attempt state machine (pending, approved, declined, cancelled, reversed, reconciliation required), idempotent by attempt, so each terminal connector (Adyen/nexo, Stripe Terminal, SumUp, Square, ZVT, OPI, PAX, Verifone, Ingenico) is an adapter, not a redesign. Connectors still need the agreements in §17 Stage 5. |
+| PAY-010 | P1 | A sale paid by an integrated terminal is completed only with an approved attempt of the same amount and cart. Timeouts and unknown outcomes block the sale until reconciled. |
+
+Known gaps by design: USB HID-POS scanners (most can be switched to keyboard or COM mode), raster-only printers (e.g. Star TSP100 futurePRNT), and label printer languages (ZPL/EPL) are later work (RCP-009). Payment connectors for specific acquirers are built only once the commercial and certification preconditions exist.
+
 # 13. Security, privacy, and operational safeguards
 
 - All cloud traffic uses TLS.

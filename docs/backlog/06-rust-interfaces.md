@@ -397,6 +397,11 @@ impl SyncService      { async fn status(..); async fn link(..); async fn retry_n
 
 ## 10. Device ports — `pos-device-ports` (E07, E13, E10)
 
+> **Implemented shape (2026-11-20, ADR-023):** see `crates/pos-device-ports/src/`. The sketch
+> below is the original design. The implementation keeps `submit(job_name, bytes)` returning
+> `PrintResult` (`Printed | Failed | Uncertain`), adds `capabilities()` and `status()` with
+> defaults, a `DrawerPin` on `CashDrawerPort::open`, and `PaymentPort::{cancel, reverse}`.
+
 ```rust
 pub struct ScanEvent {
     pub id: ScanEventId,               // unique per physical/simulated scan; duplicates of the SAME delivery share it
