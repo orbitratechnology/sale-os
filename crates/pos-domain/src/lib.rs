@@ -16,6 +16,7 @@ pub mod ids;
 pub mod inventory;
 pub mod money;
 pub mod numbering;
+pub mod payment;
 pub mod pricing;
 pub mod quantity;
 pub mod rate;

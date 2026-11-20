@@ -80,6 +80,8 @@ id_type!(
     ConflictId,
     ApprovalId,
     ImportJobId,
+    // A payment terminal attempt (E10-T02); also the idempotency key sent to the provider.
+    PaymentAttemptId,
 );
 
 #[cfg(test)]

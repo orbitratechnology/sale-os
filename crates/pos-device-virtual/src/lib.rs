@@ -1,5 +1,6 @@
-//! Simulated devices with a scriptable scenario API (PRD §12). Stage 0: the virtual printer
-//! capture (E13-T01). Scanner and payment simulators arrive with E07-T03 and E10-T02; the
-//! printer gains failure scenarios and the `ReceiptOutputPort` impl with E13-T06.
+//! Simulated devices with a scriptable scenario API (PRD §12): the virtual printer
+//! (E13-T01/T06) and the mock payment provider (E10-T02). The scanner simulator arrives with
+//! E07-T03.
 
+pub mod payment;
 pub mod printer;
