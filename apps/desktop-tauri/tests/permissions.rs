@@ -1714,8 +1714,12 @@ fn a_card_number_typed_anywhere_is_refused_and_stored_nowhere() {
             let e = invoke(&w, cmd, a).expect_err(cmd);
             assert_eq!(e["code"], "CARD_DATA_REJECTED", "{cmd} {dotted}: {e}");
             assert_eq!(e["details"]["field"], dotted.as_str(), "{cmd}");
+            // Not even part of the number comes back. The correlation id is a random UUID and
+            // can contain "4111" by chance (it did once on CI), so it is left out of the check.
+            let mut shown = e.clone();
+            shown.as_object_mut().unwrap().remove("correlationId");
             assert!(
-                !e.to_string().contains("4111"),
+                !shown.to_string().contains("4111"),
                 "the refusal repeats the number: {e}"
             );
             swept += 1;
