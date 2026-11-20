@@ -248,6 +248,11 @@ impl PrintService {
                 job.last_error_code = Some(f.code().into());
                 serde_json::json!({ "error": f.code() })
             }
+            // Part of the job may be on paper: never resubmit automatically (RCP-007).
+            Ok(PrintResult::Uncertain(reason)) => {
+                job.status = PrintStatus::Unknown;
+                serde_json::json!({ "uncertain": reason })
+            }
             // No answer: the paper may be out of the printer. Never resubmit automatically.
             Err(_) => {
                 job.status = PrintStatus::Unknown;

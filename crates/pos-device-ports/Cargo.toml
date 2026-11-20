@@ -1,6 +1,6 @@
 [package]
 name = "pos-device-ports"
-description = "Barcode / receipt-output / payment port traits (docs/backlog/06 §10)."
+description = "Barcode / receipt-output / cash-drawer / payment port traits (docs/backlog/06 §10, ADR-023)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 pos-domain.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
