@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 pos-domain.workspace = true
 serde.workspace = true
+deunicode.workspace = true
 thiserror.workspace = true
 krilla.workspace = true
 rustybuzz.workspace = true
