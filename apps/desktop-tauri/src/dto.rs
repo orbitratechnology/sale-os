@@ -472,6 +472,9 @@ pub struct ProductFilterDto {
     pub status: ProductStatusDto,
     pub track_stock: Option<bool>,
     pub category_id: Option<CategoryId>,
+    /// Only products that need restocking (low or negative); absent means no.
+    #[serde(default)]
+    pub low_stock: bool,
 }
 
 impl From<ProductFilterDto> for ProductFilter {
@@ -485,6 +488,7 @@ impl From<ProductFilterDto> for ProductFilter {
             },
             track_stock: f.track_stock,
             category_id: f.category_id,
+            low_stock: f.low_stock,
         }
     }
 }
@@ -507,6 +511,8 @@ pub struct ProductRowDto {
     pub on_hand_milli: Option<String>,
     /// A tracked variant is below zero: show the red "Negative stock" flag (INV-008).
     pub negative_stock: bool,
+    /// A tracked variant is at or below its low-stock threshold: an amber "Low stock" flag.
+    pub low_stock: bool,
     /// Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
     /// using the local values.
     pub sync_conflict: bool,
@@ -540,6 +546,7 @@ impl ProductPageDto {
                     quick_select: r.quick_select,
                     on_hand_milli: r.on_hand.map(qty),
                     negative_stock: r.negative_stock,
+                    low_stock: r.low_stock,
                     sync_conflict: r.sync_conflict,
                 })
             })
@@ -1848,6 +1855,67 @@ impl StockHistoryDto {
                 actor_name: r.actor_name.clone(),
             })
             .collect()
+    }
+}
+
+/// A posted stock document, opened from a history row or an audit entry.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockDocumentDto {
+    pub document_id: pos_domain::InventoryDocumentId,
+    pub document_no: String,
+    /// `opening`, `receipt`, `adjustment` or `write_off`.
+    pub doc_type: String,
+    pub reason: Option<String>,
+    pub supplier_name: Option<String>,
+    pub reference: Option<String>,
+    pub note: Option<String>,
+    pub local_time: String,
+    pub actor_name: String,
+    pub approver_name: Option<String>,
+    pub lines: Vec<StockDocumentLineDto>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockDocumentLineDto {
+    pub variant_id: VariantId,
+    pub name: String,
+    pub sku: Option<String>,
+    pub movement_type: String,
+    /// `sellable` or `damaged`.
+    pub bucket: String,
+    pub delta_milli: String,
+    pub unit_cost_minor: Option<String>,
+}
+
+impl StockDocumentDto {
+    pub fn from_view(d: pos_application::records::StockDocumentView) -> Self {
+        Self {
+            document_id: d.document_id,
+            document_no: d.document_no,
+            doc_type: d.doc_type,
+            reason: d.reason,
+            supplier_name: d.supplier_name,
+            reference: d.reference,
+            note: d.note,
+            local_time: d.local_time,
+            actor_name: d.actor_name,
+            approver_name: d.approver_name,
+            lines: d
+                .lines
+                .into_iter()
+                .map(|l| StockDocumentLineDto {
+                    variant_id: l.variant_id,
+                    name: l.name,
+                    sku: l.sku,
+                    movement_type: l.movement_type,
+                    bucket: l.bucket,
+                    delta_milli: qty(l.delta),
+                    unit_cost_minor: l.unit_cost.map(money),
+                })
+                .collect(),
+        }
     }
 }
 

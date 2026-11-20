@@ -151,6 +151,9 @@ pub struct ProductFilter {
     /// `Some(true)`: only products with a stock-tracked variant.
     pub track_stock: Option<bool>,
     pub category_id: Option<pos_domain::CategoryId>,
+    /// Only products with a tracked variant that needs restocking: at or below its low-stock
+    /// threshold, or below zero (the stock report's "Low" and "Negative").
+    pub low_stock: bool,
 }
 
 /// A product list row: one per product, summarising its active variants.
@@ -173,6 +176,8 @@ pub struct ProductRow {
     pub on_hand: Option<pos_domain::Quantity>,
     /// Some tracked variant is below zero (INV-008): shown as a red "Negative stock" flag.
     pub negative_stock: bool,
+    /// Some tracked variant is at or below its low-stock threshold (and not below zero).
+    pub low_stock: bool,
     /// An edit here conflicts with the cloud's version (E18): the local values are used
     /// until it is resolved.
     pub sync_conflict: bool,
@@ -266,6 +271,11 @@ pub trait StockQueries: Send + Sync {
         variant: pos_domain::VariantId,
         limit: u32,
     ) -> Result<Vec<crate::records::StockHistoryRow>, QueryError>;
+    /// One posted stock document with its movements; `None` if there is no such document.
+    async fn stock_document(
+        &self,
+        document: pos_domain::InventoryDocumentId,
+    ) -> Result<Option<crate::records::StockDocumentView>, QueryError>;
     /// Every balance that differs from the sum of its movements (E11-T06 verify).
     async fn stock_drift(&self) -> Result<Vec<crate::records::StockDrift>, QueryError>;
     /// Damaged on-hand quantity per variant at `location` (what a write-off can take).

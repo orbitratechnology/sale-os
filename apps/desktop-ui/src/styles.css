@@ -754,7 +754,9 @@
     margin: 0;
     color: var(--c-text-muted);
   }
-  .drawer-needed {
+  /* A warning in the flow of a form: soft amber with an icon (drawer needed, parked carts). */
+  .drawer-needed,
+  .callout-warning {
     display: flex;
     gap: var(--sp-2);
     align-items: flex-start;
@@ -766,6 +768,12 @@
     border: 1px solid color-mix(in oklab, var(--c-warning) 25%, transparent);
     font-size: var(--fs-sm);
     font-weight: var(--fw-medium);
+  }
+  .callout-warning > .lucide {
+    flex: none;
+    inline-size: var(--icon);
+    block-size: var(--icon);
+    margin-block-start: 0.0625rem;
   }
   .drawer-needed button.link {
     color: inherit;
@@ -1980,6 +1988,9 @@
   .out-of-stock {
     color: var(--c-danger);
     font-weight: var(--fw-semibold);
+  }
+  .stock-flag.low {
+    color: var(--c-warning);
   }
 
   /* ---- CSV import ---- */

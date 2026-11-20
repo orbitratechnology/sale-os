@@ -62,6 +62,24 @@ impl StockService {
         Ok(self.stock.stock_history(variant, limit.clamp(1, 500)).await?)
     }
 
+    /// One posted stock document (receipt, adjustment, write-off, opening stock) as recorded.
+    pub async fn document(
+        &self,
+        ctx: &CommandContext,
+        document: pos_domain::InventoryDocumentId,
+    ) -> Result<crate::records::StockDocumentView, AppError> {
+        ctx.authorize(Permission::InventoryView)?;
+        self.stock
+            .stock_document(document)
+            .await?
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "no such stock document on this device".into(),
+                    pos_domain::ErrorCode::ValidationFailed,
+                )
+            })
+    }
+
     /// E11-T06 verify: balances that differ from their movements. Empty is healthy.
     pub async fn verify(&self, ctx: &CommandContext) -> Result<Vec<StockDrift>, AppError> {
         ctx.authorize(Permission::InventoryView)?;

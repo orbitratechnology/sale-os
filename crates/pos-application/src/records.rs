@@ -489,6 +489,38 @@ pub struct StockHistoryRow {
     pub actor_name: String,
 }
 
+/// A posted stock document as recorded (E11-T05: opened from a history row or an audit entry).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StockDocumentView {
+    pub document_id: pos_domain::InventoryDocumentId,
+    /// `R01-IN-000042`.
+    pub document_no: String,
+    /// `opening`, `receipt`, `adjustment` or `write_off`.
+    pub doc_type: String,
+    /// Adjustments and write-offs: `damage`, `loss`, `theft`, `count_correction`, `expired`, `other`.
+    pub reason: Option<String>,
+    pub supplier_name: Option<String>,
+    pub reference: Option<String>,
+    pub note: Option<String>,
+    pub local_time: String,
+    pub actor_name: String,
+    pub approver_name: Option<String>,
+    /// One per stock movement written (a damage adjustment writes two per line).
+    pub lines: Vec<StockDocumentLine>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StockDocumentLine {
+    pub variant_id: pos_domain::VariantId,
+    /// The product name with the variant label, as the item is called today.
+    pub name: String,
+    pub sku: Option<String>,
+    pub movement_type: String,
+    pub bucket: String,
+    pub delta: pos_domain::Quantity,
+    pub unit_cost: Option<pos_domain::Money>,
+}
+
 // ---------- cash sessions (E15-T02) ----------
 
 #[derive(Clone, Debug, PartialEq, Eq)]

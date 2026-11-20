@@ -982,6 +982,23 @@ pub async fn stock_overview(
     Ok(crate::dto::StockReportDto::from_rows(&rows, ctx.now()))
 }
 
+/// One posted stock document (goods received, adjustment, write-off, opening stock).
+#[tauri::command]
+#[specta::specta]
+pub async fn stock_document_get(
+    services: State<'_, AppServices>,
+    document_id: pos_domain::InventoryDocumentId,
+) -> Result<crate::dto::StockDocumentDto, IpcError> {
+    let ctx = services.context().await?;
+    let doc = services
+        .app()?
+        .stock
+        .document(&ctx, document_id)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::StockDocumentDto::from_view(doc))
+}
+
 /// E11-T05: one item's stock movements, newest first, with what caused each.
 #[tauri::command]
 #[specta::specta]

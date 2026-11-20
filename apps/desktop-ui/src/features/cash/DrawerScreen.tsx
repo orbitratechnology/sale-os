@@ -1,8 +1,5 @@
 import { Modal } from "../../ui/Modal";
-import {
-  ArrowLeft,
-  Banknote,
-} from "../../ui/icons";
+import { ArrowLeft, Banknote, TriangleExclamationPoint } from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type IpcError, type Session, type Workspace } from "../../ipc";
 import type { CashStateDto_Serialize as CashState, ClosedCashDto_Serialize as Closed, SessionTotalsDto } from "../../ipc/bindings";
@@ -27,6 +24,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
   const [error, setError] = useState<IpcError | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showZ, setShowZ] = useState(false);
+  const [parked, setParked] = useState(0);
   const input = useRef<HTMLInputElement | null>(null);
   const exp = state?.session?.currencyExponent ?? workspace.currencyExponent;
   const money = (minor: string) => formatMoney(minor, { exponent: exp });
@@ -36,6 +34,10 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
     void commands.cashSessionCurrent().then((res) => {
       if (res.status === "ok") setState(res.data);
       else setError(res.error);
+    });
+    // Parked carts outlive the drawer session; closing warns about them (POS-012).
+    void commands.cartParkedList().then((res) => {
+      if (res.status === "ok") setParked(res.data.length);
     });
   }, []);
 
@@ -183,6 +185,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
             {money(s.openingFloatMinor)}
           </p>
           {state.totals && state.expectedMinor !== null && <Running totals={state.totals} expected={state.expectedMinor} money={money} />}
+          {parked > 0 && <ParkedWarning count={parked} />}
           <label>
             Counted cash ({workspace.currencyCode})
             <input ref={input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Count the drawer" autoComplete="off" />
@@ -210,6 +213,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
             <p>
               Counted {money(scaleDecimal(amount || "0", exp) ?? "0")}. Closing is final: the session cannot be reopened.
             </p>
+            {parked > 0 && <ParkedWarning count={parked} />}
             <div className="actions">
               <button type="button" className="secondary" onClick={() => setConfirming(false)}>
                 Cancel
@@ -221,6 +225,19 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
         </Modal>
       )}
     </main>
+  );
+}
+
+/** Parked carts are not sales: they stay parked, and sell into whichever drawer session is open then. */
+function ParkedWarning({ count }: { count: number }) {
+  return (
+    <p className="callout-warning" data-testid="parked-warning">
+      <TriangleExclamationPoint />
+      <span>
+        {count === 1 ? "1 cart is" : `${count} carts are`} parked on this till and not in this count. {count === 1 ? "It stays" : "They stay"}{" "}
+        parked: resume and finish {count === 1 ? "it" : "them"}, or void {count === 1 ? "it" : "them"}, from the till.
+      </span>
+    </p>
   );
 }
 

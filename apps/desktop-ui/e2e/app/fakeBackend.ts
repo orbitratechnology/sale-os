@@ -177,7 +177,8 @@ function dtoFor(p: FakeProduct): ProductDto {
         priceMinor: p.priceMinor.toString(),
         costMinor: null,
         trackStock: true,
-        lowStockThresholdMilli: null,
+        // As in the stock report below.
+        lowStockThresholdMilli: ({ "Cola 330ml": "12000", Crisps: "5000" } as Record<string, string>)[p.name] ?? null,
         scanQtyMilli: "1000",
         barcodes: Object.entries(p.barcodes).map(([raw, n]) => ({
           value: raw,
@@ -284,6 +285,7 @@ function fail(code: IpcError["code"], details: IpcError["details"] = null): neve
 const div = (a: bigint, b: bigint) => (a >= 0n ? (a + b / 2n) / b : (a - b / 2n) / b);
 
 /** Sellable on hand per product name, matching the fake stock report. */
+const FAKE_DOCUMENT = "0190a5b0-0000-7000-8000-00000000d0c1";
 const FAKE_STOCK: Record<string, bigint> = { "Chocolate bar": -2000n, "Cola 330ml": 40000n, Crisps: 3000n };
 
 /** A few registry entries, shaped like Rust's (crates/pos-application/src/settings.rs). */
@@ -602,14 +604,22 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     }
     case "product_list": {
       needSession(s);
-      const f = a.filter as { query: string; status: string; trackStock: boolean | null; categoryId: string | null };
+      const f = a.filter as { query: string; status: string; trackStock: boolean | null; categoryId: string | null; lowStock?: boolean };
+      // Low, like Rust's rule: a tracked variant below zero, or at or below its threshold.
+      const level = (p: { name: string; variants: { trackStock: boolean; lowStockThresholdMilli?: string | null }[] }) => {
+        const have = FAKE_STOCK[p.name] ?? 0n;
+        const tracked = p.variants.filter((v) => v.trackStock);
+        if (tracked.length === 0) return "none";
+        if (have < 0n) return "negative";
+        return tracked.some((v) => v.lowStockThresholdMilli != null && have <= BigInt(v.lowStockThresholdMilli)) ? "low" : "ok";
+      };
       const offset = Number(a.offset);
       const limit = Number(a.limit);
       if (s.bigCatalog !== null) {
         const total = s.bigCatalog;
         const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => {
           const n = offset + i;
-          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false, syncConflict: false };
+          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false, lowStock: false, syncConflict: false };
         });
         return { rows, total };
       }
@@ -618,6 +628,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         .filter((p) => (f.status === "all" ? true : f.status === "archived" ? p.archived : !p.archived))
         .filter((p) => f.trackStock === null || p.variants.some((v) => v.trackStock) === f.trackStock)
         .filter((p) => !f.categoryId || p.categoryId === f.categoryId)
+        .filter((p) => !f.lowStock || level(p) === "low" || level(p) === "negative")
         .filter((p) => !q || p.name.toLowerCase().includes(q) || p.variants.some((v) => v.sku?.toLowerCase().startsWith(q) || v.barcodes.some((b) => b.raw.includes(q))))
         .sort((x, y) => x.name.localeCompare(y.name));
       const rows = all.slice(offset, offset + limit).map((p) => {
@@ -630,6 +641,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           barcodeCount: p.variants.reduce((n, v) => n + v.barcodes.length, 0), trackStock: p.variants.some((v) => v.trackStock), quickSelect: p.quickSelect,
           onHandMilli: p.variants.some((v) => v.trackStock) ? (FAKE_STOCK[p.name] ?? 0n).toString() : null,
           negativeStock: (FAKE_STOCK[p.name] ?? 0n) < 0n,
+          lowStock: level(p) === "low",
           syncConflict: s.cloud.conflicts > 0 && p.name === "Cola 330ml",
         };
       });
@@ -893,10 +905,24 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     }
     case "stock_history": {
       needSession(s);
+      // The sale row points at the latest sale here, when there is one, so it can be opened.
+      const sale = s.sales[s.sales.length - 1];
       return [
-        { movementId: id(), localTime: "2026-11-07 10:05", movementType: "sale", bucket: "sellable", deltaMilli: "-2000", sourceType: "sale", sourceId: id(), sourceNumber: "R01-000004", actorName: "Cal" },
-        { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: id(), sourceNumber: "R01-IN-000001", actorName: "Mia" },
+        { movementId: id(), localTime: "2026-11-07 10:05", movementType: "sale", bucket: "sellable", deltaMilli: "-2000", sourceType: "sale", sourceId: sale?.saleId ?? id(), sourceNumber: sale?.receiptNumber ?? "R01-000004", actorName: "Cal" },
+        { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: FAKE_DOCUMENT, sourceNumber: "R01-IN-000001", actorName: "Mia" },
       ];
+    }
+    case "stock_document_get": {
+      needSession(s);
+      if (a.documentId !== FAKE_DOCUMENT) fail("VALIDATION_FAILED");
+      return {
+        documentId: FAKE_DOCUMENT, documentNo: "R01-IN-000001", docType: "receipt", reason: null, supplierName: "Wholesale Ltd", reference: "INV-8812", note: null,
+        localTime: "2026-11-07 08:30", actorName: "Mia", approverName: null,
+        lines: [
+          { variantId: id(), name: "Cola 330ml", sku: "COLA", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", unitCostMinor: "35" },
+          { variantId: id(), name: "Crisps", sku: "CRISP", movementType: "receipt", bucket: "sellable", deltaMilli: "12000", unitCostMinor: null },
+        ],
+      };
     }
     case "audit_list": {
       const me = needSession(s);
@@ -913,6 +939,10 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         {
           auditId: id(), localTime: "2026-11-07 08:00", action: "catalog.product_created", actorName: "Olu", approverName: null,
           entityType: "product", entityId: firstProduct?.productId ?? id(), entityLabel: firstProduct?.name ?? "?", metadata: "{}", userId: s.users[0]?.userId,
+        },
+        {
+          auditId: id(), localTime: "2026-11-07 08:30", action: "inventory.receipt_posted", actorName: "Mia", approverName: null,
+          entityType: "inventory_document", entityId: FAKE_DOCUMENT, entityLabel: "R01-IN-000001", metadata: "{}", userId: s.users[0]?.userId,
         },
         {
           auditId: id(), localTime: "2026-11-07 07:55", action: "auth.login", actorName: "Olu", approverName: null,

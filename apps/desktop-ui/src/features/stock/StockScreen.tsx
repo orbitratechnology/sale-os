@@ -10,7 +10,8 @@ import { formatMilli, scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
-import { StockOverview } from "./StockOverview";
+import { RecordView, type RecordRef } from "../records/RecordView";
+import { INITIAL_OVERVIEW, StockOverview, type OverviewState } from "./StockOverview";
 
 const KINDS: { value: DocumentType; label: string; post: string }[] = [
   { value: "receipt", label: "Receive goods", post: "Post goods received" },
@@ -50,19 +51,36 @@ function signedMilli(input: string, allowSign: boolean): string | null {
  * Posting is one transaction in Rust; a posted document cannot be edited, only corrected by
  * a new one.
  */
-export function StockScreen({ workspace, canPost, onBack }: { workspace: Workspace; canPost: boolean; onBack: () => void }) {
+export function StockScreen({
+  workspace,
+  canPost,
+  onBack,
+  onReturn,
+}: {
+  workspace: Workspace;
+  canPost: boolean;
+  onBack: () => void;
+  /** "Return items" on a sale opened from the history. */
+  onReturn: (receiptNumber: string) => void;
+}) {
   // Managers and owners land on posting (receiving is the common job); cashiers only see stock.
   const [view, setView] = useState<"post" | "onHand">(canPost ? "post" : "onHand");
+  const [overview, setOverview] = useState<OverviewState>(INITIAL_OVERVIEW);
+  const [record, setRecord] = useState<RecordRef | null>(null);
+  if (record) {
+    return <RecordView record={record} workspace={workspace} backLabel="Back to stock" onBack={() => setRecord(null)} onReturn={onReturn} />;
+  }
+  const overviewPanel = <StockOverview state={overview} onState={setOverview} onRecord={setRecord} />;
   if (view === "onHand" || !canPost) {
     return (
       <main className="sales">
         <StockHeader canPost={canPost} view="onHand" onView={setView} onBack={onBack} />
         {canPost ? (
           <div className="stack" {...tabPanelProps("stock", "onHand")}>
-            <StockOverview />
+            {overviewPanel}
           </div>
         ) : (
-          <StockOverview />
+          overviewPanel
         )}
       </main>
     );

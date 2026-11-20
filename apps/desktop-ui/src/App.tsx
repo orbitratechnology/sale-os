@@ -210,6 +210,7 @@ export function App() {
       case "audit":
         return (
           <AuditScreen
+            workspace={workspace}
             onBack={() => setScreen({ kind: "reports" })}
             onOpenProduct={(productId) =>
               setScreen({ kind: "editor", productId, returnTo: "audit" })
@@ -223,6 +224,7 @@ export function App() {
             workspace={workspace}
             canPost={canEdit}
             onBack={() => setScreen({ kind: "till" })}
+            onReturn={(receipt) => setScreen({ kind: "returns", receipt })}
           />
         );
       case "drawer":

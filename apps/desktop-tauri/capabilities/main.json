@@ -87,6 +87,7 @@
     "allow-stock-verify",
     "allow-stock-overview",
     "allow-stock-history",
+    "allow-stock-document-get",
     "allow-stock-rebuild",
     "allow-reports-sales-summary",
     "allow-reports-tender-mix",

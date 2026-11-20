@@ -1043,6 +1043,35 @@ describe("cash drawer (E15-T02)", () => {
     });
     expect(serious).toEqual([]);
   });
+  it("closing warns about parked carts, which stay parked (POS-012)", async () => {
+    const page = await till("checkout");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F10");
+    await page.getByLabel(/Opening float/).fill("50");
+    await page.keyboard.press("Enter");
+    await page.getByText("R01-Z-0001").waitFor();
+    expect(await page.getByTestId("parked-warning").count()).toBe(0);
+    await page.keyboard.press("Escape");
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F5");
+    await page.getByRole("dialog", { name: "Park this cart?" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: /^Parked \(1\)/ }).waitFor();
+
+    await page.keyboard.press("F10");
+    const warning = page.getByRole("main").getByTestId("parked-warning");
+    await warning.waitFor();
+    expect(await warning.textContent()).toContain("1 cart is parked on this till");
+    await page.getByLabel(/Counted cash/).fill("50");
+    await page.keyboard.press("Enter");
+    const confirm = page.getByRole("dialog", { name: "Close the drawer?" });
+    await confirm.getByTestId("parked-warning").waitFor();
+    await confirm.getByRole("button", { name: "Close drawer" }).click();
+    await page.getByRole("region", { name: "Drawer closed" }).waitFor();
+    // Closing touched no parked cart.
+    expect(await calls(page, "cart_discard_parked")).toHaveLength(0);
+  });
 });
 
 describe("stock (E11-T02/T03)", () => {
@@ -1135,6 +1164,13 @@ describe("stock (E11-T02/T03)", () => {
     const row = page.getByRole("row", { name: /Chocolate bar/ });
     await row.getByText("Negative stock").waitFor();
     expect(await page.getByRole("row", { name: /Crisps/ }).getByText("Negative stock").count()).toBe(0);
+    // Crisps: 3 on hand, low at 5. Cola: 40, low at 12.
+    await page.getByRole("row", { name: /Crisps/ }).getByText("Low stock").waitFor();
+    // The low-stock filter: low and negative, nothing else.
+    await page.getByRole("main").getByLabel("Stock").selectOption("low");
+    await page.waitForFunction(() => document.querySelector("[data-testid=product-total]")?.textContent === "2 products");
+    expect(await page.getByTestId("product-row").allTextContents()).toEqual(["Chocolate bar", "Crisps"]);
+    expect((await calls(page, "product_list")).at(-1)).toMatchObject({ filter: { lowStock: true, trackStock: null } });
   });
 
   it("a cashier sees stock on hand and its history, but cannot receive or adjust", async () => {
@@ -1161,6 +1197,41 @@ describe("stock (E11-T02/T03)", () => {
     expect(rows[1]).toContain("Goods received");
     await onHand.getByLabel("Low and negative only").check();
     await page.waitForFunction(() => document.querySelectorAll("[data-testid=onhand-row]").length === 2);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("a history row opens its stock document or sale; Esc comes back to the same history", async () => {
+    const page = await checkout();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "On hand" }).click();
+    const onHand = page.getByRole("region", { name: "Stock on hand" });
+    await onHand.getByRole("button", { name: "Cola 330ml" }).click();
+    const history = page.getByRole("region", { name: "History: Cola 330ml" });
+
+    await history.getByRole("button", { name: "R01-IN-000001" }).click();
+    const doc = page.getByRole("region", { name: "Stock document" });
+    await doc.waitFor();
+    expect(await page.getByRole("heading", { level: 1 }).textContent()).toContain("Goods received");
+    expect(await doc.textContent()).toContain("Wholesale Ltd");
+    expect(await doc.getByTestId("document-line").allTextContents()).toEqual([
+      expect.stringContaining("+24"),
+      expect.stringContaining("+12"),
+    ]);
+    await page.keyboard.press("Escape");
+    // Back where it was: the same item's history, focus on the link that opened the document.
+    await page.waitForFunction(() => document.activeElement?.textContent === "R01-IN-000001");
+
+    await history.getByRole("button", { name: "R01-000001" }).click();
+    await page.getByRole("region", { name: "Sale detail" }).waitFor();
+    await page.getByRole("button", { name: /Back to stock/ }).click();
+    await history.waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
@@ -1293,6 +1364,11 @@ describe("reports (E14-T03)", () => {
     await page.getByRole("region", { name: "Sale detail" }).waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("heading", { name: "Audit log" }).waitFor();
+    // A stock document opens too, and Esc comes back to the entry that opened it.
+    await entries.getByRole("button", { name: "R01-IN-000001" }).click();
+    await page.getByRole("region", { name: "Stock document" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.textContent === "R01-IN-000001");
     // A product opens the editor.
     await page.getByRole("region", { name: "Audit entries" }).getByRole("button", { name: "Cola 330ml" }).click();
     await page.getByLabel(/^Name/).first().waitFor();

@@ -262,6 +262,8 @@ export const commands = {
 	stockOverview: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("stock_overview", { lowOnly })),
 	/**  E11-T05: one item's stock movements, newest first, with what caused each. */
 	stockHistory: (variantId: VariantId, limit: number) => typedError<StockHistoryDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_history", { variantId, limit })),
+	/**  One posted stock document (goods received, adjustment, write-off, opening stock). */
+	stockDocumentGet: (documentId: InventoryDocumentId) => typedError<StockDocumentDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("stock_document_get", { documentId })),
 	/**
 	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
 	 *  transaction, audited. Returns what was wrong before.
@@ -1624,6 +1626,8 @@ export type ProductFilterDto_Deserialize = {
 	status: ProductStatusDto,
 	trackStock?: boolean | null,
 	categoryId?: CategoryId | null,
+	/**  Only products that need restocking (low or negative); absent means no. */
+	lowStock?: boolean,
 };
 
 export type ProductFilterDto_Serialize = {
@@ -1632,6 +1636,8 @@ export type ProductFilterDto_Serialize = {
 	status: ProductStatusDto,
 	trackStock: boolean | null,
 	categoryId: CategoryId | null,
+	/**  Only products that need restocking (low or negative); absent means no. */
+	lowStock: boolean,
 };
 
 export type ProductId = string;
@@ -1694,6 +1700,8 @@ export type ProductRowDto_Deserialize = {
 	onHandMilli?: string | null,
 	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
 	negativeStock: boolean,
+	/**  A tracked variant is at or below its low-stock threshold: an amber "Low stock" flag. */
+	lowStock: boolean,
 	/**
 	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
 	 *  using the local values.
@@ -1717,6 +1725,8 @@ export type ProductRowDto_Serialize = {
 	onHandMilli: string | null,
 	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
 	negativeStock: boolean,
+	/**  A tracked variant is at or below its low-stock threshold: an amber "Low stock" flag. */
+	lowStock: boolean,
 	/**
 	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
 	 *  using the local values.
@@ -2238,6 +2248,65 @@ export type StaffUpdateInput_Serialize = {
 	baseVersion: number,
 	displayName: string | null,
 	role: Role | null,
+};
+
+/**  A posted stock document, opened from a history row or an audit entry. */
+export type StockDocumentDto = StockDocumentDto_Serialize | StockDocumentDto_Deserialize;
+
+/**  A posted stock document, opened from a history row or an audit entry. */
+export type StockDocumentDto_Deserialize = {
+	documentId: InventoryDocumentId,
+	documentNo: string,
+	/**  `opening`, `receipt`, `adjustment` or `write_off`. */
+	docType: string,
+	reason?: string | null,
+	supplierName?: string | null,
+	reference?: string | null,
+	note?: string | null,
+	localTime: string,
+	actorName: string,
+	approverName?: string | null,
+	lines: StockDocumentLineDto_Deserialize[],
+};
+
+/**  A posted stock document, opened from a history row or an audit entry. */
+export type StockDocumentDto_Serialize = {
+	documentId: InventoryDocumentId,
+	documentNo: string,
+	/**  `opening`, `receipt`, `adjustment` or `write_off`. */
+	docType: string,
+	reason: string | null,
+	supplierName: string | null,
+	reference: string | null,
+	note: string | null,
+	localTime: string,
+	actorName: string,
+	approverName: string | null,
+	lines: StockDocumentLineDto_Serialize[],
+};
+
+export type StockDocumentLineDto = StockDocumentLineDto_Serialize | StockDocumentLineDto_Deserialize;
+
+export type StockDocumentLineDto_Deserialize = {
+	variantId: VariantId,
+	name: string,
+	sku?: string | null,
+	movementType: string,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	deltaMilli: string,
+	unitCostMinor?: string | null,
+};
+
+export type StockDocumentLineDto_Serialize = {
+	variantId: VariantId,
+	name: string,
+	sku: string | null,
+	movementType: string,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	deltaMilli: string,
+	unitCostMinor: string | null,
 };
 
 export type StockDriftDto = {

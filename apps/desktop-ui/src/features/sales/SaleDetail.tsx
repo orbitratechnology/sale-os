@@ -19,10 +19,13 @@ import { SaleSyncMark } from "../sync/SaleSyncMark";
  */
 export function SaleDetail({
   saleId,
+  backLabel = "Back to sales",
   onBack,
   onReturn,
 }: {
   saleId: string;
+  /** Where Esc and the back button go: the sales list, the stock history, the audit log. */
+  backLabel?: string;
   onBack: () => void;
   onReturn: (receiptNumber: string) => void;
 }) {
@@ -66,7 +69,7 @@ export function SaleDetail({
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to sales <kbd>Esc</kbd>
+          {backLabel} <kbd>Esc</kbd>
         </button>
       </header>
       <section className="card sale-detail" aria-label="Sale detail">

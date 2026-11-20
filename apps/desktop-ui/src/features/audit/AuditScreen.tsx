@@ -2,9 +2,9 @@ import {
   ShieldCheck,
 } from "../../ui/icons";
 import { useEffect, useRef, useState } from "react";
-import { commands, type IpcError, type SignInUser } from "../../ipc";
+import { commands, type IpcError, type SignInUser, type Workspace } from "../../ipc";
 import type { AuditFilterDto, AuditRowDto } from "../../ipc/bindings";
-import { SaleDetail } from "../sales/SaleDetail";
+import { RecordView, recordOf, type RecordRef } from "../records/RecordView";
 import { describeError } from "../shell/errors";
 
 const GROUPS: { value: string; label: string }[] = [
@@ -79,15 +79,28 @@ function details(metadata: string): string {
 
 /**
  * The audit log (E15-T01, owner only): every recorded action, newest first, filtered by
- * kind, person and dates. A sale opens its detail; a product opens the editor.
+ * kind, person and dates. A sale, return or stock document opens in place; a product opens the
+ * editor.
  */
-export function AuditScreen({ onBack, onOpenProduct, onReturn }: { onBack: () => void; onOpenProduct: (productId: string) => void; onReturn: (receipt: string) => void }) {
+export function AuditScreen({
+  workspace,
+  onBack,
+  onOpenProduct,
+  onReturn,
+}: {
+  workspace: Workspace;
+  onBack: () => void;
+  onOpenProduct: (productId: string) => void;
+  onReturn: (receipt: string) => void;
+}) {
   const [filter, setFilter] = useState<AuditFilterDto>({ action: null, userId: null, from: null, to: null });
   const [rows, setRows] = useState<AuditRowDto[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [users, setUsers] = useState<SignInUser[]>([]);
   const [error, setError] = useState<IpcError | null>(null);
-  const [sale, setSale] = useState<string | null>(null);
+  /** An entry's sale, return or stock document, open in place of the log (the log keeps its place). */
+  const [record, setRecord] = useState<{ ref: RecordRef; from: string } | null>(null);
+  const [focusEntry, setFocusEntry] = useState<string | null>(null);
   const request = useRef(0);
 
   useEffect(() => {
@@ -107,15 +120,27 @@ export function AuditScreen({ onBack, onOpenProduct, onReturn }: { onBack: () =>
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || sale) return;
+      if (e.key !== "Escape" || record) return;
       e.preventDefault();
       onBack();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sale, onBack]);
+  }, [record, onBack]);
 
-  if (sale) return <SaleDetail saleId={sale} onBack={() => setSale(null)} onReturn={onReturn} />;
+  // Back from a record: focus the link that opened it.
+  useEffect(() => {
+    if (record || !focusEntry) return;
+    document.querySelector<HTMLElement>(`[data-entry="${CSS.escape(focusEntry)}"]`)?.focus();
+  }, [record, focusEntry]);
+
+  if (record) {
+    const back = () => {
+      setFocusEntry(record.from);
+      setRecord(null);
+    };
+    return <RecordView record={record.ref} workspace={workspace} backLabel="Back to the audit log" onBack={back} onReturn={onReturn} />;
+  }
 
   const more = () => {
     if (!next) return;
@@ -186,30 +211,33 @@ export function AuditScreen({ onBack, onOpenProduct, onReturn }: { onBack: () =>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.auditId} data-testid="audit-row">
-                <td>{r.localTime}</td>
-                <td>{ACTION[r.action] ?? r.action}</td>
-                <td>
-                  {r.actorName ?? "System"}
-                  {r.approverName && <span className="small"> · approved by {r.approverName}</span>}
-                </td>
-                <td>
-                  {r.entityType === "sale" ? (
-                    <button type="button" className="link mono" onClick={() => setSale(r.entityId)}>
-                      {r.entityLabel ?? "sale"}
-                    </button>
-                  ) : r.entityType === "product" ? (
-                    <button type="button" className="link" onClick={() => onOpenProduct(r.entityId)}>
-                      {r.entityLabel ?? "product"}
-                    </button>
-                  ) : (
-                    <span className="mono">{r.entityLabel ?? r.entityType}</span>
-                  )}
-                </td>
-                <td className="small">{details(r.metadata)}</td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const ref = recordOf(r.entityType, r.entityId);
+              return (
+                <tr key={r.auditId} data-testid="audit-row">
+                  <td>{r.localTime}</td>
+                  <td>{ACTION[r.action] ?? r.action}</td>
+                  <td>
+                    {r.actorName ?? "System"}
+                    {r.approverName && <span className="small"> · approved by {r.approverName}</span>}
+                  </td>
+                  <td>
+                    {ref ? (
+                      <button type="button" className="link mono" data-entry={r.auditId} onClick={() => setRecord({ ref, from: r.auditId })}>
+                        {r.entityLabel ?? r.entityType.replace("_", " ")}
+                      </button>
+                    ) : r.entityType === "product" ? (
+                      <button type="button" className="link" onClick={() => onOpenProduct(r.entityId)}>
+                        {r.entityLabel ?? "product"}
+                      </button>
+                    ) : (
+                      <span className="mono">{r.entityLabel ?? r.entityType}</span>
+                    )}
+                  </td>
+                  <td className="small">{details(r.metadata)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {rows.length === 0 && !error && (

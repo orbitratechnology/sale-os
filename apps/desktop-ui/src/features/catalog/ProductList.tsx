@@ -23,7 +23,8 @@ export const FILTER_DEBOUNCE_MS = 150;
 interface Filter {
   query: string;
   status: ProductStatusDto;
-  tracked: "any" | "yes" | "no";
+  /** "low": tracked products that need restocking (low or negative stock). */
+  tracked: "any" | "yes" | "no" | "low";
   /** A category id, or "" for any. */
   category: string;
 }
@@ -72,7 +73,13 @@ export function ProductList({
     requested.current.add(page);
     void commands
       .productList(
-        { query: f.query, status: f.status, trackStock: f.tracked === "any" ? null : f.tracked === "yes", categoryId: f.category || null },
+        {
+          query: f.query,
+          status: f.status,
+          trackStock: f.tracked === "yes" ? true : f.tracked === "no" ? false : null,
+          categoryId: f.category || null,
+          lowStock: f.tracked === "low",
+        },
         page * PAGE,
         PAGE,
       )
@@ -212,6 +219,7 @@ export function ProductList({
                 <>
                   {formatMilli(r.onHandMilli)}
                   {r.negativeStock && <span className="stock-flag"> Negative stock</span>}
+                  {r.lowStock && <span className="stock-flag low"> Low stock</span>}
                   {r.syncConflict && (
                     <span className="stock-flag" title="Changed here and in the cloud: this till uses its own values until resolved">
                       {" "}
@@ -287,6 +295,7 @@ export function ProductList({
             <option value="any">Any</option>
             <option value="yes">Tracked</option>
             <option value="no">Not tracked</option>
+            <option value="low">Low stock</option>
           </select>
         </label>
         {categories.length > 0 && (

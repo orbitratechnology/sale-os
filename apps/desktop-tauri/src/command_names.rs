@@ -82,6 +82,7 @@ pub const COMMANDS: &[&str] = &[
     "stock_verify",
     "stock_overview",
     "stock_history",
+    "stock_document_get",
     "stock_rebuild",
     "reports_sales_summary",
     "reports_tender_mix",

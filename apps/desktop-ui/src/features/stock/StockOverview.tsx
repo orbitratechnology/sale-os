@@ -2,6 +2,7 @@ import {
   Inbox,
 } from "../../ui/icons";
 import { useEffect, useState } from "react";
+import { recordOf, type RecordRef } from "../records/RecordView";
 import { commands, type IpcError } from "../../ipc";
 import type { StockHistoryDto, StockReportDto } from "../../ipc/bindings";
 import { formatMilli } from "../../lib/decimal";
@@ -25,10 +26,21 @@ const MOVEMENT: Record<string, string> = {
  * low-stock level and status, and its movement history. Figures come from the recorded
  * movements, which the banner says plainly (PRD §6.6).
  */
-export function StockOverview() {
-  const [lowOnly, setLowOnly] = useState(false);
+export function StockOverview({
+  state,
+  onState,
+  onRecord,
+}: {
+  /** Kept by the stock screen, so coming back from a record finds the same item open. */
+  state: OverviewState;
+  onState: (s: OverviewState) => void;
+  /** A history row's sale, return or stock document. */
+  onRecord: (record: RecordRef) => void;
+}) {
+  const { lowOnly, open } = state;
+  const setLowOnly = (v: boolean) => onState({ ...state, lowOnly: v });
+  const setOpen = (v: OverviewState["open"]) => onState({ ...state, open: v, focus: null });
   const [report, setReport] = useState<StockReportDto | null>(null);
-  const [open, setOpen] = useState<{ variantId: string; name: string } | null>(null);
   const [history, setHistory] = useState<StockHistoryDto[] | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
 
@@ -56,6 +68,13 @@ export function StockOverview() {
       live = false;
     };
   }, [open]);
+
+  // Back from a record: focus the row's link that opened it.
+  const focus = state.focus;
+  useEffect(() => {
+    if (!history || !focus) return;
+    document.querySelector<HTMLElement>(`[data-source="${CSS.escape(focus)}"]`)?.focus();
+  }, [history, focus]);
 
   return (
     <section className="card return-form" aria-label="Stock on hand">
@@ -155,7 +174,15 @@ export function StockOverview() {
                     <td>{MOVEMENT[h.movementType] ?? h.movementType}</td>
                     <td className="num">{h.deltaMilli.startsWith("-") ? formatMilli(h.deltaMilli) : `+${formatMilli(h.deltaMilli)}`}</td>
                     <td>{h.bucket === "damaged" ? "Damaged" : "Sellable"}</td>
-                    <td className="mono">{h.sourceNumber}</td>
+                    <td className="mono">
+                      <SourceLink
+                        history={h}
+                        onRecord={(r) => {
+                          onState({ ...state, focus: h.sourceId });
+                          onRecord(r);
+                        }}
+                      />
+                    </td>
                     <td>{h.actorName}</td>
                   </tr>
                 ))}
@@ -165,6 +192,25 @@ export function StockOverview() {
         </div>
       )}
     </section>
+  );
+}
+
+export interface OverviewState {
+  lowOnly: boolean;
+  open: { variantId: string; name: string } | null;
+  /** The source id whose link to focus once the history has loaded. */
+  focus: string | null;
+}
+
+export const INITIAL_OVERVIEW: OverviewState = { lowOnly: false, open: null, focus: null };
+
+function SourceLink({ history: h, onRecord }: { history: StockHistoryDto; onRecord: (r: RecordRef) => void }) {
+  const record = recordOf(h.sourceType, h.sourceId);
+  if (!record || !h.sourceNumber) return <>{h.sourceNumber}</>;
+  return (
+    <button type="button" className="link mono" data-source={h.sourceId} onClick={() => onRecord(record)}>
+      {h.sourceNumber}
+    </button>
   );
 }
 

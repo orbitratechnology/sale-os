@@ -11,6 +11,27 @@ use pos_domain::catalog::{
 use pos_domain::{Money, ProductId, Quantity};
 use std::collections::BTreeMap;
 
+/// `FROM` an active, stock-tracked variant `lv` of product `p`, with its sellable balance `lb`
+/// (no balance row yet means nothing on hand).
+macro_rules! tracked_variants_with_stock {
+    () => {
+        "FROM product_variants lv LEFT JOIN stock_balances lb
+           ON lb.variant_id = lv.variant_id AND lb.bucket = 'sellable'
+         WHERE lv.product_id = p.product_id AND lv.status = 'active' AND lv.track_stock = 1"
+    };
+}
+macro_rules! sellable {
+    () => {
+        "coalesce(lb.on_hand_milli, 0)"
+    };
+}
+/// The stock report's rule (`StockStatus::of`): low when at or below a set threshold.
+macro_rules! at_or_below_threshold {
+    () => {
+        "(lv.low_stock_threshold_milli IS NOT NULL AND coalesce(lb.on_hand_milli, 0) <= lv.low_stock_threshold_milli)"
+    };
+}
+
 fn q(e: impl std::fmt::Display) -> QueryError {
     QueryError(e.to_string())
 }
@@ -348,6 +369,17 @@ impl CatalogQueries for SqliteStore {
                     .push_bind(t)
                     .push(")");
             }
+            if f.low_stock {
+                b.push(concat!(
+                    " AND EXISTS (SELECT 1 ",
+                    tracked_variants_with_stock!(),
+                    " AND (",
+                    sellable!(),
+                    " < 0 OR ",
+                    at_or_below_threshold!(),
+                    "))"
+                ));
+            }
             if let Some(q) = fts {
                 b.push(
                     " AND p.product_id IN (SELECT sv.product_id FROM product_search s
@@ -380,7 +412,7 @@ impl CatalogQueries for SqliteStore {
             .await
             .map_err(q)?;
 
-        let mut b = sqlx::QueryBuilder::new(
+        let mut b = sqlx::QueryBuilder::new(concat!(
             "SELECT p.product_id, p.name, p.status = 'archived', p.version, p.quick_select,
                (SELECT count(*) FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active'),
                (SELECT v.sku FROM product_variants v WHERE v.product_id = p.product_id AND v.is_default = 1),
@@ -394,9 +426,16 @@ impl CatalogQueries for SqliteStore {
                EXISTS (SELECT 1 FROM stock_balances b JOIN product_variants v ON v.variant_id = b.variant_id
                  WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1 AND b.bucket = 'sellable'
                    AND b.on_hand_milli < 0),
-               p.sync_status = 'conflict'
+               p.sync_status = 'conflict',
+               EXISTS (SELECT 1 ",
+            tracked_variants_with_stock!(),
+            " AND ",
+            sellable!(),
+            " >= 0 AND ",
+            at_or_below_threshold!(),
+            ")
              FROM products p",
-        );
+        ));
         filtered(&mut b, filter, fts);
         b.push(" ORDER BY p.name COLLATE NOCASE, p.product_id LIMIT ")
             .push_bind(i64::from(limit))
@@ -415,6 +454,7 @@ impl CatalogQueries for SqliteStore {
             i64,
             bool,
             i64,
+            bool,
             bool,
             bool,
         );
@@ -441,6 +481,7 @@ impl CatalogQueries for SqliteStore {
                     on_hand,
                     negative,
                     conflict,
+                    low,
                 )| {
                     Ok(ProductRow {
                         product_id: id.parse().map_err(q)?,
@@ -456,6 +497,7 @@ impl CatalogQueries for SqliteStore {
                         quick_select: quick,
                         on_hand: track.then(|| pos_domain::Quantity::from_milli(on_hand)),
                         negative_stock: negative,
+                        low_stock: low,
                         sync_conflict: conflict,
                     })
                 },

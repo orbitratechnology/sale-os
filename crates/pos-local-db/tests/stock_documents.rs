@@ -121,6 +121,26 @@ async fn a_receipt_of_three_lines_is_one_atomic_document() {
     let posted = stock.post(&t.shop.owner, receipt).await.unwrap();
     assert_eq!(posted.document_no, "R01-IN-000001");
 
+    // Opened again from a history row or the audit log: as recorded, lines in order.
+    let view = stock.document(&t.shop.owner, posted.doc.id).await.unwrap();
+    assert_eq!(
+        (view.document_no.as_str(), view.doc_type.as_str(), view.supplier_name.as_deref(), view.reference.as_deref()),
+        ("R01-IN-000001", "receipt", Some("Wholesale Ltd"), Some("INV-8812"))
+    );
+    assert_eq!(
+        view.lines
+            .iter()
+            .map(|l| (l.variant_id, l.delta.milli(), l.unit_cost.map(|m| m.minor())))
+            .collect::<Vec<_>>(),
+        [(t.tea, 24_000, Some(35)), (t.flour, 12_500, None), (t.cake, 6_000, None)]
+    );
+    assert!(!view.actor_name.is_empty());
+    let unknown = pos_domain::InventoryDocumentId::from_uuid(uuid::Uuid::nil());
+    assert_eq!(
+        stock.document(&t.shop.owner, unknown).await.unwrap_err().error_code(),
+        ErrorCode::ValidationFailed
+    );
+
     // §7.4: 3 movements, the balances, 1 audit entry, 1 event, together.
     assert_eq!(
         count(&t, "SELECT count(*) FROM stock_movements WHERE movement_type = 'receipt' AND source_type = 'inventory_document'").await,
@@ -438,6 +458,7 @@ async fn hints_only_n_in_stock_and_flags_negative_products() {
                 status: ProductStatusFilter::Active,
                 track_stock: None,
                 category_id: None,
+                low_stock: false,
             },
             0,
             10,
@@ -454,4 +475,35 @@ async fn hints_only_n_in_stock_and_flags_negative_products() {
         (Some(0), false)
     );
     assert_eq!(row("Gift wrap").on_hand, None);
+    assert!(!row("Cake").low_stock, "no threshold set: never low");
+
+    // The low-stock filter: negative stock, or at or below the threshold.
+    assert_eq!(low_stock_list(&s).await, [("Tea".to_string(), false)], "negative only");
+    sqlx::query("UPDATE product_variants SET low_stock_threshold_milli = 0 WHERE variant_id = ?")
+        .bind(t.cake.to_string())
+        .execute(s.db().writer())
+        .await
+        .unwrap();
+    assert_eq!(
+        low_stock_list(&s).await,
+        [("Cake".to_string(), true), ("Tea".to_string(), false)],
+        "0 on hand is at a threshold of 0"
+    );
+}
+
+/// The low-stock product list: (name, amber "Low stock" flag) per row.
+async fn low_stock_list(s: &SqliteStore) -> Vec<(String, bool)> {
+    use pos_application::queries::{CatalogQueries, ProductFilter};
+    let page = s
+        .list_products(
+            &ProductFilter {
+                low_stock: true,
+                ..ProductFilter::default()
+            },
+            0,
+            10,
+        )
+        .await
+        .unwrap();
+    page.rows.iter().map(|r| (r.name.clone(), r.low_stock)).collect()
 }
