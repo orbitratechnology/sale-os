@@ -1,6 +1,6 @@
 import { TabList, tabPanelProps } from "../../ui/Tabs";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Percent, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
+import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Package, Percent, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
@@ -130,9 +130,23 @@ export function SettingsScreen({
   );
 }
 
+/** Plain words for choice values that are codes (units); others show as stored. */
+const CHOICE_LABEL: Record<string, string> = {
+  '"ea"': "Each (ea)",
+  '"kg"': "Kilogram (kg)",
+  '"g"': "Gram (g)",
+  '"l"': "Litre (l)",
+  '"ml"': "Millilitre (ml)",
+  '"m"': "Metre (m)",
+  '"cm"': "Centimetre (cm)",
+  '"box"': "Box",
+  '"pack"': "Pack",
+};
+
 /** An icon for each settings page; pages added later fall back to the gear. */
 const GROUP_ICONS: Record<string, LucideIcon> = {
   Inventory: Boxes,
+  Products: Package,
   "Cash drawer": Banknote,
   Security: ShieldCheck,
   Receipts: ReceiptText,
@@ -200,7 +214,7 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
         <select id={id} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
           {k.options.map((o) => (
             <option key={o} value={o}>
-              {o.replace(/^"|"$/g, "")}
+              {CHOICE_LABEL[o] ?? o.replace(/^"|"$/g, "")}
             </option>
           ))}
         </select>

@@ -22,6 +22,7 @@ pub const COMMANDS: &[&str] = &[
     "app_preferences",
     "auth_lock",
     "tax_list",
+    "catalog_new_product_defaults",
     "categories_list",
     "category_save",
     "category_archive",

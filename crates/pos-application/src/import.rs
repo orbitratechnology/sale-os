@@ -247,7 +247,10 @@ impl ImportService {
             .or(taxes.first())
             .map(|t| t.tax_category_id)
             .ok_or_else(|| invalid("there is no tax category"))?;
+        let defaults = self.catalog.new_product_defaults().await?;
         Ok(ImportContext {
+            default_unit: defaults.unit,
+            default_track_stock: defaults.track_stock,
             currency_exponent: summary.currency_exponent,
             tax_categories: taxes
                 .iter()

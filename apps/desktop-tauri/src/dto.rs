@@ -518,6 +518,15 @@ pub struct ProductRowDto {
     pub sync_conflict: bool,
 }
 
+/// What a new product starts as.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NewProductDefaultsDto {
+    /// A unit code: `ea`, `kg`, `g`, `l`, `ml`, `m`, `cm`, `box` or `pack`.
+    pub unit: String,
+    pub track_stock: bool,
+}
+
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductPageDto {

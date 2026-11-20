@@ -294,6 +294,8 @@ const FAKE_STOCK: Record<string, bigint> = { "Chocolate bar": -2000n, "Cola 330m
 /** A few registry entries, shaped like Rust's (crates/pos-application/src/settings.rs). */
 const FAKE_SETTINGS = [
   { key: "inventory.allow_negative", group: "Inventory", label: "Allow selling below zero stock", help: "On: sell anyway.", kind: { type: "bool" }, defaultJson: "true" },
+  { key: "catalog.default_unit", group: "Products", label: "Unit for new products", help: "What a new product is sold by.", kind: { type: "choice", options: ['"ea"', '"kg"', '"g"', '"l"', '"ml"', '"m"', '"cm"', '"box"', '"pack"'] }, defaultJson: '"ea"' },
+  { key: "catalog.default_track_stock", group: "Products", label: "Track stock for new products", help: "Off: not stock-tracked.", kind: { type: "bool" }, defaultJson: "true" },
   { key: "discount.cashier_max_ppm", group: "Security", label: "Largest discount a cashier may give", help: "Above this, a manager approves.", kind: { type: "ppm" }, defaultJson: "100000" },
   { key: "security.lock_timeout_secs", group: "Security", label: "Lock the till after this many idle seconds", help: "0 never locks.", kind: { type: "int", min: 0, max: 3600 }, defaultJson: "300" },
   { key: "receipt.paper_width_mm", group: "Receipts", label: "Paper width (mm)", help: "58 or 80.", kind: { type: "choice", options: ["58", "80"] }, defaultJson: "80" },
@@ -516,6 +518,13 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       s.session = null;
       return null;
+    case "catalog_new_product_defaults": {
+      needSession(s);
+      return {
+        unit: JSON.parse(s.settings.get("catalog.default_unit")?.valueJson ?? '"ea"') as string,
+        trackStock: (s.settings.get("catalog.default_track_stock")?.valueJson ?? "true") !== "false",
+      };
+    }
     case "tax_list":
       needSession(s);
       return s.taxCategories

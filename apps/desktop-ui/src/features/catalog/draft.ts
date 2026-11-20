@@ -61,7 +61,13 @@ export function blankVariant(options: Record<string, string> = {}): VariantDraft
   return { variantId: null, options, price: "", cost: "", sku: "", barcodes: [], lowStock: "", scanQty: "1" };
 }
 
-export function blankDraft(taxCategoryId: string, barcode?: string): ProductDraft {
+/** What a new product starts as (settings `catalog.default_unit` / `catalog.default_track_stock`). */
+export interface NewProductDefaults {
+  unit: Unit;
+  trackStock: boolean;
+}
+
+export function blankDraft(taxCategoryId: string, barcode?: string, defaults: NewProductDefaults = { unit: "ea", trackStock: true }): ProductDraft {
   const v = blankVariant();
   if (barcode) v.barcodes.push({ raw: barcode, qualifier: "primary", packQty: "1" });
   return {
@@ -69,8 +75,9 @@ export function blankDraft(taxCategoryId: string, barcode?: string): ProductDraf
     version: null,
     name: "",
     description: "",
-    productType: "stock",
-    unit: "ea",
+    // Tracking stock is what makes a "stock" item; without it a new product is a non-stock item.
+    productType: defaults.trackStock ? "stock" : "non_stock",
+    unit: defaults.unit,
     taxCategoryId,
     categoryId: null,
     quickSelect: false,

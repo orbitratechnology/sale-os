@@ -13,6 +13,13 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 |---|---|---|---|
 | `inventory.allow_negative` | true / false | `true` | **Allow selling below zero stock.** On: sell anyway and flag the item for a stock check. Off: refuse the sale and list the items. |
 
+## Products
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `catalog.default_unit` | one of "ea", "kg", "g", "l", "ml", "m", "cm", "box", "pack" | `"ea"` | **Unit for new products.** What a new product is sold by, in the product editor and for CSV rows without a unit. |
+| `catalog.default_track_stock` | true / false | `true` | **Track stock for new products.** Off: new products are not stock-tracked unless you turn it on (editor) or the CSV says so. |
+
 ## Cash drawer
 
 | Key | Type | Default | What it does |

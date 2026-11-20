@@ -110,6 +110,27 @@ describe("product editor (E06-T06b)", () => {
     expect(await calls(page, "scan_submit")).toEqual([]);
   });
 
+  it("a new product starts from the owner's defaults: unit and stock tracking (E04-T03)", async () => {
+    const page = await till();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Products" }).click();
+    const panel = page.getByRole("tabpanel", { name: "Products" });
+    await panel.getByLabel("Unit for new products").selectOption({ label: "Kilogram (kg)" });
+    await panel.getByLabel("Track stock for new products").uncheck();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 2);
+    expect(await calls(page, "settings_update")).toEqual([
+      expect.objectContaining({ key: "catalog.default_unit", valueJson: '"kg"' }),
+      expect.objectContaining({ key: "catalog.default_track_stock", valueJson: "false" }),
+    ]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await products(page);
+    await page.getByRole("button", { name: "New product" }).click();
+    await page.getByLabel("Name").fill("Loose apples");
+    expect(await page.getByLabel("Unit", { exact: true }).inputValue()).toBe("kg");
+    expect(await page.getByLabel("Type", { exact: true }).inputValue()).toBe("non_stock");
+  });
+
   it("adds options to make 3 sizes × 2 colours = 6 variants with their own prices and SKUs", async () => {
     const page = await till();
     await products(page);

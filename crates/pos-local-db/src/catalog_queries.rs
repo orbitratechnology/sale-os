@@ -83,6 +83,32 @@ fn fts_query(text: &str) -> Option<String> {
 
 #[async_trait::async_trait]
 impl CatalogQueries for SqliteStore {
+    async fn new_product_defaults(&self) -> Result<pos_application::queries::NewProductDefaults, QueryError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT key, value_json FROM business_settings
+             WHERE key IN ('catalog.default_unit', 'catalog.default_track_stock')",
+        )
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        let mut out = pos_application::queries::NewProductDefaults::default();
+        for (key, value) in rows {
+            match key.as_str() {
+                "catalog.default_unit" => {
+                    // Stored as JSON (`"kg"`); an unknown code keeps the default.
+                    if let Some(u) = serde_json::from_str::<String>(&value)
+                        .ok()
+                        .and_then(|c| pos_domain::catalog::Unit::from_code(&c))
+                    {
+                        out.unit = u;
+                    }
+                }
+                _ => out.track_stock = value.trim() != "false",
+            }
+        }
+        Ok(out)
+    }
+
     async fn product(&self, id: ProductId) -> Result<Option<Product>, QueryError> {
         let r = self.db().readers();
         let row: Option<(String, Option<String>, Option<String>, String, String, String, bool, String, i64)> = sqlx::query_as(

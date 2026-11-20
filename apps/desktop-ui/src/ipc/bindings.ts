@@ -65,6 +65,11 @@ export const commands = {
 	 */
 	authLock: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_lock")),
 	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
+	/**
+	 *  What a new product starts as (settings `catalog.default_unit` and
+	 *  `catalog.default_track_stock`), for the editor's blank product. Anyone who sees the catalogue.
+	 */
+	catalogNewProductDefaults: () => typedError<NewProductDefaultsDto, IpcError_Serialize>(__TAURI_INVOKE("catalog_new_product_defaults")),
 	/**  Every category, archived ones included (flagged). */
 	categoriesList: () => typedError<CategoryDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("categories_list")),
 	/**  Creates (`categoryId: null`) or renames / moves a category; at most 3 levels, no cycles. */
@@ -1497,6 +1502,13 @@ export type MoneyAddResult = {
 };
 
 export type MovementId = string;
+
+/**  What a new product starts as. */
+export type NewProductDefaultsDto = {
+	/**  A unit code: `ea`, `kg`, `g`, `l`, `ml`, `m`, `cm`, `box` or `pack`. */
+	unit: string,
+	trackStock: boolean,
+};
 
 export type NewStaffInput = {
 	displayName: string,

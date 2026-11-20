@@ -56,6 +56,24 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "On: sell anyway and flag the item for a stock check. Off: refuse the sale and list the items.",
     },
     SettingDef {
+        key: "catalog.default_unit",
+        kind: SettingKind::Choice(&[
+            "\"ea\"", "\"kg\"", "\"g\"", "\"l\"", "\"ml\"", "\"m\"", "\"cm\"", "\"box\"", "\"pack\"",
+        ]),
+        default: "\"ea\"",
+        group: "Products",
+        label: "Unit for new products",
+        help: "What a new product is sold by, in the product editor and for CSV rows without a unit.",
+    },
+    SettingDef {
+        key: "catalog.default_track_stock",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Products",
+        label: "Track stock for new products",
+        help: "Off: new products are not stock-tracked unless you turn it on (editor) or the CSV says so.",
+    },
+    SettingDef {
         key: "cash.require_session_for_sale",
         kind: SettingKind::Bool,
         default: "true",

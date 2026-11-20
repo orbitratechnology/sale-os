@@ -22,6 +22,7 @@ import {
 } from "./draft";
 
 const UNITS: Unit[] = ["ea", "kg", "g", "l", "ml", "m", "cm", "box", "pack"];
+const isUnit = (u: string): u is Unit => (UNITS as string[]).includes(u);
 const TYPES: { value: ProductType; label: string }[] = [
   { value: "stock", label: "Stock item (counted)" },
   { value: "non_stock", label: "Non-stock item" },
@@ -74,7 +75,7 @@ export function ProductEditor({
   useEffect(() => {
     let live = true;
     void (async () => {
-      const [t, c] = await Promise.all([commands.taxList(), commands.categoriesList()]);
+      const [t, c, d] = await Promise.all([commands.taxList(), commands.categoriesList(), productId ? null : commands.catalogNewProductDefaults()]);
       if (!live) return;
       if (t.status === "error") return setFailure(t.error);
       setTaxes(t.data);
@@ -86,7 +87,9 @@ export function ProductEditor({
         setDraft(fromProduct(p.data, exponent));
       } else {
         const def = t.data.find((c) => c.isDefault) ?? t.data[0];
-        setDraft(blankDraft(def?.taxCategoryId ?? "", barcode));
+        // Without the settings (an older backend, or an error) the built-in defaults apply.
+        const defaults = d?.status === "ok" && isUnit(d.data.unit) ? { unit: d.data.unit, trackStock: d.data.trackStock } : undefined;
+        setDraft(blankDraft(def?.taxCategoryId ?? "", barcode, defaults));
       }
     })();
     return () => {

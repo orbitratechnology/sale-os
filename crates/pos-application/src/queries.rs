@@ -85,6 +85,8 @@ pub enum MatchedBy {
 
 #[async_trait::async_trait]
 pub trait CatalogQueries: Send + Sync {
+    /// `catalog.default_unit` and `catalog.default_track_stock`: what a new product starts as.
+    async fn new_product_defaults(&self) -> Result<NewProductDefaults, QueryError>;
     async fn product(
         &self,
         id: pos_domain::ProductId,
@@ -154,6 +156,22 @@ pub struct ProductFilter {
     /// Only products with a tracked variant that needs restocking: at or below its low-stock
     /// threshold, or below zero (the stock report's "Low" and "Negative").
     pub low_stock: bool,
+}
+
+/// What a new product starts as (settings `catalog.default_unit`, `catalog.default_track_stock`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NewProductDefaults {
+    pub unit: pos_domain::catalog::Unit,
+    pub track_stock: bool,
+}
+
+impl Default for NewProductDefaults {
+    fn default() -> Self {
+        Self {
+            unit: pos_domain::catalog::Unit::Ea,
+            track_stock: true,
+        }
+    }
 }
 
 /// A product list row: one per product, summarising its active variants.

@@ -77,6 +77,15 @@ impl CatalogService {
             .await?)
     }
 
+    /// What a new product starts as: the editor's blank product and CSV rows without a unit.
+    pub async fn new_product_defaults(
+        &self,
+        ctx: &CommandContext,
+    ) -> Result<crate::queries::NewProductDefaults, AppError> {
+        ctx.authorize(Permission::CatalogView)?;
+        Ok(self.catalog.new_product_defaults().await?)
+    }
+
     pub async fn tax_categories(&self, ctx: &CommandContext) -> Result<Vec<TaxCategorySummary>, AppError> {
         ctx.authorize(Permission::CatalogView)?;
         Ok(self.catalog.tax_categories().await?)

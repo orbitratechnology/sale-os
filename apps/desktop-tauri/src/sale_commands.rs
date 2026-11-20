@@ -21,6 +21,21 @@ pub async fn tax_list(services: State<'_, AppServices>) -> Result<Vec<TaxCategor
     Ok(cats.into_iter().map(Into::into).collect())
 }
 
+/// What a new product starts as (settings `catalog.default_unit` and
+/// `catalog.default_track_stock`), for the editor's blank product. Anyone who sees the catalogue.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_new_product_defaults(
+    services: State<'_, AppServices>,
+) -> Result<crate::dto::NewProductDefaultsDto, IpcError> {
+    let ctx = services.context().await?;
+    let d = services.app()?.catalog.new_product_defaults(&ctx).await.map_err(err)?;
+    Ok(crate::dto::NewProductDefaultsDto {
+        unit: d.unit.code().to_owned(),
+        track_stock: d.track_stock,
+    })
+}
+
 /// The product list (E06-T06a): one page, by name, with summary columns.
 #[tauri::command]
 #[specta::specta]

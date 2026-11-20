@@ -132,6 +132,7 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"userId": UNKNOWN_ID, "baseVersion": 1, "pin": "5555"}),
         ),
         ("tax_list", Perm(CatalogView), json!({})),
+        ("catalog_new_product_defaults", Perm(CatalogView), json!({})),
         ("categories_list", Perm(CatalogView), json!({})),
         // An empty name: permitted roles get VALIDATION_FAILED and nothing is written.
         (

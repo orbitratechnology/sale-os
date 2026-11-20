@@ -27,6 +27,7 @@
     "allow-app-preferences",
     "allow-auth-lock",
     "allow-tax-list",
+    "allow-catalog-new-product-defaults",
     "allow-categories-list",
     "allow-category-save",
     "allow-category-archive",

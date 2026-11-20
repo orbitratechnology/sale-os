@@ -54,6 +54,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         app_commands::app_preferences,
         app_commands::auth_lock,
         sale_commands::tax_list,
+        sale_commands::catalog_new_product_defaults,
         config_commands::categories_list,
         config_commands::category_save,
         config_commands::category_archive,
