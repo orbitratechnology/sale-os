@@ -204,8 +204,14 @@ pub async fn encrypt_in_place(path: &Path, key: &DbKey) -> Result<(), StoreError
             "the encrypted copy did not open with its key".into(),
         ));
     }
+    // The plain database's journal must not outlive it next to the encrypted one (it was
+    // checkpointed empty above, but a stale journal beside a new file is never kept): if it
+    // cannot be deleted, stop here with the plain database untouched.
     for suffix in ["-wal", "-shm"] {
-        let _ = std::fs::remove_file(sibling(path, suffix));
+        if let Err(e) = crate::remove_file_patient(&sibling(path, suffix)) {
+            let _ = std::fs::remove_file(&target);
+            return Err(StoreError::io("remove the plain database's journal", e));
+        }
     }
     crate::replace_file_patient(&target, path)
         .map_err(|e| StoreError::io("put encrypted database in place", e))?;

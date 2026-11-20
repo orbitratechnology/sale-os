@@ -94,43 +94,41 @@ pub(crate) fn sync_file(path: &Path) -> std::io::Result<()> {
     std::fs::OpenOptions::new().write(true).open(path)?.sync_all()
 }
 
-/// Renames `from` over `to`. On Windows a file another process has just opened (the virus
-/// scanner or search indexing looking at a file we just wrote) cannot be replaced for a moment
-/// ("Access is denied"): try again for up to about five seconds before giving up. Routine work
-/// (backups, exports) uses this while the till is selling, so it must not wait long.
-pub(crate) fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
-    replace_file_within(from, to, Duration::from_secs(5))
+/// On Windows another program (the virus scanner, search indexing) may hold a file we have
+/// just written for a moment: replacing or deleting it then fails with "Access is denied"
+/// (error 5), a sharing violation (32) or a lock violation (33).
+fn held_by_another_program(e: &std::io::Error) -> bool {
+    cfg!(windows)
+        && (e.kind() == std::io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(5 | 32 | 33)))
 }
 
-/// The same for steps that run while nothing else does (encrypting the database at start-up,
-/// putting a restored database in place): they happen once and nothing waits on them, so give
-/// a busy virus scanner up to 30 seconds rather than fail the step.
-pub(crate) fn replace_file_patient(from: &Path, to: &Path) -> std::io::Result<()> {
-    replace_file_within(from, to, Duration::from_secs(30))
-}
-
-fn replace_file_within(from: &Path, to: &Path, budget: Duration) -> std::io::Result<()> {
+/// Runs `op` until it succeeds, fails for another reason, or `budget` has passed while the file
+/// was held; logs once after the first second of waiting. The final error names the file.
+fn while_held<T>(
+    file: &Path,
+    budget: Duration,
+    mut op: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
     let started = std::time::Instant::now();
     let mut wait = Duration::from_millis(20);
     let mut warned = false;
     loop {
-        match std::fs::rename(from, to) {
-            Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied => {
+        match op() {
+            Err(e) if held_by_another_program(&e) => {
                 let waited = started.elapsed();
                 if waited >= budget {
                     return Err(std::io::Error::new(
                         e.kind(),
                         format!(
-                            "{e}: {} could not replace {} for {} s; another program (often the virus scanner or search indexing) was holding one of them",
-                            from.display(),
-                            to.display(),
+                            "{e}: {} was still held after {} s; another program (often the virus scanner or search indexing) was using it",
+                            file.display(),
                             waited.as_secs()
                         ),
                     ));
                 }
                 if !warned && waited >= Duration::from_secs(1) {
                     warned = true;
-                    tracing::warn!(file = %to.display(), "another program is holding the file; waiting to replace it");
+                    tracing::warn!(file = %file.display(), "another program is holding the file; waiting");
                 }
                 std::thread::sleep(wait.min(budget.saturating_sub(waited)));
                 wait = (wait * 2).min(Duration::from_secs(1));
@@ -138,6 +136,31 @@ fn replace_file_within(from: &Path, to: &Path, budget: Duration) -> std::io::Res
             other => return other,
         }
     }
+}
+
+/// Routine work while the till is selling (backups, exports) waits on the thread, so it gives a
+/// held file about five seconds.
+const ROUTINE_WAIT: Duration = Duration::from_secs(5);
+/// Steps that run while nothing else does (encrypting at start-up, putting a restored database
+/// in place) happen once and nothing waits on them: give a busy scanner up to 30 seconds.
+const ONE_OFF_WAIT: Duration = Duration::from_secs(30);
+
+/// Renames `from` over `to`, waiting out a held file (see `while_held`).
+pub(crate) fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    while_held(to, ROUTINE_WAIT, || std::fs::rename(from, to))
+}
+
+/// `replace_file` for one-off steps: waits up to 30 s.
+pub(crate) fn replace_file_patient(from: &Path, to: &Path) -> std::io::Result<()> {
+    while_held(to, ONE_OFF_WAIT, || std::fs::rename(from, to))
+}
+
+/// Deletes `path` if it exists, for one-off steps: waits up to 30 s for a held file.
+pub(crate) fn remove_file_patient(path: &Path) -> std::io::Result<()> {
+    while_held(path, ONE_OFF_WAIT, || match std::fs::remove_file(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    })
 }
 
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
