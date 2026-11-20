@@ -10,3 +10,6 @@ dist/
 coverage/
 .schemathesis/
 /acceptance-report/
+
+# Local throwaway scripts (screenshots, probes, measurements); never committed.
+*.tmp.mjs
