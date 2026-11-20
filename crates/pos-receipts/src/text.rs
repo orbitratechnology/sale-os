@@ -1,6 +1,7 @@
 //! The receipt as lines of monospace text for a paper width (E13-T03/T05): 32 columns for
-//! 58 mm paper, 48 for 80 mm. The preview shows exactly these lines, and the ESC/POS
-//! encoder prints them, so what the cashier sees is what prints.
+//! 58 mm paper, 48 for 80 mm (42 for Epson TM-T88 Font A, 56 or 64 with Font B). The
+//! preview shows exactly these lines, and the printer encoder ([`crate::printer`]) prints
+//! them, so what the cashier sees is what prints.
 
 use crate::document::{CopyKind, DocumentKind, ReceiptDocument, ZSection, amount, tender_label};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -20,6 +21,9 @@ pub enum Style {
     Normal,
     Centered,
     Bold,
+    /// The receipt number, centred. Printers that can print it as a CODE128 barcode (or a
+    /// QR code) do; otherwise it prints as the centred text.
+    Barcode,
 }
 
 pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
@@ -48,6 +52,17 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
             text: columns(left, right, width),
             style,
         });
+    };
+    let barcode = |out: &mut Vec<TextLine>, s: &str| {
+        if text_columns(s) <= width {
+            out.push(TextLine {
+                text: s.to_owned(),
+                style: Style::Barcode,
+            });
+        } else {
+            // Wrapped over several lines it could not be one barcode.
+            centered(out, s);
+        }
     };
     let rule = |out: &mut Vec<TextLine>| {
         out.push(TextLine {
@@ -84,9 +99,9 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
         rule(&mut out);
         render_z(&mut out, doc, z, width);
         rule(&mut out);
-        centered(&mut out, &doc.barcode);
+        barcode(&mut out, &doc.barcode);
         for l in &mut out {
-            if l.style == Style::Centered {
+            if matches!(l.style, Style::Centered | Style::Barcode) {
                 l.text = center(&l.text, width);
             }
         }
@@ -225,9 +240,9 @@ pub fn render(doc: &ReceiptDocument, width: usize) -> Vec<TextLine> {
             centered(&mut out, l);
         }
     }
-    centered(&mut out, &doc.barcode);
+    barcode(&mut out, &doc.barcode);
     for l in &mut out {
-        if l.style == Style::Centered {
+        if matches!(l.style, Style::Centered | Style::Barcode) {
             l.text = center(&l.text, width);
         }
     }
@@ -417,23 +432,9 @@ pub fn to_plain_text(lines: &[TextLine]) -> String {
     s
 }
 
-/// ESC/POS bytes for the rendered lines (alignment and bold from the style).
+/// ESC/POS bytes for the rendered lines with the default options (ASCII, partial cut, the
+/// receipt number as text): [`crate::printer::encode`] with
+/// [`crate::printer::EncodeOptions::default`].
 pub fn to_escpos(lines: &[TextLine]) -> Vec<u8> {
-    use crate::escpos::{Cut, EscPos};
-    let mut p = EscPos::new();
-    // Send style changes only when the style changes.
-    let mut bold = false;
-    for l in lines {
-        let want = l.style == Style::Bold;
-        if want != bold {
-            p.bold(want);
-            bold = want;
-        }
-        p.line(&l.text);
-    }
-    if bold {
-        p.bold(false);
-    }
-    p.feed(3).cut(Cut::Partial);
-    p.into_bytes()
+    crate::printer::encode(lines, &crate::printer::EncodeOptions::default())
 }

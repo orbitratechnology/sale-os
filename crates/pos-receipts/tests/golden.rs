@@ -475,3 +475,294 @@ fn golden_z_summary() {
     let back: ReceiptDocument = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
     assert_eq!(render(&back, COLUMNS_80MM), render(&doc, COLUMNS_80MM));
 }
+
+// ---------------------------------------------------------------------------------------
+// E13-T05: code pages, transliteration, dialects, barcodes, other paper widths.
+
+use pos_receipts::printer::{Op, decode, parse};
+use pos_receipts::text::{Style, TextLine, text_columns};
+use pos_receipts::{CodePage, CutMode, Dialect, DrawerPin, EncodeOptions, encode};
+
+/// Names in Latin with accents, Polish, Greek, Russian, Japanese and symbols that only some
+/// code pages have.
+fn intl_doc() -> ReceiptDocument {
+    let g = ids();
+    let vat = rate(&g, "VAT 20%", 200_000);
+    let mut c = Cart::new(&g);
+    for (name, label, price, qty) in [
+        ("Café crème 250 g — Größe L", "", 450, 1),
+        ("Żubrówka 0,5 l", "", 1899, 1),
+        ("Ελληνικός καφές", "", 320, 2),
+        ("Квас хлебный", "", 210, 1),
+        ("抹茶ラテ", "", 395, 1),
+        ("Jalapeño ½ kg £ € ¥", "", 125, 1),
+        ("Ærøskøbing Øl", "33 cl", 289, 3),
+    ] {
+        c.add(
+            item(&g, name, label, price, Unit::Ea, vec![vat.clone()]),
+            Quantity::from_whole(qty).unwrap(),
+            AddVia::Search,
+            &g,
+        )
+        .unwrap();
+    }
+    let mut ctx = context();
+    ctx.business_name = "Café Zoë — Łódź".into();
+    ctx.address_lines = vec!["ul. Piotrkowska 1".into(), "90-001 Łódź".into()];
+    ctx.footer_lines = vec![
+        "Merci — à bientôt!".into(),
+        "Dziękujemy · Спасибо · Ευχαριστώ".into(),
+        "ありがとう 谢谢".into(),
+    ];
+    ctx.cashier_name = "Zoë".into();
+    sale_receipt(
+        &sale(&c, TaxMode::Inclusive, &[cash(10_000)], SaleMode::Live),
+        &ctx,
+        "R01-000042",
+        CopyKind::Original,
+    )
+}
+
+/// An Epson TM-T88-style profile: the escpos-printer-db numbers for each page.
+fn epson_pages() -> Vec<(CodePage, u8)> {
+    vec![
+        (CodePage::Cp858, 19),
+        (CodePage::Cp852, 18),
+        (CodePage::Cp866, 17),
+        (CodePage::Cp737, 14),
+        (CodePage::Cp1252, 16),
+        (CodePage::JisX0201, 1),
+    ]
+}
+
+/// A Star TSP100-style profile: Star Line Mode `ESC GS t n` numbers.
+fn star_pages() -> Vec<(CodePage, u8)> {
+    vec![
+        (CodePage::Cp858, 4),
+        (CodePage::Cp852, 5),
+        (CodePage::Cp866, 10),
+        (CodePage::Cp737, 15),
+        (CodePage::Cp1252, 32),
+    ]
+}
+
+/// Golden bytes plus their decode (`.txt`) for review.
+fn check_job(dir: &std::path::Path, stem: &str, bytes: &[u8], opts: &EncodeOptions) {
+    check(
+        dir.join(format!("{stem}.txt")),
+        &decode(bytes, opts.dialect, &opts.code_pages),
+    );
+    check_bytes(dir.join(format!("{stem}.bin")), bytes);
+}
+
+#[test]
+fn golden_international_receipt_in_every_dialect() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let doc = intl_doc();
+    check(
+        dir.join("intl.json"),
+        &(serde_json::to_string_pretty(&doc).unwrap() + "\n"),
+    );
+    for width in [COLUMNS_58MM, 42, COLUMNS_80MM, 56, 64] {
+        let lines = render(&doc, width);
+        assert!(lines.iter().all(|l| text_columns(&l.text) <= width));
+        check(dir.join(format!("intl.{width}.txt")), &to_plain_text(&lines));
+    }
+
+    // Today's default: ASCII with transliteration, nothing else changes.
+    let lines = render(&doc, COLUMNS_58MM);
+    let opts = EncodeOptions::default();
+    check_job(&dir, "intl.32.escpos-ascii", &to_escpos(&lines), &opts);
+
+    let lines = render(&doc, COLUMNS_80MM);
+    let opts = EncodeOptions {
+        code_pages: epson_pages(),
+        cut: CutMode::Full,
+        barcode: true,
+        drawer_kick: Some(DrawerPin::Pin2),
+        ..EncodeOptions::default()
+    };
+    check_job(&dir, "intl.48.escpos", &encode(&lines, &opts), &opts);
+
+    let opts = EncodeOptions {
+        dialect: Dialect::StarLine,
+        code_pages: star_pages(),
+        qr: true,
+        drawer_kick: Some(DrawerPin::Pin5),
+        ..EncodeOptions::default()
+    };
+    check_job(&dir, "intl.48.star", &encode(&lines, &opts), &opts);
+
+    let lines = render(&doc, COLUMNS_58MM);
+    let opts = EncodeOptions {
+        dialect: Dialect::PlainText,
+        code_pages: vec![(CodePage::Cp1252, 0)],
+        cut: CutMode::Full,
+        barcode: true,
+        ..EncodeOptions::default()
+    };
+    check_job(&dir, "intl.32.plain", &encode(&lines, &opts), &opts);
+}
+
+#[test]
+fn golden_barcode_on_a_return_and_qr_on_a_z_summary() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let ret = scenarios().into_iter().find(|(n, _)| *n == "return").unwrap().1;
+    let opts = EncodeOptions {
+        code_pages: epson_pages(),
+        barcode: true,
+        ..EncodeOptions::default()
+    };
+    check_job(&dir, "return.42.escpos", &encode(&render(&ret, 42), &opts), &opts);
+    let opts = EncodeOptions {
+        qr: true,
+        cut: CutMode::None,
+        feed_before_cut: 5,
+        ..EncodeOptions::default()
+    };
+    check_job(
+        &dir,
+        "z_summary.32.escpos-qr",
+        &encode(&render(&z_doc(), 32), &opts),
+        &opts,
+    );
+}
+
+/// The text of each printed line, one byte per column.
+fn printed_lines(bytes: &[u8], dialect: Dialect) -> Vec<Vec<u8>> {
+    let mut lines = vec![Vec::new()];
+    for op in parse(bytes, dialect) {
+        match op {
+            Op::Text(t) => lines.last_mut().unwrap().extend(t),
+            Op::Lf => lines.push(Vec::new()),
+            Op::Unknown(b) => panic!("unknown byte {b:#04X}"),
+            _ => {}
+        }
+    }
+    lines
+}
+
+#[test]
+fn every_encoded_line_stays_within_its_columns() {
+    let mut docs: Vec<(&str, ReceiptDocument)> = scenarios();
+    docs.push(("intl", intl_doc()));
+    docs.push(("z_summary", z_doc()));
+    let option_sets = [
+        EncodeOptions::default(),
+        EncodeOptions {
+            code_pages: epson_pages(),
+            ..EncodeOptions::default()
+        },
+        EncodeOptions {
+            code_pages: vec![(CodePage::Cp437, 0)],
+            ..EncodeOptions::default()
+        },
+        EncodeOptions {
+            dialect: Dialect::StarLine,
+            code_pages: star_pages(),
+            ..EncodeOptions::default()
+        },
+        EncodeOptions {
+            dialect: Dialect::PlainText,
+            code_pages: vec![(CodePage::Cp1252, 0)],
+            ..EncodeOptions::default()
+        },
+        EncodeOptions {
+            dialect: Dialect::PlainText,
+            ..EncodeOptions::default()
+        },
+    ];
+    for (name, doc) in &docs {
+        for width in [COLUMNS_58MM, 42, COLUMNS_80MM, 56, 64] {
+            let lines = render(doc, width);
+            for opts in &option_sets {
+                let printed = printed_lines(&encode(&lines, opts), opts.dialect);
+                assert!(printed.len() > lines.len(), "{name}");
+                for (l, p) in lines.iter().zip(&printed) {
+                    let laid_out = text_columns(&l.text);
+                    assert!(
+                        p.len() <= width,
+                        "{name} at {width} ({:?}): {:?} prints {} columns",
+                        opts.dialect,
+                        l.text,
+                        p.len()
+                    );
+                    if laid_out == width {
+                        // Full lines (rules, amounts) keep their right edge.
+                        assert_eq!(p.len(), width, "{name} at {width}: {:?}", l.text);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn non_latin_text_prints_natively_where_a_page_has_it() {
+    let lines = render(&intl_doc(), COLUMNS_80MM);
+    let opts = EncodeOptions {
+        code_pages: epson_pages(),
+        ..EncodeOptions::default()
+    };
+    let decoded = decode(&encode(&lines, &opts), Dialect::EscPos, &opts.code_pages);
+    for want in [
+        "Café crème 250 g — Größe L",
+        "Żubrówka 0,5 l",
+        "Ελληνικός καφές",
+        "Квас хлебный",
+        "Ærøskøbing Øl 33 cl",
+        "Dziękujemy",
+        "Спасибо",
+        "Ευχαριστώ",
+    ] {
+        assert!(decoded.contains(want), "{want} missing from:\n{decoded}");
+    }
+    // With no code pages the same receipt is readable ASCII, never `?` for Latin letters.
+    let ascii = String::from_utf8(to_escpos(&lines)).unwrap_or_default();
+    for want in ["Cafe creme 250 g - Grosse L", "Zubrowka 0,5 l", "Kvas khlebnyi"] {
+        assert!(ascii.contains(want), "{want} missing from:\n{ascii}");
+    }
+}
+
+#[test]
+fn receipts_lay_out_at_42_56_and_64_columns() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let mut docs: Vec<(&str, ReceiptDocument)> = scenarios();
+    docs.push(("z_summary", z_doc()));
+    for (name, doc) in &docs {
+        for width in [42, 56, 64] {
+            let lines = render(doc, width);
+            assert!(
+                lines.iter().all(|l| text_columns(&l.text) <= width),
+                "{name} overflows {width}"
+            );
+            assert!(
+                lines.iter().any(|l| l.text == "-".repeat(width)),
+                "{name} at {width}: no full-width rule"
+            );
+            // Totals are right-aligned on the last column.
+            let total = lines
+                .iter()
+                .find(|l| l.style == Style::Bold)
+                .unwrap_or_else(|| panic!("{name}: no bold total"));
+            assert_eq!(text_columns(&total.text), width, "{name} at {width}: {total:?}");
+            // The receipt number is the last line, centred, as one barcode line.
+            let last: &TextLine = lines.last().unwrap();
+            assert_eq!(last.style, Style::Barcode, "{name}");
+            assert_eq!(last.text.trim(), doc.barcode);
+            let pad = last.text.len() - last.text.trim_start().len();
+            assert_eq!(pad, (width - doc.barcode.len()) / 2, "{name} at {width}");
+        }
+    }
+    let sale = &docs.iter().find(|(n, _)| *n == "sale").unwrap().1;
+    check(dir.join("sale.42.txt"), &to_plain_text(&render(sale, 42)));
+    let discounts = &docs.iter().find(|(n, _)| *n == "discounts").unwrap().1;
+    check(
+        dir.join("discounts.56.txt"),
+        &to_plain_text(&render(discounts, 56)),
+    );
+    check(
+        dir.join("z_summary.64.txt"),
+        &to_plain_text(&render(&z_doc(), 64)),
+    );
+}
