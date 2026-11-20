@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-import-products-progress"
+description = "Enables the import_products_progress command without any pre-configured scope."
+commands.allow = ["import_products_progress"]
+
+[[permission]]
+identifier = "deny-import-products-progress"
+description = "Denies the import_products_progress command without any pre-configured scope."
+commands.deny = ["import_products_progress"]

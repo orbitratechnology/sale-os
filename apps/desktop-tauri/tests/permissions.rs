@@ -174,6 +174,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"jobId": UNKNOWN_ID}),
         ),
         (
+            "import_products_progress",
+            Perm(CatalogImport),
+            json!({"jobId": UNKNOWN_ID}),
+        ),
+        (
             "import_products_error_report",
             Perm(CatalogImport),
             json!({"jobId": UNKNOWN_ID}),
@@ -1333,8 +1338,12 @@ fn a_products_import_over_ipc() {
         ),
         (Some(22), Some(20))
     );
+    let before = invoke(&w, "import_products_progress", json!({"jobId": job})).unwrap();
+    assert_eq!((before["rowsDone"].as_u64(), before["rowsTotal"].as_u64()), (Some(0), Some(22)));
     let done = invoke(&w, "import_products_commit", json!({"jobId": job})).unwrap();
     assert_eq!(done["productsCreated"], 20);
+    let after = invoke(&w, "import_products_progress", json!({"jobId": job})).unwrap();
+    assert_eq!((after["rowsDone"].as_u64(), after["rowsTotal"].as_u64()), (Some(22), Some(22)));
     let list = invoke(
         &w,
         "product_list",

@@ -114,6 +114,11 @@ export const commands = {
 	 *  again: rows already committed are not imported twice.
 	 */
 	importProductsCommit: (jobId: ImportJobId) => typedError<ImportCommitDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_commit", { jobId })),
+	/**
+	 *  How far a running commit has got, for its progress bar. The screen asks every few hundred
+	 *  milliseconds while `import_products_commit` runs.
+	 */
+	importProductsProgress: (jobId: ImportJobId) => typedError<ImportProgressDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_progress", { jobId })),
 	/**  Saves the rows that were not imported (with an `error` column) where the user chooses. */
 	importProductsErrorReport: (jobId: ImportJobId) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("import_products_error_report", { jobId })),
 	/**  Abandons an import that has not started committing. */
@@ -1394,6 +1399,12 @@ export type ImportProblemDto = {
 	/**  `error`, `duplicate_in_file` or `duplicate_existing`. */
 	status: string,
 	messages: string[],
+};
+
+/**  A commit's progress: rows written of rows to write. */
+export type ImportProgressDto = {
+	rowsDone: number,
+	rowsTotal: number,
 };
 
 export type ImportSummaryDto = {

@@ -97,7 +97,9 @@ export interface FakeState {
   /** What the next "Open" dialog picks: CSV text and a file name, or null for Cancel. */
   openFile: { name: string; text: string } | null;
   /** Import jobs by id: the rows and what validation decided. */
-  imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[] }>;
+  imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[]; done?: number }>;
+  /** A commit writes one row per this many ms (0: at once), so its progress bar can be seen. */
+  importStepMs: number;
   /** The business profile besides the name and till name (which live in `workspace`). */
   business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number; logo?: string | null };
   /** `scanner.error_sound` (E07-T04). */
@@ -234,6 +236,7 @@ function initialStateInner(preset: Preset): FakeState {
     printed: 0,
     saveAs: [],
     openFile: null,
+    importStepMs: 0,
     imports: new Map(),
     business: { legalName: null, taxRegistrationNo: "GB123456789", addressLines: ["1 High Street", "Leeds LS1 1AA"], phone: null, email: null, version: 1, registerVersion: 1 },
     categories: [],
@@ -1397,6 +1400,11 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const mapping = header.flatMap((h, index) => (synonyms[h.toLowerCase()] ? [{ column: synonyms[h.toLowerCase()], index }] : []));
       return { jobId, fileName: s.openFile.name, encoding: "utf8", delimiter: ",", header, sample: lines.slice(0, 10), totalRows: lines.length, mapping };
     }
+    case "import_products_progress": {
+      needSession(s);
+      const job = s.imports.get(String(a.jobId)) ?? fail("VALIDATION_FAILED");
+      return { rowsDone: job.done ?? 0, rowsTotal: job.valid.length };
+    }
     case "import_products_validate":
     case "import_products_commit":
     case "import_products_error_report":
@@ -1459,7 +1467,21 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           variants: [{ variantId: id(), isDefault: true, sku: null, options: {}, priceMinor: String(Math.round(parseFloat((r[1] ?? "0").replace(",", ".")) * 100)), costMinor: null, trackStock: true, lowStockThresholdMilli: null, scanQtyMilli: "1000", barcodes: [], archived: false }],
         });
       }
-      return { productsCreated: job.valid.length, productsUpdated: 0, rowsCommitted: job.valid.length };
+      const result = { productsCreated: job.valid.length, productsUpdated: 0, rowsCommitted: job.valid.length };
+      if (s.importStepMs === 0) {
+        job.done = job.valid.length;
+        return result;
+      }
+      job.done = 0;
+      return new Promise((resolve) => {
+        const t = setInterval(() => {
+          job.done = (job.done ?? 0) + 1;
+          if (job.done >= job.valid.length) {
+            clearInterval(t);
+            resolve(result);
+          }
+        }, s.importStepMs);
+      });
     }
     case "receipt_export_pdf": {
       needSession(s);

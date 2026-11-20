@@ -37,6 +37,7 @@ pub const COMMANDS: &[&str] = &[
     "import_products_open",
     "import_products_validate",
     "import_products_commit",
+    "import_products_progress",
     "import_products_error_report",
     "import_products_cancel",
     "product_list",

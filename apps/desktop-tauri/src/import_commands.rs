@@ -3,7 +3,7 @@
 
 use crate::app_commands::err;
 use crate::dto::{
-    ImportCommitDto, ImportPreviewDto, ImportSummaryDto, MappingEntryDto, OnDuplicateDto, SavedFileDto,
+    ImportCommitDto, ImportPreviewDto, ImportProgressDto, ImportSummaryDto, MappingEntryDto, OnDuplicateDto, SavedFileDto,
 };
 use crate::{AppServices, IpcError};
 use pos_domain::{ImportJobId, Permission};
@@ -86,6 +86,22 @@ pub async fn import_products_commit(
         products_created: s.products_created,
         products_updated: s.products_updated,
         rows_committed: s.rows_committed,
+    })
+}
+
+/// How far a running commit has got, for its progress bar. The screen asks every few hundred
+/// milliseconds while `import_products_commit` runs.
+#[tauri::command]
+#[specta::specta]
+pub async fn import_products_progress(
+    services: State<'_, AppServices>,
+    job_id: ImportJobId,
+) -> Result<ImportProgressDto, IpcError> {
+    let ctx = services.context().await?;
+    let p = services.app()?.imports.progress(&ctx, job_id).await.map_err(err)?;
+    Ok(ImportProgressDto {
+        rows_done: p.rows_done,
+        rows_total: p.rows_total,
     })
 }
 

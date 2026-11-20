@@ -2367,6 +2367,14 @@ impl ImportSummaryDto {
     }
 }
 
+/// A commit's progress: rows written of rows to write.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgressDto {
+    pub rows_done: u32,
+    pub rows_total: u32,
+}
+
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportCommitDto {

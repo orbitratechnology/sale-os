@@ -316,8 +316,20 @@ describe("CSV import (E06-T08)", () => {
       return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
     });
     expect(violations).toEqual([]);
+    // A slow commit (a row a second here) shows how far it has got.
+    await page.evaluate(() => {
+      window.__fake.importStepMs = 1000;
+    });
     await page.getByRole("button", { name: "Import 2 products" }).click();
+    const bar = page.getByRole("progressbar", { name: "Import progress" });
+    await bar.waitFor();
+    await page.getByTestId("import-progress-text").filter({ hasText: "1 of 2 rows (50%)" }).waitFor();
+    expect(await bar.getAttribute("value")).toBe("1");
+    expect(await bar.getAttribute("max")).toBe("2");
+    expect(await page.getByRole("button", { name: "Importing…" }).isDisabled()).toBe(true);
     await page.getByRole("heading", { name: "Imported: 2 new, 0 updated." }).waitFor();
+    expect(await bar.count()).toBe(0);
+    expect((await calls(page, "import_products_progress"))[0]).toEqual({ jobId: expect.any(String) });
     await page.keyboard.press("Escape");
     await page.getByTestId("product-total").filter({ hasText: "5 products" }).waitFor();
     expect(await calls(page, "import_products_cancel")).toEqual([]);

@@ -57,6 +57,18 @@ impl ImportQueries for SqliteStore {
         .transpose()
     }
 
+    async fn import_progress(&self, id: ImportJobId) -> Result<(u32, u32), QueryError> {
+        let (done, total): (i64, i64) = sqlx::query_as(
+            "SELECT coalesce(sum(status = 'committed'), 0), count(*)
+             FROM import_rows WHERE job_id = ? AND status IN ('valid', 'committed')",
+        )
+        .bind(id.to_string())
+        .fetch_one(self.db().readers())
+        .await
+        .map_err(q)?;
+        Ok((u32::try_from(done).map_err(q)?, u32::try_from(total).map_err(q)?))
+    }
+
     async fn import_rows(&self, id: ImportJobId) -> Result<Vec<ImportRowRecord>, QueryError> {
         let rows: Vec<(i64, String, Option<String>, String, String)> = sqlx::query_as(
             "SELECT row_no, raw_json, parsed_json, status, errors_json FROM import_rows WHERE job_id = ? ORDER BY row_no",

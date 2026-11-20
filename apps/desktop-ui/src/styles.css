@@ -1994,6 +1994,34 @@
   }
 
   /* ---- CSV import ---- */
+  .import-progress {
+    display: grid;
+    gap: var(--sp-2);
+    margin-block-start: var(--sp-4);
+  }
+  .import-progress progress {
+    inline-size: 100%;
+    block-size: 0.5rem;
+    appearance: none;
+    border: none;
+    border-radius: 999px;
+    background: var(--c-surface-2);
+    overflow: hidden;
+    accent-color: var(--c-accent);
+  }
+  .import-progress progress::-webkit-progress-bar {
+    background: var(--c-surface-2);
+    border-radius: 999px;
+  }
+  .import-progress progress::-webkit-progress-value {
+    background: var(--c-accent);
+    border-radius: 999px;
+    transition: inline-size 200ms ease-out;
+  }
+  .import-progress progress::-moz-progress-bar {
+    background: var(--c-accent);
+    border-radius: 999px;
+  }
   .import-wizard .card + .card,
   .import-wizard .card + form {
     margin-block-start: var(--sp-4);

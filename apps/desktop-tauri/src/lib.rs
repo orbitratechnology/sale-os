@@ -69,6 +69,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         import_commands::import_products_open,
         import_commands::import_products_validate,
         import_commands::import_products_commit,
+        import_commands::import_products_progress,
         import_commands::import_products_error_report,
         import_commands::import_products_cancel,
         sale_commands::product_list,

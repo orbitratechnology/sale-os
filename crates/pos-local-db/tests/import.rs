@@ -421,9 +421,14 @@ async fn a_crash_mid_commit_keeps_whole_chunks_and_resumes_without_duplicates() 
         .await
         .unwrap();
     assert_eq!(status, "committing");
+    // The progress bar shows where it stopped: the first chunk's rows of all of them.
+    let at = normal.progress(owner, p.job_id).await.unwrap();
+    assert_eq!((at.rows_done as usize, at.rows_total as usize), (CHUNK, n));
     // Committing again finishes the rest.
     let done = normal.commit(owner, p.job_id).await.unwrap();
     assert_eq!((done.products_created as usize, done.chunks), (n - CHUNK, 2));
+    let at = normal.progress(owner, p.job_id).await.unwrap();
+    assert_eq!((at.rows_done as usize, at.rows_total as usize), (n, n));
     assert_eq!(active_products(&shop).await, n as i64);
     assert_eq!(
         count(&shop, "SELECT count(DISTINCT name) FROM products").await,

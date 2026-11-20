@@ -42,6 +42,7 @@
     "allow-import-products-open",
     "allow-import-products-validate",
     "allow-import-products-commit",
+    "allow-import-products-progress",
     "allow-import-products-error-report",
     "allow-import-products-cancel",
     "allow-product-list",
