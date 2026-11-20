@@ -18,6 +18,7 @@ mod export_queries;
 mod import_queries;
 mod link_store;
 mod migrate;
+mod payment_queries;
 mod pragmas;
 mod queries;
 mod receipt_queries;

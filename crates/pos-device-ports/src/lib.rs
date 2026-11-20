@@ -12,6 +12,9 @@ pub mod printer;
 pub mod scanner;
 
 pub use drawer::{CashDrawerPort, DrawerPin};
+pub use payment::{
+    PaymentCapabilities, PaymentKind, PaymentPort, PaymentRequest, PaymentStatus, may_have_been_sent,
+};
 pub use printer::{
     CommandDialect, CutSupport, PaperLevel, PrintFailure, PrintResult, PrinterCapabilities, PrinterStatus,
     ReceiptOutputPort,

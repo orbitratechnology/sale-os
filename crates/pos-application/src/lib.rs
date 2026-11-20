@@ -19,6 +19,7 @@ pub mod export;
 pub mod import;
 pub mod link;
 pub mod mode;
+pub mod payments;
 pub mod printing;
 pub mod queries;
 pub mod receipts;

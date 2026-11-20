@@ -80,6 +80,11 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
     ("import_jobs", "import staging (the products travel)"),
     ("import_rows", "import staging"),
     ("sync_conflicts", "sync bookkeeping"),
+    (
+        "payment_attempts",
+        "cart working state; the money travels in the sale's tender (E10-T02)",
+    ),
+    ("payment_attempt_events", "history of payment_attempts"),
     ("inbound_changes", "sync bookkeeping"),
 ];
 

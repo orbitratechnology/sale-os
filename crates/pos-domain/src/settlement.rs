@@ -4,7 +4,8 @@
 //! last tender may leave change. External tenders (card on a separate terminal, bank
 //! transfer, QR) are **recorded by the operator**: they are stored as confirmed by the
 //! operator, never as confirmed by a provider (PAY-003). A provider confirmation can only be
-//! made from a payment provider's approval, which does not exist in the MVP.
+//! made from a payment provider's approval: an approved [`crate::payment::PaymentAttempt`]
+//! (E10-T02), applied with [`settle_with_confirmed`].
 
 use crate::pricing::{PricingPolicy, cash_rounding};
 use crate::{ErrorCode, HasErrorCode, Money};
@@ -92,11 +93,24 @@ impl ConfirmationSource {
     }
 }
 
-/// A payment provider's approval. Private field: only a `PaymentPort` result may make one,
-/// and the MVP has none (E10-T02 builds the flow behind a non-production port).
+/// A payment provider's approval. Private field: only an attempt the provider approved can
+/// make one ([`crate::payment::PaymentAttempt::sale_tender`]); operator input never can.
+/// Serialises as `{"reference": ...}` (the `sale.completed` v1 `ProviderApprovalV1`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ProviderApproval {
     reference: String,
+}
+
+impl ProviderApproval {
+    /// Crate-private on purpose: see the type's documentation.
+    pub(crate) fn from_approved_attempt(reference: String) -> Self {
+        Self { reference }
+    }
+
+    /// The provider's transaction reference.
+    pub fn reference(&self) -> &str {
+        &self.reference
+    }
 }
 
 /// One tender as entered at the till.
@@ -178,10 +192,24 @@ pub fn settle(
     tenders: &[TenderInput],
     policy: &PricingPolicy,
 ) -> Result<Settlement, SettlementError> {
-    if tenders.is_empty() {
+    settle_with_confirmed(total, Vec::new(), tenders, policy)
+}
+
+/// Like [`settle`], with tenders that were already confirmed elsewhere applied first: card
+/// payments a terminal approved (E10-T02, from
+/// [`crate::payment::PaymentAttempt::sale_tender`]). They are never cash and never give
+/// change, so applying them first cannot move change away from the last cash tender; each
+/// must still fit in what is due.
+pub fn settle_with_confirmed(
+    total: Money,
+    confirmed: Vec<SettledTender>,
+    tenders: &[TenderInput],
+    policy: &PricingPolicy,
+) -> Result<Settlement, SettlementError> {
+    if tenders.is_empty() && confirmed.is_empty() {
         return Err(SettlementError::NoTenders);
     }
-    let all_cash = tenders.iter().all(|t| t.kind.is_cash());
+    let all_cash = confirmed.is_empty() && tenders.iter().all(|t| t.kind.is_cash());
     let rounding = if all_cash {
         cash_rounding(total, policy)?
     } else {
@@ -189,7 +217,23 @@ pub fn settle(
     };
     let total_due = total.checked_add(rounding)?;
     let mut remaining = total_due;
-    let mut settled = Vec::with_capacity(tenders.len());
+    let mut settled = Vec::with_capacity(confirmed.len() + tenders.len());
+    for t in confirmed {
+        if t.kind.is_cash() || t.received.is_some() || t.change.minor() != 0 {
+            return Err(SettlementError::ChangeFromNonCash);
+        }
+        if t.amount.minor() <= 0 {
+            return Err(SettlementError::NonPositiveAmount);
+        }
+        if remaining.minor() == 0 {
+            return Err(SettlementError::TenderAfterPaid);
+        }
+        if t.amount > remaining {
+            return Err(SettlementError::OverTenderNonCash);
+        }
+        remaining = remaining.checked_sub(t.amount)?;
+        settled.push(t);
+    }
     for (i, t) in tenders.iter().enumerate() {
         if t.amount.minor() <= 0 {
             return Err(SettlementError::NonPositiveAmount);

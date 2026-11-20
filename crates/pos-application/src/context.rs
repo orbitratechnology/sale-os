@@ -136,6 +136,8 @@ pub enum AppError {
     #[error(transparent)]
     Settlement(#[from] pos_domain::settlement::SettlementError),
     #[error(transparent)]
+    Payment(#[from] pos_domain::payment::PaymentError),
+    #[error(transparent)]
     Inventory(#[from] pos_domain::inventory::InventoryError),
     #[error(transparent)]
     Sale(#[from] pos_domain::sale::SaleError),
@@ -179,6 +181,7 @@ impl HasErrorCode for AppError {
             AppError::Setup(e) => e.error_code(),
             AppError::Catalog(e) => e.error_code(),
             AppError::Settlement(e) => e.error_code(),
+            AppError::Payment(e) => e.error_code(),
             AppError::Inventory(e) => e.error_code(),
             AppError::Sale(e) => e.error_code(),
             AppError::Return(e) => e.error_code(),

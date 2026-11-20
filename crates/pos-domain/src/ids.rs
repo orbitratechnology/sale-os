@@ -81,6 +81,8 @@ id_type!(
     ApprovalId,
     ImportJobId,
     DeviceId,
+    // A payment terminal attempt (E10-T02); also the idempotency key sent to the provider.
+    PaymentAttemptId,
 );
 
 #[cfg(test)]
