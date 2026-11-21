@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { ReceiptDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 /**
  * Whose receipt: a sale's (`id: null` is the last sale on this till), a return's, a closed
@@ -33,6 +34,7 @@ export function printReceipt(source: ReceiptSource) {
  * 32 or 48 columns, and this shows them on a monospace grid. Paper width can be switched.
  */
 export function ReceiptPreview({ source }: { source: ReceiptSource }) {
+  const t = useT();
   const [width, setWidth] = useState<58 | 80 | null>(null);
   const [receipt, setReceipt] = useState<ReceiptDto | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
@@ -57,11 +59,11 @@ export function ReceiptPreview({ source }: { source: ReceiptSource }) {
   }, [kind, id, width]);
 
   if (error) return <p role="alert">{describeError(error)}</p>;
-  if (absent) return <p className="small">No tax invoice was issued for this sale.</p>;
-  if (!receipt) return <p className="small">Loading receipt…</p>;
+  if (absent) return <p className="small">{t("No tax invoice was issued for this sale.")}</p>;
+  if (!receipt) return <p className="small">{t("Loading receipt…")}</p>;
   return (
-    <figure className="receipt" aria-label={`${kind === "taxInvoice" ? "Tax invoice" : "Receipt"} ${receipt.receiptNumber}`}>
-      <div className="receipt-widths" role="group" aria-label="Paper width">
+    <figure className="receipt" aria-label={`${kind === "taxInvoice" ? t("Tax invoice") : t("Receipt")} ${receipt.receiptNumber}`}>
+      <div className="receipt-widths" role="group" aria-label={t("Paper width")}>
         {([58, 80] as const).map((w) => (
           <button key={w} type="button" className={receipt.columns === (w === 58 ? 32 : 48) ? "" : "secondary"} onClick={() => setWidth(w)}>
             {w} mm

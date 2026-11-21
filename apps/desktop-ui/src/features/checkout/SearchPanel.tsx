@@ -5,6 +5,7 @@ import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState, ty
 import { commands, type CatalogHit } from "../../ipc";
 import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { useT } from "../../i18n";
 
 /** Search as you type (E09-T04). */
 export const SEARCH_DEBOUNCE_MS = 80;
@@ -23,6 +24,7 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
     const [query, setQuery] = useState("");
     const [hits, setHits] = useState<CatalogHit[]>([]);
     const [active, setActive] = useState(0);
+    const t = useT();
     const input = useRef<HTMLInputElement | null>(null);
     const latest = useRef(0);
     const listId = useId();
@@ -88,18 +90,18 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
           ref={input}
           type="search"
           role="combobox"
-          aria-label="Search products (F2)"
+          aria-label={t("Search products (F2)")}
           aria-expanded={open}
           aria-controls={listId}
           aria-activedescendant={open ? `${listId}-${active}` : undefined}
-          placeholder="Search products (F2)"
+          placeholder={t("Search products (F2)")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           autoComplete="off"
         />
         {open && (
-          <ul id={listId} role="listbox" className="search-results" aria-label="Search results">
+          <ul id={listId} role="listbox" className="search-results" aria-label={t("Search results")}>
             {hits.map((h, i) => (
               <li
                 key={h.variantId}
@@ -119,7 +121,7 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
                 </span>
                 {h.onHandMilli !== null && (
                   <span className={BigInt(h.onHandMilli) > 0n ? "small num" : "small num out-of-stock"} data-testid="search-stock">
-                    {BigInt(h.onHandMilli) > 0n ? `${formatMilli(h.onHandMilli)} in stock` : "None in stock"}
+                    {BigInt(h.onHandMilli) > 0n ? t("{qty} in stock", { qty: formatMilli(h.onHandMilli) }) : t("None in stock")}
                   </span>
                 )}
                 <span className="num">{formatMoney(h.priceMinor, { exponent })}</span>
@@ -127,7 +129,7 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
             ))}
           </ul>
         )}
-        {query.trim() && !open && <p className="search-empty small">No matches yet…</p>}
+        {query.trim() && !open && <p className="search-empty small">{t("No matches yet…")}</p>}
       </div>
     );
   },

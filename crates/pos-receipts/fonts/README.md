@@ -8,6 +8,8 @@ SIL Open Font License 1.1 (`OFL.txt`, which must ship with the app).
 |---|---|---|
 | `NotoSansMono-Regular.ttf`, `NotoSansMono-Bold.ttf` | notofonts.github.io `fonts/NotoSansMono/unhinted/ttf/` | Receipt-width PDFs (the 32/48-column grid) |
 | `NotoSans-Regular.ttf`, `NotoSans-Bold.ttf` | `fonts/NotoSans/unhinted/ttf/` | A4 PDFs |
+| `NotoSansSinhala-Regular.ttf` | `fonts/NotoSansSinhala/unhinted/ttf/` | Sinhala fallback (Sri Lanka, D-02) |
+| `NotoSansTamil-Regular.ttf` | `fonts/NotoSansTamil/unhinted/ttf/` | Tamil fallback (Sri Lanka, D-02) |
 | `NotoSansArabic-Regular.ttf` | `fonts/NotoSansArabic/unhinted/ttf/` | Arabic fallback |
 | `NotoSansDevanagari-Regular.ttf` | `fonts/NotoSansDevanagari/unhinted/ttf/` | Devanagari fallback |
 | `NotoSansCJK-Subset.ttf` | google/fonts `ofl/notosanssc/NotoSansSC[wght].ttf`, weight 400, subset | Chinese and Japanese: GB 2312 (simplified Chinese) + JIS X 0208 (kana, kanji) + CJK punctuation and full-width forms (10,709 characters) |

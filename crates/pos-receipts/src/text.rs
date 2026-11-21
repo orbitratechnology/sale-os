@@ -6,7 +6,7 @@
 use crate::document::{
     CopyKind, DocumentKind, ReceiptDocument, TaxInvoiceSection, ZSection, amount, tender_label,
 };
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 pub const COLUMNS_58MM: usize = 32;
 pub const COLUMNS_80MM: usize = 48;
@@ -428,13 +428,25 @@ fn render_tax_invoice(out: &mut Vec<TextLine>, doc: &ReceiptDocument, ti: &TaxIn
 
 /// Columns a character takes on a receipt: 2 for wide (CJK) characters, 0 for combining
 /// marks, otherwise 1. Printers and the monospace preview lay text out the same way.
+///
+/// Sinhala and Tamil letters also take 2: shaped in Noto Sans Sinhala or Tamil at the
+/// receipt's font size, a letter with its vowel signs measures 1.2 to 2.0 monospace cells
+/// (Unicode counts it as 1, and the signs as 0), so one column would squeeze the name.
 pub fn char_columns(c: char) -> usize {
-    c.width().unwrap_or(0)
+    match c.width().unwrap_or(0) {
+        1 if is_sinhala_or_tamil(c) => 2,
+        w => w,
+    }
+}
+
+/// Sinhala (U+0D80–U+0DFF) or Tamil (U+0B80–U+0BFF).
+pub fn is_sinhala_or_tamil(c: char) -> bool {
+    matches!(c, '\u{0D80}'..='\u{0DFF}' | '\u{0B80}'..='\u{0BFF}')
 }
 
 /// Columns a string takes (see [`char_columns`]).
 pub fn text_columns(s: &str) -> usize {
-    s.width()
+    s.chars().map(char_columns).sum()
 }
 
 /// The longest prefix of `s` that fits in `room` columns.

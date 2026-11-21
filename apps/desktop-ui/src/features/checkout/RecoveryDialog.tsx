@@ -2,6 +2,7 @@ import { Modal } from "../../ui/Modal";
 import { useEffect, useRef } from "react";
 import type { RecoveredCartDto } from "../../ipc/bindings";
 import { formatMoney } from "../../lib/money";
+import { useT } from "../../i18n";
 
 /**
  * "Recovered cart" (E09-T02, POS-011): the till was closed with a sale in progress. Resume
@@ -20,6 +21,7 @@ export function RecoveryDialog({
   onResume: () => void;
   onDiscard: () => void;
 }) {
+  const t = useT();
   const resume = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     resume.current?.focus();
@@ -36,25 +38,26 @@ export function RecoveryDialog({
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [onResume]);
 
-  const items = `${recovered.lines} ${recovered.lines === 1 ? "item" : "items"}`;
+  const items = recovered.lines === 1 ? t("1 item") : t("{n} items", { n: recovered.lines });
   return (
-    <Modal label="Recovered cart">
-        <h2>
-          Recovered cart ({items}, {formatMoney(recovered.totalMinor, { exponent })})
-        </h2>
-        <p>The till was closed during a sale. Carry on with it, or start again with an empty cart.</p>
+    <Modal label={t("Recovered cart")}>
+        <h2>{t("Recovered cart ({items}, {total})", { items, total: formatMoney(recovered.totalMinor, { exponent }) })}</h2>
+        <p>{t("The till was closed during a sale. Carry on with it, or start again with an empty cart.")}</p>
         {recovered.repricedLines > 0 && (
           <p data-testid="recovery-repriced">
-            {recovered.repricedLines === 1 ? "1 price has" : `${recovered.repricedLines} prices have`} changed since; the
-            total uses today&apos;s prices and the changed {recovered.repricedLines === 1 ? "line is" : "lines are"} marked.
+            {recovered.repricedLines === 1
+              ? t("1 price has changed since; the total uses today's prices and the changed line is marked.")
+              : t("{n} prices have changed since; the total uses today's prices and the changed lines are marked.", {
+                  n: recovered.repricedLines,
+                })}
           </p>
         )}
         <div className="actions">
           <button type="button" className="danger" onClick={onDiscard}>
-            Discard
+            {t("Discard")}
           </button>
           <button type="button" ref={resume} onClick={onResume}>
-            Resume
+            {t("Resume")}
           </button>
         </div>
     </Modal>

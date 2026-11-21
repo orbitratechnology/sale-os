@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { currentLanguage, translate, type T } from "../../i18n";
 import { commands, type ApprovalScope, type CartView, type DiscountInput, type IpcError, type Result } from "../../ipc";
 
 export type Notice =
@@ -166,12 +167,15 @@ export function useCart(onSignedOut: () => void) {
 export type CartApi = ReturnType<typeof useCart>;
 
 /** What a scan hint from Rust means for the cashier (E21-T01/T03). */
-export function scanHintText(hint: string): string {
+export function scanHintText(hint: string, t: T = (e, v) => translate(currentLanguage(), e, v)): string {
   if (hint.startsWith("keyboard_layout:")) {
     const layout = hint.slice("keyboard_layout:".length);
     const names: Record<string, string> = { azerty_fr: "French AZERTY", azerty_be: "Belgian AZERTY", qwertz_de: "German QWERTZ" };
-    return `The scanner types as if the keyboard were US while Windows uses ${names[layout] ?? layout}. Scans still work, but set the scanner's keyboard country to match (see its manual's setup barcodes).`;
+    return t(
+      "The scanner types as if the keyboard were US while Windows uses {layout}. Scans still work, but set the scanner's keyboard country to match (see its manual's setup barcodes).",
+      { layout: names[layout] ?? layout },
+    );
   }
-  if (hint === "check_digit") return "That barcode's check digit is wrong: probably a misread. Scan it again or type it.";
+  if (hint === "check_digit") return t("That barcode's check digit is wrong: probably a misread. Scan it again or type it.");
   return hint;
 }

@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Package,
 } from "../../ui/icons";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
@@ -23,6 +24,18 @@ import {
 
 const UNITS: Unit[] = ["ea", "kg", "g", "l", "ml", "m", "cm", "box", "pack"];
 const isUnit = (u: string): u is Unit => (UNITS as string[]).includes(u);
+/** Units in words, with the short code people see on receipts. */
+const UNIT_LABEL: Record<Unit, string> = {
+  ea: "Each (ea)",
+  kg: "Kilogram (kg)",
+  g: "Gram (g)",
+  l: "Litre (l)",
+  ml: "Millilitre (ml)",
+  m: "Metre (m)",
+  cm: "Centimetre (cm)",
+  box: "Box",
+  pack: "Pack",
+};
 const TYPES: { value: ProductType; label: string }[] = [
   { value: "stock", label: "Stock item (counted)" },
   { value: "non_stock", label: "Non-stock item" },
@@ -189,11 +202,10 @@ export function ProductEditor({
     <main className="editor">
       <form onSubmit={(e) => void save(e)} noValidate aria-label="Product editor">
         <header className="products-head">
-          <button type="button" className="secondary" onClick={onClose}>
-            <ArrowLeft />
-            Back <kbd>Esc</kbd>
-          </button>
-          <h1>{draft.productId ? draft.name || "Product" : "New product"}</h1>
+          <h1 className="page-title">
+            <Package />
+            {draft.productId ? draft.name || "Product" : "New product"}
+          </h1>
           <span aria-live="polite" className="saved-note">
             {saved ? "Saved on this device" : ""}
           </span>
@@ -202,6 +214,10 @@ export function ProductEditor({
               {busy ? "Saving…" : "Save"}
             </button>
           )}
+          <button type="button" className="secondary" onClick={onClose}>
+            <ArrowLeft />
+            Back <kbd>Esc</kbd>
+          </button>
         </header>
 
         <section className="card editor-grid">
@@ -223,7 +239,9 @@ export function ProductEditor({
             {(id) => (
               <select id={id} disabled={ro} value={draft.unit} onChange={(e) => update((d) => ({ ...d, unit: e.target.value as Unit }))}>
                 {UNITS.map((u) => (
-                  <option key={u}>{u}</option>
+                  <option key={u} value={u}>
+                    {UNIT_LABEL[u]}
+                  </option>
                 ))}
               </select>
             )}

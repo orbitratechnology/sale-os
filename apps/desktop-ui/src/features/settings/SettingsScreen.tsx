@@ -1,6 +1,36 @@
 import { TabList, tabPanelProps } from "../../ui/Tabs";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Package, Percent, Printer, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
+import {
+  ArrowLeft,
+  BadgePercent,
+  Banknote,
+  Boxes,
+  Building,
+  ClipboardList,
+  Cloud,
+  CornerDownLeft,
+  CreditCard,
+  Database,
+  Gauge,
+  Package,
+  PackageMinus,
+  PanelBottom,
+  PanelTop,
+  Percent,
+  Printer,
+  ReceiptText,
+  Ruler,
+  ScanBarcode,
+  Settings,
+  ShieldCheck,
+  Timer,
+  Undo2,
+  Users,
+  Volume2,
+  Wallet,
+  Weight,
+} from "../../ui/icons";
+import { PanelHeader } from "../../ui/PanelHeader";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
@@ -99,45 +129,38 @@ export function SettingsScreen({
         selected={group}
         onSelect={setGroup}
       />
-      {group === BUSINESS ? (
+      {group && (
         <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <BusinessPanel onChanged={onChanged} />
-        </section>
-      ) : group === STAFF ? (
-        <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <StaffPanel />
-        </section>
-      ) : group === TAXES ? (
-        <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <TaxesPanel />
-        </section>
-      ) : group === DEVICES ? (
-        <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <DevicesPanel />
-        </section>
-      ) : group === CLOUD ? (
-        <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <CloudPanel onRelinked={onRelinked} />
-        </section>
-      ) : group === BACKUPS ? (
-        <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <BackupsPanel />
-        </section>
-      ) : (
-        <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          {(settings ?? [])
-            .filter((s) => s.group === group)
-            .map((s) => (
-              <SettingRow
-                key={s.key}
-                setting={s}
-                onSaved={(updated) => {
-                  setSettings((all) => all?.map((x) => (x.key === updated.key ? updated : x)) ?? null);
-                  onChanged();
-                }}
-                onConflict={load}
-              />
-            ))}
+          <PanelHeader icon={GROUP_ICONS[group] ?? Settings} title={group}>
+            {GROUP_HELP[group]}
+          </PanelHeader>
+          {group === BUSINESS ? (
+            <BusinessPanel onChanged={onChanged} />
+          ) : group === STAFF ? (
+            <StaffPanel />
+          ) : group === TAXES ? (
+            <TaxesPanel />
+          ) : group === DEVICES ? (
+            <DevicesPanel />
+          ) : group === CLOUD ? (
+            <CloudPanel onRelinked={onRelinked} />
+          ) : group === BACKUPS ? (
+            <BackupsPanel />
+          ) : (
+            (settings ?? [])
+              .filter((s) => s.group === group)
+              .map((s) => (
+                <SettingRow
+                  key={s.key}
+                  setting={s}
+                  onSaved={(updated) => {
+                    setSettings((all) => all?.map((x) => (x.key === updated.key ? updated : x)) ?? null);
+                    onChanged();
+                  }}
+                  onConflict={load}
+                />
+              ))
+          )}
         </section>
       )}
       </div>
@@ -156,6 +179,54 @@ const CHOICE_LABEL: Record<string, string> = {
   '"cm"': "Centimetre (cm)",
   '"box"': "Box",
   '"pack"': "Pack",
+  "58": "58 mm (narrow)",
+  "80": "80 mm (standard)",
+  '"Enter"': "Enter",
+  '"Tab"': "Tab",
+  '"none"': "Nothing (a short pause ends the code)",
+};
+
+/** One plain sentence under each page's name, saying what the page is for. */
+const GROUP_HELP: Record<string, string> = {
+  Inventory: "What the till does when stock runs low or out.",
+  Products: "Starting values for the products you add.",
+  "Cash drawer": "When the cash drawer must be open, and when it opens by itself.",
+  Security: "What cashiers may do on their own, and when the till locks itself.",
+  Receipts: "Paper size and the extra lines printed on every receipt.",
+  Scanner: "How the till recognises your barcode scanner and scale labels.",
+  Business: "Your shop's details, printed on receipts.",
+  Staff: "Who can sign in to this till, and what each person may do.",
+  Taxes: "Tax rates, and the tax categories products belong to.",
+  Devices: "The receipt printer, cash drawer, serial scanner and card terminal.",
+  Cloud: "Link this till to your online account so sales and products sync.",
+  Backups: "Automatic copies of this till's data, and how to bring one back.",
+};
+
+/** An icon for each setting, so a long page is easy to scan; new ones use their page's icon. */
+const SETTING_ICONS: Record<string, LucideIcon> = {
+  "inventory.allow_negative": PackageMinus,
+  "catalog.default_unit": Ruler,
+  "catalog.default_track_stock": ClipboardList,
+  "cash.require_session_for_sale": Wallet,
+  "drawer.open_on_cash_sale": Banknote,
+  "discount.cashier_max_ppm": BadgePercent,
+  "returns.cashier_requires_approval": Undo2,
+  "payments.cashier_external_tender": CreditCard,
+  "security.lock_timeout_secs": Timer,
+  "receipt.paper_width_mm": Ruler,
+  "receipt.auto_print": Printer,
+  "receipt.header_lines": PanelTop,
+  "receipt.footer_lines": PanelBottom,
+  "scanner.variable_measure_rules": Weight,
+  "scanner.suffix": CornerDownLeft,
+  "scanner.max_key_gap_ms": Gauge,
+  "scanner.error_sound": Volume2,
+};
+
+/** The unit shown after a number field, so nobody has to guess what the number means. */
+const UNITS: Record<string, string> = {
+  "security.lock_timeout_secs": "seconds",
+  "scanner.max_key_gap_ms": "ms",
 };
 
 /** An icon for each settings page; pages added later fall back to the gear. */
@@ -179,6 +250,9 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
   const [draft, setDraft] = useState(() => toText(setting, current));
   const [state, setState] = useState<{ kind: "idle" } | { kind: "saved" } | { kind: "error"; message: string }>({ kind: "idle" });
   const id = `setting-${setting.key}`;
+  // The help (and any error) describe the control; the label stays just its name.
+  const described = { "aria-describedby": state.kind === "error" ? `${id}-help ${id}-error` : `${id}-help` };
+  const invalid = state.kind === "error" ? { "aria-invalid": true as const } : {};
 
   async function save(valueJson: string) {
     const res = await commands.settingsUpdate(setting.key, valueJson, setting.version);
@@ -217,17 +291,25 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
   const control = (() => {
     if (k.type === "bool") {
       return (
-        <input
-          id={id}
-          type="checkbox"
-          checked={current === true}
-          onChange={(e) => void save(e.target.checked ? "true" : "false")}
-        />
+        <span className="switch-field">
+          <span aria-hidden="true">{current === true ? "On" : "Off"}</span>
+          <input
+            id={id}
+            type="checkbox"
+            // The native switch where the engine has it; role="switch" is what it exposes.
+            {...{ switch: "" }}
+            role="switch"
+            className="switch"
+            {...described}
+            checked={current === true}
+            onChange={(e) => void save(e.target.checked ? "true" : "false")}
+          />
+        </span>
       );
     }
     if (k.type === "choice") {
       return (
-        <select id={id} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
+        <select id={id} {...described} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
           {k.options.map((o) => (
             <option key={o} value={o}>
               {CHOICE_LABEL[o] ?? o.replace(/^"|"$/g, "")}
@@ -238,9 +320,9 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
     }
     const input =
       k.type === "lines" ? (
-        <textarea id={id} rows={Math.min(k.maxLines, 5)} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={k.maxLines * (k.maxChars + 1)} />
+        <textarea id={id} {...described} {...invalid} rows={Math.min(k.maxLines, 5)} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={k.maxLines * (k.maxChars + 1)} />
       ) : (
-        <input id={id} inputMode="decimal" value={draft} onChange={(e) => setDraft(e.target.value)} className="qty-input" />
+        <input id={id} {...described} {...invalid} inputMode="decimal" value={draft} onChange={(e) => setDraft(e.target.value)} />
       );
     return (
       <form
@@ -253,7 +335,8 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
         }}
       >
         {input}
-        {k.type === "ppm" && <span>%</span>}
+        {k.type === "ppm" && <span className="unit">%</span>}
+        {UNITS[setting.key] && <span className="unit">{UNITS[setting.key]}</span>}
         <button type="submit" className="secondary">
           Save
         </button>
@@ -261,19 +344,24 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
     );
   })();
 
+  const Icon = SETTING_ICONS[setting.key] ?? GROUP_ICONS[setting.group] ?? Settings;
   return (
-    <div className="setting-row" data-testid="setting-row">
-      <label htmlFor={id}>
-        <strong>{setting.label}</strong>
-        <span className="small">{setting.help}</span>
-      </label>
-      <div>
+    <div className="setting-row has-icon" data-testid="setting-row">
+      <span className="icon-tile sm" aria-hidden="true">
+        <Icon />
+      </span>
+      <div className="setting-text">
+        <label htmlFor={id}>{setting.label}</label>
+        <span id={`${id}-help`} className="small">
+          {setting.help}
+        </span>
+      </div>
+      <div className="setting-control">
         {control}
-        <span aria-live="polite" className="small">
-          {state.kind === "saved" && " Saved."}
+        <span aria-live="polite" className="small setting-status">
+          {state.kind === "saved" && <span className="saved-note">Saved.</span>}
           {state.kind === "error" && (
-            <span role="alert" className="field-error">
-              {" "}
+            <span role="alert" id={`${id}-error`} className="field-error">
               {state.message}
             </span>
           )}

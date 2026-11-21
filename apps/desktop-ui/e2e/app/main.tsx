@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { App } from "../../src/App";
+import { LanguageProvider } from "../../src/i18n";
 import { handle, initialState, type FakeState, type Preset } from "./fakeBackend";
 import "@fontsource-variable/inter/wght.css";
 import "../../src/styles.css";
@@ -30,6 +31,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("#root missing");
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <LanguageProvider>
+      <App />
+    </LanguageProvider>
   </StrictMode>,
 );

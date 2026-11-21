@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { Role, StaffDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { SectionTitle } from "../../ui/PanelHeader";
+import { UserPlus, Users } from "../../ui/icons";
 
 const ROLES: { role: Role; label: string; help: string }[] = [
-  { role: "cashier", label: "Cashier", help: "Sells, returns with approval, counts the drawer blind." },
-  { role: "manager", label: "Manager", help: "Also approves, edits products and stock, sees reports." },
-  { role: "owner", label: "Owner", help: "Everything, including staff, settings and the cloud." },
+  { role: "cashier", label: "Cashier", help: "sell, make returns with a manager's approval, and count the drawer (without seeing the expected amount)." },
+  { role: "manager", label: "Manager", help: "do everything a cashier can, approve, edit products and stock, and see reports." },
+  { role: "owner", label: "Owner", help: "do everything, including staff, settings and the cloud." },
 ];
 const roleLabel = (r: Role) => ROLES.find((x) => x.role === r)?.label ?? r;
 
@@ -147,12 +149,13 @@ export function StaffPanel() {
           {problem.text}
         </p>
       )}
+      <SectionTitle icon={Users}>People who can sign in</SectionTitle>
       <table className="sales-table" aria-label="Staff">
         <thead>
           <tr>
             <th scope="col">Name</th>
             <th scope="col">Role</th>
-            <th scope="col">
+            <th scope="col" className="row-actions">
               <span className="visually-hidden">Actions</span>
             </th>
           </tr>
@@ -237,7 +240,7 @@ export function StaffPanel() {
                       {roleLabel(u.role)}
                     </span>
                   </td>
-                  <td>
+                  <td className="row-actions">
                     <button
                       type="button"
                       className="link"
@@ -275,15 +278,16 @@ export function StaffPanel() {
         </p>
       )}
 
-      <h2>Add a staff member</h2>
+      <SectionTitle icon={UserPlus}>Add a staff member</SectionTitle>
       <form className="card sales-filters" aria-label="Add a staff member" onSubmit={(e) => void add(e)}>
         <label>
           Name
           <input
             value={draft.name}
             aria-invalid={newProblem?.field === "displayName" || undefined}
+            aria-describedby={newProblem?.field === "displayName" ? "staff-new-error" : undefined}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            placeholder="As shown on the PIN pad"
+            placeholder="e.g. Sam"
           />
         </label>
         <label>
@@ -304,6 +308,7 @@ export function StaffPanel() {
             autoComplete="off"
             value={draft.pin}
             aria-invalid={newProblem?.field === "pin" || undefined}
+            aria-describedby={newProblem?.field === "pin" ? "staff-new-error" : undefined}
             onChange={(e) => setDraft({ ...draft, pin: e.target.value })}
           />
         </label>
@@ -317,13 +322,19 @@ export function StaffPanel() {
             onChange={(e) => setDraft({ ...draft, again: e.target.value })}
           />
         </label>
-        <span>
-          <button type="submit">Add</button>
+        <p className="small form-hint">
+          The name is shown on the sign-in screen. {ROLES.find((r) => r.role === draft.role)?.label}s can{" "}
+          {ROLES.find((r) => r.role === draft.role)?.help}
+        </p>
+        <span className="form-hint">
+          <button type="submit">
+            <UserPlus />
+            Add
+          </button>
         </span>
       </form>
-      <p className="small">{ROLES.find((r) => r.role === draft.role)?.help}</p>
       {newProblem && (
-        <p role="alert" className="field-error">
+        <p role="alert" id="staff-new-error" className="field-error">
           {newProblem.text}
         </p>
       )}

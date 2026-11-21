@@ -299,9 +299,9 @@ export function ReturnScreen({
             <thead>
               <tr>
                 <th scope="col">Item</th>
-                <th scope="col">Sold</th>
-                <th scope="col">Returned</th>
-                <th scope="col">Paid</th>
+                <th scope="col" className="num">Sold</th>
+                <th scope="col" className="num">Returned</th>
+                <th scope="col" className="num">Paid</th>
                 <th scope="col">Return now</th>
                 <th scope="col">Goods</th>
               </tr>
@@ -316,9 +316,9 @@ export function ReturnScreen({
                 return (
                   <tr key={l.saleLineId} className={none ? "muted" : undefined}>
                     <th scope="row">{label}</th>
-                    <td>{formatMilli(l.soldMilli)}</td>
-                    <td>{formatMilli(l.returnedMilli)}</td>
-                    <td>{money(l.totalMinor)}</td>
+                    <td className="num">{formatMilli(l.soldMilli)}</td>
+                    <td className="num">{formatMilli(l.returnedMilli)}</td>
+                    <td className="num">{money(l.totalMinor)}</td>
                     <td>
                       <input
                         className="qty-input"

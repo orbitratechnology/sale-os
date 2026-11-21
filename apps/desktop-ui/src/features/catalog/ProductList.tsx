@@ -242,10 +242,6 @@ export function ProductList({
   return (
     <main className="products">
       <header className="products-head">
-        <button type="button" className="secondary" onClick={onBack}>
-          <ArrowLeft />
-          Till <kbd>Esc</kbd>
-        </button>
         <h1 className="page-title">
           <Package />
           Products
@@ -271,6 +267,10 @@ export function ProductList({
             New product
           </button>
         )}
+        <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
+          Back to till <kbd>Esc</kbd>
+        </button>
       </header>
       <div className="products-filters">
         <input

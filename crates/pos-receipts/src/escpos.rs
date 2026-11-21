@@ -192,6 +192,16 @@ impl EscPos {
         true
     }
 
+    /// Prints a 1-bit image (`GS v 0`, normal density): `width_bytes` bytes per row, most
+    /// significant bit leftmost, 1 = ink. The paper advances by its height.
+    pub fn raster(&mut self, width_bytes: u16, height: u16, data: &[u8]) -> &mut Self {
+        let [xl, xh] = width_bytes.to_le_bytes();
+        let [yl, yh] = height.to_le_bytes();
+        self.buf.extend_from_slice(&[GS, b'v', b'0', 0, xl, xh, yl, yh]);
+        self.buf.extend_from_slice(data);
+        self
+    }
+
     pub fn bytes(&self) -> &[u8] {
         &self.buf
     }

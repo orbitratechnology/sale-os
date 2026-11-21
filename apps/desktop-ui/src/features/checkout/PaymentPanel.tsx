@@ -13,6 +13,7 @@ import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 import { SaleSyncMark } from "../sync/SaleSyncMark";
 import { TerminalPayment } from "./TerminalPayment";
+import { useT } from "../../i18n";
 
 interface Tender {
   kind: TenderKind;
@@ -66,6 +67,9 @@ export function PaymentPanel({
   const [resume, setResume] = useState<PaymentAttemptDto | null>(null);
   const [external, setExternal] = useState({ amount: "", reference: "" });
   const [error, setError] = useState<IpcError | string | null>(null);
+  const t = useT();
+  // The hint names a key: the sentence is translated whole and split where the key goes.
+  const [cashHintBefore, cashHintAfter = ""] = t("Type the amount the customer gave, or press {key} on an empty box for the exact amount.").split("{key}");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<CompletedSaleDto | null>(null);
   const [returned, setReturned] = useState<CompletedReturnDto | null>(null);
@@ -133,7 +137,7 @@ export function PaymentPanel({
       // An exchange settles with tenders recorded at the till; the terminal flow is not offered for it.
       if (terminalTenders.length > 0) {
         setBusy(false);
-        return setError("An exchange cannot be settled on the card terminal yet: record the card payment as Card (separate terminal).");
+        return setError(t("An exchange cannot be settled on the card terminal yet: record the card payment as Card (separate terminal)."));
       }
       const x = exchange;
       const res = await commands.exchangeComplete(x.saleId, x.lines, x.reason, x.note, [], approvalTokenId, cart.cartId, cart.revision, others);
@@ -169,8 +173,8 @@ export function PaymentPanel({
     e.preventDefault();
     if (busy) return;
     const amount = cash.trim() ? scaleDecimal(cash, exp) : remaining.toString();
-    if (amount === null || amount === "0") return setError("Enter the cash received, e.g. 20.00.");
-    if (remaining === 0n) return setError("The sale is already paid. Remove a tender to change it.");
+    if (amount === null || amount === "0") return setError(t("Enter the cash received, e.g. 20.00."));
+    if (remaining === 0n) return setError(t("The sale is already paid. Remove a tender to change it."));
     const next = [...tenders, { kind: "cash" as const, amountMinor: amount, reference: null }];
     setCash("");
     setError(null);
@@ -183,8 +187,8 @@ export function PaymentPanel({
     e.preventDefault();
     if (!method || method === "terminal") return;
     const amount = external.amount.trim() ? scaleDecimal(external.amount, exp) : remaining.toString();
-    if (amount === null || amount === "0") return setError("Enter the amount charged.");
-    if (BigInt(amount) > remaining) return setError("A card or transfer cannot be more than the amount due; the rest can be cash.");
+    if (amount === null || amount === "0") return setError(t("Enter the amount charged."));
+    if (BigInt(amount) > remaining) return setError(t("A card or transfer cannot be more than the amount due; the rest can be cash."));
     setTenders([...tenders, { kind: method, amountMinor: amount, reference: external.reference.trim() || null }]);
     setMethod(null);
     setExternal({ amount: "", reference: "" });
@@ -194,37 +198,38 @@ export function PaymentPanel({
   if (done) {
     return (
       // Its own key: a new dialog, so focus starts on "New sale" (Enter), not on the page.
-      <Modal key="done" label={returned ? "Exchange completed" : "Sale completed"} className="pay-done">
+      <Modal key="done" label={returned ? t("Exchange completed") : t("Sale completed")} className="pay-done">
           <span className="done-icon">
             <CircleCheck />
           </span>
           {returned && (
             <p data-testid="exchange-return">
-              Return <strong className="mono">{returned.returnNumber}</strong> · {money(returned.totalMinor)} back, spent on the new items
+              {t("Return")} <strong className="mono">{returned.returnNumber}</strong> ·{" "}
+              {t("{amount} back, spent on the new items", { amount: money(returned.totalMinor) })}
             </p>
           )}
-          <p className="small">{returned ? "Give back" : "Change due"}</p>
+          <p className="small">{returned ? t("Give back") : t("Change due")}</p>
           <output className="change-amount" data-testid="change">
             {money(done.changeMinor)}
           </output>
           <p>
-            Receipt <strong className="mono">{done.receiptNumber}</strong> · total {money(done.totalMinor)}
+            {t("Receipt")} <strong className="mono">{done.receiptNumber}</strong> · {t("total {amount}", { amount: money(done.totalMinor) })}
           </p>
           <p className="small" data-testid="saved" aria-live="polite">
             <SaleSyncMark saleId={done.saleId} />
             {done.mode === "sandbox" ? " · SANDBOX" : ""}
           </p>
-          {done.drawer === "opened" && <p className="small">Cash drawer opened.</p>}
+          {done.drawer === "opened" && <p className="small">{t("Cash drawer opened.")}</p>}
           {done.drawer.startsWith("failed") && (
             <p role="alert" className="small">
-              The cash drawer did not open ({done.drawer.slice(8)}). Open it with No sale or the key.
+              {t("The cash drawer did not open ({why}). Open it with No sale or the key.", { why: done.drawer.slice(8) })}
             </p>
           )}
           {done.negativeStockItems > 0 && (
             <p className="small">
               {done.negativeStockItems === 1
-                ? "1 item went below zero stock and was flagged for a stock check."
-                : `${done.negativeStockItems} items went below zero stock and were flagged for a stock check.`}
+                ? t("1 item went below zero stock and was flagged for a stock check.")
+                : t("{n} items went below zero stock and were flagged for a stock check.", { n: done.negativeStockItems })}
             </p>
           )}
           <PrintControls source={{ kind: "sale", id: done.saleId }} autoPrint={done.autoPrint} />
@@ -232,10 +237,10 @@ export function PaymentPanel({
           {showReceipt && <ReceiptPreview source={{ kind: "sale", id: done.saleId }} />}
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
-              {showReceipt ? "Hide receipt" : "Show receipt"}
+              {showReceipt ? t("Hide receipt") : t("Show receipt")}
             </button>
             <button type="button" data-autofocus onClick={onDone}>
-              New sale <kbd>Enter</kbd>
+              {t("New sale")} <kbd>Enter</kbd>
             </button>
           </div>
       </Modal>
@@ -243,35 +248,35 @@ export function PaymentPanel({
   }
 
   return (
-    <Modal key="pay" label={exchange ? "Settle the exchange" : "Payment"} className="pay">
+    <Modal key="pay" label={exchange ? t("Settle the exchange") : t("Payment")} className="pay">
         {exchange && (
-          <dl className="totals" aria-label="Exchange">
-            <dt>New items</dt>
+          <dl className="totals" aria-label={t("Exchange")}>
+            <dt>{t("New items")}</dt>
             <dd>{money(cart.totalMinor)}</dd>
-            <dt>Returned ({exchange.receiptNumber})</dt>
+            <dt>{t("Returned ({receipt})", { receipt: exchange.receiptNumber })}</dt>
             <dd data-testid="exchange-credit">-{money(credit)}</dd>
           </dl>
         )}
         <div className="pay-head">
           <div>
-            <p className="small">{exchange ? "To pay" : "Total"}</p>
+            <p className="small">{exchange ? t("To pay") : t("Total")}</p>
             <output className="pay-total">{money(total)}</output>
           </div>
           <div>
-            <p className="small">Still due</p>
+            <p className="small">{t("Still due")}</p>
             <output className="pay-remaining" data-testid="remaining">
               {money(remaining)}
             </output>
           </div>
           {change > 0n && (
             <div>
-              <p className="small">Change</p>
+              <p className="small">{t("Change")}</p>
               <output className="pay-remaining">{money(change)}</output>
             </div>
           )}
           {giveBack > 0n && (
             <div>
-              <p className="small">Give back (cash)</p>
+              <p className="small">{t("Give back (cash)")}</p>
               <output className="pay-remaining" data-testid="give-back">
                 {money(giveBack)}
               </output>
@@ -280,22 +285,28 @@ export function PaymentPanel({
         </div>
 
         {tenders.length > 0 && (
-          <ul className="tender-list" aria-label="Tenders">
-            {tenders.map((t, i) => (
+          <ul className="tender-list" aria-label={t("Tenders")}>
+            {tenders.map((tender, i) => (
               <li key={i}>
                 <span>
-                  {label(t.kind)}
-                  {t.attemptId ? (
-                    <span className="tag">Approved by terminal</span>
+                  {t(label(tender.kind))}
+                  {tender.attemptId ? (
+                    <span className="tag">{t("Approved by terminal")}</span>
                   ) : (
-                    t.kind !== "cash" && <span className="tag">Externally confirmed by operator</span>
+                    tender.kind !== "cash" && <span className="tag">{t("Externally confirmed by operator")}</span>
                   )}
-                  {t.reference && <span className="small mono"> {t.reference}</span>}
+                  {tender.reference && <span className="small mono"> {tender.reference}</span>}
                 </span>
-                <span className="num">{money(t.amountMinor)}</span>
-                {!t.attemptId && (
-                  <button type="button" className="secondary" aria-label={`Remove ${label(t.kind)} ${money(t.amountMinor)}`} disabled={busy} onClick={() => setTenders(tenders.filter((_, j) => j !== i))}>
-                    Remove
+                <span className="num">{money(tender.amountMinor)}</span>
+                {!tender.attemptId && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    aria-label={t("Remove {what} {amount}", { what: t(label(tender.kind)), amount: money(tender.amountMinor) })}
+                    disabled={busy}
+                    onClick={() => setTenders(tenders.filter((_, j) => j !== i))}
+                  >
+                    {t("Remove")}
                   </button>
                 )}
               </li>
@@ -306,14 +317,26 @@ export function PaymentPanel({
         {!method ? (
           <>
             <form onSubmit={addCash} className="cash-form">
-              <label>
-                Cash received ({cart.currencyCode}) · empty + Enter = exact
-                <input ref={cashInput} inputMode="decimal" aria-label="Cash received" value={cash} onChange={(e) => setCash(e.target.value)} disabled={busy || remaining === 0n} />
-              </label>
+              <label htmlFor="cash-received">{t("Cash received ({currency})", { currency: cart.currencyCode })}</label>
+              <p id="cash-hint" className="small field-hint">
+                {cashHintBefore}
+                <kbd>Enter</kbd>
+                {cashHintAfter}
+              </p>
+              <input
+                id="cash-received"
+                ref={cashInput}
+                inputMode="decimal"
+                aria-describedby="cash-hint"
+                placeholder="0.00"
+                value={cash}
+                onChange={(e) => setCash(e.target.value)}
+                disabled={busy || remaining === 0n}
+              />
               <div className="quick-cash">
                 <button type="button" disabled={busy || remaining === 0n} onClick={() => void complete([...tenders, { kind: "cash", amountMinor: remaining.toString(), reference: null }])}>
                   <Banknote />
-                  Exact {money(remaining)}
+                  {t("Exact {amount}", { amount: money(remaining) })}
                 </button>
                 {quickAmounts(remaining, exp).map((n) => (
                   <button key={n.toString()} type="button" className="secondary" disabled={busy} onClick={() => void complete([...tenders, { kind: "cash", amountMinor: n.toString(), reference: null }])}>
@@ -322,16 +345,16 @@ export function PaymentPanel({
                 ))}
               </div>
             </form>
-            <div className="methods" role="group" aria-label="Other payment methods">
+            <div className="methods" role="group" aria-label={t("Other payment methods")}>
               {terminal && exchange === null && (
                 <button type="button" disabled={busy || remaining === 0n} onClick={() => setMethod("terminal")}>
-                  Card (terminal)
+                  {t("Card (terminal)")}
                 </button>
               )}
               {METHODS.map((m) => (
                 <button key={m.kind} type="button" className="secondary" disabled={busy || remaining === 0n} onClick={() => setMethod(m.kind)}>
                   <m.icon />
-                  {m.label}
+                  {t(m.label)}
                 </button>
               ))}
             </div>
@@ -359,21 +382,25 @@ export function PaymentPanel({
             }}
           />
         ) : (
-          <form onSubmit={addExternal} className="external-form" aria-label={label(method)}>
-            <p className="small">Take the payment on the {method === "card_external" ? "card terminal" : "customer's device"} first, then record it here.</p>
+          <form onSubmit={addExternal} className="external-form" aria-label={t(label(method))}>
+            <p className="small">
+              {method === "card_external"
+                ? t("Take the payment on the card terminal first, then record it here.")
+                : t("Take the payment on the customer's device first, then record it here.")}
+            </p>
             <label>
-              Amount ({cart.currencyCode}) · empty = the rest, {money(remaining)}
+              {t("Amount ({currency}) · empty = the rest, {amount}", { currency: cart.currencyCode, amount: money(remaining) })}
               <input autoFocus inputMode="decimal" value={external.amount} onChange={(e) => setExternal({ ...external, amount: e.target.value })} />
             </label>
             <label>
-              Reference (optional: approval code or transfer ID, never a card number)
+              {t("Reference (optional: approval code or transfer ID, never a card number)")}
               <input value={external.reference} maxLength={64} autoComplete="off" onChange={(e) => setExternal({ ...external, reference: e.target.value })} />
             </label>
             <div className="actions">
               <button type="button" className="secondary" onClick={() => setMethod(null)}>
-                Back
+                {t("Back")}
               </button>
-              <button type="submit">Record {label(method)}</button>
+              <button type="submit">{t("Record {what}", { what: t(label(method)) })}</button>
             </div>
           </form>
         )}
@@ -385,16 +412,16 @@ export function PaymentPanel({
         )}
         <div className="actions">
           <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-            Back to cart <kbd>Esc</kbd>
+            {t("Back to cart")} <kbd>Esc</kbd>
           </button>
           {exchange && total === 0n ? (
             // The returned value covers the new items: nothing to pay, only a difference to give back.
             <button type="button" data-autofocus disabled={busy} onClick={() => void complete([])}>
-              {busy ? "Saving…" : "Complete exchange"}
+              {busy ? t("Saving…") : t("Complete exchange")}
             </button>
           ) : (
             <button type="button" disabled={busy || remaining > 0n || tenders.length === 0} onClick={() => void complete(tenders)}>
-              {busy ? "Saving…" : exchange ? "Complete exchange" : "Complete sale"}
+              {busy ? t("Saving…") : exchange ? t("Complete exchange") : t("Complete sale")}
             </button>
           )}
         </div>

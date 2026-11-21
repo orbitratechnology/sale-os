@@ -50,6 +50,7 @@ import type { ExchangeCredit } from "../returns/exchange";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
 import { scanHintText, useCart } from "./useCart";
+import { useT, type T } from "../../i18n";
 
 type Modal =
   | "goLive"
@@ -196,6 +197,7 @@ export function Checkout({
   }, [c.notice, noticeKind, errorSound]);
   const money = (minor: string) => formatMoney(minor, { exponent });
   const selectedLine = c.line(c.selected);
+  const t = useT();
 
   // Wedge scans: in scanner-ready mode, or typed into the code field.
   // Paused while a dialog owns the keyboard (approval PIN pad, reason, confirmations).
@@ -210,10 +212,10 @@ export function Checkout({
       if (d === "missing_suffix")
         c.setNotice({
           kind: "info",
-          text: "That looked like a scan, but the scanner did not end it with the key set in Settings → Scanner. Match the setting to the scanner, or set it to “none”.",
+          text: t("That looked like a scan, but the scanner did not end it with the key set in Settings → Scanner. Match the setting to the scanner, or set it to “none”."),
         });
       else if (d === "interrupted_scan")
-        c.setNotice({ kind: "info", text: "A scan was interrupted part-way and nothing was added. Scan the item again." });
+        c.setNotice({ kind: "info", text: t("A scan was interrupted part-way and nothing was added. Scan the item again.") });
     },
   );
 
@@ -240,7 +242,7 @@ export function Checkout({
       const attempt = async (approvalTokenId: string | null): Promise<boolean> => {
         const res = await commands.drawerOpen(reason, approvalTokenId);
         if (res.status === "ok") {
-          c.setNotice({ kind: "info", text: "Cash drawer opened." });
+          c.setNotice({ kind: "info", text: t("Cash drawer opened.") });
           return true;
         }
         if (res.error.code === "APPROVAL_REQUIRED" && res.error.details?.scope) {
@@ -252,7 +254,7 @@ export function Checkout({
       };
       return attempt(null);
     },
-    [c],
+    [c, t],
   );
 
   const lock = useCallback(async () => {
@@ -265,7 +267,7 @@ export function Checkout({
     if (field === "qty") {
       const milli = scaleDecimal(value, 3);
       if (milli === null || milli === "0") {
-        c.setNotice({ kind: "info", text: "Enter a quantity above zero. To take an item off, press Delete." });
+        c.setNotice({ kind: "info", text: t("Enter a quantity above zero. To take an item off, press Delete.") });
         return;
       }
       void c.setQuantity(lineId, milli);
@@ -273,10 +275,10 @@ export function Checkout({
       if (!value.trim()) return void c.setLineDiscount(lineId, null);
       const ppm = percentToPpm(value.replace("%", ""));
       if (ppm === null) {
-        c.setNotice({ kind: "info", text: "Enter the discount as a percentage, e.g. 10." });
+        c.setNotice({ kind: "info", text: t("Enter the discount as a percentage, e.g. 10.") });
         return;
       }
-      withReason(ppm, `Reason for ${ppmToPercent(ppm)}% off`, (reason) =>
+      withReason(ppm, t("Reason for {pct}% off", { pct: ppmToPercent(ppm) }), (reason) =>
         void c.setLineDiscount(lineId, { kind: "percent", ratePpm: ppm, reason }),
       );
     }
@@ -303,7 +305,7 @@ export function Checkout({
         case "F3":
           e.preventDefault();
           if (sel && c.line(sel)?.scaleLabel) {
-            c.setNotice({ kind: "info", text: "This item's weight or price comes from its scale label. Remove the line and scan the label again." });
+            c.setNotice({ kind: "info", text: t("This item's weight or price comes from its scale label. Remove the line and scan the label again.") });
           } else if (sel) setEditing({ lineId: sel, field: "qty" });
           return;
         case "F4":
@@ -370,7 +372,7 @@ export function Checkout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock]);
+  }, [active, c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock, t]);
 
   // Leaving the till closes what was open on it (adjusted while rendering, the React way to
   // reset state when a prop changes).
@@ -421,15 +423,17 @@ export function Checkout({
       {workspace.mode === "sandbox" && (
         <div className="sandbox-banner" role="note">
           <FlaskConical />
-          SANDBOX: practice mode. Sales here are excluded from reports.
+          <span>
+            <strong>{t("Practice mode")}</strong> {t("(sandbox): sales made here are not counted in reports.")}
+          </span>
           {onWentLive && (
             <>
               {" "}
               <button type="button" className="link" onClick={() => setModal("start")}>
-                Getting started
+                {t("Getting started")}
               </button>{" "}
               <button type="button" className="link" onClick={() => setModal("goLive")}>
-                Go live…
+                {t("Go live…")}
               </button>
             </>
           )}
@@ -447,69 +451,75 @@ export function Checkout({
             </span>
           </span>
         </div>
-        <nav className="screen-nav" aria-label="Screens">
+        <nav className="screen-nav" aria-label={t("Screens")}>
           <button type="button" onClick={onProducts}>
             <Package />
-            Products <kbd>F6</kbd>
+            {t("Products")} <kbd>F6</kbd>
           </button>
           <button type="button" onClick={onSales}>
             <ReceiptText />
-            Sales <kbd>F8</kbd>
+            {t("Sales")} <kbd>F8</kbd>
           </button>
           <button type="button" onClick={onReturns}>
             <Undo2 />
-            Returns <kbd>F7</kbd>
+            {t("Returns")} <kbd>F7</kbd>
           </button>
           <button type="button" onClick={onDrawer}>
             <Banknote />
-            Drawer <kbd>F10</kbd>
+            {t("Drawer")} <kbd>F10</kbd>
           </button>
           <button
             type="button"
-            onClick={() => setModal({ reason: "Why open the cash drawer without a sale?", then: (r) => void noSale(r.trim()) })}
+            onClick={() => setModal({ reason: t("Why open the cash drawer without a sale?"), then: (r) => void noSale(r.trim()) })}
           >
             <LockOpen />
-            No sale
+            {t("No sale")}
           </button>
           {onStock && (
             <button type="button" onClick={onStock}>
               <Boxes />
-              Stock <kbd>F11</kbd>
+              {t("Stock")} <kbd>F11</kbd>
             </button>
           )}
           {onReports && (
             <button type="button" onClick={onReports}>
               <ChartColumn />
-              Reports
+              {t("Reports")}
             </button>
           )}
           {onSettings && (
             <button type="button" onClick={() => onSettings()}>
               <Settings />
-              Settings
+              {t("Settings")}
             </button>
           )}
         </nav>
         <button type="button" className="secondary lock" onClick={() => void lock()}>
           <Lock />
-          Lock <kbd>F12</kbd>
+          {t("Lock")} <kbd>F12</kbd>
         </button>
       </div>
       </header>
       <main className="till-main">
-      <h1 className="visually-hidden">Till</h1>
+      <h1 className="visually-hidden">{t("Till")}</h1>
       {/* Arrow keys move the selected line without moving focus (the page keeps it for the
           scanner): say which line is selected, for screen-reader users. */}
       <p className="visually-hidden" aria-live="polite" data-testid="selected-line">
-        {selectedLine ? `Selected: ${selectedLine.name}, quantity ${formatMilli(selectedLine.quantityMilli)}, ${money(selectedLine.totalMinor)}` : ""}
+        {selectedLine
+          ? t("Selected: {name}, quantity {qty}, {total}", {
+              name: selectedLine.name,
+              qty: formatMilli(selectedLine.quantityMilli),
+              total: money(selectedLine.totalMinor),
+            })
+          : ""}
       </p>
-      <section className="entry" aria-label="Add items">
+      <section className="entry" aria-label={t("Add items")}>
         <form onSubmit={submitCode} className="code-form">
           <ScanBarcode />
           <input
             data-scan-field
-            aria-label="Scan or type a code"
-            placeholder="Scan or type a code, then Enter"
+            aria-label={t("Scan or type a code")}
+            placeholder={t("Scan or type a code")}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             autoComplete="off"
@@ -518,11 +528,11 @@ export function Checkout({
         <SearchPanel ref={search} exponent={exponent} onPick={(hit) => void c.addVariant(hit.variantId)} />
         <button type="button" className="secondary quick-open" onClick={() => setModal("quick")}>
           <LayoutGrid />
-          Quick items <kbd>⇧F2</kbd>
+          {t("Quick items")} <kbd>⇧F2</kbd>
         </button>
       </section>
 
-      <section className="cart-area" aria-label="Cart lines">
+      <section className="cart-area" aria-label={t("Cart lines")}>
         {cart && (
           <CartTable
             cart={cart}
@@ -537,77 +547,77 @@ export function Checkout({
       </section>
       </main>
 
-      <aside className="side" aria-label="Totals and actions">
+      <aside className="side" aria-label={t("Totals and actions")}>
         {cart && (
           <dl className="totals">
-            <dt>Subtotal</dt>
+            <dt>{t("Subtotal")}</dt>
             <dd>{money(cart.subtotalMinor)}</dd>
             {cart.lineDiscountTotalMinor !== "0" && (
               <>
-                <dt>Line discounts</dt>
+                <dt>{t("Line discounts")}</dt>
                 <dd>-{money(cart.lineDiscountTotalMinor)}</dd>
               </>
             )}
             {cart.orderDiscountTotalMinor !== "0" && (
               <>
-                <dt>Order discount</dt>
+                <dt>{t("Order discount")}</dt>
                 <dd>-{money(cart.orderDiscountTotalMinor)}</dd>
               </>
             )}
-            {cart.taxBreakdown.map((t) => (
-              <TaxRow key={t.name} name={t.name} amount={money(t.taxMinor)} included={cart.taxMode === "inclusive"} />
+            {cart.taxBreakdown.map((tax) => (
+              <TaxRow key={tax.name} name={tax.name} amount={money(tax.taxMinor)} included={cart.taxMode === "inclusive"} t={t} />
             ))}
           </dl>
         )}
         <div className="total-due" aria-live="polite">
-          <span className="total-label">Total due {cart?.currencyCode}</span>
+          <span className="total-label">{t("Total due {currency}", { currency: cart?.currencyCode ?? "" })}</span>
           <output className="total-amount" data-testid="total">
             {cart ? money(cart.totalMinor) : ""}
           </output>
         </div>
         <div className="action-group" role="group" aria-labelledby="line-actions">
-          <h2 id="line-actions">This line</h2>
+          <h2 id="line-actions">{t("This line")}</h2>
           <div className="actions-grid">
             <button type="button" className="secondary" disabled={!selectedLine || !!selectedLine.scaleLabel} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "qty" })}>
               <Hash />
-              Quantity <kbd>F3</kbd>
+              {t("Quantity")} <kbd>F3</kbd>
             </button>
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "discount" })}>
               <Percent />
-              Discount <kbd>F4</kbd>
+              {t("Discount")} <kbd>F4</kbd>
             </button>
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => setModal("price")}>
               <Tag />
-              Change price
+              {t("Change price")}
             </button>
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && void c.removeLine(c.selected)}>
               <Trash />
-              Remove <kbd>Del</kbd>
+              {t("Remove")} <kbd>Del</kbd>
             </button>
           </div>
         </div>
         <div className="action-group" role="group" aria-labelledby="sale-actions">
-          <h2 id="sale-actions">This sale</h2>
+          <h2 id="sale-actions">{t("This sale")}</h2>
           <div className="actions-grid">
             <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("orderDiscount")}>
               <BadgePercent />
-              Order discount
+              {t("Order discount")}
             </button>
             <button type="button" className="secondary" disabled={!hasLines} onClick={() => setModal("park")}>
               <CirclePause />
-              Park <kbd>F5</kbd>
+              {t("Park")} <kbd>F5</kbd>
             </button>
             <button type="button" className="secondary wide" onClick={() => setModal("parked")}>
               <ClipboardList />
-              Parked ({parkedCount}) <kbd>⇧F5</kbd>
+              {t("Parked ({n})", { n: parkedCount })} <kbd>⇧F5</kbd>
             </button>
             <button type="button" className="secondary quiet-danger" disabled={!hasLines} onClick={() => setModal("clear")}>
               <ListX />
-              Clear cart
+              {t("Clear cart")}
             </button>
             <button type="button" className="secondary quiet-danger" disabled={!hasLines} onClick={() => setModal("void")}>
               <Ban />
-              Void sale
+              {t("Void sale")}
             </button>
           </div>
         </div>
@@ -615,19 +625,24 @@ export function Checkout({
           <div className="exchange-banner" role="status" data-testid="exchange-banner">
             <ArrowRightLeft />
             <p>
-              <strong>Exchange</strong> · {exchange.items} from <span className="mono">{exchange.receiptNumber}</span>
+              <strong>{t("Exchange")}</strong> · {t("{items} from", { items: exchange.items })} <span className="mono">{exchange.receiptNumber}</span>
               <br />
-              Credit <strong>{formatMoney(exchange.creditMinor, { exponent: workspace.currencyExponent })}</strong> towards the new items
+              {t("Credit {amount} towards the new items", {
+                amount: formatMoney(exchange.creditMinor, { exponent: workspace.currencyExponent }),
+              })}
             </p>
             <button type="button" className="link" onClick={onExchangeEnd}>
-              Cancel exchange
+              {t("Cancel exchange")}
             </button>
           </div>
         )}
         {drawerNeeded && (
           <p role="status" className="drawer-needed">
             <TriangleExclamationPoint />
-            Open the cash drawer before selling. <button type="button" className="link" onClick={onDrawer}>Open drawer (F10)</button>
+            {t("Open the cash drawer before selling.")}{" "}
+            <button type="button" className="link" onClick={onDrawer}>
+              {t("Open drawer (F10)")}
+            </button>
           </p>
         )}
         <Notice
@@ -650,7 +665,7 @@ export function Checkout({
         />
         <button type="button" className="pay" disabled={!hasLines} onClick={() => setModal("pay")}>
           {exchange ? <ArrowRightLeft /> : <Wallet />}
-          {exchange ? "Settle exchange" : "Pay"} <kbd>F9</kbd>
+          {exchange ? t("Settle exchange") : t("Pay")} <kbd>F9</kbd>
         </button>
       </aside>
 
@@ -680,8 +695,8 @@ export function Checkout({
       )}
       {shown === "clear" && (
         <Dialog
-          title="Clear the cart?"
-          confirmLabel="Clear cart"
+          title={t("Clear the cart?")}
+          confirmLabel={t("Clear cart")}
           danger
           onCancel={() => setModal(null)}
           onConfirm={() => {
@@ -689,29 +704,29 @@ export function Checkout({
             void c.clear();
           }}
         >
-          <p>All {cart?.lines.length} lines will be removed.</p>
+          <p>{t("All {n} lines will be removed.", { n: cart?.lines.length ?? 0 })}</p>
         </Dialog>
       )}
       {shown === "void" && (
         <Dialog
-          title="Void this sale?"
-          confirmLabel="Void sale"
+          title={t("Void this sale?")}
+          confirmLabel={t("Void sale")}
           danger
-          input={{ label: "Reason" }}
+          input={{ label: t("Reason") }}
           onCancel={() => setModal(null)}
           onConfirm={(reason) => {
             setModal(null);
             void c.void(reason.trim());
           }}
         >
-          <p>The cart is closed and kept for the audit trail. A new, empty cart opens.</p>
+          <p>{t("The cart is closed and kept for the audit trail. A new, empty cart opens.")}</p>
         </Dialog>
       )}
       {shown === "park" && (
         <Dialog
-          title="Park this cart?"
-          confirmLabel="Park"
-          input={{ label: "Label, to find it again (optional)", optional: true, maxLength: 40 }}
+          title={t("Park this cart?")}
+          confirmLabel={t("Park")}
+          input={{ label: t("Label, to find it again (optional)"), optional: true, maxLength: 40 }}
           onCancel={() => setModal(null)}
           onConfirm={(label) => {
             setModal(null);
@@ -719,8 +734,10 @@ export function Checkout({
           }}
         >
           <p>
-            The {cart?.lines.length} {cart?.lines.length === 1 ? "line is" : "lines are"} set aside and an empty cart opens for
-            the next customer. Resume it from Parked (<kbd>⇧F5</kbd>); prices are checked again then.
+            {cart?.lines.length === 1
+              ? t("The 1 line is set aside and an empty cart opens for the next customer.")
+              : t("The {n} lines are set aside and an empty cart opens for the next customer.", { n: cart?.lines.length ?? 0 })}{" "}
+            {t("Resume it from Parked (⇧F5); prices are checked again then.")}
           </p>
         </Dialog>
       )}
@@ -781,16 +798,16 @@ export function Checkout({
       )}
       {shown === "orderDiscount" && (
         <Dialog
-          title="Order discount"
-          confirmLabel="Apply"
-          input={{ label: "Discount % (0 removes it)", inputMode: "decimal" }}
+          title={t("Order discount")}
+          confirmLabel={t("Apply")}
+          input={{ label: t("Discount % (0 removes it)"), inputMode: "decimal" }}
           onCancel={() => setModal(null)}
           onConfirm={(value) => {
             setModal(null);
             const ppm = percentToPpm(value.replace("%", ""));
-            if (ppm === null) return c.setNotice({ kind: "info", text: "Enter the discount as a percentage, e.g. 10." });
+            if (ppm === null) return c.setNotice({ kind: "info", text: t("Enter the discount as a percentage, e.g. 10.") });
             if (ppm === 0) return void c.setOrderDiscount(null);
-            withReason(ppm, `Reason for ${ppmToPercent(ppm)}% off the order`, (reason) =>
+            withReason(ppm, t("Reason for {pct}% off the order", { pct: ppmToPercent(ppm) }), (reason) =>
               void c.setOrderDiscount({ kind: "percent", ratePpm: ppm, reason }),
             );
           }}
@@ -798,24 +815,31 @@ export function Checkout({
       )}
       {shown === "price" && selectedLine && (
         <Dialog
-          title={`New price for ${selectedLine.name}`}
-          confirmLabel="Change price"
-          input={{ label: `Unit price (${cart?.currencyCode ?? ""})`, initial: money(selectedLine.unitPriceMinor).replace(/,/g, ""), inputMode: "decimal" }}
+          title={t("New price for {name}", { name: selectedLine.name })}
+          confirmLabel={t("Change price")}
+          input={{
+            label: t("Unit price ({currency})", { currency: cart?.currencyCode ?? "" }),
+            initial: money(selectedLine.unitPriceMinor).replace(/,/g, ""),
+            inputMode: "decimal",
+          }}
           onCancel={() => setModal(null)}
           onConfirm={(value) => {
             setModal(null);
             const minor = scaleDecimal(value, exponent);
-            if (minor === null) return c.setNotice({ kind: "info", text: "Enter a price like 1.20." });
+            if (minor === null) return c.setNotice({ kind: "info", text: t("Enter a price like 1.20.") });
             const lineId = selectedLine.lineId;
-            setModal({ reason: `Reason for changing the price of ${selectedLine.name}`, then: (r) => void c.overridePrice(lineId, minor, r.trim()) });
+            setModal({
+              reason: t("Reason for changing the price of {name}", { name: selectedLine.name }),
+              then: (r) => void c.overridePrice(lineId, minor, r.trim()),
+            });
           }}
         />
       )}
       {shown !== null && typeof shown === "object" && (
         <Dialog
           title={shown.reason}
-          confirmLabel="Continue"
-          input={{ label: "Reason (kept in the audit log)" }}
+          confirmLabel={t("Continue")}
+          input={{ label: t("Reason (kept in the audit log)") }}
           onCancel={() => setModal(null)}
           onConfirm={(reason) => {
             setModal(null);
@@ -839,13 +863,10 @@ export function Checkout({
   );
 }
 
-function TaxRow({ name, amount, included }: { name: string; amount: string; included: boolean }) {
+function TaxRow({ name, amount, included, t }: { name: string; amount: string; included: boolean; t: T }) {
   return (
     <>
-      <dt>
-        {name}
-        {included ? " (included)" : ""}
-      </dt>
+      <dt>{included ? t("{tax} (included)", { tax: name }) : name}</dt>
       <dd>{amount}</dd>
     </>
   );
@@ -865,6 +886,7 @@ function Notice({
   onAskManager: ((barcode: string) => void) | null;
 }) {
   const n = c.notice;
+  const t = useT();
   if (!n) return <div className="notice-slot" aria-live="assertive" />;
   return (
     <div className="notice-slot" aria-live="assertive">
@@ -874,10 +896,10 @@ function Notice({
             <p>
               <PackageSearch />
               <span>
-                No product with code <strong className="mono">{n.code}</strong>.
+                {t("No product with code")} <strong className="mono">{n.code}</strong>.
               </span>
             </p>
-            {n.hint && <p className="small">{scanHintText(n.hint)}</p>}
+            {n.hint && <p className="small">{scanHintText(n.hint, t)}</p>}
             <button
               type="button"
               className="secondary"
@@ -886,15 +908,15 @@ function Notice({
                 onSearch(n.code);
               }}
             >
-              Search for it
+              {t("Search for it")}
             </button>
             {onCreate ? (
               <button type="button" className="secondary" onClick={() => onCreate(n.code)}>
-                Create product
+                {t("Create product")}
               </button>
             ) : onAskManager ? (
               <button type="button" className="secondary" onClick={() => onAskManager(n.code)}>
-                Ask a manager
+                {t("Ask a manager")}
               </button>
             ) : null}
           </>
@@ -903,7 +925,7 @@ function Notice({
           <p>
             <CircleExclamationPoint />
             <span>
-              {describeError(n.error)} <span className="mono small">ref {n.error.correlationId.slice(-8)}</span>
+              {describeError(n.error)} <span className="mono small">{t("ref")} {n.error.correlationId.slice(-8)}</span>
             </span>
           </p>
         )}

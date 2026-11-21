@@ -1,43 +1,46 @@
 import type { SyncStatusDto } from "../../ipc/bindings";
+import { currentLanguage, translate, type T } from "../../i18n";
 
 /** The status bar's sync words (E17-T09, PRD §5.1). */
-export function indicatorText(s: SyncStatusDto): string {
+export function indicatorText(s: SyncStatusDto, t: T = (e, v) => translate(currentLanguage(), e, v)): string {
   const pending = s.pending;
   switch (s.indicator) {
     case "synced":
       return s.lastPushOkAt
-        ? `Synced (last at ${new Date(s.lastPushOkAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })})`
-        : "Synced";
+        ? t("Synced (last at {time})", {
+            time: new Date(s.lastPushOkAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+          })
+        : t("Synced");
     case "pending":
-      return `Sync pending (${pending})`;
+      return t("Sync pending ({n})", { n: pending });
     case "offline":
-      return `Offline (${pending} pending)`;
+      return t("Offline ({n} pending)", { n: pending });
     case "attention": {
       const parts = [];
-      if (s.conflicts > 0) parts.push(`${s.conflicts} conflict${s.conflicts === 1 ? "" : "s"}`);
-      if (s.rejected > 0) parts.push(`${s.rejected} refused`);
-      return `Attention needed${parts.length ? ` (${parts.join(", ")})` : ""}`;
+      if (s.conflicts > 0) parts.push(s.conflicts === 1 ? t("1 conflict") : t("{n} conflicts", { n: s.conflicts }));
+      if (s.rejected > 0) parts.push(t("{n} refused", { n: s.rejected }));
+      return parts.length ? t("Attention needed ({what})", { what: parts.join(", ") }) : t("Attention needed");
     }
     case "revoked":
-      return "Device revoked · saved on this computer";
+      return t("Device revoked · saved on this computer");
     case "update_required":
-      return "Update required · saved on this computer";
+      return t("Update required · saved on this computer");
     default:
-      return "Not linked · saved on this computer";
+      return t("Not linked · saved on this computer");
   }
 }
 
 /** A sale's mark (AT-13). */
-export function saleSyncText(state: string | null | undefined): string {
+export function saleSyncText(state: string | null | undefined, t: T = (e, v) => translate(currentLanguage(), e, v)): string {
   switch (state) {
     case "synced":
-      return "Synced";
+      return t("Synced");
     case "pending":
-      return "Saved on this device · Sync pending";
+      return t("Saved on this device · Sync pending");
     case "attention":
-      return "Saved on this device · The cloud refused it: see Settings → Cloud";
+      return t("Saved on this device · The cloud refused it: see Settings → Cloud");
     default:
-      return "Saved on this device · Not linked to the cloud";
+      return t("Saved on this device · Not linked to the cloud");
   }
 }
 

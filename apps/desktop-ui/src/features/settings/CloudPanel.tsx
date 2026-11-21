@@ -3,6 +3,9 @@ import { commands, type IpcError } from "../../ipc";
 import type { LinkOptionsDto, RepairQueueDto, SyncStatusDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { indicatorText, refusalText } from "../sync/syncText";
+import { SectionTitle } from "../../ui/PanelHeader";
+import { Dialog } from "../checkout/Dialog";
+import { CloudOff, Link, Lock, RefreshCw, TriangleExclamationPoint } from "../../ui/icons";
 
 function when(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleString() : "not yet";
@@ -90,8 +93,10 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
   if (!status) return <p aria-busy="true">Loading…</p>;
   if (!status.cloudConfigured) {
     return (
-      <div>
-        <h2>Cloud</h2>
+      <div className="empty-state">
+        <span className="empty-icon">
+          <CloudOff />
+        </span>
         <p>No cloud is set up for this app, so this till works on its own. Everything stays on this computer.</p>
       </div>
     );
@@ -99,8 +104,7 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
 
   const linked = status.linkState === "linked";
   return (
-    <div>
-      <h2>Cloud</h2>
+    <div className="panel-stack">
       {status.linkState === "revoked" && (
         <p role="alert">
           This register was disconnected by the owner. Sales continue on this till and are kept here; link it again to
@@ -129,10 +133,11 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         <p role="alert">This computer's clock is more than 10 minutes off. Correct the date and time.</p>
       )}
       {linked && (
-        <p>
+        <p className="button-row">
           <button type="button" onClick={() => void commands.syncRetryNow().then(load)}>
+            <RefreshCw />
             Send now
-          </button>{" "}
+          </button>
           <button type="button" className="secondary" onClick={() => void exportSupport()}>
             Export for support
           </button>
@@ -141,7 +146,7 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
       {exported && <p role="status">{exported}</p>}
       {queue && queue.events.length > 0 && (
         <section aria-label="Refused by the cloud">
-          <h3>Refused by the cloud</h3>
+          <SectionTitle icon={TriangleExclamationPoint}>Refused by the cloud</SectionTitle>
           <ul className="repair-queue">
             {queue.events.map((e) => (
               <li key={e.eventId}>
@@ -165,7 +170,7 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
       )}
       {queue && queue.conflicts.length > 0 && (
         <section aria-label="Conflicts">
-          <h3>Conflicts</h3>
+          <SectionTitle icon={TriangleExclamationPoint}>Conflicts</SectionTitle>
           <p>
             These were changed here and in the cloud at the same time. The cloud kept its version; settling them comes
             with the conflict screen.
@@ -185,7 +190,12 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         </p>
       )}
       {!linked && !options && (
-        <form onSubmit={(e) => void signIn(e)} aria-label="Cloud sign-in" noValidate>
+        <form onSubmit={(e) => void signIn(e)} aria-label="Cloud sign-in" noValidate className="stack-form">
+          <SectionTitle icon={Lock}>Sign in to your cloud account</SectionTitle>
+          <p className="small">
+            Linking sends this till's sales, products and stock to your online account, and keeps them in step with your other
+            tills. Selling never waits for the internet.
+          </p>
           <label>
             Cloud account email
             <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -195,13 +205,14 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
             <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
           <button type="submit" disabled={busy || !email.trim() || !password}>
+            <Link />
             Sign in to link
           </button>
         </form>
       )}
       {options && !joining && (
         <section aria-label="Link this till">
-          <h3>Create</h3>
+          <h3>Create a new cloud business</h3>
           <p>Use this till's business, products and staff as the cloud business. Nothing here changes.</p>
           <button type="button" disabled={busy} onClick={() => void complete("create", null, false)}>
             {options.ownBusinessInCloud ? "Finish linking this till's business" : "Create the cloud business from this till"}
@@ -214,7 +225,7 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
               </button>
             </p>
           )}
-          <h3>Join</h3>
+          <h3>Or join an existing one</h3>
           {!options.mayJoin && (
             <p id="join-blocked">
               Joining replaces this till's data with the other business's, so it is only possible before this till has live
@@ -240,18 +251,21 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         </section>
       )}
       {joining && (
-        <div role="alertdialog" aria-label="Join a business">
+        <Dialog
+          title="Join a business"
+          alert
+          safeFocus
+          danger
+          confirmLabel={`Join ${joining.name}`}
+          confirmDisabled={busy}
+          onConfirm={() => void complete("join", joining.businessId, false)}
+          onCancel={() => setJoining(null)}
+        >
           <p>
             Joining replaces everything on this till with {joining.name}'s products, settings and staff. Its first sale gets
             its own register number.
           </p>
-          <button type="button" disabled={busy} onClick={() => void complete("join", joining.businessId, false)}>
-            Join {joining.name}
-          </button>{" "}
-          <button type="button" className="secondary" disabled={busy} onClick={() => setJoining(null)}>
-            Cancel
-          </button>
-        </div>
+        </Dialog>
       )}
     </div>
   );

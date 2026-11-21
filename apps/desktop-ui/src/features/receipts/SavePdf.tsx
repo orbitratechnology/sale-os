@@ -5,6 +5,7 @@ import { useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { PdfPaperDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 /**
  * Save a receipt as a PDF (E13-T04): no printer needed. Rust renders the stored receipt,
@@ -20,6 +21,7 @@ export function SavePdf({
   /** The sale whose tax invoice to save (D-02), instead of a receipt. */
   taxInvoiceOf?: string;
 }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
@@ -37,14 +39,20 @@ export function SavePdf({
     <div className="print-controls" aria-live="polite">
       <button type="button" className="secondary" disabled={busy} onClick={() => void save("receipt")}>
         <FileDown />
-        Save as PDF
+        {t("Save as PDF")}
       </button>
       <button type="button" className="secondary" disabled={busy} onClick={() => void save("a4")}>
         <FileDown />
-        Save A4 PDF
+        {t("Save A4 PDF")}
       </button>
       <span className="small" data-testid="pdf-status">
-        {busy ? "Saving…" : error ? <span role="alert">The PDF was not saved: {describeError(error)}</span> : saved ? `Saved ${saved}.` : null}
+        {busy ? (
+          t("Saving…")
+        ) : error ? (
+          <span role="alert">{t("The PDF was not saved: {why}", { why: describeError(error) })}</span>
+        ) : saved ? (
+          t("Saved {file}.", { file: saved })
+        ) : null}
       </span>
     </div>
   );

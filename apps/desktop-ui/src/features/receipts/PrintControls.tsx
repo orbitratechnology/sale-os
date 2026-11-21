@@ -7,6 +7,7 @@ import type { PrintJobDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { printReceipt, type ReceiptSource } from "./ReceiptPreview";
 import { SavePdf } from "./SavePdf";
+import { useT } from "../../i18n";
 
 const FAILURE: Record<string, string> = {
   paper_out: "The printer is out of paper. Load paper, then try again.",
@@ -21,6 +22,7 @@ const FAILURE: Record<string, string> = {
  * "not printed" prints a copy marked REPRINT. Nothing here can affect the sale.
  */
 export function PrintControls({ source, autoPrint }: { source: ReceiptSource; autoPrint: boolean }) {
+  const t = useT();
   const [job, setJob] = useState<PrintJobDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<IpcError | null>(null);
@@ -47,28 +49,28 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
   }, [autoPrint]);
 
   const status = (() => {
-    if (busy) return <span>Printing…</span>;
+    if (busy) return <span>{t("Printing…")}</span>;
     if (error) return <span role="alert">{describeError(error)}</span>;
     if (!job) return null;
-    if (job.status === "completed") return <span>{job.reprint ? "Reprint printed." : "Printed."}</span>;
+    if (job.status === "completed") return <span>{job.reprint ? t("Reprint printed.") : t("Printed.")}</span>;
     if (job.status === "failed")
       return (
         <span role="alert">
-          {FAILURE[job.errorCode ?? "rejected"] ?? FAILURE.rejected}{" "}
+          {t(FAILURE[job.errorCode ?? "rejected"] ?? FAILURE.rejected ?? "")}{" "}
           <button type="button" className="secondary" onClick={() => void run(() => commands.printJobRetry(job.jobId))}>
-            Try again
+            {t("Try again")}
           </button>
         </span>
       );
     if (job.status === "unknown")
       return (
         <span role="alert">
-          Print status unknown — did it print?{" "}
+          {t("Print status unknown — did it print?")}{" "}
           <button type="button" className="secondary" onClick={() => void run(() => commands.printJobResolve(job.jobId, true))}>
-            Printed
+            {t("Printed")}
           </button>{" "}
           <button type="button" className="secondary" onClick={() => void run(() => commands.printJobResolve(job.jobId, false))}>
-            Not printed — reprint
+            {t("Not printed — reprint")}
           </button>
         </span>
       );
@@ -80,7 +82,7 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
       <div className="print-controls" aria-live="polite">
         <button type="button" className="secondary" disabled={busy} onClick={() => void run(print)}>
           <Printer />
-          {job ? "Print another copy" : "Print receipt"}
+          {job ? t("Print another copy") : t("Print receipt")}
         </button>
         <span className="small" data-testid="print-status">
           {status}

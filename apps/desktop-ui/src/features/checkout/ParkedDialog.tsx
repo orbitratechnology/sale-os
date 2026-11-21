@@ -5,6 +5,7 @@ import type { ParkedCartDto } from "../../ipc/bindings";
 import { formatMoney } from "../../lib/money";
 import { describeError } from "../shell/errors";
 import type { PendingApproval } from "./useCart";
+import { useT } from "../../i18n";
 
 function parkedTime(iso: string): string {
   const d = new Date(iso);
@@ -36,6 +37,7 @@ export function ParkedDialog({
   /** Another dialog (the approval PIN pad) owns the keyboard. */
   paused: boolean;
 }) {
+  const t = useT();
   const [list, setList] = useState<ParkedCartDto[] | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [selected, setSelected] = useState(0);
@@ -68,7 +70,7 @@ export function ParkedDialog({
     if (res.error.code === "APPROVAL_REQUIRED" && scope) {
       onApproval({
         scope: { permission: scope.permission, entityId: scope.entityId, maxPpm: scope.maxPpm ?? null },
-        retry: (t) => discard(cart, why, t),
+        retry: (token) => discard(cart, why, token),
       });
       return false;
     }
@@ -110,45 +112,45 @@ export function ParkedDialog({
   }, [list, selected, canResume, discarding, paused, onClose, onResume]);
 
   return (
-    <Modal label="Parked carts" className="wide" focusSelf>
-        <h2>Parked carts</h2>
+    <Modal label={t("Parked carts")} className="wide" focusSelf>
+        <h2>{t("Parked carts")}</h2>
         {error && (
           <p role="alert" className="field-error">
             {describeError(error)}
           </p>
         )}
-        {!canResume && <p className="small">Park or finish the current sale to resume one of these.</p>}
-        {list === null && !error && <p aria-busy="true">Loading…</p>}
-        {list?.length === 0 && <p>No carts are parked on this till.</p>}
+        {!canResume && <p className="small">{t("Park or finish the current sale to resume one of these.")}</p>}
+        {list === null && !error && <p aria-busy="true">{t("Loading…")}</p>}
+        {list?.length === 0 && <p>{t("No carts are parked on this till.")}</p>}
         {list && list.length > 0 && (
-          <table className="sales-table" aria-label="Parked carts">
+          <table className="sales-table" aria-label={t("Parked carts")}>
             <thead>
               <tr>
-                <th scope="col">Cart</th>
-                <th scope="col">Parked</th>
-                <th scope="col">By</th>
+                <th scope="col">{t("Cart")}</th>
+                <th scope="col">{t("Parked")}</th>
+                <th scope="col">{t("By")}</th>
                 <th scope="col" className="num">
-                  Items
+                  {t("Items")}
                 </th>
                 <th scope="col" className="num">
-                  Total now
+                  {t("Total now")}
                 </th>
                 <th scope="col">
-                  <span className="visually-hidden">Actions</span>
+                  <span className="visually-hidden">{t("Actions")}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {list.map((p, i) => (
                 <tr key={p.cartId} data-testid="parked-row" aria-selected={i === selected} className={i === selected ? "selected" : undefined} onClick={() => setSelected(i)}>
-                  <th scope="row">{p.label ?? `Cart ${i + 1}`}</th>
+                  <th scope="row">{p.label ?? t("Cart {n}", { n: i + 1 })}</th>
                   <td>{parkedTime(p.parkedAt)}</td>
                   <td>{p.parkedByName}</td>
                   <td className="num">{p.lines}</td>
                   <td className="num">{formatMoney(p.totalMinor, { exponent })}</td>
                   <td>
                     <button type="button" disabled={!canResume} onClick={() => onResume(p.cartId)}>
-                      Resume
+                      {t("Resume")}
                     </button>{" "}
                     <button
                       type="button"
@@ -158,7 +160,7 @@ export function ParkedDialog({
                         setDiscarding(p);
                       }}
                     >
-                      Discard…
+                      {t("Discard…")}
                     </button>
                   </td>
                 </tr>
@@ -169,33 +171,35 @@ export function ParkedDialog({
         {discarding && (
           <form
             role="group"
-            aria-label="Discard a parked cart"
+            aria-label={t("Discard a parked cart")}
             onSubmit={(e) => {
               e.preventDefault();
               if (reason.trim()) void discard(discarding, reason.trim(), null);
             }}
           >
             <p>
-              Discard <strong>{discarding.label ?? "this cart"}</strong> ({discarding.lines}{" "}
-              {discarding.lines === 1 ? "item" : "items"})? It is voided and kept for the audit trail.
+              {t("Discard {cart} ({items})? It is voided and kept for the audit trail.", {
+                cart: discarding.label ?? t("this cart"),
+                items: discarding.lines === 1 ? t("1 item") : t("{n} items", { n: discarding.lines }),
+              })}
             </p>
             <label>
-              Reason
+              {t("Reason")}
               <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)} />
             </label>
             <div className="actions">
               <button type="button" className="secondary" onClick={() => setDiscarding(null)}>
-                Keep it
+                {t("Keep it")}
               </button>
               <button type="submit" className="danger" disabled={!reason.trim()}>
-                Discard cart
+                {t("Discard cart")}
               </button>
             </div>
           </form>
         )}
         <div className="actions">
           <button type="button" className="secondary" onClick={onClose}>
-            Close
+            {t("Close")}
           </button>
         </div>
     </Modal>
