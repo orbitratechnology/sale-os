@@ -101,7 +101,7 @@ export function TaxesPanel() {
               <td>{r.from ?? "always"}</td>
               <td>{r.to ?? "no end"}</td>
               <td className="row-actions">
-                <button type="button" className="link" onClick={() => edit(r)}>
+                <button type="button" className="link" aria-label={`Edit ${r.name}`} onClick={() => edit(r)}>
                   Edit
                 </button>{" "}
                 <button

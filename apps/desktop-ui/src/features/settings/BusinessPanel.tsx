@@ -128,7 +128,7 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
       id,
       value: draft[key],
       "aria-invalid": invalid || undefined,
-      "aria-describedby": invalid ? `${id}-error` : undefined,
+      "aria-describedby": [HELP[key] ? `${id}-help` : "", invalid ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined,
       onChange: (e: { target: { value: string } }) => {
         setSaved(false);
         setDraft({ ...draft, [key]: e.target.value });
@@ -140,10 +140,14 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
         <span className="icon-tile sm" aria-hidden="true">
           <Icon />
         </span>
-        <label htmlFor={id}>
-          <strong>{LABELS[key]}</strong>
-          {HELP[key] && <span className="small">{HELP[key]}</span>}
-        </label>
+        <div className="setting-text">
+          <label htmlFor={id}>{LABELS[key]}</label>
+          {HELP[key] && (
+            <span id={`${id}-help`} className="small">
+              {HELP[key]}
+            </span>
+          )}
+        </div>
         <div className="setting-control">
           {key === "addressLines" ? <textarea rows={4} {...common} /> : <input type={key === "email" ? "email" : "text"} {...common} />}
           {invalid && (

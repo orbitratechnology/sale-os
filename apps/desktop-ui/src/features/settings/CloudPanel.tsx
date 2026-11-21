@@ -4,6 +4,7 @@ import type { LinkOptionsDto, RepairQueueDto, SyncStatusDto } from "../../ipc/bi
 import { describeError } from "../shell/errors";
 import { indicatorText, refusalText } from "../sync/syncText";
 import { SectionTitle } from "../../ui/PanelHeader";
+import { Dialog } from "../checkout/Dialog";
 import { CloudOff, Link, Lock, RefreshCw, TriangleExclamationPoint } from "../../ui/icons";
 
 function when(iso: string | null | undefined): string {
@@ -250,18 +251,21 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         </section>
       )}
       {joining && (
-        <div role="alertdialog" aria-label="Join a business">
+        <Dialog
+          title="Join a business"
+          alert
+          safeFocus
+          danger
+          confirmLabel={`Join ${joining.name}`}
+          confirmDisabled={busy}
+          onConfirm={() => void complete("join", joining.businessId, false)}
+          onCancel={() => setJoining(null)}
+        >
           <p>
             Joining replaces everything on this till with {joining.name}'s products, settings and staff. Its first sale gets
             its own register number.
           </p>
-          <button type="button" disabled={busy} onClick={() => void complete("join", joining.businessId, false)}>
-            Join {joining.name}
-          </button>{" "}
-          <button type="button" className="secondary" disabled={busy} onClick={() => setJoining(null)}>
-            Cancel
-          </button>
-        </div>
+        </Dialog>
       )}
     </div>
   );

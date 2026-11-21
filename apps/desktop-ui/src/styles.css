@@ -99,6 +99,12 @@
     --dur-fast: 120ms;
     --page-max: 70rem;
   }
+  /* Fingers on a touch screen need bigger targets than a mouse pointer. */
+  @media (pointer: coarse) {
+    :root {
+      --ctl-h: var(--ctl-h-lg);
+    }
+  }
 }
 
 /* ============================== base ============================== */
@@ -121,6 +127,10 @@
     background: var(--c-bg);
     -webkit-font-smoothing: antialiased;
     accent-color: var(--c-accent-solid);
+    font-size-adjust: from-font;
+  }
+  :where(.mono, .receipt-paper, code, pre, .chip) {
+    font-size-adjust: none;
   }
   ::selection {
     background: color-mix(in oklab, var(--c-text) 15%, transparent);
@@ -263,7 +273,7 @@
     display: inline-grid;
     place-items: center;
     min-inline-size: 1.25rem;
-    block-size: 1.25rem;
+    min-block-size: 1.25rem;
     padding: 0 0.3rem;
     margin-inline-start: var(--sp-1);
     font: var(--fw-medium) 0.6875rem / 1 var(--font-sans);
@@ -740,9 +750,19 @@
     display: grid;
   }
   dialog.dialog::backdrop {
-    background: oklch(0 0 0 / 0.45);
+    background: transparent;
     overflow: hidden;
     overscroll-behavior: contain;
+    transition-property: background-color, display, overlay;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
+  }
+  dialog.dialog[open]::backdrop {
+    background: var(--c-backdrop);
+    @starting-style {
+      background: transparent;
+    }
   }
   /* A dialog that is itself focused (it drives its own keys) shows no ring around the panel. */
   dialog.dialog:focus-visible {
@@ -752,12 +772,34 @@
   .dialog-form {
     display: contents;
   }
-  @media (prefers-reduced-motion: no-preference) {
-    dialog.dialog[open] {
-      animation: zoom-in 150ms ease-out both;
+  /*
+   * Opening: fade in, and grow slightly for people who have not asked for less motion. Set with
+   * transitions from @starting-style; display and overlay are listed so the top layer keeps the
+   * dialog while it changes. (Closing unmounts it, so there is no exit to animate.)
+   */
+  dialog.dialog {
+    opacity: 0;
+    transition-property: opacity, scale, display, overlay;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
+    @media (prefers-reduced-motion: no-preference) {
+      scale: 0.96;
     }
-    dialog.dialog[open]::backdrop {
-      animation: fade-in 150ms ease-out both;
+    @media (prefers-reduced-motion: reduce) {
+      transition-duration: 80ms;
+    }
+  }
+  dialog.dialog[open] {
+    opacity: 1;
+    @starting-style {
+      opacity: 0;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      scale: 1;
+      @starting-style {
+        scale: 0.96;
+      }
     }
   }
   .dialog > h2,
@@ -1042,6 +1084,9 @@
     text-align: end;
     white-space: nowrap;
   }
+  :is(.row-actions, .plain-list) button.link {
+    min-block-size: 1.5rem;
+  }
 
   /* An on/off switch: a checkbox drawn as the toggle people know from their phones. */
   input[type="checkbox"].switch {
@@ -1144,12 +1189,14 @@
     }
   }
   .setting-row > label,
-  .setting-row > span {
+  .setting-row > span,
+  .setting-row > .setting-text {
     display: grid;
     gap: var(--sp-1);
     font-weight: var(--fw-regular);
     color: var(--c-text-muted);
   }
+  .setting-text > label,
   .setting-row :is(label, span) > strong {
     font-size: var(--fs-sm);
     font-weight: var(--fw-medium);
@@ -1474,7 +1521,7 @@
     gap: var(--sp-2);
   }
   .pin-key {
-    block-size: 3.75rem;
+    min-block-size: 3.75rem;
     font-size: var(--fs-xl);
     font-weight: var(--fw-medium);
     background: var(--c-surface);
@@ -1952,6 +1999,9 @@
     display: grid;
     gap: var(--sp-3);
   }
+  .cash-form > label + .field-hint {
+    margin-block-start: calc(-1 * var(--sp-2));
+  }
   .cash-form input {
     font-size: var(--fs-xl);
     font-variant-numeric: tabular-nums;
@@ -2118,7 +2168,7 @@
     padding: 0 var(--sp-4);
   }
   .plist-head {
-    block-size: 2.5rem;
+    min-block-size: 2.5rem;
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
     color: var(--c-text-muted);
@@ -2597,14 +2647,4 @@
   }
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes zoom-in {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-}
+

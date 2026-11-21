@@ -12,6 +12,9 @@ export function Dialog({
   confirmLabel,
   danger,
   input,
+  confirmDisabled,
+  safeFocus,
+  alert,
   onConfirm,
   onCancel,
 }: {
@@ -21,6 +24,12 @@ export function Dialog({
   danger?: boolean;
   /** Ask for a value; confirm stays disabled while it is empty unless `optional`. */
   input?: { label: string; initial?: string; inputMode?: "decimal" | "text"; optional?: boolean; maxLength?: number };
+  /** Keep the confirm button disabled (e.g. until a tick box is ticked, or while busy). */
+  confirmDisabled?: boolean;
+  /** Start focus on Cancel: for confirmations where Enter by habit must not do the risky thing. */
+  safeFocus?: boolean;
+  /** Expose it as an alert dialog (an urgent, consequential confirmation). */
+  alert?: boolean;
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }) {
@@ -44,12 +53,12 @@ export function Dialog({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (input && !input.optional && !value.trim()) return;
+    if (confirmDisabled || (input && !input.optional && !value.trim())) return;
     onConfirm(value);
   };
 
   return (
-    <Modal labelledBy={titleId} onSubmit={submit} onDismiss={onCancel}>
+    <Modal labelledBy={titleId} onSubmit={submit} onDismiss={onCancel} {...(alert ? { alert } : {})}>
         <h2 id={titleId}>{title}</h2>
         {children}
         {input && (
@@ -67,15 +76,26 @@ export function Dialog({
           </label>
         )}
         <div className="actions">
-          <button type="button" className="secondary" onClick={onCancel}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onCancel}
+            ref={
+              safeFocus
+                ? (el) => {
+                    first.current = el;
+                  }
+                : undefined
+            }
+          >
             Cancel
           </button>
           <button
             type="submit"
             className={danger ? "danger" : undefined}
-            disabled={!!input && !input.optional && !value.trim()}
+            disabled={confirmDisabled || (!!input && !input.optional && !value.trim())}
             ref={
-              input
+              input || safeFocus
                 ? undefined
                 : (el) => {
                     first.current = el;

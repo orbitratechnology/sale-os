@@ -1,5 +1,6 @@
 import { Database, Download, HardDrive, History, KeyRound, RefreshCw } from "../../ui/icons";
 import { SectionTitle } from "../../ui/PanelHeader";
+import { Dialog } from "../checkout/Dialog";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { BackupCheckDto, BackupDto, BackupStatusDto } from "../../ipc/bindings";
@@ -289,7 +290,15 @@ export function BackupsPanel() {
         </p>
       )}
       {restoring && (
-        <div role="alertdialog" aria-label="Restore a backup">
+        <Dialog
+          title="Restore a backup"
+          alert
+          safeFocus
+          confirmLabel="Restore and restart"
+          confirmDisabled={busy || (!confirmed && !status.linked)}
+          onConfirm={() => void restore()}
+          onCancel={() => setRestoring(null)}
+        >
           <p>
             Restore the backup made <strong>{when(restoring.createdAt)}</strong> ({restoring.sales}{" "}
             {restoring.sales === 1 ? "sale" : "sales"})? The till goes back to that moment and Sale OS restarts. What it holds
@@ -306,15 +315,7 @@ export function BackupsPanel() {
               that sales, returns and stock changes made on this till after {when(restoring.createdAt)} will be lost.
             </label>
           )}
-          <p className="button-row">
-            <button type="button" disabled={busy || (!confirmed && !status.linked)} onClick={() => void restore()}>
-              Restore and restart
-            </button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => setRestoring(null)}>
-              Cancel
-            </button>
-          </p>
-        </div>
+        </Dialog>
       )}
     </div>
   );

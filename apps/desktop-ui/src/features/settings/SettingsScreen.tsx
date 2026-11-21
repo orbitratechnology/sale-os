@@ -250,6 +250,9 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
   const [draft, setDraft] = useState(() => toText(setting, current));
   const [state, setState] = useState<{ kind: "idle" } | { kind: "saved" } | { kind: "error"; message: string }>({ kind: "idle" });
   const id = `setting-${setting.key}`;
+  // The help (and any error) describe the control; the label stays just its name.
+  const described = { "aria-describedby": state.kind === "error" ? `${id}-help ${id}-error` : `${id}-help` };
+  const invalid = state.kind === "error" ? { "aria-invalid": true as const } : {};
 
   async function save(valueJson: string) {
     const res = await commands.settingsUpdate(setting.key, valueJson, setting.version);
@@ -293,7 +296,11 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
           <input
             id={id}
             type="checkbox"
+            // The native switch where the engine has it; role="switch" is what it exposes.
+            {...{ switch: "" }}
+            role="switch"
             className="switch"
+            {...described}
             checked={current === true}
             onChange={(e) => void save(e.target.checked ? "true" : "false")}
           />
@@ -302,7 +309,7 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
     }
     if (k.type === "choice") {
       return (
-        <select id={id} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
+        <select id={id} {...described} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
           {k.options.map((o) => (
             <option key={o} value={o}>
               {CHOICE_LABEL[o] ?? o.replace(/^"|"$/g, "")}
@@ -313,9 +320,9 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
     }
     const input =
       k.type === "lines" ? (
-        <textarea id={id} rows={Math.min(k.maxLines, 5)} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={k.maxLines * (k.maxChars + 1)} />
+        <textarea id={id} {...described} {...invalid} rows={Math.min(k.maxLines, 5)} value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={k.maxLines * (k.maxChars + 1)} />
       ) : (
-        <input id={id} inputMode="decimal" value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <input id={id} {...described} {...invalid} inputMode="decimal" value={draft} onChange={(e) => setDraft(e.target.value)} />
       );
     return (
       <form
@@ -343,16 +350,18 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
       <span className="icon-tile sm" aria-hidden="true">
         <Icon />
       </span>
-      <label htmlFor={id}>
-        <strong>{setting.label}</strong>
-        <span className="small">{setting.help}</span>
-      </label>
+      <div className="setting-text">
+        <label htmlFor={id}>{setting.label}</label>
+        <span id={`${id}-help`} className="small">
+          {setting.help}
+        </span>
+      </div>
       <div className="setting-control">
         {control}
         <span aria-live="polite" className="small setting-status">
           {state.kind === "saved" && <span className="saved-note">Saved.</span>}
           {state.kind === "error" && (
-            <span role="alert" className="field-error">
+            <span role="alert" id={`${id}-error`} className="field-error">
               {state.message}
             </span>
           )}

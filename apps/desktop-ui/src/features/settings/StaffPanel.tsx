@@ -285,6 +285,7 @@ export function StaffPanel() {
           <input
             value={draft.name}
             aria-invalid={newProblem?.field === "displayName" || undefined}
+            aria-describedby={newProblem?.field === "displayName" ? "staff-new-error" : undefined}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="e.g. Sam"
           />
@@ -307,6 +308,7 @@ export function StaffPanel() {
             autoComplete="off"
             value={draft.pin}
             aria-invalid={newProblem?.field === "pin" || undefined}
+            aria-describedby={newProblem?.field === "pin" ? "staff-new-error" : undefined}
             onChange={(e) => setDraft({ ...draft, pin: e.target.value })}
           />
         </label>
@@ -332,7 +334,7 @@ export function StaffPanel() {
         </span>
       </form>
       {newProblem && (
-        <p role="alert" className="field-error">
+        <p role="alert" id="staff-new-error" className="field-error">
           {newProblem.text}
         </p>
       )}
