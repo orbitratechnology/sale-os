@@ -307,9 +307,21 @@ export function PaymentPanel({
           <>
             <form onSubmit={addCash} className="cash-form">
               <label>
-                Cash received ({cart.currencyCode}) · empty + Enter = exact
-                <input ref={cashInput} inputMode="decimal" aria-label="Cash received" value={cash} onChange={(e) => setCash(e.target.value)} disabled={busy || remaining === 0n} />
+                Cash received ({cart.currencyCode})
+                <input
+                  ref={cashInput}
+                  inputMode="decimal"
+                  aria-label="Cash received"
+                  aria-describedby="cash-hint"
+                  placeholder="0.00"
+                  value={cash}
+                  onChange={(e) => setCash(e.target.value)}
+                  disabled={busy || remaining === 0n}
+                />
               </label>
+              <p id="cash-hint" className="small field-hint">
+                Type the amount the customer gave, or press <kbd>Enter</kbd> on an empty box for the exact amount.
+              </p>
               <div className="quick-cash">
                 <button type="button" disabled={busy || remaining === 0n} onClick={() => void complete([...tenders, { kind: "cash", amountMinor: remaining.toString(), reference: null }])}>
                   <Banknote />

@@ -3,6 +3,8 @@ import { commands, type IpcError } from "../../ipc";
 import type { TaxConfigDto, TaxRateConfigDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { SectionTitle } from "../../ui/PanelHeader";
+import { Pencil, Percent, Plus, Tag } from "../../ui/icons";
 
 function message(e: IpcError): string {
   const d = e.details;
@@ -76,7 +78,7 @@ export function TaxesPanel() {
           {error}
         </p>
       )}
-      <h2>Rates</h2>
+      <SectionTitle icon={Percent}>Rates</SectionTitle>
       <table className="sales-table" aria-label="Tax rates">
         <thead>
           <tr>
@@ -86,7 +88,7 @@ export function TaxesPanel() {
             </th>
             <th scope="col">From</th>
             <th scope="col">Until (not including)</th>
-            <th scope="col">
+            <th scope="col" className="row-actions">
               <span className="visually-hidden">Actions</span>
             </th>
           </tr>
@@ -98,7 +100,7 @@ export function TaxesPanel() {
               <td className="num">{ppmToPercent(r.ratePpm)}%</td>
               <td>{r.from ?? "always"}</td>
               <td>{r.to ?? "no end"}</td>
-              <td>
+              <td className="row-actions">
                 <button type="button" className="link" onClick={() => edit(r)}>
                   Edit
                 </button>{" "}
@@ -115,6 +117,7 @@ export function TaxesPanel() {
           ))}
         </tbody>
       </table>
+      <SectionTitle icon={rate.id ? Pencil : Plus}>{rate.id ? "Change a rate" : "Add a rate"}</SectionTitle>
       <form className="card sales-filters" aria-label={rate.id ? "Change a rate" : "Add a rate"} onSubmit={(e) => void saveRate(e)}>
         <label>
           Name
@@ -132,8 +135,9 @@ export function TaxesPanel() {
           Until (not including)
           <input type="date" value={rate.to} onChange={(e) => setRate({ ...rate, to: e.target.value })} />
         </label>
-        <span>
-          <button type="submit">{rate.id ? "Save rate" : "Add rate"}</button>{" "}
+        <p className="small form-hint">Leave the dates empty for a rate that always applies.</p>
+        <span className="button-row form-hint">
+          <button type="submit">{rate.id ? "Save rate" : "Add rate"}</button>
           {rate.id && (
             <button type="button" className="secondary" onClick={() => setRate(blank)}>
               Cancel
@@ -142,8 +146,8 @@ export function TaxesPanel() {
         </span>
       </form>
 
-      <h2>Tax categories</h2>
-      <p className="small">Each product has one tax category; its rates are added up on the receipt.</p>
+      <SectionTitle icon={Tag}>Tax categories</SectionTitle>
+      <p className="small">Each product belongs to one tax category. Tick the rates that apply to it; they are added up on the receipt.</p>
       <ul className="plain-list" aria-label="Tax categories">
         {cfg.categories
           .filter((c) => !c.archived)
@@ -151,7 +155,7 @@ export function TaxesPanel() {
             <li key={c.taxCategoryId} data-testid="taxcat-row">
               <strong>{c.name}</strong>
               {c.isDefault ? (
-                <span className="tag"> default</span>
+                <span className="tag">default</span>
               ) : (
                 <>
                   {" "}
@@ -164,7 +168,7 @@ export function TaxesPanel() {
                   </button>
                 </>
               )}
-              <div role="group" aria-label={`Rates in ${c.name}`}>
+              <div role="group" aria-label={`Rates in ${c.name}`} className="check-list">
                 {activeRates.map((r) => (
                   <label key={r.taxRateId} className="check">
                     <input

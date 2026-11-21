@@ -1,6 +1,5 @@
-import {
-  Database,
-} from "../../ui/icons";
+import { Database, Download, HardDrive, History, KeyRound, RefreshCw } from "../../ui/icons";
+import { SectionTitle } from "../../ui/PanelHeader";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { BackupCheckDto, BackupDto, BackupStatusDto } from "../../ipc/bindings";
@@ -111,7 +110,6 @@ export function BackupsPanel() {
   if (!status) return error ? <p role="alert">{describeError(error)}</p> : <p aria-busy="true">Loading…</p>;
   return (
     <div className="panel-sections">
-      <h2>Backups</h2>
       <p>
         Sale OS backs up this till by itself: once a day, every hour something changed, and when it closes. Copies go to a
         second folder too if you choose one, such as a USB stick.
@@ -122,13 +120,14 @@ export function BackupsPanel() {
           {describeError(error)}
         </p>
       )}
-      <p>
+      <p className="button-row">
         <button type="button" disabled={busy} onClick={() => void backUpNow()}>
+          <RefreshCw />
           Back up now
         </button>
       </p>
       <section aria-label="Encryption">
-        <h3>Encryption</h3>
+        <SectionTitle icon={KeyRound}>Encryption</SectionTitle>
         {status.encrypted ? (
           <>
             <p>
@@ -147,12 +146,14 @@ export function BackupsPanel() {
                   {recovery}
                 </p>
                 <p className="small">Anyone with this key and a backup can read the shop's data. Do not photograph it or email it.</p>
-                <button type="button" disabled={busy} onClick={() => void confirmRecoveryKey()}>
-                  I have written it down
-                </button>{" "}
-                <button type="button" className="secondary" onClick={() => setRecovery(null)}>
-                  Hide
-                </button>
+                <p className="button-row">
+                  <button type="button" disabled={busy} onClick={() => void confirmRecoveryKey()}>
+                    I have written it down
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setRecovery(null)}>
+                    Hide
+                  </button>
+                </p>
               </div>
             ) : (
               <button type="button" className="secondary" disabled={busy} onClick={() => void showRecoveryKey()}>
@@ -168,29 +169,37 @@ export function BackupsPanel() {
         )}
       </section>
       <section aria-label="Second folder">
-        <h3>Second folder</h3>
+        <SectionTitle icon={HardDrive}>Second folder</SectionTitle>
         {status.secondFolder ? (
-          <p>
-            Copies also go to <span className="mono">{status.secondFolder}</span>.{" "}
-            <button type="button" className="secondary" disabled={busy} onClick={() => void folder(false)}>
-              Change…
-            </button>{" "}
-            <button type="button" className="secondary" disabled={busy} onClick={() => void folder(true)}>
-              Stop copying
-            </button>
-          </p>
+          <>
+            <p>
+              Copies also go to <span className="mono">{status.secondFolder}</span>.
+            </p>
+            <p className="button-row">
+              <button type="button" className="secondary" disabled={busy} onClick={() => void folder(false)}>
+                Change…
+              </button>
+              <button type="button" className="secondary" disabled={busy} onClick={() => void folder(true)}>
+                Stop copying
+              </button>
+            </p>
+          </>
         ) : (
-          <p>
-            No second folder: if this computer's disk fails, the backups go with it.{" "}
-            <button type="button" className="secondary" disabled={busy} onClick={() => void folder(false)}>
-              Choose a folder…
-            </button>
-          </p>
+          <>
+            <p>No second folder: if this computer's disk fails, the backups go with it. A USB stick or a network folder keeps a safe copy.</p>
+            <p className="button-row">
+              <button type="button" className="secondary" disabled={busy} onClick={() => void folder(false)}>
+                Choose a folder…
+              </button>
+            </p>
+          </>
         )}
         {status.secondFolderProblem && (
           <p role="alert">The last copy to the second folder failed: {status.secondFolderProblem}</p>
         )}
       </section>
+      <section aria-label="Saved backups">
+      <SectionTitle icon={History}>Saved backups</SectionTitle>
       <table className="sales-table" aria-label="Backups">
         <thead>
           <tr>
@@ -203,7 +212,7 @@ export function BackupsPanel() {
               Size
             </th>
             <th scope="col">Check</th>
-            <th scope="col">
+            <th scope="col" className="row-actions">
               <span className="visually-hidden">Restore</span>
             </th>
           </tr>
@@ -233,7 +242,7 @@ export function BackupsPanel() {
                     </button>
                   )}
                 </td>
-                <td>
+                <td className="row-actions">
                   <button
                     type="button"
                     className="secondary"
@@ -259,12 +268,16 @@ export function BackupsPanel() {
           <p>No backups yet. The first is made a minute after start-up.</p>
         </div>
       )}
+      </section>
       <section aria-label="Export all data">
-        <h3>Export all data</h3>
+        <SectionTitle icon={Download}>Export all data</SectionTitle>
         <p>
           Everything this till holds — sales, returns, stock, products, staff, settings and the audit log — as spreadsheet
-          files (CSV) in one ZIP, for your records or another system. PINs are not included.{" "}
+          files (CSV) in one ZIP, for your records or another system. PINs are not included.
+        </p>
+        <p className="button-row">
           <button type="button" className="secondary" disabled={busy} onClick={() => void exportAll()}>
+            <Download />
             Export all data…
           </button>
         </p>
@@ -288,15 +301,15 @@ export function BackupsPanel() {
               Until they have, sales cannot be completed.
             </p>
           ) : (
-            <label>
+            <label className="check">
               <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> I understand
               that sales, returns and stock changes made on this till after {when(restoring.createdAt)} will be lost.
             </label>
           )}
-          <p>
+          <p className="button-row">
             <button type="button" disabled={busy || (!confirmed && !status.linked)} onClick={() => void restore()}>
               Restore and restart
-            </button>{" "}
+            </button>
             <button type="button" className="secondary" disabled={busy} onClick={() => setRestoring(null)}>
               Cancel
             </button>

@@ -127,7 +127,7 @@ export function SalesScreen({
             ref={receiptInput}
             value={receipt}
             onChange={(e) => setReceipt(e.target.value)}
-            placeholder="e.g. R01-000123 or 123"
+            placeholder="e.g. R01-000123"
             autoComplete="off"
             spellCheck={false}
           />

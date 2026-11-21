@@ -1548,7 +1548,7 @@ describe("going live (E04-T02)", () => {
     await page.keyboard.type("1234");
     await page.keyboard.press("Enter");
     await dialog.waitFor({ state: "detached" });
-    expect(await page.getByText("SANDBOX: practice mode").count()).toBe(0);
+    expect(await page.getByText("sales made here are not counted in reports").count()).toBe(0);
     await page.getByText("Open the cash drawer before selling.").waitFor();
     await page.getByRole("contentinfo", { name: "Status" }).getByText("LIVE").waitFor();
     expect((await calls(page, "register_go_live")).map((c) => c.pinCode)).toEqual(["1234", "9999", "1234"]);
@@ -1560,7 +1560,7 @@ describe("going live (E04-T02)", () => {
     await page.keyboard.type("2222");
     await page.keyboard.press("Enter");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
-    await page.getByText("SANDBOX: practice mode").waitFor();
+    await page.getByText("sales made here are not counted in reports").waitFor();
     expect(await page.getByRole("button", { name: "Go live…" }).count()).toBe(0);
   });
 });
