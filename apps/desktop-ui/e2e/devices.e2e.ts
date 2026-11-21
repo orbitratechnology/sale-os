@@ -1,7 +1,7 @@
 /**
  * E20-T11 / E22-T02 / E21 in Chromium against the scripted backend: setting up a printer
  * (network, found by discovery), the status bar, "No sale", the drawer after a cash sale,
- * the customer display (set up, tested, total due at payment), and card payments on the sandbox terminal: approve, decline and an unknown outcome
+ * a USB HID-POS scanner (picked from the detected ones, its status), the customer display (set up, tested, total due at payment), and card payments on the sandbox terminal: approve, decline and an unknown outcome
  * settled by the operator. Rust's behaviour behind each command is tested in Rust.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -94,6 +94,49 @@ describe("Settings → Devices (E20-T11)", () => {
     expect(await page.getByLabel("Connection").inputValue()).toBe("spooler");
     expect(await page.getByLabel("Printer", { exact: true }).inputValue()).toBe("EPSON TM-T20III Receipt");
     expect(await page.locator("option[value=TSP143IIIU]").evaluate((o) => (o as HTMLOptionElement).disabled)).toBe(true);
+    await page.close();
+  }, 60_000);
+});
+
+describe("USB HID-POS scanner", () => {
+  it("picks a detected scanner, saves it beside the serial one and shows its status", async () => {
+    const page = await till();
+    await devicesPage(page);
+    const section = page.getByRole("region", { name: "USB HID-POS scanner" });
+    expect(await section.getByRole("button", { name: "Save USB scanner" }).isDisabled()).toBe(true);
+    await section.getByRole("button", { name: "Find USB scanners" }).click();
+    expect(await section.getByRole("combobox").inputValue()).toBe("/dev/hidraw3");
+    await section.getByRole("option", { name: "Honeywell Xenon 1900 (0c2e:0b61)" }).waitFor({ state: "attached" });
+    await section.getByRole("button", { name: "Save USB scanner" }).click();
+    await page.getByText("Saved. Scans from Honeywell Xenon 1900 (0c2e:0b61) go to the till.").waitFor();
+    const input = (await calls(page, "device_save")).at(-1)?.input as { kind: string; role: string; configJson: string };
+    expect(input.kind).toBe("scanner");
+    expect(input.role).toBe("hidpos");
+    expect(JSON.parse(input.configJson)).toEqual({
+      hidPos: { vendorId: 0x0c2e, productId: 0x0b61, serialNumber: "19200B1234", path: "/dev/hidraw3", label: "Honeywell Xenon 1900 (0c2e:0b61)" },
+    });
+    await section.getByTestId("device-hidpos-status").filter({ hasText: "Honeywell Xenon 1900 (0c2e:0b61) · Ready" }).waitFor();
+
+    // A serial scanner as well: both are kept.
+    const serial = page.getByRole("region", { name: "Serial scanner" });
+    await serial.getByLabel("Port").fill("COM4");
+    await serial.getByRole("button", { name: "Save scanner" }).click();
+    await expect
+      .poll(() => page.evaluate(() => window.__fake.devices.filter((d) => d.kind === "scanner").map((d) => d.role).sort()))
+      .toEqual(["hidpos", "main"]);
+
+    // Unplugged: the status says so, by name.
+    await page.evaluate(() => (window.__fake.hidScanners = []));
+    await page.getByRole("tab", { name: "Scanner", exact: true }).click();
+    await page.getByRole("tab", { name: "Devices" }).click();
+    await page
+      .getByRole("region", { name: "USB HID-POS scanner" })
+      .getByTestId("device-hidpos-status")
+      .filter({ hasText: "Not working: Honeywell Xenon 1900 (0c2e:0b61) is not connected" })
+      .waitFor();
+    // Nothing attached: Find says how to switch a scanner to HID-POS.
+    await page.getByRole("region", { name: "USB HID-POS scanner" }).getByRole("button", { name: "Find USB scanners" }).click();
+    await page.getByText(/^No HID-POS scanner found/).waitFor();
     await page.close();
   }, 60_000);
 });

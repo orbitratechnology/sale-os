@@ -132,6 +132,8 @@ pub const COMMANDS: &[&str] = &[
     "printer_profiles",
     "devices_discover",
     "drawer_open",
+    "hid_scanners_list",
+    "scanner_status",
     "display_status",
     "display_test",
     "display_show_total",

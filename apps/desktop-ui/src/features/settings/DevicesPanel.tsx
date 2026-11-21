@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { SectionTitle } from "../../ui/PanelHeader";
 import { CreditCard, Monitor, Printer, ScanBarcode } from "../../ui/icons";
 import { commands, type IpcError } from "../../ipc";
-import type { DeviceDto, DiscoveryDto, DisplayStatusDto_Serialize as DisplayStatusDto, PrinterProfileDto, PrinterStatusDto } from "../../ipc/bindings";
+import type {
+  DeviceDto,
+  DiscoveryDto,
+  DisplayStatusDto_Serialize as DisplayStatusDto,
+  HidPosDevice_Serialize as HidPosDevice,
+  PrinterProfileDto,
+  PrinterStatusDto,
+  ScannerStatusDto_Serialize as ScannerStatusDto,
+} from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { useT } from "../../i18n";
 
@@ -116,7 +124,7 @@ const PROTOCOL_LABEL_COPY: Record<DisplayProtocol, string> = {
 
 /**
  * This till's devices (E20-T11, DEV-001…009): the receipt printer (any connection, any
- * model), a serial barcode scanner, the customer display, and the card terminal. Keyboard-wedge scanners need no
+ * model), a serial barcode scanner, a USB HID-POS scanner, the customer display, and the card terminal. Keyboard-wedge scanners need no
  * set-up here: they work as soon as they are plugged in (Settings → Scanner for timing).
  */
 export function DevicesPanel() {
@@ -128,6 +136,8 @@ export function DevicesPanel() {
   const [printerMessage, setPrinterMessage] = useState<string | null>(null);
   /** The same for the customer display. */
   const [displayMessage, setDisplayMessage] = useState<string | null>(null);
+  /** The same for the USB HID-POS scanner. */
+  const [hidMessage, setHidMessage] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void commands.devicesList().then((r) => (r.status === "ok" ? setDevices(r.data) : setError(r.error)));
@@ -138,7 +148,7 @@ export function DevicesPanel() {
     void commands.printerProfiles().then((r) => r.status === "ok" && setProfiles(r.data));
   }, [load]);
 
-  const byKind = (k: string) => devices?.find((d) => d.kind === k && d.role === "main") ?? null;
+  const byKind = (k: string, role = "main") => devices?.find((d) => d.kind === k && d.role === role) ?? null;
   return (
     <div className="devices">
       {error && (
@@ -156,6 +166,13 @@ export function DevicesPanel() {
         setResult={setPrinterMessage}
       />
       <ScannerSection key={`scanner-${byKind("scanner")?.deviceId ?? "new"}-${byKind("scanner")?.version ?? 0}`} device={byKind("scanner")} onChanged={load} />
+      <HidScannerSection
+        key={`hidpos-${byKind("scanner", HID_ROLE)?.deviceId ?? "new"}-${byKind("scanner", HID_ROLE)?.version ?? 0}`}
+        device={byKind("scanner", HID_ROLE)}
+        onChanged={load}
+        message={hidMessage}
+        setMessage={setHidMessage}
+      />
       <DisplaySection
         key={`display-${byKind("customer_display")?.deviceId ?? "new"}-${byKind("customer_display")?.version ?? 0}`}
         device={byKind("customer_display")}
@@ -551,6 +568,136 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
           </button>
         )}
       </form>
+      {message && (
+        <p role="status" className="small">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The role a USB HID-POS scanner is saved under, beside the serial scanner (`main`). */
+const HID_ROLE = "hidpos";
+
+/** "Honeywell Xenon 1900 (0c2e:0b61)": the same name Rust gives it. */
+function hidLabel(d: HidPosDevice): string {
+  const hex = (n: number) => n.toString(16).padStart(4, "0");
+  const name = [d.manufacturer, d.product]
+    .map((x) => (x ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return `${name || "HID-POS scanner"} (${hex(d.vendorId)}:${hex(d.productId)})`;
+}
+
+/** A USB scanner in HID-POS mode (usage page 0x8C): it sends codes to the till instead of typing them (E21-T04). */
+function HidScannerSection({
+  device,
+  onChanged,
+  message,
+  setMessage,
+}: {
+  device: DeviceDto | null;
+  onChanged: () => void;
+  message: string | null;
+  setMessage: (m: string | null) => void;
+}) {
+  const t = useT();
+  const stored = device ? (JSON.parse(device.configJson) as { hidPos?: { label?: string | null } }) : null;
+  const [found, setFound] = useState<HidPosDevice[] | null>(null);
+  const [chosen, setChosen] = useState("");
+  const [status, setStatus] = useState<ScannerStatusDto | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!device) return;
+    void commands.scannerStatus().then((r) => r.status === "ok" && setStatus(r.data.find((x) => x.deviceId === device.deviceId) ?? null));
+  }, [device]);
+  useEffect(refresh, [refresh]);
+
+  async function find() {
+    setBusy(true);
+    setMessage(null);
+    const res = await commands.hidScannersList();
+    setBusy(false);
+    if (res.status === "error") return setMessage(describeError(res.error));
+    setFound(res.data);
+    setChosen(res.data[0]?.path ?? "");
+    refresh();
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    const d = found?.find((x) => x.path === chosen);
+    if (!d) return;
+    setBusy(true);
+    const label = hidLabel(d);
+    const res = await commands.deviceSave({
+      deviceId: device?.deviceId ?? null,
+      kind: "scanner",
+      role: HID_ROLE,
+      name: label,
+      configJson: JSON.stringify({
+        hidPos: { vendorId: d.vendorId, productId: d.productId, serialNumber: d.serialNumber, path: d.path, label },
+      }),
+      enabled: true,
+      baseVersion: device?.version ?? null,
+    });
+    setBusy(false);
+    setMessage(res.status === "ok" ? t("Saved. Scans from {name} go to the till.", { name: label }) : describeError(res.error));
+    if (res.status === "ok") onChanged();
+  }
+
+  return (
+    <section aria-label={t("USB HID-POS scanner")} className="device-section">
+      <SectionTitle icon={ScanBarcode}>{t("USB HID-POS scanner (optional)")}</SectionTitle>
+      <p className="small">
+        {t(
+          "For a USB scanner set to HID-POS mode (USB HID Point of Sale), which sends codes to the till instead of typing them. Plug it in, press “Find USB scanners” and choose it. The till finds it again after it is unplugged.",
+        )}
+      </p>
+      {device && (
+        <p data-testid="device-hidpos-status" className="small">
+          {stored?.hidPos?.label ?? device.name} ·{" "}
+          <strong>
+            {status?.state === "ready"
+              ? t("Ready")
+              : status?.state === "offline"
+                ? t("Not working: {reason}", { reason: status.message ?? "" })
+                : t("Waiting for the scanner")}
+          </strong>
+        </p>
+      )}
+      <form onSubmit={(e) => void save(e)} className="row" aria-label={t("USB scanner settings")}>
+        <button type="button" className="secondary" disabled={busy} onClick={() => void find()}>
+          {t("Find USB scanners")}
+        </button>
+        {found && found.length > 0 && (
+          <label>
+            {t("Scanner")}
+            <select value={chosen} onChange={(e) => setChosen(e.target.value)}>
+              {found.map((d) => (
+                <option key={d.path} value={d.path}>
+                  {hidLabel(d)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button type="submit" disabled={!chosen || busy}>
+          {t("Save USB scanner")}
+        </button>
+        {device && (
+          <button type="button" className="secondary" onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}>
+            {t("Remove")}
+          </button>
+        )}
+      </form>
+      {found && found.length === 0 && (
+        <p role="status" className="small">
+          {t("No HID-POS scanner found. Check it is plugged in and set to HID-POS mode with the set-up barcode in its manual.")}
+        </p>
+      )}
       {message && (
         <p role="status" className="small">
           {message}

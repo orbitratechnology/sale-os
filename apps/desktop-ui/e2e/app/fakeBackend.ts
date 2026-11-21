@@ -100,6 +100,8 @@ export interface FakeState {
   drawerOpens: string[];
   /** What the customer display was last told: "test" or "total_due". */
   displayShown: string[];
+  /** USB HID-POS scanners attached (what `hid_scanners_list` finds); unplugged ones are offline. */
+  hidScanners: { path: string; vendorId: number; productId: number; serialNumber: string | null; manufacturer: string | null; product: string | null }[];
   /** Card-terminal attempts (E22-T02, sandbox rules: .01 declines, .02 uncertain). */
   attempts: Map<string, { cartId: string; amountMinor: string; status: string; polls: number; used: boolean; reason: string | null }>;
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
@@ -251,6 +253,7 @@ function initialStateInner(preset: Preset): FakeState {
     devices: [],
     drawerOpens: [],
     displayShown: [],
+    hidScanners: [{ path: "/dev/hidraw3", vendorId: 0x0c2e, productId: 0x0b61, serialNumber: "19200B1234", manufacturer: "Honeywell", product: "Xenon 1900" }],
     attempts: new Map(),
     printJobs: new Map(),
     printed: 0,
@@ -1839,20 +1842,41 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "device_save": {
       const me = needSession(s);
       if (me.role === "cashier") fail("PERMISSION_DENIED");
-      const input = a.input as { deviceId: string | null; kind: string; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
+      const input = a.input as { deviceId: string | null; kind: string; role: string | null; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
       const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string; serial?: { port?: string } };
       if (input.kind === "receipt_printer" && config.connection?.kind === "network" && !config.connection.host) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "connection.host", value: null, ownerProductId: null, remainingMinor: null });
       if (input.kind === "customer_display" && !config.serial?.port) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "serial.port", value: null, ownerProductId: null, remainingMinor: null });
       const old = s.devices.find((d) => d.deviceId === input.deviceId);
       if (old && old.version !== input.baseVersion) fail("CONFLICT_VERSION");
-      const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role: "main", name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
-      s.devices = [...s.devices.filter((d) => d.deviceId !== dev.deviceId && !(d.kind === dev.kind && !old)), dev];
+      const role = input.role ?? "main";
+      const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role, name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
+      s.devices = [...s.devices.filter((d) => d.deviceId !== dev.deviceId && !(d.kind === dev.kind && d.role === role && !old)), dev];
       return dev;
     }
     case "device_remove":
       needSession(s);
       s.devices = s.devices.filter((d) => d.deviceId !== a.deviceId);
       return null;
+    case "hid_scanners_list": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      return s.hidScanners;
+    }
+    case "scanner_status": {
+      needSession(s);
+      return s.devices
+        .filter((d) => d.kind === "scanner")
+        .map((d) => {
+          const c = JSON.parse(d.configJson) as { serial?: { port: string }; hidPos?: { vendorId: number; productId: number; label?: string | null } };
+          if (c.hidPos) {
+            const h = c.hidPos;
+            const target = h.label ?? "HID-POS scanner";
+            const here = s.hidScanners.some((x) => x.vendorId === h.vendorId && x.productId === h.productId);
+            return { deviceId: d.deviceId, name: d.name, connection: "hidPos", target, state: here ? "ready" : "offline", message: here ? null : `${target} is not connected` };
+          }
+          return { deviceId: d.deviceId, name: d.name, connection: "serial", target: c.serial?.port ?? "", state: "ready", message: null };
+        });
+    }
     case "display_status": {
       needSession(s);
       const d = s.devices.find((x) => x.kind === "customer_display");

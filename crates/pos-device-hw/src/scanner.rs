@@ -8,8 +8,8 @@
 //! (unplugged), the thread reopens it with capped exponential backoff, and every change is
 //! published as [`DeviceHealth`].
 //!
-//! Known gap: HID-POS scanners (USB HID usage page 0x8C) need raw HID access (`hidraw`
-//! ioctls on Linux), which is not done here. Keyboard-wedge scanners are captured by the UI.
+//! USB HID-POS scanners are in [`crate::hidpos`]; keyboard-wedge scanners are captured by
+//! the UI.
 
 use crate::config::{ScannerConfig, Terminator};
 use crate::transport::serial::{is_vanished, open_port};

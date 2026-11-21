@@ -353,6 +353,46 @@ impl ScannerConfig {
     }
 }
 
+/// A scanner's stored settings: a serial scanner (`{"serial": …}`) or a USB HID-POS
+/// scanner (`{"hidPos": …}`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScannerSettings {
+    Serial(ScannerConfig),
+    HidPos(crate::hidpos::HidPosConfig),
+}
+
+impl ScannerSettings {
+    /// Reads stored or entered settings; the `hidPos` key picks the HID-POS kind.
+    pub fn from_json(value: &serde_json::Value) -> Result<Self, serde_json::Error> {
+        match value.get("hidPos") {
+            Some(hid) => Ok(Self::HidPos(serde_json::from_value(hid.clone())?)),
+            None => Ok(Self::Serial(serde_json::from_value(value.clone())?)),
+        }
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            Self::Serial(c) => serde_json::to_value(c).unwrap_or_default(),
+            Self::HidPos(c) => serde_json::json!({ "hidPos": c }),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), Vec<FieldError>> {
+        match self {
+            Self::Serial(c) => c.validate(),
+            Self::HidPos(c) => c.validate(),
+        }
+    }
+
+    /// Which scanner, in words (`COM4`, `Honeywell Xenon 1900 (0c2e:0b61)`).
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Serial(c) => c.serial.port.clone(),
+            Self::HidPos(c) => c.describe(),
+        }
+    }
+}
+
 /// How the scanner ends each scan.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

@@ -59,6 +59,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crc32fast = "1.5"
 getrandom = "0.3"
+# USB HID-POS barcode scanners (usage page 0x8C). Pure-Rust backends on Linux (hidraw via
+# sysfs, no libudev) and Windows (hid.dll through windows-sys); macOS compiles hidapi's C
+# backend against IOKit, which every macOS has.
+hidapi = { version = "2.6.7", default-features = false, features = ["linux-native-basic-udev", "windows-native"] }
 # SQLCipher in place of SQLite (ADR-023): the same crate sqlx uses, built with encryption.
 libsqlite3-sys = { version = "0.30", features = ["bundled-sqlcipher-vendored-openssl"] }
 flate2 = "1.1"

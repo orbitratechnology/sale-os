@@ -79,7 +79,22 @@ value digits as zeros) or its item code. The till also reads the weight and pric
 **Serial scanners** (RS-232, USB-COM, Bluetooth SPP). Set them up in Settings → Devices. They reconnect by themselves
 after being unplugged.
 
-**Not supported yet:** USB HID-POS scanners. Most can be switched to keyboard or COM mode with a set-up barcode.
+**USB HID-POS scanners** (USB HID Point of Sale, the scanner's "HID-POS" or "USB OPOS" mode). In this mode the scanner
+sends each code to the till as data instead of typing it, so codes can't be mangled by the keyboard layout and long 2D
+codes arrive whole. Settings → Devices → USB HID-POS scanner → **Find USB scanners**, choose it, **Save USB scanner**.
+The till finds it again after it is unplugged, even in another USB port. A keyboard-wedge scanner keeps working beside
+it, and so does a serial one.
+
+- The till reads the code and its symbology from the scanner's reports (layout from the scanner's own description when
+  the system provides it; otherwise the common Honeywell / Zebra / Datalogic layout).
+- **Linux:** the scanner appears as `/dev/hidrawN`, which only root can open by default. Add a udev rule for it, for
+  example `/etc/udev/rules.d/70-hidpos-scanner.rules` containing
+  `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c2e", MODE="0660", TAG+="uaccess"` (use your scanner's vendor ID, shown in
+  the list as `vendor:product`), then unplug and replug it. Until then the scanner shows "could not be opened".
+- **Windows and macOS:** no driver or set-up needed.
+- Not found? Scan the "USB HID-POS" (sometimes "USB OPOS" or "HID POS") set-up barcode from the scanner's manual. To go
+  back to keyboard mode, scan its "USB keyboard" set-up barcode.
+- Emulated only so far: no real HID-POS scanner has been tried yet (D-07).
 
 ## Customer displays
 

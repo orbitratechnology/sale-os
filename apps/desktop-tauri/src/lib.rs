@@ -166,6 +166,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         device_commands::printer_profiles,
         device_commands::devices_discover,
         device_commands::drawer_open,
+        device_commands::hid_scanners_list,
+        device_commands::scanner_status,
         device_commands::display_status,
         device_commands::display_test,
         device_commands::display_show_total,

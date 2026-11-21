@@ -432,6 +432,13 @@ export const commands = {
 	devicesDiscover: (subnet: string | null, port: number | null) => typedError<DiscoveryDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("devices_discover", { subnet, port })),
 	/**  "No sale": opens the cash drawer with a reason. Cashiers need a manager's approval. */
 	drawerOpen: (reason: string, approvalTokenId: ApprovalId | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("drawer_open", { reason, approvalTokenId })),
+	/**  The USB HID-POS scanners attached now (Settings → Devices picks one). */
+	hidScannersList: () => typedError<HidPosDevice_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("hid_scanners_list")),
+	/**
+	 *  The serial and HID-POS scanners set up on this till and how each is doing (any
+	 *  signed-in user: the status bar).
+	 */
+	scannerStatus: () => typedError<ScannerStatusDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("scanner_status")),
 	/**  How the customer display is doing (any signed-in user). Its problems never stop a sale. */
 	displayStatus: () => typedError<DisplayStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("display_status")),
 	/**  Shows a test pattern on the customer display (Settings → Devices; audited). */
@@ -1540,6 +1547,37 @@ export type FieldDiffDto = {
 	serverJson: string,
 };
 
+/**  A HID-POS scanner the system lists. */
+export type HidPosDevice = HidPosDevice_Serialize | HidPosDevice_Deserialize;
+
+/**  A HID-POS scanner the system lists. */
+export type HidPosDevice_Deserialize = {
+	/**
+	 *  The system's path for it (`/dev/hidraw3`, `\\?\HID#VID_0C2E…`); may change after
+	 *  unplugging.
+	 */
+	path: string,
+	vendorId: number,
+	productId: number,
+	serialNumber?: string | null,
+	manufacturer?: string | null,
+	product?: string | null,
+};
+
+/**  A HID-POS scanner the system lists. */
+export type HidPosDevice_Serialize = {
+	/**
+	 *  The system's path for it (`/dev/hidraw3`, `\\?\HID#VID_0C2E…`); may change after
+	 *  unplugging.
+	 */
+	path: string,
+	vendorId: number,
+	productId: number,
+	serialNumber: string | null,
+	manufacturer: string | null,
+	product: string | null,
+};
+
 /**  What the printer said about itself (`GS I`). */
 export type IdentifiedPrinter = IdentifiedPrinter_Serialize | IdentifiedPrinter_Deserialize;
 
@@ -2564,6 +2602,35 @@ export type ScanOutcomeDto_Serialize =
 
 /**  How a code reached `scan_submit`. */
 export type ScanSourceDto = "scanner" | "manual";
+
+/**  A configured scanner and how it is doing (`scanner_status`). */
+export type ScannerStatusDto = ScannerStatusDto_Serialize | ScannerStatusDto_Deserialize;
+
+/**  A configured scanner and how it is doing (`scanner_status`). */
+export type ScannerStatusDto_Deserialize = {
+	deviceId: DeviceId,
+	name: string,
+	/**  `serial` or `hidPos`. */
+	connection: string,
+	/**  The port, or the HID-POS scanner's name and IDs. */
+	target: string,
+	/**  `ready`, `warning`, `offline` or `unknown`. */
+	state: string,
+	message?: string | null,
+};
+
+/**  A configured scanner and how it is doing (`scanner_status`). */
+export type ScannerStatusDto_Serialize = {
+	deviceId: DeviceId,
+	name: string,
+	/**  `serial` or `hidPos`. */
+	connection: string,
+	/**  The port, or the HID-POS scanner's name and IDs. */
+	target: string,
+	/**  `ready`, `warning`, `offline` or `unknown`. */
+	state: string,
+	message: string | null,
+};
 
 export type SerialCandidate = SerialCandidate_Serialize | SerialCandidate_Deserialize;
 

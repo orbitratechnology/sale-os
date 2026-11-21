@@ -6,7 +6,10 @@ use crate::app_commands::err;
 use crate::{AppServices, IpcError};
 use pos_application::devices::{DeviceConfigProblem, DeviceDriver, DeviceInput, PrinterHandle, PrinterView};
 use pos_application::records::{DeviceKind, DeviceRecord};
-use pos_device_hw::{DisplayConfig, HwCustomerDisplay, PrinterConfig, ScannerConfig, SerialScanner};
+use pos_device_hw::{
+    DisplayConfig, HidBackend, HidPosScanner, HwCustomerDisplay, PrinterConfig, ScannerSettings,
+    SerialScanner,
+};
 use pos_device_ports::{BarcodeInputPort, DeviceError, DeviceHealth, PaperLevel, PrintResult, PushedStatus};
 use pos_domain::{DeviceId, ErrorCode};
 use serde::{Deserialize, Serialize};
@@ -54,9 +57,12 @@ impl DeviceDriver for HwDriver {
                 Ok(serde_json::to_value(c).unwrap_or_default())
             }
             DeviceKind::Scanner => {
-                let c: ScannerConfig = parse(config)?;
+                let c = ScannerSettings::from_json(config).map_err(|e| DeviceConfigProblem {
+                    field: "config".into(),
+                    message: format!("settings not understood: {e}"),
+                })?;
                 c.validate().map_err(first_problem)?;
-                Ok(serde_json::to_value(c).unwrap_or_default())
+                Ok(c.to_json())
             }
             DeviceKind::PaymentTerminal => {
                 let provider = config.get("provider").and_then(Value::as_str).unwrap_or_default();
@@ -105,18 +111,19 @@ impl DeviceDriver for HwDriver {
     }
 }
 
-// ---------- serial scanners → the UI ----------
+// ---------- serial and HID-POS scanners → the UI ----------
 
-/// One scan from a serial scanner, for the UI to submit like a wedge scan.
+/// One scan from a serial or HID-POS scanner, for the UI to submit like a wedge scan.
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SerialScanDto {
     pub scan_event_id: pos_domain::ScanEventId,
     pub raw: String,
+    /// The serial port, or the HID-POS scanner's name.
     pub port: String,
 }
 
-/// A serial scanner's health, for the status bar.
+/// A scanner's health, for the status bar and Settings → Devices.
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScannerHealthDto {
@@ -126,31 +133,52 @@ pub struct ScannerHealthDto {
     pub message: Option<String>,
 }
 
-/// Runs the configured serial scanners. Scans and health go out on broadcast channels the
-/// shell forwards to the window as `scanner://scan` and `scanner://status`.
+/// A configured scanner and how it is doing (`scanner_status`).
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannerStatusDto {
+    pub device_id: DeviceId,
+    pub name: String,
+    /// `serial` or `hidPos`.
+    pub connection: String,
+    /// The port, or the HID-POS scanner's name and IDs.
+    pub target: String,
+    /// `ready`, `warning`, `offline` or `unknown`.
+    pub state: String,
+    pub message: Option<String>,
+}
+
+type RunningScanner = (Arc<dyn BarcodeInputPort>, tokio::task::JoinHandle<()>);
+
+/// Runs the configured serial and HID-POS scanners. Scans and health go out on broadcast
+/// channels the shell forwards to the window as `scanner://scan` and `scanner://status`.
 pub struct ScannerHub {
-    running: tokio::sync::Mutex<Vec<(Arc<SerialScanner>, tokio::task::JoinHandle<()>)>>,
+    running: tokio::sync::Mutex<Vec<RunningScanner>>,
+    /// The latest health of each running scanner, by device.
+    status: Arc<std::sync::Mutex<Vec<ScannerStatusDto>>>,
+    /// How HID-POS scanners are reached (`hidapi`; tests use an emulated scanner).
+    hid: Arc<dyn HidBackend>,
     pub scans: tokio::sync::broadcast::Sender<SerialScanDto>,
     pub health: tokio::sync::broadcast::Sender<ScannerHealthDto>,
 }
 
 impl Default for ScannerHub {
     fn default() -> Self {
-        Self {
-            running: tokio::sync::Mutex::new(Vec::new()),
-            scans: tokio::sync::broadcast::channel(64).0,
-            health: tokio::sync::broadcast::channel(16).0,
-        }
+        Self::with_hid_backend(Arc::new(pos_device_hw::HidApiBackend))
     }
 }
 
-fn health_dto(name: &str, h: &DeviceHealth) -> ScannerHealthDto {
-    let (state, message) = match h {
+fn health_parts(h: &DeviceHealth) -> (&'static str, Option<String>) {
+    match h {
         DeviceHealth::Ready => ("ready", None),
         DeviceHealth::Warning(m) => ("warning", Some(m.clone())),
         DeviceHealth::Offline(m) => ("offline", Some(m.clone())),
         DeviceHealth::Unknown => ("unknown", None),
-    };
+    }
+}
+
+fn health_dto(name: &str, h: &DeviceHealth) -> ScannerHealthDto {
+    let (state, message) = health_parts(h);
     ScannerHealthDto {
         name: name.to_owned(),
         state: state.into(),
@@ -159,6 +187,32 @@ fn health_dto(name: &str, h: &DeviceHealth) -> ScannerHealthDto {
 }
 
 impl ScannerHub {
+    pub fn with_hid_backend(hid: Arc<dyn HidBackend>) -> Self {
+        Self {
+            running: tokio::sync::Mutex::new(Vec::new()),
+            status: Arc::new(std::sync::Mutex::new(Vec::new())),
+            hid,
+            scans: tokio::sync::broadcast::channel(64).0,
+            health: tokio::sync::broadcast::channel(16).0,
+        }
+    }
+
+    /// The HID-POS scanners attached now (Settings → Devices list).
+    pub async fn hid_devices(&self) -> Result<Vec<pos_device_hw::HidPosDevice>, String> {
+        let hid = self.hid.clone();
+        tokio::task::spawn_blocking(move || hid.list())
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
+    /// The configured scanners and their latest health.
+    pub fn status(&self) -> Vec<ScannerStatusDto> {
+        self.status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// Stops the running scanners and starts the enabled ones in `devices`.
     pub async fn restart(&self, devices: &[DeviceRecord]) {
         let mut running = self.running.lock().await;
@@ -166,31 +220,64 @@ impl ScannerHub {
             let _ = scanner.stop().await;
             task.abort();
         }
+        self.status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         for d in devices
             .iter()
             .filter(|d| d.kind == DeviceKind::Scanner && d.enabled)
         {
-            let config: ScannerConfig = match serde_json::from_value(d.config.clone()) {
+            let settings = match ScannerSettings::from_json(&d.config) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(device = %d.name, error = %e, "scanner settings not understood");
                     continue;
                 }
             };
-            let port = config.serial.port.clone();
-            let scanner = Arc::new(SerialScanner::new(config));
+            let target = settings.describe();
+            let (scanner, connection): (Arc<dyn BarcodeInputPort>, &str) = match settings {
+                ScannerSettings::Serial(c) => (Arc::new(SerialScanner::new(c)), "serial"),
+                ScannerSettings::HidPos(c) => (Arc::new(HidPosScanner::new(c, self.hid.clone())), "hidPos"),
+            };
+            self.status
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(ScannerStatusDto {
+                    device_id: d.device_id,
+                    name: d.name.clone(),
+                    connection: connection.into(),
+                    target: target.clone(),
+                    state: "unknown".into(),
+                    message: None,
+                });
             if let Err(e) = scanner.start().await {
                 tracing::warn!(device = %d.name, error = %e, "scanner did not start");
             }
             let mut scans = scanner.subscribe();
             let mut health = scanner.health();
-            let (tx, htx, name) = (self.scans.clone(), self.health.clone(), d.name.clone());
+            let (tx, htx, name, id) = (
+                self.scans.clone(),
+                self.health.clone(),
+                d.name.clone(),
+                d.device_id,
+            );
+            let table = self.status.clone();
             let task = tokio::spawn(async move {
+                let record = |h: &DeviceHealth| {
+                    let (state, message) = health_parts(h);
+                    let mut t = table.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if let Some(row) = t.iter_mut().find(|r| r.device_id == id) {
+                        row.state = state.into();
+                        row.message = message;
+                    }
+                };
+                record(&health.borrow_and_update().clone());
                 loop {
                     tokio::select! {
                         s = scans.recv() => match s {
                             Ok(e) => {
-                                let _ = tx.send(SerialScanDto { scan_event_id: e.id, raw: e.raw, port: port.clone() });
+                                let _ = tx.send(SerialScanDto { scan_event_id: e.id, raw: e.raw, port: target.clone() });
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                                 tracing::warn!(lost = n, "scanner events lagged");
@@ -199,7 +286,8 @@ impl ScannerHub {
                         },
                         changed = health.changed() => {
                             if changed.is_err() { break; }
-                            let h = health.borrow().clone();
+                            let h = health.borrow_and_update().clone();
+                            record(&h);
                             let _ = htx.send(health_dto(&name, &h));
                         }
                     }
@@ -647,6 +735,37 @@ pub async fn devices_discover(
     })
 }
 
+/// The USB HID-POS scanners attached now (Settings → Devices picks one).
+#[tauri::command]
+#[specta::specta]
+pub async fn hid_scanners_list(
+    services: State<'_, AppServices>,
+) -> Result<Vec<pos_device_hw::HidPosDevice>, IpcError> {
+    let ctx = services.context().await?;
+    ctx.authorize(pos_domain::Permission::DeviceConfigure)
+        .map_err(err)?;
+    let app = services.app()?;
+    tokio::time::timeout(Duration::from_secs(5), app.scanners.hid_devices())
+        .await
+        .map_err(|_| IpcError::coded(ErrorCode::DeviceUnavailable, "listing USB scanners took too long"))?
+        .map_err(|e| {
+            IpcError::coded(
+                ErrorCode::DeviceUnavailable,
+                format!("USB scanners could not be listed: {e}"),
+            )
+        })
+}
+
+/// The serial and HID-POS scanners set up on this till and how each is doing (any
+/// signed-in user: the status bar).
+#[tauri::command]
+#[specta::specta]
+pub async fn scanner_status(services: State<'_, AppServices>) -> Result<Vec<ScannerStatusDto>, IpcError> {
+    let ctx = services.context().await?;
+    ctx.actor().map_err(err)?;
+    Ok(services.app()?.scanners.status())
+}
+
 /// "No sale": opens the cash drawer with a reason. Cashiers need a manager's approval.
 #[tauri::command]
 #[specta::specta]
@@ -747,4 +866,74 @@ pub async fn display_show_total(services: State<'_, AppServices>) -> Result<(), 
     let view = app.carts.current(&ctx).await.map_err(err)?;
     app.devices.display.show_total_due(&view);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pos_device_hw::hidpos::{EmulatedHid, default_reports};
+    use pos_domain::Timestamp;
+
+    fn hid_device_record(device: &pos_device_hw::HidPosDevice) -> DeviceRecord {
+        DeviceRecord {
+            device_id: "0190a5b0-0000-7000-8000-000000000001".parse().unwrap(),
+            register_id: "0190a5b0-0000-7000-8000-000000000002".parse().unwrap(),
+            kind: DeviceKind::Scanner,
+            role: "hidpos".into(),
+            name: "USB scanner".into(),
+            config: ScannerSettings::HidPos(pos_device_hw::HidPosConfig::for_device(device)).to_json(),
+            enabled: true,
+            version: 1,
+            created_at: Timestamp::from_millis(0),
+            updated_at: Timestamp::from_millis(0),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_hid_pos_scanner_feeds_the_same_scan_events_as_a_serial_one() {
+        let device = pos_device_hw::HidPosDevice {
+            path: "/dev/hidraw2".into(),
+            vendor_id: 0x05e0,
+            product_id: 0x1300,
+            serial_number: None,
+            manufacturer: Some("Zebra".into()),
+            product: Some("DS2208".into()),
+        };
+        let emu = EmulatedHid::new(device.clone());
+        let hub = ScannerHub::with_hid_backend(Arc::new(emu.clone()));
+        assert_eq!(hub.hid_devices().await.unwrap(), std::slice::from_ref(&device));
+        let mut scans = hub.scans.subscribe();
+        hub.restart(&[hid_device_record(&device)]).await;
+
+        let wait_state = |want: &'static str| {
+            let hub = &hub;
+            async move {
+                for _ in 0..250 {
+                    let s = hub.status();
+                    if s.first().is_some_and(|r| r.state == want) {
+                        return s[0].clone();
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                panic!("scanner never {want}: {:?}", hub.status());
+            }
+        };
+        let ready = wait_state("ready").await;
+        assert_eq!(ready.connection, "hidPos");
+        assert_eq!(ready.target, "Zebra DS2208 (05e0:1300)");
+
+        emu.send(default_reports(b"]E0", b"4006381333931"));
+        let scan = tokio::time::timeout(Duration::from_secs(5), scans.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(scan.raw, "]E04006381333931");
+        assert_eq!(scan.port, "Zebra DS2208 (05e0:1300)");
+
+        emu.unplug();
+        let offline = wait_state("offline").await;
+        assert!(offline.message.unwrap().contains("Zebra DS2208"));
+        hub.restart(&[]).await;
+        assert!(hub.status().is_empty());
+    }
 }

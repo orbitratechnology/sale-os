@@ -137,6 +137,8 @@
     "allow-printer-profiles",
     "allow-devices-discover",
     "allow-drawer-open",
+    "allow-hid-scanners-list",
+    "allow-scanner-status",
     "allow-display-status",
     "allow-display-test",
     "allow-display-show-total",

@@ -517,6 +517,9 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ),
         // Customer display: none set up, so the test gets DEVICE_UNAVAILABLE and showing
         // the total due does nothing.
+        // Scanners: listing USB HID-POS scanners is set-up; their status is for everyone.
+        ("hid_scanners_list", Perm(DeviceConfigure), json!({})),
+        ("scanner_status", Session, json!({})),
         ("display_status", Session, json!({})),
         ("display_test", Perm(DeviceConfigure), json!({})),
         ("display_show_total", Perm(SaleComplete), json!({})),
@@ -2792,4 +2795,93 @@ fn a_customer_display_on_a_serial_port_follows_a_sale_over_ipc() {
         ),
     ));
     pty.wait_for(from, &cd);
+}
+
+#[test]
+fn a_hid_pos_scanner_is_saved_and_its_scans_go_through_the_scan_pipeline() {
+    // Settings → Devices: the USB HID-POS list (none attached on this machine), a refused
+    // configuration, a saved one beside the serial scanner, its status for any signed-in
+    // user, and a scan as the scanner delivers it (AIM identifier in front) going through
+    // scan_submit with its scan-event id: found, and counted once when delivered twice.
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Kamal Stores", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let listed = invoke(&w, "hid_scanners_list", json!({})).unwrap();
+    assert!(listed.is_array(), "{listed}");
+    assert_eq!(invoke(&w, "scanner_status", json!({})).unwrap(), json!([]));
+
+    let save = |config: Value| {
+        invoke(
+            &w,
+            "device_save",
+            json!({"input": {"deviceId": null, "kind": "scanner", "role": "hidpos", "name": "USB scanner",
+                "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+        )
+    };
+    let bad = save(json!({"hidPos": {"vendorId": 0, "productId": 4864}})).unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED", "{bad}");
+    assert_eq!(bad["details"]["field"], "hidPos.vendorId");
+    let saved = save(
+        json!({"hidPos": {"vendorId": 1504, "productId": 4864, "serialNumber": null,
+        "path": "/dev/hidraw9", "label": "Zebra DS2208 (05e0:1300)"}}),
+    )
+    .unwrap();
+    let stored: Value = serde_json::from_str(saved["configJson"].as_str().unwrap()).unwrap();
+    assert_eq!(stored["hidPos"]["vendorId"], 1504);
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "device.saved", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1, "{audited}");
+
+    // Not plugged in here: the till says so, by name, and keeps trying.
+    let started = std::time::Instant::now();
+    let status = loop {
+        let s = invoke(&w, "scanner_status", json!({})).unwrap();
+        if s[0]["state"] == "offline" || started.elapsed() > std::time::Duration::from_secs(5) {
+            break s;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status[0]["connection"], "hidPos", "{status}");
+    assert_eq!(status[0]["target"], "Zebra DS2208 (05e0:1300)");
+    assert_eq!(status[0]["state"], "offline", "{status}");
+    assert!(
+        status[0]["message"].as_str().unwrap().contains("Zebra DS2208"),
+        "{status}"
+    );
+
+    // The scan, as the HID-POS scanner hands it to the window.
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["variants"][0]["barcodes"] =
+        json!([{"raw": "4006381333931", "symbology": null, "qualifier": "primary", "packQtyMilli": null}]);
+    invoke(&w, "product_create", product).unwrap();
+    let scan = || {
+        invoke(
+            &w,
+            "scan_submit",
+            json!({"scanEventId": "0190a5b0-0000-7000-8000-0000000000a1", "raw": "]E04006381333931", "source": "scanner"}),
+        )
+        .unwrap()
+    };
+    let first = scan();
+    assert_eq!(first["outcome"], "added", "{first}");
+    let again = scan();
+    assert_eq!(again["outcome"], "duplicate", "{again}");
+    assert_eq!(again["cart"]["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(again["cart"]["lines"][0]["quantityMilli"], "1000");
 }

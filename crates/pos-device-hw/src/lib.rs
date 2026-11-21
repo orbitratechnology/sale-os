@@ -6,6 +6,8 @@
 //! - [`transport`]: TCP raw (port 9100), serial (RS-232, USB COM, Bluetooth SPP), device
 //!   files (`/dev/usb/lp0`, `LPT1`) and the OS spooler (winspool RAW, CUPS `lp -o raw`).
 //! - [`scanner::SerialScanner`]: serial barcode scanners with auto-reconnect.
+//! - [`hidpos::HidPosScanner`]: USB HID-POS barcode scanners (usage page 0x8C), behind a
+//!   [`hidpos::HidBackend`] so tests drive an emulated device.
 //! - [`display::HwCustomerDisplay`]: 2×20 customer (pole) displays, ESC/POS or CD5220.
 //! - [`profiles`]: model profiles (columns, code pages, cutter, drawer…), partly derived
 //!   from escpos-printer-db (CC BY 4.0, see `profiles/LICENSE-escpos-printer-db`).
@@ -20,15 +22,18 @@ pub mod config;
 pub mod discovery;
 pub mod display;
 pub mod escpos;
+pub mod hidpos;
 pub mod printer;
 pub mod profiles;
 pub mod scanner;
 pub mod transport;
 
 pub use config::{
-    FieldError, PrinterConfig, PrinterConnection, ScannerConfig, SerialSettings, Terminator, build_printer,
+    FieldError, PrinterConfig, PrinterConnection, ScannerConfig, ScannerSettings, SerialSettings, Terminator,
+    build_printer,
 };
 pub use display::{DisplayConfig, DisplayProtocol, HwCustomerDisplay};
+pub use hidpos::{HidApiBackend, HidBackend, HidPosConfig, HidPosDevice, HidPosScanner};
 pub use printer::{AsbTimings, DrawerOpenLevel, HwPrinter, IdentifiedPrinter, PrinterTimeouts, StatusSource};
 pub use profiles::{FontChoice, PrinterProfile, match_identified, profile, profiles};
 pub use scanner::SerialScanner;

@@ -14,6 +14,7 @@ specta = ["dep:specta"]
 [dependencies]
 async-trait.workspace = true
 deunicode.workspace = true
+hidapi.workspace = true
 pos-device-ports.workspace = true
 pos-domain.workspace = true
 serde.workspace = true
