@@ -281,7 +281,7 @@ export const commands = {
 	 */
 	inventoryPostDocument: (draft: DocumentDraftDto_Deserialize) => typedError<PostedDocumentDto, IpcError_Serialize>(__TAURI_INVOKE("inventory_post_document", { draft })),
 	/**  E11-T06: stock balances that differ from the sum of their movements (empty is healthy). */
-	stockVerify: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
+	stockVerify: () => typedError<StockDriftDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
 	/**
 	 *  E11-T05: stock on hand for every stock-tracked item (OK / Low / Negative), for anyone who
 	 *  can see inventory. `lowOnly` keeps low and negative items.
@@ -295,7 +295,7 @@ export const commands = {
 	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
 	 *  transaction, audited. Returns what was wrong before.
 	 */
-	stockRebuild: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
+	stockRebuild: () => typedError<StockDriftDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
 	/**  Sales, discounts, tax, refunds and net sales per business day and for the range. */
 	reportsSalesSummary: (range: DateRangeDto) => typedError<SalesSummaryDto, IpcError_Serialize>(__TAURI_INVOKE("reports_sales_summary", { range })),
 	/**  Payments taken and refunded per tender type, split by who confirmed them. */
@@ -1635,6 +1635,8 @@ export type LinkResultDto = {
 	signInAgain: boolean,
 };
 
+export type LocationId = string;
+
 /**  The file column (0-based) chosen for a meaning. */
 export type MappingEntryDto = {
 	column: Column,
@@ -2666,10 +2668,37 @@ export type StockDocumentLineDto_Serialize = {
 	unitCostMinor: string | null,
 };
 
-export type StockDriftDto = {
+export type StockDriftDto = StockDriftDto_Serialize | StockDriftDto_Deserialize;
+
+export type StockDriftDto_Deserialize = {
+	locationId: LocationId,
+	/**  Empty when the location is not known on this device. */
+	locationName: string,
 	variantId: VariantId,
+	/**  Product name and variant label; empty when the item is not in this device's catalogue. */
+	itemName: string,
+	sku?: string | null,
+	/**  `sellable` or `damaged`. */
 	bucket: string,
+	/**  What the stock figure says. */
 	recordedMilli: string,
+	/**  The sum of the item's recorded movements: what a rebuild sets it to. */
+	fromMovementsMilli: string,
+};
+
+export type StockDriftDto_Serialize = {
+	locationId: LocationId,
+	/**  Empty when the location is not known on this device. */
+	locationName: string,
+	variantId: VariantId,
+	/**  Product name and variant label; empty when the item is not in this device's catalogue. */
+	itemName: string,
+	sku: string | null,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	/**  What the stock figure says. */
+	recordedMilli: string,
+	/**  The sum of the item's recorded movements: what a rebuild sets it to. */
 	fromMovementsMilli: string,
 };
 

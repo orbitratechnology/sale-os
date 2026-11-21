@@ -1534,9 +1534,18 @@ impl PostedDocumentDto {
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StockDriftDto {
+    pub location_id: pos_domain::LocationId,
+    /// Empty when the location is not known on this device.
+    pub location_name: String,
     pub variant_id: VariantId,
+    /// Product name and variant label; empty when the item is not in this device's catalogue.
+    pub item_name: String,
+    pub sku: Option<String>,
+    /// `sellable` or `damaged`.
     pub bucket: String,
+    /// What the stock figure says.
     pub recorded_milli: String,
+    /// The sum of the item's recorded movements: what a rebuild sets it to.
     pub from_movements_milli: String,
 }
 
@@ -1544,7 +1553,11 @@ impl StockDriftDto {
     pub fn list(d: &[pos_application::records::StockDrift]) -> Vec<Self> {
         d.iter()
             .map(|d| Self {
+                location_id: d.location_id,
+                location_name: d.location_name.clone(),
                 variant_id: d.variant_id,
+                item_name: d.item_name.clone(),
+                sku: d.sku.clone(),
                 bucket: d.bucket.clone(),
                 recorded_milli: qty(d.recorded),
                 from_movements_milli: qty(d.from_movements),

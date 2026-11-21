@@ -492,6 +492,12 @@ pub struct StockDrift {
     pub recorded: pos_domain::Quantity,
     /// The sum of the movements (0 when there are none).
     pub from_movements: pos_domain::Quantity,
+    /// The item as the stock screen names it (product name and variant label); empty when
+    /// the variant is not in this device's catalogue.
+    pub item_name: String,
+    pub sku: Option<String>,
+    /// The location's name; empty when it is not known on this device.
+    pub location_name: String,
 }
 
 /// One stock movement as the history shows it (E11-T05).

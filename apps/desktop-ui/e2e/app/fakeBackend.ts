@@ -82,6 +82,10 @@ export interface FakeState {
   };
   /** Inventory documents posted so far (for their numbers). */
   documents: number;
+  /** E11-T06: stock figures that differ from their movements (what `stock_verify` finds), and
+   * the rebuilds made (each clears them, as Rust's does). */
+  stockDrift: { itemName: string; sku: string | null; locationName: string; bucket: string; recordedMilli: string; fromMovementsMilli: string }[];
+  stockRebuilds: number;
   /** CSV exports made. */
   exports: number;
   /** Business settings: key → value (JSON text) and version. */
@@ -237,6 +241,8 @@ function initialStateInner(preset: Preset): FakeState {
     returns: new Map(),
     drawer: { required: false, seq: 0, session: null, lastClosed: null },
     documents: 0,
+    stockDrift: [],
+    stockRebuilds: 0,
     exports: 0,
     settings: new Map(FAKE_SETTINGS.map((d) => [d.key, { valueJson: d.defaultJson, version: 1 }])),
     printScript: [],
@@ -988,6 +994,18 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         { movementId: id(), localTime: "2026-11-07 10:05", movementType: "sale", bucket: "sellable", deltaMilli: "-2000", sourceType: "sale", sourceId: sale?.saleId ?? id(), sourceNumber: sale?.receiptNumber ?? "R01-000004", actorName: "Cal" },
         { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: FAKE_DOCUMENT, sourceNumber: "R01-IN-000001", actorName: "Mia" },
       ];
+    }
+    case "stock_verify":
+    case "stock_rebuild": {
+      const me = needSession(s);
+      // Verify needs InventoryView (every role); rebuild is the owner's (SettingsEdit).
+      if (cmd === "stock_rebuild" && me.role !== "owner") fail("PERMISSION_DENIED");
+      const found = s.stockDrift.map((d) => ({ ...d, locationId: "0190a5b0-0000-7000-8000-0000000010c1", variantId: id() }));
+      if (cmd === "stock_rebuild") {
+        s.stockDrift = [];
+        s.stockRebuilds += 1;
+      }
+      return found;
     }
     case "stock_document_get": {
       needSession(s);

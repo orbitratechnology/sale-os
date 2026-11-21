@@ -1196,6 +1196,7 @@ describe("cash drawer (E15-T02)", () => {
     await closed.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
     expect(await calls(page, "cash_session_z_print")).toHaveLength(1);
 
+
     await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
     const serious = await page.evaluate(async () => {
       const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
@@ -1395,6 +1396,123 @@ describe("stock (E11-T02/T03)", () => {
     await history.waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+});
+
+describe("stock figures check (E11-T06)", () => {
+  async function axeSerious(page: Page): Promise<string[]> {
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    return page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+  }
+
+  it("the check runs when opened and says when every figure matches its history", async () => {
+    const page = await checkout();
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "Check figures" }).click();
+    const check = page.getByRole("region", { name: "Check stock figures" });
+    await check.getByTestId("stock-check-result").filter({ hasText: "All stock figures match their history." }).waitFor();
+    // (React's development StrictMode runs the opening effect twice; the app runs it once.)
+    const opened = (await calls(page, "stock_verify")).length;
+    expect(opened).toBeGreaterThanOrEqual(1);
+    // Nothing to rebuild: no table and no rebuild button.
+    expect(await check.getByRole("table").count()).toBe(0);
+    expect(await check.getByRole("button", { name: "Rebuild stock figures" }).count()).toBe(0);
+    await check.getByRole("button", { name: "Check again" }).click();
+    await page.waitForFunction((n) => window.__ipc.filter((c) => c.cmd === "stock_verify").length === n + 1, opened);
+    await check.getByTestId("stock-check-result").waitFor();
+    expect(await axeSerious(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("lists figures that differ; the owner rebuilds them after an alert, and the check runs again", async () => {
+    const page = await checkout();
+    await page.evaluate(() => {
+      window.__fake.stockDrift = [
+        { itemName: "Cola 330ml", sku: "COLA", locationName: "Main", bucket: "sellable", recordedMilli: "999", fromMovementsMilli: "40000" },
+        { itemName: "", sku: null, locationName: "", bucket: "damaged", recordedMilli: "0", fromMovementsMilli: "-1500" },
+      ];
+    });
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "Check figures" }).click();
+    const check = page.getByRole("region", { name: "Check stock figures" });
+    await check.getByTestId("stock-check-result").filter({ hasText: "2 stock figures do not match their history." }).waitFor();
+    const table = check.getByRole("table", { name: "Stock figures that do not match" });
+    expect(await table.getByRole("columnheader").allTextContents()).toEqual(["Item", "Location", "Stock", "Recorded", "From history"]);
+    const rows = await table.getByTestId("drift-row").evaluateAll((trs) =>
+      trs.map((tr) => [...tr.querySelectorAll("th, td")].map((c) => c.textContent?.trim())),
+    );
+    expect(rows).toEqual([
+      ["Cola 330ml · COLA", "Main", "Sellable", "0.999", "40"],
+      ["Unknown item", "Unknown location", "Damaged", "0", "-1.5"],
+    ]);
+    expect(await axeSerious(page)).toEqual([]);
+
+    // Cancel first: an alert dialog whose focus starts on Cancel, so Enter does not rebuild.
+    await check.getByRole("button", { name: "Rebuild stock figures" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Rebuild stock figures?" });
+    await dialog.getByText("2 stock figures will be set to the totals of their recorded movements.").waitFor();
+    await dialog.getByText("recorded in the audit log").waitFor();
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Cancel");
+    // Once the dialog has faded in (axe would otherwise measure it half transparent).
+    await page.waitForFunction(() => getComputedStyle(document.querySelector("dialog[open]") as Element).opacity === "1");
+    expect(await axeSerious(page)).toEqual([]);
+    await page.keyboard.press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    expect(await calls(page, "stock_rebuild")).toHaveLength(0);
+    // Escape closes the dialog only, not the stock screen.
+    await check.getByRole("button", { name: "Rebuild stock figures" }).click();
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    await check.waitFor();
+    expect(await calls(page, "stock_rebuild")).toHaveLength(0);
+
+    await check.getByRole("button", { name: "Rebuild stock figures" }).click();
+    await dialog.getByRole("button", { name: "Rebuild" }).click();
+    await check.getByTestId("stock-rebuilt").filter({ hasText: "2 stock figures were rebuilt from their history." }).waitFor();
+    await check.getByTestId("stock-check-result").filter({ hasText: "All stock figures match their history." }).waitFor();
+    expect(await calls(page, "stock_rebuild")).toHaveLength(1);
+    // Verified on opening, and again right after the rebuild.
+    const order = await page.evaluate(() => window.__ipc.map((c) => c.cmd).filter((c) => c === "stock_verify" || c === "stock_rebuild"));
+    expect(order[0]).toBe("stock_verify");
+    expect(order.slice(-2)).toEqual(["stock_rebuild", "stock_verify"]);
+    expect(await check.getByRole("table").count()).toBe(0);
+    expect(await axeSerious(page)).toEqual([]);
+  });
+
+  it("a manager sees the figures that differ but the rebuild is the owner's", async () => {
+    const page = await open("signIn");
+    await page.evaluate(() => {
+      window.__fake.stockDrift = [{ itemName: "Crisps", sku: "CRISP", locationName: "Main", bucket: "sellable", recordedMilli: "3000", fromMovementsMilli: "2000" }];
+    });
+    await page.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "Check figures" }).click();
+    const check = page.getByRole("region", { name: "Check stock figures" });
+    await check.getByTestId("stock-check-result").filter({ hasText: "1 stock figure does not match its history." }).waitFor();
+    await check.getByText("Only the owner can rebuild them").waitFor();
+    expect(await check.getByTestId("drift-row").count()).toBe(1);
+    expect(await check.getByRole("button", { name: "Rebuild stock figures" }).count()).toBe(0);
+  });
+
+  it("a cashier has no check view", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F11");
+    await page.getByRole("region", { name: "Stock on hand" }).waitFor();
+    expect(await page.getByRole("tab", { name: "Check figures" }).count()).toBe(0);
+    expect(await calls(page, "stock_verify")).toHaveLength(0);
   });
 });
 

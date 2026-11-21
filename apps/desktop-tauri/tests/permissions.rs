@@ -1212,6 +1212,75 @@ fn a_receipt_pdf_over_ipc() {
 }
 
 #[test]
+fn stock_figures_checked_and_rebuilt_over_ipc() {
+    // E11-T06 through the shell: a stock figure changed outside the app is found by
+    // `stock_verify`, named as the stock screen shows it, and `stock_rebuild` puts it back
+    // and audits it.
+    let (_dir, app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Tea");
+    product["product"]["variants"][0]["sku"] = json!("TEA");
+    let made = invoke(&w, "product_create", product).unwrap();
+    let variant = made["variants"][0]["variantId"].clone();
+    invoke(
+        &w,
+        "inventory_post_document",
+        json!({"draft": {"docType": "receipt", "reason": null, "supplierName": null, "reference": null, "note": null,
+                         "lines": [{"variantId": variant, "quantityMilli": "12000", "unitCostMinor": null}]}}),
+    )
+    .unwrap();
+    assert_eq!(invoke(&w, "stock_verify", json!({})).unwrap(), json!([]));
+
+    let db = app.state::<AppServices>().db.as_ref().unwrap().clone();
+    tauri::async_runtime::block_on(async {
+        sqlx::query("UPDATE stock_balances SET on_hand_milli = 999")
+            .execute(db.writer())
+            .await
+            .unwrap();
+    });
+    let drift = invoke(&w, "stock_verify", json!({})).unwrap();
+    let row = &drift.as_array().unwrap()[..];
+    assert_eq!(row.len(), 1, "{drift}");
+    assert_eq!(
+        (
+            row[0]["itemName"].as_str(),
+            row[0]["sku"].as_str(),
+            row[0]["bucket"].as_str(),
+            row[0]["recordedMilli"].as_str(),
+            row[0]["fromMovementsMilli"].as_str(),
+        ),
+        (Some("Tea"), Some("TEA"), Some("sellable"), Some("999"), Some("12000"))
+    );
+    assert!(!row[0]["locationName"].as_str().unwrap().is_empty());
+    assert_eq!(row[0]["variantId"], variant);
+
+    let fixed = invoke(&w, "stock_rebuild", json!({})).unwrap();
+    assert_eq!(fixed, drift, "the rebuild reports what it repaired");
+    assert_eq!(invoke(&w, "stock_verify", json!({})).unwrap(), json!([]));
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "inventory.projection_rebuilt", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn a_cash_session_over_ipc() {
     // E15-T02 through the shell: open with a float, sell for cash, close with a count,
     // then read and print the Z summary.

@@ -894,6 +894,21 @@
     font-size: var(--fs-sm);
     font-weight: var(--fw-medium);
   }
+  /* The same, for a good outcome (stock figures match their history). */
+  .callout-ok {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: flex-start;
+    margin: 0;
+    padding: var(--sp-3);
+    border-radius: var(--r-lg);
+    background: var(--c-success-soft);
+    color: var(--c-success);
+    border: 1px solid color-mix(in oklab, var(--c-success) 25%, transparent);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+  }
+  .callout-ok > .lucide,
   .callout-warning > .lucide {
     flex: none;
     inline-size: var(--icon);
