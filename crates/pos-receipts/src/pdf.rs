@@ -18,7 +18,7 @@
 // amounts are formatted from `Money` into text before layout.
 #![allow(clippy::disallowed_types)]
 
-use crate::document::{CopyKind, DocumentKind, ReceiptDocument, amount};
+use crate::document::{CopyKind, DocumentKind, ReceiptDocument, ZSection, amount, tender_label};
 use crate::text::{self, COLUMNS_58MM, COLUMNS_80MM, Style, char_columns};
 use krilla::Document;
 use krilla::geom::{PathBuilder, Point, Size, Transform};
@@ -342,11 +342,14 @@ pub fn render_pdf_with_logo(
     let layout = match format {
         PdfFormat::Receipt58 => roll(doc, 58.0, COLUMNS_58MM, logo),
         PdfFormat::Receipt80 => roll(doc, 80.0, COLUMNS_80MM, logo),
-        // The Z summary and the tax invoice are laid out as text on A4 (their particulars in
-        // the order the text renderer gives them).
-        PdfFormat::A4 if matches!(doc.kind, DocumentKind::CashSession | DocumentKind::TaxInvoice) => {
-            a4_grid(doc)
-        }
+        // A Z summary is laid out from its own section: session, takings and the count.
+        PdfFormat::A4 if doc.kind == DocumentKind::CashSession => match &doc.z {
+            Some(z) => a4_z(doc, z),
+            None => a4_grid(doc),
+        },
+        // The tax invoice is laid out as text on A4 (its particulars in the order the text
+        // renderer gives them, which follows the gazette).
+        PdfFormat::A4 if doc.kind == DocumentKind::TaxInvoice => a4_grid(doc),
         PdfFormat::A4 => a4_invoice(doc, logo),
     };
     draw(&layout, doc, logo)
@@ -425,7 +428,8 @@ fn roll(doc: &ReceiptDocument, paper_mm: f32, columns: usize, logo: Option<&crat
     }
 }
 
-/// A Z summary on A4: the 48-column lines, larger, on as many pages as needed.
+/// A document on A4 as its 48-column lines, larger, on as many pages as needed (the tax
+/// invoice, and a Z summary stored without its section).
 fn a4_grid(doc: &ReceiptDocument) -> Layout {
     let lines = text::render(doc, COLUMNS_80MM);
     let cell = 2.6 * MM;
@@ -550,21 +554,6 @@ fn a4_invoice(doc: &ReceiptDocument, logo: Option<&crate::logo::Logo>) -> Layout
     let (left, right) = (p.left, p.right);
 
     // Header: the shop on the left, the receipt on the right.
-    let mut shop: Vec<(String, FontId, f32)> =
-        vec![(doc.header.business_name.clone(), FontId::SansBold, 14.0)];
-    shop.extend(
-        doc.header
-            .address_lines
-            .iter()
-            .map(|l| (l.clone(), FontId::Sans, BODY)),
-    );
-    if let Some(ph) = &doc.header.phone {
-        shop.push((format!("Tel {ph}"), FontId::Sans, BODY));
-    }
-    if let Some(t) = &doc.header.tax_registration_no {
-        shop.push((format!("Tax no. {t}"), FontId::Sans, BODY));
-    }
-    shop.extend(doc.header.lines.iter().map(|l| (l.clone(), FontId::Sans, BODY)));
     let mut info: Vec<(String, FontId, f32)> = vec![(
         if refund { "Refund receipt" } else { "Receipt" }.to_owned(),
         FontId::SansBold,
@@ -600,17 +589,7 @@ fn a4_invoice(doc: &ReceiptDocument, logo: Option<&crate::logo::Logo>) -> Layout
         }
         p.y += h + 4.0 * MM;
     }
-    let top = p.y;
-    for (i, (t, f, s)) in shop.iter().enumerate() {
-        p.y = top + 14.0 + i as f32 * LINE + if i > 0 { 4.0 } else { 0.0 };
-        p.text(left, t, *f, *s, Align::Left);
-    }
-    let shop_end = p.y;
-    for (i, (t, f, s)) in info.iter().enumerate() {
-        p.y = top + 14.0 + i as f32 * LINE + if i > 0 { 4.0 } else { 0.0 };
-        p.text(right, t, *f, *s, Align::Right);
-    }
-    p.y = p.y.max(shop_end) + 10.0 * MM;
+    a4_header(&mut p, doc, &info);
 
     // Items.
     let col_qty = left + 104.0 * MM;
@@ -785,6 +764,229 @@ fn a4_invoice(doc: &ReceiptDocument, logo: Option<&crate::logo::Logo>) -> Layout
         p.text(mid, l, FontId::Sans, BODY, Align::Center);
         p.y += LINE;
     }
+    Layout {
+        page: A4,
+        pages: p.pages,
+    }
+}
+
+/// The A4 header: the shop on the left, `info` (the document's title and details) on the
+/// right; leaves `p.y` below both.
+fn a4_header(p: &mut Pager, doc: &ReceiptDocument, info: &[(String, FontId, f32)]) {
+    let (left, right) = (p.left, p.right);
+    let mut shop: Vec<(String, FontId, f32)> =
+        vec![(doc.header.business_name.clone(), FontId::SansBold, 14.0)];
+    shop.extend(
+        doc.header
+            .address_lines
+            .iter()
+            .map(|l| (l.clone(), FontId::Sans, BODY)),
+    );
+    if let Some(ph) = &doc.header.phone {
+        shop.push((format!("Tel {ph}"), FontId::Sans, BODY));
+    }
+    if let Some(t) = &doc.header.tax_registration_no {
+        shop.push((format!("Tax no. {t}"), FontId::Sans, BODY));
+    }
+    shop.extend(doc.header.lines.iter().map(|l| (l.clone(), FontId::Sans, BODY)));
+    let top = p.y;
+    for (i, (t, f, s)) in shop.iter().enumerate() {
+        p.y = top + 14.0 + i as f32 * LINE + if i > 0 { 4.0 } else { 0.0 };
+        p.text(left, t, *f, *s, Align::Left);
+    }
+    let shop_end = p.y;
+    for (i, (t, f, s)) in info.iter().enumerate() {
+        p.y = top + 14.0 + i as f32 * LINE + if i > 0 { 4.0 } else { 0.0 };
+        p.text(right, t, *f, *s, Align::Right);
+    }
+    p.y = p.y.max(shop_end) + 10.0 * MM;
+}
+
+/// One row of a Z summary table on A4.
+struct ZRow {
+    label: String,
+    count: Option<u32>,
+    value: String,
+    /// Indented under the row above (a part of it, such as the tax in the sales).
+    sub: bool,
+    bold: bool,
+}
+
+impl ZRow {
+    fn new(label: &str, count: Option<u32>, value: String) -> Self {
+        Self {
+            label: label.to_owned(),
+            count,
+            value,
+            sub: false,
+            bold: false,
+        }
+    }
+    fn sub(mut self) -> Self {
+        self.sub = true;
+        self
+    }
+    fn bold(mut self) -> Self {
+        self.bold = true;
+        self
+    }
+}
+
+/// A Z summary on A4, laid out from its [`ZSection`]: the shop and the session on top, then
+/// tables for the takings, the payments taken, the refunds paid and the cash count, each
+/// amount right-aligned in one column and each count in another. It states the same figures
+/// as the printed summary.
+fn a4_z(doc: &ReceiptDocument, z: &ZSection) -> Layout {
+    let margin = 18.0 * MM;
+    let mut p = Pager {
+        pages: vec![Vec::new()],
+        y: margin,
+        left: margin,
+        right: A4.0 - margin,
+        top: margin,
+        bottom: A4.1 - margin,
+    };
+    let exp = doc.currency_exponent;
+    let m = |v: pos_domain::Money| amount(v, exp);
+    let neg = |v: pos_domain::Money| {
+        if v.minor() == 0 {
+            m(v)
+        } else {
+            format!("-{}", m(v))
+        }
+    };
+    let (left, right) = (p.left, p.right);
+
+    let mut info: Vec<(String, FontId, f32)> = vec![("Z summary".into(), FontId::SansBold, 14.0)];
+    info.push((format!("No. {}", doc.meta.receipt_number), FontId::Sans, BODY));
+    info.push((
+        format!("{} ({})", doc.meta.register_name, doc.meta.register_code),
+        FontId::Sans,
+        BODY,
+    ));
+    if doc.copy == CopyKind::Reprint {
+        info.push(("REPRINT".into(), FontId::SansBold, BODY));
+    }
+    if doc.sandbox {
+        info.push(("SANDBOX - PRACTICE".into(), FontId::SansBold, BODY));
+    }
+    a4_header(&mut p, doc, &info);
+
+    // The session: when it opened and closed, and who by.
+    let when_x = left + 30.0 * MM;
+    p.text(left, "Session", FontId::SansBold, 11.0, Align::Left);
+    p.y += 4.0;
+    p.rule();
+    p.y += LINE;
+    for (what, time, by) in [
+        ("Opened", &z.opened_local, &z.opened_by),
+        ("Closed", &doc.meta.local_time, &doc.meta.cashier_name),
+    ] {
+        p.text(left, what, FontId::Sans, BODY, Align::Left);
+        p.text(when_x, &format!("{time} by {by}"), FontId::Sans, BODY, Align::Left);
+        p.y += LINE;
+    }
+    p.y += LINE;
+
+    // Tables: label, count, amount.
+    let count_x = left + 130.0 * MM;
+    let table = |p: &mut Pager, title: &str, counts: bool, rows: &[ZRow]| {
+        // A table is kept on one page (it moves to the next whole).
+        p.room(LINE + 4.0 + rows.len() as f32 * (LINE + 1.0));
+        p.text(left, title, FontId::SansBold, 11.0, Align::Left);
+        if counts {
+            p.text(count_x, "Count", FontId::SansBold, BODY, Align::Right);
+        }
+        p.text(right, "Amount", FontId::SansBold, BODY, Align::Right);
+        p.y += 4.0;
+        p.rule();
+        p.y += LINE;
+        for r in rows {
+            let (f, size) = if r.bold {
+                (FontId::SansBold, 11.0)
+            } else {
+                (FontId::Sans, BODY)
+            };
+            let x = if r.sub { left + 5.0 * MM } else { left };
+            p.text(x, &r.label, f, size, Align::Left);
+            if let Some(c) = r.count {
+                p.text(count_x, &c.to_string(), f, size, Align::Right);
+            }
+            if !r.value.is_empty() {
+                p.text(right, &r.value, f, size, Align::Right);
+            }
+            p.y += LINE + if r.bold { 1.0 } else { 0.0 };
+        }
+        p.y += LINE;
+    };
+
+    let t = &z.totals;
+    let mut takings = vec![
+        ZRow::new("Sales", Some(t.sales_count), m(t.sales_total)),
+        ZRow::new("incl. tax", None, m(t.tax_total)).sub(),
+    ];
+    if t.discount_total.minor() != 0 {
+        takings.push(ZRow::new("Discounts given", None, neg(t.discount_total)).sub());
+    }
+    if t.rounding_total.minor() != 0 {
+        takings.push(ZRow::new("Cash rounding", None, m(t.rounding_total)).sub());
+    }
+    takings.push(ZRow::new("Returns", Some(t.returns_count), neg(t.refunds_total)));
+    table(&mut p, "Takings", true, &takings);
+
+    let mut taken: Vec<ZRow> = t
+        .tenders
+        .iter()
+        .map(|k| ZRow::new(tender_label(k.kind), Some(k.count), m(k.amount)))
+        .collect();
+    if taken.is_empty() {
+        taken.push(ZRow::new("None", None, String::new()));
+    }
+    table(&mut p, "Payments taken", true, &taken);
+    if !t.refunds.is_empty() {
+        let paid: Vec<ZRow> = t
+            .refunds
+            .iter()
+            .map(|k| ZRow::new(tender_label(k.kind), Some(k.count), neg(k.amount)))
+            .collect();
+        table(&mut p, "Refunds paid", true, &paid);
+    }
+
+    let cash_in = t.cash_in().unwrap_or_default();
+    let cash_out = t.cash_out().unwrap_or_default();
+    let (variance_label, variance) = match z.variance.minor().signum() {
+        0 => ("Variance", m(z.variance)),
+        1 => ("Variance (over)", format!("+{}", m(z.variance))),
+        _ => ("Variance (short)", m(z.variance)),
+    };
+    table(
+        &mut p,
+        "Cash in the drawer",
+        false,
+        &[
+            ZRow::new("Opening float", None, m(z.opening_float)),
+            ZRow::new("+ Cash from sales", None, m(cash_in)),
+            ZRow::new("- Cash refunds", None, neg(cash_out)),
+            ZRow::new("Expected cash", None, m(z.expected)).bold(),
+            ZRow::new("Counted cash", None, m(z.counted)).bold(),
+            ZRow::new(variance_label, None, variance).bold(),
+        ],
+    );
+
+    if let Some(note) = &z.note {
+        let rows = wrap_width(note, FontId::Sans, BODY, right - left);
+        p.room(LINE * (rows.len() as f32 + 1.0));
+        p.text(left, "Note", FontId::SansBold, BODY, Align::Left);
+        p.y += LINE;
+        for r in &rows {
+            p.text(left, r, FontId::Sans, BODY, Align::Left);
+            p.y += LINE;
+        }
+        p.y += LINE;
+    }
+
+    p.room(LINE);
+    p.text((left + right) / 2.0, &doc.barcode, FontId::Sans, BODY, Align::Center);
     Layout {
         page: A4,
         pages: p.pages,

@@ -111,6 +111,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `inventory_post_document` | InventoryReceive (opening/receipt) / InventoryAdjust (adjustment/write_off) | `InventoryDocumentDraft → DocumentDto` | E11-T02/T03 |
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
 | `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
+| `cash_session_z_export_pdf` | CashSessionViewVariance | `{ sessionId?, paper: receipt\|a4 } → { path, fileName } \| null` (null: the user cancelled the save dialog); audited `receipt.exported_pdf` | E15-T02, E13-T04 |
 | `stock_document_get` | InventoryView | `{ documentId } → { documentNo, docType, reason?, supplierName?, reference?, note?, localTime, actorName, approverName?, lines[] }` | E11-T05 |
 | `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
 | `settings_get` / `settings_update` | SettingsEdit (owner) | `→ [{ key, group, label, help, kind, valueJson, defaultJson, version }]`; `{ key, valueJson, baseVersion } → setting` (unknown key or wrong type: `VALIDATION_FAILED`; stale version: `CONFLICT_VERSION`). Registry and defaults: docs/settings.md (generated) | E04-T03 |

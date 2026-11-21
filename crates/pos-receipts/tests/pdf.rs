@@ -395,3 +395,98 @@ fn the_logo_is_drawn_above_the_receipt_and_the_text_is_unchanged() {
     let z = render_pdf_with_logo(&doc("z_summary"), PdfFormat::Receipt80, Some(&logo)).unwrap();
     assert!(images(&z).is_empty(), "no logo on a Z summary");
 }
+
+/// A Z summary on A4 is laid out from its section, not as receipt lines: each figure sits
+/// on one line with its label (its count in its own column), the tables are in the printed
+/// summary's order, and the copy, sandbox, over/short and empty cases read as they should.
+#[test]
+fn a_z_summary_on_a4_is_laid_out_from_its_section() {
+    let d = doc("z_summary");
+    let pdf = render_pdf(&d, PdfFormat::A4).unwrap();
+    let f = fonts(&pdf);
+    assert!(
+        f.contains("NotoSans-Regular") && f.contains("NotoSans-Bold") && !f.iter().any(|n| n.contains("Mono")),
+        "proportional fonts, not the receipt grid: {f:?}"
+    );
+    let pages = read(&pdf);
+    assert_eq!(pages.len(), 1);
+    let lines = &pages[0].1;
+    let at = |want: &str| {
+        lines
+            .iter()
+            .position(|l| l == want)
+            .unwrap_or_else(|| panic!("{want:?} not in {lines:#?}"))
+    };
+    // Every figure of the printed summary, by its label, in the same order.
+    let order: Vec<usize> = [
+        "Corner Shop Z summary",
+        "1 High Street No. R01-Z-0007",
+        "Opened 2026-01-01 08:58 by Olu",
+        "Closed 2026-01-01 17:30 by Mia",
+        "Takings Count Amount",
+        "Sales 12 123.45",
+        "incl. tax 20.57",
+        "Discounts given -3.00",
+        "Cash rounding 0.02",
+        "Returns 2 -6.50",
+        "Payments taken Count Amount",
+        "Card (external) 4 43.45",
+        "Cash 9 80.00",
+        "Refunds paid Count Amount",
+        "Card (external) 1 -4.00",
+        "Cash 1 -2.50",
+        "Cash in the drawer Amount",
+        "Opening float 100.00",
+        "+ Cash from sales 80.00",
+        "- Cash refunds -2.50",
+        "Expected cash 177.50",
+        "Counted cash 177.00",
+        "Variance (short) -0.50",
+        "50p coin found under the drawer after the count",
+        "R01-Z-0007",
+    ]
+    .iter()
+    .map(|w| at(w))
+    .collect();
+    assert!(order.is_sorted(), "out of order: {order:?}\n{lines:#?}");
+    // The receipt-width lines are not what is drawn.
+    assert!(!lines.iter().any(|l| l.contains("Z SUMMARY") || l.contains("EXPECTED CASH")));
+
+    // A reprint from a sandbox till, nothing taken, counted over, with a long note.
+    let mut quiet = d.clone();
+    quiet.copy = pos_receipts::document::CopyKind::Reprint;
+    quiet.sandbox = true;
+    let z = quiet.z.as_mut().unwrap();
+    z.totals.tenders.clear();
+    z.totals.refunds.clear();
+    z.totals.discount_total = pos_domain::Money::ZERO;
+    z.totals.rounding_total = pos_domain::Money::ZERO;
+    z.variance = pos_domain::Money::from_minor(25);
+    z.note = Some("word ".repeat(60).trim_end().to_owned());
+    let lines = read(&render_pdf(&quiet, PdfFormat::A4).unwrap())
+        .into_iter()
+        .flat_map(|(_, l)| l)
+        .collect::<Vec<_>>();
+    // (The right-hand header column reads back on the same line as the shop's details.)
+    for want in ["REPRINT", "SANDBOX - PRACTICE", "None", "Variance (over) +0.25"] {
+        assert!(
+            lines.iter().any(|l| l == want || l.ends_with(&format!(" {want}"))),
+            "{want:?} not in {lines:#?}"
+        );
+    }
+    assert!(!lines.iter().any(|l| l.starts_with("Refunds paid") || l.starts_with("Discounts given")));
+    // The note wraps inside the margins and loses no word.
+    let words: usize = lines
+        .iter()
+        .filter(|l| l.starts_with("word"))
+        .map(|l| l.split(' ').count())
+        .sum();
+    assert_eq!(words, 60);
+    assert!(lines.iter().filter(|l| l.starts_with("word")).count() >= 2);
+
+    // Even: "Variance 0.00".
+    let mut even = d;
+    even.z.as_mut().unwrap().variance = pos_domain::Money::ZERO;
+    let lines = read(&render_pdf(&even, PdfFormat::A4).unwrap()).remove(0).1;
+    assert!(lines.iter().any(|l| l == "Variance 0.00"), "{lines:#?}");
+}

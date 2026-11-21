@@ -80,3 +80,24 @@ pub async fn cash_session_z_print(
     let job = app.prints.print_receipt(&ctx, receipt).await.map_err(err)?;
     Ok(PrintJobDto::from_record(&job))
 }
+
+/// Saves a closed session's Z summary as a PDF (`sessionId: null`: the last one on this
+/// till), on the till's receipt paper or A4. As with receipts (E13-T04), Rust renders it,
+/// asks where to save it with the system dialog and writes the file; the WebView never
+/// names a path. `null` when the user cancels. Audited as `receipt.exported_pdf`.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_session_z_export_pdf(
+    services: State<'_, AppServices>,
+    session_id: Option<pos_domain::CashSessionId>,
+    paper: crate::dto::PdfPaperDto,
+) -> Result<Option<crate::dto::SavedFileDto>, IpcError> {
+    let ctx = services.context().await?;
+    crate::sale_commands::save_pdf(
+        &services,
+        &ctx,
+        pos_application::receipts::ReceiptOf::ZSummary(session_id),
+        paper,
+    )
+    .await
+}

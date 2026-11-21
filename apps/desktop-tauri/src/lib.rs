@@ -148,6 +148,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         cash_commands::cash_session_close,
         cash_commands::cash_session_z_get,
         cash_commands::cash_session_z_print,
+        cash_commands::cash_session_z_export_pdf,
         sync_commands::sync_retry_now,
         sync_commands::sync_status,
         sync_commands::sync_link_start,

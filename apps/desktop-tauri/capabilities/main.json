@@ -119,6 +119,7 @@
     "allow-cash-session-close",
     "allow-cash-session-z-get",
     "allow-cash-session-z-print",
+    "allow-cash-session-z-export-pdf",
     "allow-sync-retry-now",
     "allow-sync-status",
     "allow-sync-link-start",

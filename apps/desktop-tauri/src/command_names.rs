@@ -114,6 +114,7 @@ pub const COMMANDS: &[&str] = &[
     "cash_session_close",
     "cash_session_z_get",
     "cash_session_z_print",
+    "cash_session_z_export_pdf",
     "sync_retry_now",
     "sync_status",
     "sync_link_start",

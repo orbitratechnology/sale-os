@@ -6,21 +6,28 @@ import { commands, type IpcError } from "../../ipc";
 import type { PdfPaperDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { useT } from "../../i18n";
+import type { ReceiptSource } from "./ReceiptPreview";
+
+/** Rust renders the stored document and asks where to save it; `data: null` is Cancel. */
+function exportPdf(source: ReceiptSource, paper: PdfPaperDto) {
+  switch (source.kind) {
+    case "sale":
+      return commands.receiptExportPdf(source.id, null, paper);
+    case "return":
+      return commands.receiptExportPdf(null, source.id, paper);
+    case "taxInvoice":
+      return commands.taxInvoiceExportPdf(source.id, paper);
+    case "z":
+      return commands.cashSessionZExportPdf(source.id, paper);
+  }
+}
 
 /**
- * Save a receipt as a PDF (E13-T04): no printer needed. Rust renders the stored receipt,
- * opens the system "Save as" dialog and writes the file; cancelling the dialog does nothing.
+ * Save a receipt, a tax invoice or a Z summary as a PDF (E13-T04): no printer needed. Rust
+ * renders the stored document, opens the system "Save as" dialog and writes the file;
+ * cancelling the dialog does nothing.
  */
-export function SavePdf({
-  saleId,
-  returnId,
-  taxInvoiceOf,
-}: {
-  saleId: string | null;
-  returnId: string | null;
-  /** The sale whose tax invoice to save (D-02), instead of a receipt. */
-  taxInvoiceOf?: string;
-}) {
+export function SavePdf({ source }: { source: ReceiptSource }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
@@ -29,7 +36,7 @@ export function SavePdf({
   async function save(paper: PdfPaperDto) {
     setBusy(true);
     setError(null);
-    const res = taxInvoiceOf ? await commands.taxInvoiceExportPdf(taxInvoiceOf, paper) : await commands.receiptExportPdf(saleId, returnId, paper);
+    const res = await exportPdf(source, paper);
     setBusy(false);
     if (res.status === "error") return setError(res.error);
     if (res.data) setSaved(res.data.fileName);

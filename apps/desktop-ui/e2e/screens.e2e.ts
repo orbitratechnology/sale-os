@@ -1196,6 +1196,21 @@ describe("cash drawer (E15-T02)", () => {
     await closed.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
     expect(await calls(page, "cash_session_z_print")).toHaveLength(1);
 
+    // The Z summary saves as a PDF too, through Rust's Save dialog (E13-T04).
+    await page.evaluate(() => {
+      window.__fake.saveAs = [null];
+    });
+    await closed.getByRole("button", { name: "Save as PDF" }).click();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "cash_session_z_export_pdf").length === 1);
+    expect(await closed.getByTestId("pdf-status").textContent()).toBe("");
+    await closed.getByRole("button", { name: "Save A4 PDF" }).click();
+    await closed.getByTestId("pdf-status").filter({ hasText: "Saved z-summary-R01-Z-0001-A4.pdf." }).waitFor();
+    const zSession = await page.evaluate(() => window.__fake.drawer.lastClosed?.id);
+    expect(await calls(page, "cash_session_z_export_pdf")).toEqual([
+      { sessionId: zSession, paper: "receipt" },
+      { sessionId: zSession, paper: "a4" },
+    ]);
+    // Nothing here names a file path: the WebView only says which summary and which paper.
 
     await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
     const serious = await page.evaluate(async () => {
@@ -1205,6 +1220,30 @@ describe("cash drawer (E15-T02)", () => {
     });
     expect(serious).toEqual([]);
   });
+  it("the last Z summary saves as a PDF from the closed drawer", async () => {
+    const page = await till("checkout");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F10");
+    await page.getByLabel(/Opening float/).fill("20");
+    await page.keyboard.press("Enter");
+    await page.getByText("R01-Z-0001").waitFor();
+    await page.getByLabel(/Counted cash/).fill("20");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Close the drawer?" }).getByRole("button", { name: "Close drawer" }).click();
+    await page.getByRole("region", { name: "Drawer closed" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+
+    await page.keyboard.press("F10");
+    const form = page.getByRole("form", { name: "Open the drawer" });
+    await form.getByRole("button", { name: "Last Z summary" }).click();
+    await form.getByTestId("receipt-text").filter({ hasText: "Z SUMMARY" }).waitFor();
+    await form.getByRole("button", { name: "Save as PDF" }).click();
+    await form.getByTestId("pdf-status").filter({ hasText: "Saved z-summary-R01-Z-0001.pdf." }).waitFor();
+    // The last closed session (null): Rust looks it up for this till.
+    expect(await calls(page, "cash_session_z_export_pdf")).toEqual([{ sessionId: null, paper: "receipt" }]);
+  });
+
   it("closing warns about parked carts, which stay parked (POS-012)", async () => {
     const page = await till("checkout");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();

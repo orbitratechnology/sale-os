@@ -373,6 +373,13 @@ export const commands = {
 	cashSessionZGet: (sessionId: CashSessionId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_get", { sessionId, widthMm })),
 	/**  Prints a closed session's Z summary (later copies are reprints). */
 	cashSessionZPrint: (sessionId: CashSessionId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_print", { sessionId })),
+	/**
+	 *  Saves a closed session's Z summary as a PDF (`sessionId: null`: the last one on this
+	 *  till), on the till's receipt paper or A4. As with receipts (E13-T04), Rust renders it,
+	 *  asks where to save it with the system dialog and writes the file; the WebView never
+	 *  names a path. `null` when the user cancels. Audited as `receipt.exported_pdf`.
+	 */
+	cashSessionZExportPdf: (sessionId: CashSessionId | null, paper: PdfPaperDto) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_export_pdf", { sessionId, paper })),
 	/**  Pushes pending events now, with the retry delay reset (E17-T03). Any signed-in user. */
 	syncRetryNow: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_retry_now")),
 	/**  Where sync stands. Any signed-in user. */

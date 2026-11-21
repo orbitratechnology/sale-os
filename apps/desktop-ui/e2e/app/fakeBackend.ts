@@ -1440,6 +1440,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const answer = s.saveAs.length ? s.saveAs.shift() : `tax-invoice-${sale.taxInvoice.number}.pdf`;
       return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
     }
+    case "cash_session_z_export_pdf": {
+      const me = needSession(s);
+      // As Rust: the Z summary needs CashSessionViewVariance, and a closed session.
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const z = s.drawer.lastClosed ?? fail("VALIDATION_FAILED");
+      if (a.sessionId != null && a.sessionId !== z.id) fail("VALIDATION_FAILED");
+      const answer = s.saveAs.length ? s.saveAs.shift() : `z-summary-${z.number}${a.paper === "a4" ? "-A4" : ""}.pdf`;
+      return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
+    }
     case "tax_invoice_print":
     case "cash_session_z_print":
     case "return_receipt_print":

@@ -482,6 +482,12 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(CashSessionViewVariance),
             json!({"sessionId": null}),
         ),
+        // No dialog in tests: an allowed call finds no closed session (VALIDATION_FAILED).
+        (
+            "cash_session_z_export_pdf",
+            Perm(CashSessionViewVariance),
+            json!({"sessionId": null, "paper": "a4"}),
+        ),
         // Devices (E20-T11, ADR-024). No real device in tests: allowed calls reach the
         // virtual printer or report DEVICE_UNAVAILABLE.
         ("devices_list", Perm(DeviceConfigure), json!({})),
@@ -1278,6 +1284,96 @@ fn stock_figures_checked_and_rebuilt_over_ipc() {
     )
     .unwrap();
     assert_eq!(audited["rows"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn a_z_summary_pdf_over_ipc() {
+    // E15-T02 + E13-T04: a closed session's Z summary saved as a PDF through the same Save
+    // dialog as receipts. Rust renders the stored summary and writes the file; cancelling
+    // writes and records nothing; the save is audited with the session's number.
+    let out = tempfile::tempdir().unwrap();
+    let dialog = Arc::new(ScriptedDialog::default());
+    *dialog.answers.lock().unwrap() = vec![
+        None,
+        Some(out.path().join("z.pdf")),
+        Some(out.path().join("z-a4")),
+    ];
+    let (_dir, _app, w) = start_with(Some(dialog.clone()));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let pdf = |args: Value| invoke(&w, "cash_session_z_export_pdf", args);
+    // No closed session yet: nothing to save, and the dialog is never shown.
+    let none = pdf(json!({"sessionId": null, "paper": "a4"})).unwrap_err();
+    assert_eq!(none["code"], "VALIDATION_FAILED");
+    assert!(dialog.suggested.lock().unwrap().is_empty());
+
+    invoke(&w, "cash_session_open", json!({"floatMinor": "5000"})).unwrap();
+    let closed = invoke(
+        &w,
+        "cash_session_close",
+        json!({"countedMinor": "4990", "note": "short a coin"}),
+    )
+    .unwrap();
+    let session = closed["session"]["cashSessionId"].clone();
+    let exported = || {
+        invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "receipt.exported_pdf", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+
+    // Cancelled: nothing saved, nothing recorded.
+    assert_eq!(pdf(json!({"sessionId": session, "paper": "receipt"})).unwrap(), Value::Null);
+    assert!(exported().is_empty());
+    assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+    // The till's roll (80 mm by default), by session id.
+    let saved = pdf(json!({"sessionId": session, "paper": "receipt"})).unwrap();
+    assert_eq!(saved["fileName"], "z.pdf");
+    assert!(
+        std::fs::read(out.path().join("z.pdf"))
+            .unwrap()
+            .starts_with(b"%PDF-")
+    );
+    // A4, as the last closed session; ".pdf" is added to a bare name.
+    let saved = pdf(json!({"sessionId": null, "paper": "a4"})).unwrap();
+    assert_eq!(saved["fileName"], "z-a4.pdf");
+    let bytes = std::fs::read(out.path().join("z-a4.pdf")).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert_eq!(
+        *dialog.suggested.lock().unwrap(),
+        vec![
+            "z-summary-R01-Z-0001.pdf",
+            "z-summary-R01-Z-0001.pdf",
+            "z-summary-R01-Z-0001-A4.pdf"
+        ]
+    );
+    let rows = exported();
+    assert_eq!(rows.len(), 2);
+    let meta: Value = serde_json::from_str(rows[0]["metadata"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        (meta["receiptNumber"].as_str(), meta["format"].as_str(), meta["file"].as_str()),
+        (Some("R01-Z-0001"), Some("a4"), Some("z-a4.pdf"))
+    );
+    assert_eq!(rows[0]["entityType"], "receipt");
+    // An unknown session: refused before the dialog.
+    let unknown = pdf(json!({"sessionId": UNKNOWN_ID, "paper": "a4"})).unwrap_err();
+    assert_eq!(unknown["code"], "VALIDATION_FAILED");
+    assert_eq!(dialog.suggested.lock().unwrap().len(), 3);
 }
 
 #[test]

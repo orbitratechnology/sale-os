@@ -304,6 +304,7 @@ impl AppServices {
                 },
                 receipt_pdfs: ReceiptPdfService {
                     receipts: a.clone(),
+                    cash: a.clone(),
                     store: a.clone(),
                 },
                 sales: SalesService { sales: a.clone() },

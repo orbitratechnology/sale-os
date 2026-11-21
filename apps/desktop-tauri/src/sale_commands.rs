@@ -1192,7 +1192,7 @@ pub async fn stock_history(
 
 /// Renders a receipt, refund or tax invoice as a PDF, asks where to save it (Rust opens the
 /// dialog: the WebView never names a path), writes it and records the export.
-async fn save_pdf(
+pub(crate) async fn save_pdf(
     services: &AppServices,
     ctx: &pos_application::context::CommandContext,
     of: pos_application::receipts::ReceiptOf,
