@@ -102,4 +102,11 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 1
-strip = "debuginfo"
+# Do not strip. rustc strips with its bundled llvm-objcopy, which can leave the Mach-O
+# __LINKEDIT string table 4-byte aligned; dyld on macOS 27 refuses to load such binaries
+# ("mis-aligned LINKEDIT string pool"). That broke `tauri build` at the first proc-macro
+# (sqlx-macros) and would also stop the stripped app from launching. Leaving `strip` unset
+# is not enough: Cargo then strips debuginfo by default. `debug` is already off, so the cost
+# is only std's debuginfo, a few MB. Restore `strip = "debuginfo"` once the toolchain ships
+# the LLVM objcopy fix that aligns __LINKEDIT entries to pointer size.
+strip = false
