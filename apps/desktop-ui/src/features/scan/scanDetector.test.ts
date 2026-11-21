@@ -94,6 +94,21 @@ describe("terminators and noise", () => {
     expect(run(suffix, keys).scans).toEqual([]);
   });
 
+  it.each<ScanSuffix>(["none", "Enter", "Tab"])("a stall right after the first character keeps the code whole (suffix %s)", (suffix) => {
+    // The Windows runner's AT-03 failure: "5", 52 ms, then the other 12 characters.
+    for (const stall of [52, 130]) {
+      const keys: Array<[string, number]> = [["5", 0], ...[..."012345678910"].map((c, i): [string, number] => [c, i === 0 ? stall : 5])];
+      if (suffix !== "none") keys.push([suffix, 5]);
+      expect(run(suffix, keys).scans.map((s) => s.raw), `${stall} ms`).toEqual(["5012345678910"]);
+    }
+  });
+
+  it("a person's slow keys after a first key are still not a scan", () => {
+    const keys: Array<[string, number]> = [["4", 0], ["2", 100], ["7", 90], ["1", 110], ["Enter", 80]];
+    expect(run("Enter", keys).scans).toEqual([]);
+    expect(run("none", keys.slice(0, 4)).scans).toEqual([]);
+  });
+
   it("too many stalls drop the whole scan; the tail is not emitted", () => {
     const keys: Array<[string, number]> = [
       ...[..."5012345678900"].map((c, i): [string, number] => [c, i === 0 ? 0 : i === 3 || i === 5 || i === 7 ? 100 : 5]),

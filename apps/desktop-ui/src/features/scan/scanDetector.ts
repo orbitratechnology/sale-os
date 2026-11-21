@@ -136,6 +136,8 @@ export class ScanDetector {
   private discardedAt = Number.NEGATIVE_INFINITY;
   /** The current burst continues one that broke on a stall: it must not be emitted. */
   private broken = false;
+  /** The current burst absorbed a stall while it was typing at scanner speed. */
+  private judgedFast = false;
 
   constructor(
     private readonly config: ScanDetectorConfig,
@@ -152,16 +154,31 @@ export class ScanDetector {
           gap <= this.config.maxStallMs && this.stalls < this.config.maxStalls && this.isFastSoFar();
         if (gap > this.config.maxInterKeyMs && absorbStall) {
           this.stalls += 1;
+          this.judgedFast = true;
           this.gaps.push(gap);
         } else if (gap > this.config.maxInterKeyMs && this.mayBeSlowScan(gap)) {
+          this.gaps.push(gap);
+        } else if (
+          gap > this.config.maxInterKeyMs &&
+          this.buffer.length === 1 &&
+          gap <= this.config.maxStallMs &&
+          this.stalls < this.config.maxStalls
+        ) {
+          // A stall right after the first character: one key gives no speed to judge, so it
+          // is absorbed like any stall (the whole burst must still average scanner speed to
+          // be emitted). Otherwise the first character was dropped and the rest delivered as
+          // a scan of its own: a truncated code (seen on the Windows runner, 52 ms, suffix
+          // "none", which has no slow-scanner path to carry it).
+          this.stalls += 1;
           this.gaps.push(gap);
         } else if (gap > this.config.maxInterKeyMs) {
           // The burst has ended. Without a suffix the gap is the terminator; with one, an
           // unterminated burst is human typing or a partial read: drop it. A scanner-speed
           // burst cut by a stall marks what follows as its remainder (never a scan of its own).
-          // A burst that already absorbed a stall was judged scanner-fast when it did.
+          // A burst that absorbed a stall while fast was judged scanner-fast then (a stall
+          // after its first key proves nothing about speed, so it does not count).
           const stalledScan =
-            this.config.suffix !== "none" && (this.isFastSoFar() || this.stalls > 0) && gap <= RESUME_WINDOW_MS;
+            this.config.suffix !== "none" && (this.isFastSoFar() || this.judgedFast) && gap <= RESUME_WINDOW_MS;
           let emitted = false;
           if (this.config.suffix === "none") emitted = this.emitIfScan("gap", this.lastAt);
           else this.diagnoseUnterminated();
@@ -271,5 +288,6 @@ export class ScanDetector {
     this.stalls = 0;
     this.gaps = [];
     this.broken = false;
+    this.judgedFast = false;
   }
 }

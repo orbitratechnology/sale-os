@@ -312,6 +312,12 @@ scanners, scales (E20-T06) and customer displays are the remaining device gaps.
 (once locally on 2026-11-07, then on the Windows runner). It was a real bug: a scan broken by a long
 stall was emitted as a truncated code. Fixed on 2026-11-19 (`c68edd1`, see above); if it fails again
 its message now shows the codes received and every key gap over 30 ms.
+On 2026-11-21 the Windows runner failed it again (suffix "none"): a 52 ms stall right after a scan's
+**first** key dropped that key and delivered the other twelve as a scan of their own. One key gives no
+speed to judge, so the stall was not absorbed. Fixed: a stall within `maxStallMs` after the first key
+is absorbed (the burst must still average scanner speed), without counting as proof of scanner speed
+for the stalled-scan rule (`scanDetector.test.ts`). The same day one local run failed the Tab case
+and its message was not kept; 14 further runs, 8 under CPU load, passed. Not explained yet.
 
 **Security exceptions (`deny.toml`, review by 2027-02-01):** RUSTSEC-2026-0459 (SQLite CVE in the
 bundled `libsqlite3-sys`; no `sqlx` release, 0.8.6 or 0.9.0, accepts the fixed 0.39 yet; the app
