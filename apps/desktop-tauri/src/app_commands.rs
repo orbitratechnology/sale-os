@@ -372,6 +372,7 @@ pub async fn app_preferences(
         scanner_suffix: p.scanner_suffix,
         scanner_max_key_gap_ms: p.scanner_max_key_gap_ms,
         lock_timeout_secs: p.lock_timeout_secs,
+        error_sound: p.error_sound,
     })
 }
 

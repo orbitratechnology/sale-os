@@ -21,6 +21,26 @@ pub async fn tax_list(services: State<'_, AppServices>) -> Result<Vec<TaxCategor
     Ok(cats.into_iter().map(Into::into).collect())
 }
 
+/// What a new product starts as (settings `catalog.default_unit` and
+/// `catalog.default_track_stock`), for the editor's blank product. Anyone who sees the catalogue.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_new_product_defaults(
+    services: State<'_, AppServices>,
+) -> Result<crate::dto::NewProductDefaultsDto, IpcError> {
+    let ctx = services.context().await?;
+    let d = services
+        .app()?
+        .catalog
+        .new_product_defaults(&ctx)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::NewProductDefaultsDto {
+        unit: d.unit.code().to_owned(),
+        track_stock: d.track_stock,
+    })
+}
+
 /// The product list (E06-T06a): one page, by name, with summary columns.
 #[tauri::command]
 #[specta::specta]
@@ -65,6 +85,32 @@ pub async fn product_create(
         .await
         .map_err(err)?;
     ProductDto::from_product(&p)
+}
+
+/// E07-T04: a product for a barcode the till did not know, created from the "not found"
+/// prompt. A cashier needs a manager's approval for that barcode (`approvalTokenId`); the
+/// product must carry `barcode`.
+#[tauri::command]
+#[specta::specta]
+pub async fn product_create_from_scan(
+    services: State<'_, AppServices>,
+    product: ProductInputDto,
+    barcode: String,
+    approval_token_id: Option<ApprovalId>,
+) -> Result<ProductDto, IpcError> {
+    let input = product.into_domain()?;
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services
+        .app()?
+        .catalog
+        .create_from_scan(&ctx, input, &barcode)
+        .await
+    {
+        Ok(p) => ProductDto::from_product(&p),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
 }
 
 /// `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`.
@@ -120,6 +166,69 @@ pub async fn catalog_lookup_code(
     Ok(hit.map(Into::into))
 }
 
+/// One page of the quick-select grid (E09-T04, POS-002).
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickSelectPageDto {
+    /// The grid's tabs: categories that have quick-select products, in their order.
+    pub categories: Vec<QuickSelectCategoryDto>,
+    /// Products in the chosen tab, all pages.
+    pub total: u32,
+    pub products: Vec<QuickProductDto>,
+}
+
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickSelectCategoryDto {
+    pub category_id: pos_domain::CategoryId,
+    pub name: String,
+}
+
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickProductDto {
+    pub product_id: pos_domain::ProductId,
+    pub name: String,
+    /// More than one: the till asks which.
+    pub variants: Vec<CatalogHitDto>,
+}
+
+/// Products flagged for quick-select, by name, `limit` (at most 48) per page; `categoryId`
+/// narrows to one tab.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_quick_select(
+    services: State<'_, AppServices>,
+    category_id: Option<pos_domain::CategoryId>,
+    offset: u32,
+    limit: u32,
+) -> Result<QuickSelectPageDto, IpcError> {
+    let ctx = services.context().await?;
+    let page = services
+        .app()?
+        .catalog
+        .quick_select(&ctx, category_id, offset, limit)
+        .await
+        .map_err(err)?;
+    Ok(QuickSelectPageDto {
+        categories: page
+            .categories
+            .into_iter()
+            .map(|(category_id, name)| QuickSelectCategoryDto { category_id, name })
+            .collect(),
+        total: page.total,
+        products: page
+            .products
+            .into_iter()
+            .map(|p| QuickProductDto {
+                product_id: p.product_id,
+                name: p.name,
+                variants: p.variants.into_iter().map(Into::into).collect(),
+            })
+            .collect(),
+    })
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn catalog_search(
@@ -128,13 +237,28 @@ pub async fn catalog_search(
     limit: u32,
 ) -> Result<Vec<CatalogHitDto>, IpcError> {
     let ctx = services.context().await?;
-    let hits = services
-        .app()?
-        .catalog
-        .search(&ctx, &query, limit)
-        .await
-        .map_err(err)?;
-    Ok(hits.into_iter().map(Into::into).collect())
+    let app = services.app()?;
+    let hits = app.catalog.search(&ctx, &query, limit).await.map_err(err)?;
+    let tracked: Vec<VariantId> = hits
+        .iter()
+        .filter(|h| h.track_stock)
+        .map(|h| h.variant_id)
+        .collect();
+    let on_hand = app.carts.on_hand(&ctx, &tracked).await.map_err(err)?;
+    Ok(hits
+        .into_iter()
+        .map(|h| {
+            let stock = h.track_stock.then(|| {
+                on_hand
+                    .get(&h.variant_id)
+                    .copied()
+                    .unwrap_or(pos_domain::Quantity::ZERO)
+            });
+            let mut dto = CatalogHitDto::from(h);
+            dto.on_hand_milli = stock.map(|q| q.milli().to_string());
+            dto
+        })
+        .collect())
 }
 
 /// Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI
@@ -159,20 +283,30 @@ pub async fn scan_submit(
         .await
         .map_err(err)?;
     Ok(match outcome {
-        ScanOutcome::Added { view, change } => {
+        ScanOutcome::Added { view, change, hint } => {
             let cart = CartViewDto::from_view(&view)?;
+            let hint = crate::dto::scan_hint(&hint);
             match change {
-                CartChange::QuantityIncreased { line, .. } => {
-                    ScanOutcomeDto::Incremented { cart, line_id: line }
-                }
-                CartChange::LineAdded(line) => ScanOutcomeDto::Added { cart, line_id: line },
+                CartChange::QuantityIncreased { line, .. } => ScanOutcomeDto::Incremented {
+                    cart,
+                    line_id: line,
+                    hint,
+                },
+                CartChange::LineAdded(line) => ScanOutcomeDto::Added {
+                    cart,
+                    line_id: line,
+                    hint,
+                },
                 other => return Err(IpcError::internal(format!("unexpected scan change {other:?}"))),
             }
         }
         ScanOutcome::Duplicate { view } => ScanOutcomeDto::Duplicate {
             cart: CartViewDto::from_view(&view)?,
         },
-        ScanOutcome::NotFound { code } => ScanOutcomeDto::NotFound { code },
+        ScanOutcome::NotFound { code, hint } => ScanOutcomeDto::NotFound {
+            code,
+            hint: crate::dto::scan_hint(&hint),
+        },
     })
 }
 
@@ -350,8 +484,152 @@ pub async fn cart_void(
     res
 }
 
+/// The cart the last run left open (E09-T02, POS-011), for the "Recovered cart" prompt.
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveredCartDto {
+    pub cart_id: pos_domain::CartId,
+    /// Send back with `cart_recovery_discard`.
+    pub revision: u32,
+    pub lines: u32,
+    /// At today's prices, minor units as a decimal string.
+    pub total_minor: String,
+    /// Lines whose price changed since they were added (marked after Resume).
+    pub repriced_lines: u32,
+}
+
+/// After sign-in: the cart the app was closed with, until it is resumed or discarded.
+/// `null` when there is nothing to offer (asked again later, it stays `null`).
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_recovery(services: State<'_, AppServices>) -> Result<Option<RecoveredCartDto>, IpcError> {
+    let ctx = services.context().await?;
+    let found = services.app()?.carts.recovery(&ctx).await.map_err(err)?;
+    Ok(found.map(|r| RecoveredCartDto {
+        cart_id: r.cart_id,
+        revision: u32::try_from(r.revision).unwrap_or(u32::MAX),
+        lines: u32::try_from(r.lines).unwrap_or(u32::MAX),
+        total_minor: r.total.minor().to_string(),
+        repriced_lines: u32::try_from(r.repriced).unwrap_or(u32::MAX),
+    }))
+}
+
+/// Resume: the recovered cart, priced as items sell now, with changed prices marked.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_recovery_resume(services: State<'_, AppServices>) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services.app()?.carts.resume_recovered(&ctx).await.map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// Discard: empties the recovered cart (needs the right to clear a cart), audited as
+/// `cart.recovery_discarded`. `revision` is the one the prompt showed.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_recovery_discard(
+    services: State<'_, AppServices>,
+    revision: u32,
+) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services
+        .app()?
+        .carts
+        .discard_recovered(&ctx, u64::from(revision))
+        .await
+        .map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// A parked cart in the list (POS-012).
+#[derive(Debug, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ParkedCartDto {
+    pub cart_id: pos_domain::CartId,
+    pub label: Option<String>,
+    /// RFC 3339.
+    pub parked_at: String,
+    pub parked_by_name: String,
+    pub lines: u32,
+    /// At today's prices, minor units as a decimal string.
+    pub total_minor: String,
+}
+
+fn parked_dto(list: Vec<pos_application::cart::ParkedSummary>) -> Vec<ParkedCartDto> {
+    list.into_iter()
+        .map(|p| ParkedCartDto {
+            cart_id: p.cart_id,
+            label: p.label,
+            parked_at: p.parked_at.to_rfc3339(),
+            parked_by_name: p.parked_by_name,
+            lines: u32::try_from(p.lines).unwrap_or(u32::MAX),
+            total_minor: p.total.minor().to_string(),
+        })
+        .collect()
+}
+
+/// POS-012: sets the cart aside (with an optional label, at most 40 characters) and returns
+/// a fresh empty one. An empty cart cannot be parked; at most 20 per register.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_park(
+    services: State<'_, AppServices>,
+    revision: u32,
+    label: Option<String>,
+) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services
+        .app()?
+        .carts
+        .park(&ctx, u64::from(revision), label.as_deref())
+        .await
+        .map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// POS-012: the parked carts on this register, oldest first, priced as they sell today.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_parked_list(services: State<'_, AppServices>) -> Result<Vec<ParkedCartDto>, IpcError> {
+    let ctx = services.context().await?;
+    Ok(parked_dto(services.app()?.carts.parked(&ctx).await.map_err(err)?))
+}
+
+/// POS-012: makes a parked cart the current one. The current cart must be empty.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_resume(
+    services: State<'_, AppServices>,
+    cart_id: pos_domain::CartId,
+) -> Result<CartViewDto, IpcError> {
+    let ctx = services.context().await?;
+    let view = services.app()?.carts.resume(&ctx, cart_id).await.map_err(err)?;
+    CartViewDto::from_view(&view)
+}
+
+/// POS-012: voids a parked cart without resuming it, with a reason; a cashier needs a
+/// manager's approval (as for voiding a sale). Returns the parked carts left.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_discard_parked(
+    services: State<'_, AppServices>,
+    cart_id: pos_domain::CartId,
+    reason: String,
+    approval_token_id: Option<ApprovalId>,
+) -> Result<Vec<ParkedCartDto>, IpcError> {
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let res = match services.app()?.carts.discard_parked(&ctx, cart_id, &reason).await {
+        Ok(list) => Ok(parked_dto(list)),
+        Err(e) => Err(err(e)),
+    };
+    services.settle(token, &res);
+    res
+}
+
 /// Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
 /// stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
+/// `terminal`: approved card-terminal payments to include (E22-T02). Afterwards the cash
+/// drawer opens when cash was taken and `drawer.open_on_cash_sale` is on (E20-T05).
 #[tauri::command]
 #[specta::specta]
 pub async fn checkout_complete(
@@ -359,26 +637,58 @@ pub async fn checkout_complete(
     cart_id: pos_domain::CartId,
     revision: u32,
     tenders: Vec<TenderInputDto>,
+    terminal: Option<Vec<crate::payment_commands::TerminalTenderDto>>,
 ) -> Result<CompletedSaleDto, IpcError> {
     let ctx = services.context().await?;
     let tenders = tenders
         .into_iter()
         .map(TenderInputDto::into_domain)
         .collect::<Result<Vec<_>, _>>()?;
-    let done = services
-        .app()?
-        .checkout
-        .complete_sale(
-            &ctx,
-            pos_application::checkout::CompleteSale {
-                cart_id,
-                revision: u64::from(revision),
-                tenders,
-            },
-        )
+    let took_cash = tenders
+        .iter()
+        .any(|t| t.kind == pos_domain::settlement::TenderKind::Cash);
+    let input = pos_application::checkout::CompleteSale {
+        cart_id,
+        revision: u64::from(revision),
+        tenders,
+    };
+    let app = services.app()?;
+    let terminal = terminal.unwrap_or_default();
+    let done = if terminal.is_empty() {
+        app.checkout.complete_sale(&ctx, input).await.map_err(err)?
+    } else {
+        let provider = crate::payment_commands::provider_tenders(&terminal)?;
+        crate::payment_commands::flow(&services)
+            .await?
+            .complete_sale(&ctx, &app.checkout, input, &provider)
+            .await
+            .map_err(err)?
+    };
+    let mut dto = CompletedSaleDto::from_completed(&done);
+    let open_on_cash = setting_bool(&app.queries, "drawer.open_on_cash_sale", true).await;
+    dto.drawer = match app
+        .devices
+        .after_sale(&ctx, done.sale.id, took_cash, open_on_cash)
         .await
-        .map_err(err)?;
-    Ok(CompletedSaleDto::from_completed(&done))
+    {
+        pos_application::devices::DrawerKick::Opened => "opened".into(),
+        pos_application::devices::DrawerKick::NotNeeded | pos_application::devices::DrawerKick::NoDrawer => {
+            "none".into()
+        }
+        pos_application::devices::DrawerKick::Failed(why) => format!("failed: {why}"),
+    };
+    Ok(dto)
+}
+
+/// A boolean business setting, `default` when unset or unreadable.
+pub(crate) async fn setting_bool(q: &pos_local_db::SqliteStore, key: &str, default: bool) -> bool {
+    use pos_application::settings::SettingsQueries;
+    q.stored_settings()
+        .await
+        .ok()
+        .and_then(|all| all.into_iter().find(|(k, ..)| k == key))
+        .and_then(|(_, v, _)| v.as_bool())
+        .unwrap_or(default)
 }
 
 /// A sale's receipt as stored at completion, rendered for 58 or 80 mm paper (E13-T03).
@@ -535,6 +845,148 @@ pub async fn return_create(
     res
 }
 
+/// An exchange: the return and the sale of the current cart in one transaction. The
+/// returned value pays for the cart (recorded as a cash refund and a cash payment of the same
+/// amount); `tenders` is what the customer pays on top, `refunds` what of the returned value
+/// is paid back other than as change. Same approval rule as a return.
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+pub async fn exchange_complete(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    lines: Vec<crate::dto::ReturnLineInputDto>,
+    reason: pos_domain::returns::ReturnReason,
+    note: Option<String>,
+    refunds: Vec<TenderInputDto>,
+    approval_token_id: Option<ApprovalId>,
+    cart_id: pos_domain::CartId,
+    revision: u32,
+    tenders: Vec<TenderInputDto>,
+) -> Result<crate::dto::CompletedExchangeDto, IpcError> {
+    let lines = lines
+        .into_iter()
+        .map(crate::dto::ReturnLineInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let refunds = refunds
+        .into_iter()
+        .map(TenderInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let tenders = tenders
+        .into_iter()
+        .map(TenderInputDto::into_domain)
+        .collect::<Result<Vec<_>, _>>()?;
+    let (ctx, token) = services.context_with_approval(approval_token_id).await?;
+    let app = services.app()?;
+    let res = pos_application::exchange::complete(
+        &app.returns,
+        &app.checkout,
+        &ctx,
+        pos_application::exchange::CreateExchange {
+            ret: pos_application::returns::CreateReturn {
+                sale_id,
+                lines,
+                reason,
+                note,
+                refunds,
+            },
+            cart_id,
+            revision: u64::from(revision),
+            tenders,
+        },
+    )
+    .await
+    .map(|done| crate::dto::CompletedExchangeDto {
+        ret: crate::dto::CompletedReturnDto::from_completed(&done.ret),
+        sale: CompletedSaleDto::from_completed(&done.sale),
+    })
+    .map_err(err);
+    services.settle(token, &res);
+    res
+}
+
+/// D-02: issues the VAT tax invoice of a sale for a registered buyer (TIN, name, address as
+/// on their certificate). One per sale; numbered `YYMMM_<register>_XXXXX`.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_issue(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    purchaser_tin: String,
+    purchaser_name: String,
+    purchaser_address: Vec<String>,
+) -> Result<crate::dto::ReceiptDto, IpcError> {
+    let ctx = services.context().await?;
+    let r = services
+        .app()?
+        .tax_invoices
+        .issue(
+            &ctx,
+            sale_id,
+            pos_application::tax_invoice::Purchaser {
+                tin: purchaser_tin,
+                name: purchaser_name,
+                address: purchaser_address,
+            },
+        )
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::ReceiptDto::from_rendered(&r))
+}
+
+/// A sale's tax invoice as issued, for 58 or 80 mm paper; `null` if none was issued.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_get(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    width_mm: Option<u32>,
+) -> Result<Option<crate::dto::ReceiptDto>, IpcError> {
+    let ctx = services.context().await?;
+    let r = services
+        .app()?
+        .tax_invoices
+        .get(&ctx, sale_id, width_mm)
+        .await
+        .map_err(err)?;
+    Ok(r.as_ref().map(crate::dto::ReceiptDto::from_rendered))
+}
+
+/// Prints a sale's tax invoice; later copies are marked as copies.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_print(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+) -> Result<crate::dto::PrintJobDto, IpcError> {
+    let ctx = services.context().await?;
+    let job = services
+        .app()?
+        .prints
+        .print_tax_invoice(&ctx, sale_id)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::PrintJobDto::from_record(&job))
+}
+
+/// Saves a sale's tax invoice as a PDF (receipt width or A4) where the user chooses.
+#[tauri::command]
+#[specta::specta]
+pub async fn tax_invoice_export_pdf(
+    services: State<'_, AppServices>,
+    sale_id: pos_domain::SaleId,
+    paper: crate::dto::PdfPaperDto,
+) -> Result<Option<crate::dto::SavedFileDto>, IpcError> {
+    let ctx = services.context().await?;
+    save_pdf(
+        &services,
+        &ctx,
+        pos_application::receipts::ReceiptOf::TaxInvoice(sale_id),
+        paper,
+    )
+    .await
+}
+
 /// A return's refund receipt as stored, rendered for 58 or 80 mm paper.
 #[tauri::command]
 #[specta::specta]
@@ -594,39 +1046,7 @@ pub async fn receipt_export_pdf(
             )));
         }
     };
-    let app = services.app()?;
-    let pdf = app
-        .receipt_pdfs
-        .render(&ctx, of, paper.into_domain())
-        .await
-        .map_err(err)?;
-    let chosen = services
-        .file_dialog
-        .ask(&pdf.file_name, ("PDF", &["pdf"]))
-        .await
-        .ok()
-        .flatten();
-    let Some(path) = chosen else {
-        return Ok(None);
-    };
-    let path = if path.extension().is_some() {
-        path
-    } else {
-        path.with_extension("pdf")
-    };
-    write_replacing(&path, &pdf.bytes).map_err(IpcError::internal)?;
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    app.receipt_pdfs
-        .record(&ctx, &pdf, &file_name)
-        .await
-        .map_err(err)?;
-    Ok(Some(crate::dto::SavedFileDto {
-        path: path.display().to_string(),
-        file_name,
-    }))
+    save_pdf(&services, &ctx, of, paper).await
 }
 
 /// Writes `bytes` to `path` (the dialog has already asked about replacing an existing
@@ -735,6 +1155,23 @@ pub async fn stock_overview(
     Ok(crate::dto::StockReportDto::from_rows(&rows, ctx.now()))
 }
 
+/// One posted stock document (goods received, adjustment, write-off, opening stock).
+#[tauri::command]
+#[specta::specta]
+pub async fn stock_document_get(
+    services: State<'_, AppServices>,
+    document_id: pos_domain::InventoryDocumentId,
+) -> Result<crate::dto::StockDocumentDto, IpcError> {
+    let ctx = services.context().await?;
+    let doc = services
+        .app()?
+        .stock
+        .document(&ctx, document_id)
+        .await
+        .map_err(err)?;
+    Ok(crate::dto::StockDocumentDto::from_view(doc))
+}
+
 /// E11-T05: one item's stock movements, newest first, with what caused each.
 #[tauri::command]
 #[specta::specta]
@@ -751,4 +1188,48 @@ pub async fn stock_history(
         .await
         .map_err(err)?;
     Ok(crate::dto::StockHistoryDto::list(&rows))
+}
+
+/// Renders a receipt, refund or tax invoice as a PDF, asks where to save it (Rust opens the
+/// dialog: the WebView never names a path), writes it and records the export.
+async fn save_pdf(
+    services: &AppServices,
+    ctx: &pos_application::context::CommandContext,
+    of: pos_application::receipts::ReceiptOf,
+    paper: crate::dto::PdfPaperDto,
+) -> Result<Option<crate::dto::SavedFileDto>, IpcError> {
+    let app = services.app()?;
+    let logo = crate::config_commands::stored_logo(services).await;
+    let pdf = app
+        .receipt_pdfs
+        .render(ctx, of, paper.into_domain(), logo.as_ref())
+        .await
+        .map_err(err)?;
+    let chosen = services
+        .file_dialog
+        .ask(&pdf.file_name, ("PDF", &["pdf"]))
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = chosen else {
+        return Ok(None);
+    };
+    let path = if path.extension().is_some() {
+        path
+    } else {
+        path.with_extension("pdf")
+    };
+    write_replacing(&path, &pdf.bytes).map_err(IpcError::internal)?;
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    app.receipt_pdfs
+        .record(ctx, &pdf, &file_name)
+        .await
+        .map_err(err)?;
+    Ok(Some(crate::dto::SavedFileDto {
+        path: path.display().to_string(),
+        file_name,
+    }))
 }

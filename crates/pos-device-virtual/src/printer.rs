@@ -2,7 +2,9 @@
 //! `<name>.bin` and a human-readable decode to `<name>.txt`, and plays scripted outcomes
 //! (accept, paper out, cover open, disconnected, timeout) for tests and the dev panel.
 
-use pos_device_ports::{PrintFailure, PrintResult, ReceiptOutputPort};
+use pos_device_ports::{
+    CashDrawerPort, DeviceError, DrawerPin, PrintFailure, PrintResult, ReceiptOutputPort,
+};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -22,6 +24,8 @@ pub struct VirtualPrinter {
     out_dir: PathBuf,
     script: Mutex<VecDeque<Scenario>>,
     submissions: AtomicUsize,
+    drawer_opens: Mutex<Vec<DrawerPin>>,
+    drawer_fails: Mutex<Option<DeviceError>>,
 }
 
 /// Files written for one captured job.
@@ -38,6 +42,8 @@ impl VirtualPrinter {
             out_dir: out_dir.into(),
             script: Mutex::new(VecDeque::new()),
             submissions: AtomicUsize::new(0),
+            drawer_opens: Mutex::new(Vec::new()),
+            drawer_fails: Mutex::new(None),
         }
     }
 
@@ -53,6 +59,22 @@ impl VirtualPrinter {
     /// How many times anything was submitted (accepted or not).
     pub fn submissions(&self) -> usize {
         self.submissions.load(Ordering::SeqCst)
+    }
+
+    /// Every drawer pulse sent through this printer's kick connector, in order.
+    pub fn drawer_opens(&self) -> Vec<DrawerPin> {
+        self.drawer_opens
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The next drawer pulse fails with `error` (e.g. the printer is off).
+    pub fn fail_next_drawer(&self, error: DeviceError) {
+        *self
+            .drawer_fails
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<Scenario>> {
@@ -102,6 +124,26 @@ impl ReceiptOutputPort for VirtualPrinter {
             Scenario::Fail(f) => PrintResult::Failed(f),
             Scenario::Timeout => std::future::pending().await,
         }
+    }
+}
+
+/// The virtual printer is also the cash drawer on its kick connector (the usual wiring).
+#[async_trait::async_trait]
+impl CashDrawerPort for VirtualPrinter {
+    async fn open(&self, pin: DrawerPin) -> Result<(), DeviceError> {
+        if let Some(e) = self
+            .drawer_fails
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            return Err(e);
+        }
+        self.drawer_opens
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(pin);
+        Ok(())
     }
 }
 

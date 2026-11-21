@@ -85,6 +85,8 @@ pub enum MatchedBy {
 
 #[async_trait::async_trait]
 pub trait CatalogQueries: Send + Sync {
+    /// `catalog.default_unit` and `catalog.default_track_stock`: what a new product starts as.
+    async fn new_product_defaults(&self) -> Result<NewProductDefaults, QueryError>;
     async fn product(
         &self,
         id: pos_domain::ProductId,
@@ -95,6 +97,9 @@ pub trait CatalogQueries: Send + Sync {
     async fn sku_owner(&self, sku: &str) -> Result<Option<pos_domain::ProductId>, QueryError>;
     /// Barcode first, then SKU (`catalog_lookup_code`). Active products only.
     async fn lookup_code(&self, raw: &str) -> Result<Option<CatalogHit>, QueryError>;
+    /// The first of these canonical barcode values that an active product carries, with its
+    /// position in `values` (E21-T01: scan decoding candidates, most specific first).
+    async fn lookup_barcodes(&self, values: &[String]) -> Result<Option<(usize, CatalogHit)>, QueryError>;
     /// Name / SKU / barcode search with prefix matching, best matches first.
     async fn search(&self, query: &str, limit: u32) -> Result<Vec<CatalogHit>, QueryError>;
     /// Active tax categories, default first, then by name.
@@ -106,6 +111,32 @@ pub trait CatalogQueries: Send + Sync {
         offset: u32,
         limit: u32,
     ) -> Result<ProductPage, QueryError>;
+    /// One page of the quick-select grid (POS-002): active products flagged `quick_select`,
+    /// by name, each with its active variants; `category` narrows to one category.
+    async fn quick_select(
+        &self,
+        category: Option<pos_domain::CategoryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<QuickSelectPage, QueryError>;
+}
+
+/// A page of the quick-select grid, with the categories that have quick-select products
+/// (the grid's tabs).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct QuickSelectPage {
+    pub categories: Vec<(pos_domain::CategoryId, String)>,
+    /// Products in the chosen tab, all pages.
+    pub total: u32,
+    pub products: Vec<QuickProduct>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuickProduct {
+    pub product_id: pos_domain::ProductId,
+    pub name: String,
+    /// At least one; more than one opens the variant picker.
+    pub variants: Vec<CatalogHit>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -125,6 +156,25 @@ pub struct ProductFilter {
     /// `Some(true)`: only products with a stock-tracked variant.
     pub track_stock: Option<bool>,
     pub category_id: Option<pos_domain::CategoryId>,
+    /// Only products with a tracked variant that needs restocking: at or below its low-stock
+    /// threshold, or below zero (the stock report's "Low" and "Negative").
+    pub low_stock: bool,
+}
+
+/// What a new product starts as (settings `catalog.default_unit`, `catalog.default_track_stock`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NewProductDefaults {
+    pub unit: pos_domain::catalog::Unit,
+    pub track_stock: bool,
+}
+
+impl Default for NewProductDefaults {
+    fn default() -> Self {
+        Self {
+            unit: pos_domain::catalog::Unit::Ea,
+            track_stock: true,
+        }
+    }
 }
 
 /// A product list row: one per product, summarising its active variants.
@@ -147,6 +197,8 @@ pub struct ProductRow {
     pub on_hand: Option<pos_domain::Quantity>,
     /// Some tracked variant is below zero (INV-008): shown as a red "Negative stock" flag.
     pub negative_stock: bool,
+    /// Some tracked variant is at or below its low-stock threshold (and not below zero).
+    pub low_stock: bool,
     /// An edit here conflicts with the cloud's version (E18): the local values are used
     /// until it is resolved.
     pub sync_conflict: bool,
@@ -169,6 +221,10 @@ pub struct StoredCartLine {
     pub price_override: Option<pos_domain::Money>,
     pub line_discount: Option<pos_domain::pricing::Discount>,
     pub added_via: pos_domain::cart::AddVia,
+    /// BAR-009: set by a scale label.
+    pub label: Option<pos_domain::cart::CartLabel>,
+    /// The catalogue price when the line was last saved (E09-T02); `None` before 0019.
+    pub price_seen: Option<pos_domain::Money>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -178,6 +234,16 @@ pub struct StoredCart {
     pub opened_by: pos_domain::UserId,
     pub order_discount: Option<pos_domain::pricing::Discount>,
     pub lines: Vec<StoredCartLine>,
+}
+
+/// A parked cart with who parked it, when, and the label they gave (POS-012).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParkedCart {
+    pub cart: StoredCart,
+    pub label: Option<String>,
+    pub parked_at: pos_domain::Timestamp,
+    pub parked_by: pos_domain::UserId,
+    pub parked_by_name: String,
 }
 
 /// How this business prices (from `businesses`).
@@ -195,6 +261,8 @@ pub struct PricingSettings {
 pub trait CartQueries: Send + Sync {
     /// The register's open cart, if any (at most one, enforced by a unique index).
     async fn open_cart(&self, register: pos_domain::RegisterId) -> Result<Option<StoredCart>, QueryError>;
+    /// The register's parked carts, oldest first (POS-012).
+    async fn parked_carts(&self, register: pos_domain::RegisterId) -> Result<Vec<ParkedCart>, QueryError>;
     /// A variant ready for the cart, with its tax rates resolved for `date`. Returned even
     /// if since archived, so a recovered cart can still show (and remove) it.
     async fn sellable(
@@ -203,6 +271,8 @@ pub trait CartQueries: Send + Sync {
         date: pos_domain::BusinessDate,
     ) -> Result<Option<pos_domain::cart::SellableVariant>, QueryError>;
     async fn pricing_settings(&self) -> Result<PricingSettings, QueryError>;
+    /// `scanner.variable_measure_rules`: the shop's scale/price label rules, one per line.
+    async fn scan_rules(&self) -> Result<Vec<String>, QueryError>;
 }
 
 /// Stock reads for selling (E11-T04).
@@ -222,6 +292,11 @@ pub trait StockQueries: Send + Sync {
         variant: pos_domain::VariantId,
         limit: u32,
     ) -> Result<Vec<crate::records::StockHistoryRow>, QueryError>;
+    /// One posted stock document with its movements; `None` if there is no such document.
+    async fn stock_document(
+        &self,
+        document: pos_domain::InventoryDocumentId,
+    ) -> Result<Option<crate::records::StockDocumentView>, QueryError>;
     /// Every balance that differs from the sum of its movements (E11-T06 verify).
     async fn stock_drift(&self) -> Result<Vec<crate::records::StockDrift>, QueryError>;
     /// Damaged on-hand quantity per variant at `location` (what a write-off can take).
@@ -267,6 +342,11 @@ pub trait ReceiptQueries: Send + Sync {
     async fn return_receipt(
         &self,
         ret: pos_domain::ReturnId,
+    ) -> Result<Option<(pos_domain::ReceiptId, String)>, QueryError>;
+    /// The stored tax invoice of a sale (D-02), if one was issued: its document as JSON text.
+    async fn tax_invoice_receipt(
+        &self,
+        sale: pos_domain::SaleId,
     ) -> Result<Option<(pos_domain::ReceiptId, String)>, QueryError>;
     /// The most recent sale on this register, for "last receipt".
     async fn last_sale(

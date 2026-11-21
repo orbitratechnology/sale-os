@@ -6,6 +6,7 @@ pub mod approval;
 pub mod audit;
 pub mod audit_log;
 pub mod auth;
+pub mod backups;
 pub mod cart;
 pub mod cash;
 pub mod catalog;
@@ -14,14 +15,18 @@ pub mod cloud_reports;
 pub mod config;
 pub mod conflict;
 pub mod context;
+pub mod devices;
+pub mod exchange;
 pub mod export;
 pub mod import;
 pub mod link;
 pub mod mode;
+pub mod payments;
 pub mod printing;
 pub mod queries;
 pub mod receipts;
 pub mod records;
+pub mod replay;
 pub mod reports;
 pub mod returns;
 pub mod sales;
@@ -31,9 +36,10 @@ pub mod setup;
 pub mod staff;
 pub mod stock;
 pub mod sync;
+pub mod tax_invoice;
 pub mod write;
 
 pub use write::{
-    AppliedWriteSet, ChangeNotice, Counter, LocalStore, NumberSlot, OutboxDraft, WriteContext, WriteError,
-    WriteOp, WriteSet, WriteSetBuilder, WriteSetError,
+    AppliedWriteSet, ChangeNotice, Counter, LocalStore, NumberSlot, OutboxDraft, Replay, WriteContext,
+    WriteError, WriteOp, WriteSet, WriteSetBuilder, WriteSetError,
 };

@@ -1,0 +1,277 @@
+{
+  "acceptanceTests": [
+    {
+      "checks": [
+        {
+          "check": "`desktop-tauri/tests/permissions.rs` `at01_new_business_twenty_products_and_a_cash_sale`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-local-db/tests/import.rs` `at01_demo20_creates_twenty_products`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"completes with the keyboard only, offline, well under 3 minutes\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-01",
+      "statement": "A new business: profile, at least 20 products and a test cash sale, with no cloud",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-local-db/tests/catalog.rs` `create_then_find_by_barcode_sku_and_name`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"search: type, arrow down, Enter adds; manual code entry uses the scan path\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-02",
+      "statement": "Find a product by barcode, SKU and name",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-local-db/tests/cart.rs` `ten_fast_scans_are_ten_items`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-local-db/tests/cart.rs` `a_repeated_delivery_counts_once`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-local-db/tests/cart.rs` `concurrent_scans_are_never_lost`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/scanCapture.e2e.ts`: \"delivers 20 scans typed at 5 ms/key: no merges, no drops, no truncation\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-03",
+      "statement": "Repeated scans increment correctly; no rapid scan is lost",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-local-db/tests/checkout.rs` `a_failure_at_any_statement_leaves_nothing_behind`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-local-db/tests/checkout.rs` `refusals_write_nothing`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"a full disk: the sale is not saved, the cashier is told, the cart is kept (E19-T02)\"",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"a refusal keeps the cart and the panel: a card number typed as the reference\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-04",
+      "statement": "A completed sale and all its dependent records commit atomically",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-local-db/tests/cart.rs` `the_cart_survives_a_restart`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "crash harness (kill during writes, verify on restart)",
+          "detail": "passed (50)",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-05",
+      "statement": "A restart loses no committed sale or pending event",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`sync-e2e/tests/faults.rs` `at06_*` [PostgreSQL]",
+          "detail": "passed (10)",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-06",
+      "statement": "An offline sale syncs exactly once despite retries",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`sync-e2e/tests/conflicts.rs` `at07_two_registers_reprice_offline_one_conflicts_and_nothing_is_overwritten` [PostgreSQL]",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/cloud.e2e.ts`: \"a manager resolves a conflict field by field, with a custom price in pounds\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-07",
+      "statement": "A conflicting product edit is surfaced, not overwritten",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-receipts/tests/pdf.rs` `receipt_width_pdfs_say_what_the_printed_receipt_says`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-receipts/tests/pdf.rs` `a4_pdfs_match_their_goldens`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-receipts/tests/pdf.rs` `fonts_are_embedded_noto_subsets`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`desktop-tauri/tests/permissions.rs` `a_receipt_pdf_over_ipc`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"saves the receipt as a PDF with no printer: receipt width or A4; Cancel saves nothing (AT-08)\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-08",
+      "statement": "Preview a receipt and export it as PDF without a printer",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-local-db/tests/printing.rs` `prints_the_stored_receipt_and_marks_later_copies_as_reprints`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-receipts/tests/golden.rs` `golden_documents_and_text`",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-09",
+      "statement": "ESC/POS output is captured by the virtual printer",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-local-db/tests/returns.rs` `a_return_moves_stock_by_disposition_and_commits_everything_together`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"a cashier's return: quantities, refund preview, manager approval, refund receipt\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-10",
+      "statement": "A return creates a linked return and refund and the correct stock movement",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`desktop-tauri/tests/permissions.rs` `each_role_gets_exactly_what_the_matrix_grants`",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-11",
+      "statement": "A cashier cannot do manager-only operations by invoking IPC directly",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`cloud-api/tests/isolation.rs` `at12_*` [PostgreSQL]",
+          "detail": "passed (2)",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-12",
+      "statement": "A business cannot read another business's cloud data",
+      "verdict": "PASS"
+    },
+    {
+      "checks": [
+        {
+          "check": "`pos-domain (unit)` `settlement::tests::at13_till_input_is_only_ever_operator_confirmed*`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-application (unit)` `sync::tests::a_sale_is_marked_by_its_event*`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "`pos-local-db/tests/sync_push.rs` `the_repair_queue_lists_refused_events_and_conflicts_and_sales_show_their_mark`",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/cloud.e2e.ts`: \"the status bar shows each sync state\"",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/cloud.e2e.ts`: \"a completed sale says sync pending until the cloud has it, then synced (AT-13)\"",
+          "detail": "passed",
+          "status": "passed"
+        },
+        {
+          "check": "browser `e2e/screens.e2e.ts`: \"split: card recorded by the operator, then cash with change; tenders can be removed\"",
+          "detail": "passed",
+          "status": "passed"
+        }
+      ],
+      "id": "AT-13",
+      "statement": "The UI tells pending from synchronized, and external confirmation from processor approval",
+      "verdict": "PASS"
+    }
+  ],
+  "commit": "fed13a7cb233",
+  "finished": "2026-11-19 08:56 UTC",
+  "node": "v22.23.4",
+  "os": "linux x86_64",
+  "postgres": true,
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "seconds": 187
+}

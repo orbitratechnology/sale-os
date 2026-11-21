@@ -50,10 +50,10 @@ hardware. It is measured by:
 
   Show the "cloud not linked — data stays on this device until you link" explainer.
 - **Acceptance:**
-  - [ ] An e2e test completes the wizard offline in under 3 minutes (scripted).
-  - [ ] Sandbox sales show a SANDBOX banner and are excluded from reports (enforced in E14).
-  - [ ] Switching to Live needs the owner PIN and is audited (`mode.changed`).
-  - [ ] Every step is keyboard-navigable.
+  - [x] An e2e test completes the wizard offline in under 3 minutes (scripted).
+  - [x] Sandbox sales show a SANDBOX banner and are excluded from reports (enforced in E14).
+  - [x] Switching to Live needs the owner PIN and is audited (`mode.changed`).
+  - [x] Every step is keyboard-navigable.
 
 ### E04-T03 · Settings store and settings UI shell
 - **Size** S · **Deps** E04-T01 · **PRD** SET-004, SET-005
@@ -128,10 +128,10 @@ hardware. It is measured by:
 ### E05-T06 · Login, lock and staff management UI
 - **Size** M · **Deps** E05-T02..T05
 - **Acceptance:**
-  - [ ] PIN pad usable by mouse, touch and keyboard.
-  - [ ] Shows remaining attempts and a lockout countdown.
-  - [ ] Staff list with role badges, plus create, edit, deactivate and reset PIN.
-  - [ ] The `ApprovalDialog` component can be reused by any command that returns `APPROVAL_REQUIRED`, and retries the original command with the token.
+  - [x] PIN pad usable by mouse, touch and keyboard.
+  - [x] Shows remaining attempts and a lockout countdown.
+  - [x] Staff list with role badges, plus create, edit, deactivate and reset PIN.
+  - [x] The `ApprovalDialog` component can be reused by any command that returns `APPROVAL_REQUIRED`, and retries the original command with the token.
 
 ## E06 Catalogue
 
@@ -260,9 +260,9 @@ hardware. It is measured by:
 ### E07-T04 · Unknown barcode flow
 - **Size** S · **Deps** E07-T02, E06-T06b · **PRD** BAR-006
 - **Acceptance:**
-  - [ ] A not-found toast shows the code and offers **Search** (pre-filled) and **Create product** (only if the user has `BarcodeCreateFromScan`; otherwise "Ask a manager", which opens the approval dialog).
-  - [ ] Create product opens the editor with the barcode pre-filled. Saving adds the item to the cart.
-  - [ ] An audible or visual error cue is shown; it is configurable and never only colour (a11y).
+  - [x] A not-found toast shows the code and offers **Search** (pre-filled) and **Create product** (only if the user has `BarcodeCreateFromScan`; otherwise "Ask a manager", which opens the approval dialog).
+  - [x] Create product opens the editor with the barcode pre-filled. Saving adds the item to the cart.
+  - [x] An audible or visual error cue is shown; it is configurable and never only colour (a11y).
 
 ## E08 Pricing, tax and discounts
 
@@ -327,8 +327,8 @@ hardware. It is measured by:
 ### E09-T02 · Cart recovery after restart
 - **Size** S · **Deps** E09-T01 · **PRD** POS-011
 - **Acceptance:**
-  - [ ] Kill the app with 5 lines in the cart and restart: after login, a "Recovered cart (5 items, 23.40)" prompt offers **Resume** or **Discard** (discard needs `CartClear` and is audited as `cart.recovery_discarded`).
-  - [ ] Prices are recomputed against the current catalogue on resume, and lines whose price changed are highlighted.
+  - [x] Kill the app with 5 lines in the cart and restart: after login, a "Recovered cart (5 items, 23.40)" prompt offers **Resume** or **Discard** (discard needs `CartClear` and is audited as `cart.recovery_discarded`).
+  - [x] Prices are recomputed against the current catalogue on resume, and lines whose price changed are highlighted.
 
 ### E09-T03 · Checkout screen layout and cart table
 - **Size** M · **Deps** E09-T01, E01-T02 · **PRD** §5, §5.1
@@ -342,10 +342,10 @@ hardware. It is measured by:
 ### E09-T04 · Product search panel and quick-select grid
 - **Size** M · **Deps** E06-T04, E09-T03 · **PRD** POS-002
 - **Acceptance:**
-  - [ ] Search as you type (debounce 80 ms) with keyboard navigation (↑/↓/Enter adds).
-  - [ ] Search shows the price, the variant label and on-hand stock (once Stage 2 lands).
-  - [ ] The quick-select grid shows products flagged `quick_select`, paged, with categories as tabs. It is touch-friendly (targets of at least 44 px).
-  - [ ] Choosing a variant product opens a variant picker.
+  - [x] Search as you type (debounce 80 ms) with keyboard navigation (↑/↓/Enter adds).
+  - [x] Search shows the price, the variant label and on-hand stock (once Stage 2 lands).
+  - [x] The quick-select grid shows products flagged `quick_select`, paged, with categories as tabs. It is touch-friendly (targets of at least 44 px).
+  - [x] Choosing a variant product opens a variant picker.
 
 ### E09-T05 · Keyboard map and accessibility
 - **Size** S · **Deps** E09-T03, E09-T04 · **PRD** §5.1, §14 (Accessibility)

@@ -96,6 +96,7 @@ describe("product editor (E06-T06b)", () => {
     await page.getByRole("button", { name: "New product" }).click();
     await page.getByLabel("Name").fill("Sparkling water");
     await page.getByLabel("Price for Sparkling water").fill("0.95");
+    await page.getByLabel("Cost for Sparkling water").fill("0.40");
     await page.getByLabel("SKU for Sparkling water").fill("WATER");
     await scan(page, "5000112546415"); // scanner-ready: goes to the editor, not the cart
     await page.getByRole("list", { name: "Barcodes for Sparkling water" }).getByText("5000112546415").waitFor();
@@ -104,9 +105,30 @@ describe("product editor (E06-T06b)", () => {
     const [created] = await calls(page, "product_create");
     expect(created?.product).toMatchObject({
       name: "Sparkling water",
-      variants: [{ priceMinor: "95", sku: "WATER", barcodes: [{ raw: "5000112546415", qualifier: "primary" }] }],
+      variants: [{ priceMinor: "95", costMinor: "40", sku: "WATER", barcodes: [{ raw: "5000112546415", qualifier: "primary" }] }],
     });
     expect(await calls(page, "scan_submit")).toEqual([]);
+  });
+
+  it("a new product starts from the owner's defaults: unit and stock tracking (E04-T03)", async () => {
+    const page = await till();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Products" }).click();
+    const panel = page.getByRole("tabpanel", { name: "Products" });
+    await panel.getByLabel("Unit for new products").selectOption({ label: "Kilogram (kg)" });
+    await panel.getByLabel("Track stock for new products").uncheck();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 2);
+    expect(await calls(page, "settings_update")).toEqual([
+      expect.objectContaining({ key: "catalog.default_unit", valueJson: '"kg"' }),
+      expect.objectContaining({ key: "catalog.default_track_stock", valueJson: "false" }),
+    ]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await products(page);
+    await page.getByRole("button", { name: "New product" }).click();
+    await page.getByLabel("Name").fill("Loose apples");
+    expect(await page.getByLabel("Unit", { exact: true }).inputValue()).toBe("kg");
+    expect(await page.getByLabel("Type", { exact: true }).inputValue()).toBe("non_stock");
   });
 
   it("adds options to make 3 sizes × 2 colours = 6 variants with their own prices and SKUs", async () => {
@@ -171,7 +193,7 @@ describe("unknown barcode (E07-T04)", () => {
     expect(scans.at(-1)).toMatchObject({ raw: "9300633603209", source: "manual" });
   });
 
-  it("a cashier is told to ask a manager instead", async () => {
+  it("a cashier asks a manager: the manager's PIN, then the cashier creates that one product", async () => {
     const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
     await page.goto(`${base}/app-harness.html?preset=signIn`);
     await page.getByRole("button", { name: /Cal/ }).click();
@@ -179,8 +201,25 @@ describe("unknown barcode (E07-T04)", () => {
     await page.keyboard.press("Enter");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
     await scan(page, "9300633603209");
-    await page.getByText("A manager can add it as a new product.").waitFor();
     expect(await page.getByRole("button", { name: "Create product" }).count()).toBe(0);
+    await page.getByRole("button", { name: "Ask a manager" }).click();
+    const approval = page.getByRole("dialog", { name: /approv/i });
+    await approval.waitFor();
+    await approval.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    const scope = (await calls(page, "auth_request_approval")).at(-1)?.scope;
+    expect(scope).toEqual({ permission: "barcode_create_from_scan", entityId: "9300633603209", maxPpm: null });
+    // The editor opens for this product, the barcode filled in.
+    await page.getByRole("list", { name: /Barcodes for/ }).getByText("9300633603209").waitFor();
+    await page.getByLabel("Name").fill("Tomato sauce");
+    await page.getByLabel(/^Price for/).fill("1.80");
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    const [created] = await calls(page, "product_create_from_scan");
+    expect(created).toMatchObject({ barcode: "9300633603209" });
+    expect(typeof created?.approvalTokenId).toBe("string");
+    expect(await calls(page, "product_create")).toEqual([]);
   });
 });
 
@@ -298,8 +337,20 @@ describe("CSV import (E06-T08)", () => {
       return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
     });
     expect(violations).toEqual([]);
+    // A slow commit (a row a second here) shows how far it has got.
+    await page.evaluate(() => {
+      window.__fake.importStepMs = 1000;
+    });
     await page.getByRole("button", { name: "Import 2 products" }).click();
+    const bar = page.getByRole("progressbar", { name: "Import progress" });
+    await bar.waitFor();
+    await page.getByTestId("import-progress-text").filter({ hasText: "1 of 2 rows (50%)" }).waitFor();
+    expect(await bar.getAttribute("value")).toBe("1");
+    expect(await bar.getAttribute("max")).toBe("2");
+    expect(await page.getByRole("button", { name: "Importing…" }).isDisabled()).toBe(true);
     await page.getByRole("heading", { name: "Imported: 2 new, 0 updated." }).waitFor();
+    expect(await bar.count()).toBe(0);
+    expect((await calls(page, "import_products_progress"))[0]).toEqual({ jobId: expect.any(String) });
     await page.keyboard.press("Escape");
     await page.getByTestId("product-total").filter({ hasText: "5 products" }).waitFor();
     expect(await calls(page, "import_products_cancel")).toEqual([]);
@@ -329,5 +380,9 @@ describe("CSV import (E06-T08)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
     await products(page);
     expect(await page.getByRole("button", { name: "Import CSV" }).count()).toBe(0);
+    // The editor is read-only for a cashier, and the cost price is not shown (CAT-002).
+    await page.getByTestId("product-row").first().click();
+    await page.getByRole("table", { name: "Variants" }).waitFor();
+    expect(await page.getByRole("columnheader", { name: /Cost/ }).count()).toBe(0);
   });
 });

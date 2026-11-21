@@ -17,11 +17,15 @@ tauri-build.workspace = true
 [dependencies]
 async-trait.workspace = true
 pos-application.workspace = true
+pos-device-hw = { workspace = true, features = ["specta"] }
+pos-device-ports.workspace = true
 pos-device-virtual.workspace = true
 pos-domain = { workspace = true, features = ["specta"] }
 pos-local-db.workspace = true
 pos-observability.workspace = true
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
 pos-receipts.workspace = true
+base64.workspace = true
 pos-sync.workspace = true
 pos-sync-http.workspace = true
 serde_json.workspace = true
@@ -36,6 +40,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
 tempfile.workspace = true
 tauri = { workspace = true, features = ["test"] }

@@ -11,6 +11,27 @@ use pos_domain::catalog::{
 use pos_domain::{Money, ProductId, Quantity};
 use std::collections::BTreeMap;
 
+/// `FROM` an active, stock-tracked variant `lv` of product `p`, with its sellable balance `lb`
+/// (no balance row yet means nothing on hand).
+macro_rules! tracked_variants_with_stock {
+    () => {
+        "FROM product_variants lv LEFT JOIN stock_balances lb
+           ON lb.variant_id = lv.variant_id AND lb.bucket = 'sellable'
+         WHERE lv.product_id = p.product_id AND lv.status = 'active' AND lv.track_stock = 1"
+    };
+}
+macro_rules! sellable {
+    () => {
+        "coalesce(lb.on_hand_milli, 0)"
+    };
+}
+/// The stock report's rule (`StockStatus::of`): low when at or below a set threshold.
+macro_rules! at_or_below_threshold {
+    () => {
+        "(lv.low_stock_threshold_milli IS NOT NULL AND coalesce(lb.on_hand_milli, 0) <= lv.low_stock_threshold_milli)"
+    };
+}
+
 fn q(e: impl std::fmt::Display) -> QueryError {
     QueryError(e.to_string())
 }
@@ -62,6 +83,32 @@ fn fts_query(text: &str) -> Option<String> {
 
 #[async_trait::async_trait]
 impl CatalogQueries for SqliteStore {
+    async fn new_product_defaults(&self) -> Result<pos_application::queries::NewProductDefaults, QueryError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT key, value_json FROM business_settings
+             WHERE key IN ('catalog.default_unit', 'catalog.default_track_stock')",
+        )
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        let mut out = pos_application::queries::NewProductDefaults::default();
+        for (key, value) in rows {
+            match key.as_str() {
+                "catalog.default_unit" => {
+                    // Stored as JSON (`"kg"`); an unknown code keeps the default.
+                    if let Some(u) = serde_json::from_str::<String>(&value)
+                        .ok()
+                        .and_then(|c| pos_domain::catalog::Unit::from_code(&c))
+                    {
+                        out.unit = u;
+                    }
+                }
+                _ => out.track_stock = value.trim() != "false",
+            }
+        }
+        Ok(out)
+    }
+
     async fn product(&self, id: ProductId) -> Result<Option<Product>, QueryError> {
         let r = self.db().readers();
         let row: Option<(String, Option<String>, Option<String>, String, String, String, bool, String, i64)> = sqlx::query_as(
@@ -152,55 +199,68 @@ impl CatalogQueries for SqliteStore {
     }
 
     async fn barcode_owner(&self, value: &str) -> Result<Option<ProductId>, QueryError> {
-        let row: Option<String> = sqlx::query_scalar(
-            "SELECT v.product_id FROM product_barcodes b JOIN product_variants v USING (variant_id)
-             WHERE b.value_normalized = ? AND b.status = 'active'",
-        )
-        .bind(value)
-        .fetch_optional(self.db().readers())
-        .await
-        .map_err(q)?;
+        let row: Option<String> = sqlx::query_scalar(BARCODE_OWNER_SQL)
+            .bind(value)
+            .fetch_optional(self.db().readers())
+            .await
+            .map_err(q)?;
         row.map(|s| s.parse().map_err(q)).transpose()
     }
 
     async fn sku_owner(&self, sku: &str) -> Result<Option<ProductId>, QueryError> {
-        let row: Option<String> = sqlx::query_scalar(
-            "SELECT product_id FROM product_variants WHERE sku = ? COLLATE NOCASE AND status = 'active'",
-        )
-        .bind(sku.trim())
-        .fetch_optional(self.db().readers())
-        .await
-        .map_err(q)?;
+        let row: Option<String> = sqlx::query_scalar(SKU_OWNER_SQL)
+            .bind(sku.trim())
+            .fetch_optional(self.db().readers())
+            .await
+            .map_err(q)?;
         row.map(|s| s.parse().map_err(q)).transpose()
+    }
+
+    async fn lookup_barcodes(&self, values: &[String]) -> Result<Option<(usize, CatalogHit)>, QueryError> {
+        for (i, value) in values.iter().enumerate() {
+            if let Some(h) = self.barcode_hit(value).await? {
+                return Ok(Some((i, h)));
+            }
+        }
+        // Codabar: the shop registered `A40156B` but the scanner strips start/stop (or the
+        // other way round, handled by the decoder). Only the not-found path pays for this
+        // unindexed match, and only an unambiguous single product counts.
+        if let Some(first) = values.first()
+            && !first.is_empty()
+            && first.len() <= 60
+            && first
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b"$:/.+-".contains(&b))
+        {
+            let ids: Vec<String> = sqlx::query_scalar(
+                "SELECT DISTINCT b.value_normalized FROM product_barcodes b
+                 WHERE b.status = 'active' AND b.value_normalized GLOB '[ABCD]' || ?1 || '[ABCD]' LIMIT 2",
+            )
+            .bind(first)
+            .fetch_all(self.db().readers())
+            .await
+            .map_err(q)?;
+            if let [only] = ids.as_slice()
+                && let Some(h) = self.barcode_hit(only).await?
+            {
+                return Ok(Some((0, h)));
+            }
+        }
+        Ok(None)
     }
 
     async fn lookup_code(&self, raw: &str) -> Result<Option<CatalogHit>, QueryError> {
         let r = self.db().readers();
-        if let Ok(n) = normalize_barcode(raw, None) {
-            let row: Option<(String, String, String, String, Option<String>, i64, String, bool, i64, String, i64)> =
-                sqlx::query_as(&format!(
-                    "SELECT {HIT_COLUMNS}, b.qualifier, b.pack_qty_milli
-                     FROM product_barcodes b JOIN product_variants v USING (variant_id) JOIN products p USING (product_id)
-                     WHERE b.value_normalized = ? AND b.status = 'active' AND v.status = 'active' AND p.status = 'active'"
-                ))
-                .bind(&n.value)
-                .fetch_optional(r)
-                .await
-                .map_err(q)?;
-            if let Some(row) = row {
-                let pack = (row.9 == "pack").then_some(row.10);
-                let base = (row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8);
-                return hit(base, MatchedBy::Barcode, pack).map(Some);
-            }
+        if let Ok(n) = normalize_barcode(raw, None)
+            && let Some(h) = self.barcode_hit(&n.value).await?
+        {
+            return Ok(Some(h));
         }
-        let row: Option<HitRow> = sqlx::query_as(&format!(
-            "SELECT {HIT_COLUMNS} FROM product_variants v JOIN products p USING (product_id)
-             WHERE v.sku = ? COLLATE NOCASE AND v.status = 'active' AND p.status = 'active'"
-        ))
-        .bind(raw.trim())
-        .fetch_optional(r)
-        .await
-        .map_err(q)?;
+        let row: Option<HitRow> = sqlx::query_as(&sku_hit_sql())
+            .bind(raw.trim())
+            .fetch_optional(r)
+            .await
+            .map_err(q)?;
         row.map(|row| hit(row, MatchedBy::Sku, None)).transpose()
     }
 
@@ -223,6 +283,72 @@ impl CatalogQueries for SqliteStore {
         rows.into_iter()
             .map(|row| hit(row, MatchedBy::Search, None))
             .collect()
+    }
+
+    async fn quick_select(
+        &self,
+        category: Option<pos_domain::CategoryId>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<pos_application::queries::QuickSelectPage, QueryError> {
+        use pos_application::queries::{QuickProduct, QuickSelectPage};
+        let r = self.db().readers();
+        let categories: Vec<(String, String)> = sqlx::query_as(
+            "SELECT DISTINCT c.category_id, c.name, c.sort_order FROM products p
+               JOIN categories c ON c.category_id = p.category_id AND c.status = 'active'
+              WHERE p.quick_select = 1 AND p.status = 'active'
+              ORDER BY c.sort_order, c.name COLLATE NOCASE",
+        )
+        .fetch_all(r)
+        .await
+        .map_err(q)
+        .map(|rows: Vec<(String, String, i64)>| rows.into_iter().map(|(id, n, _)| (id, n)).collect())?;
+        let cat = category.map(|c| c.to_string());
+        let total: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM products p WHERE p.quick_select = 1 AND p.status = 'active'
+               AND (?1 IS NULL OR p.category_id = ?1)
+               AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active')",
+        )
+        .bind(&cat)
+        .fetch_one(r)
+        .await
+        .map_err(q)?;
+        let rows: Vec<HitRow> = sqlx::query_as(&format!(
+            "WITH page AS (
+               SELECT p.product_id, p.name FROM products p
+                WHERE p.quick_select = 1 AND p.status = 'active' AND (?1 IS NULL OR p.category_id = ?1)
+                  AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active')
+                ORDER BY p.name COLLATE NOCASE, p.product_id LIMIT ?2 OFFSET ?3)
+             SELECT {HIT_COLUMNS} FROM page JOIN products p USING (product_id)
+               JOIN product_variants v ON v.product_id = p.product_id AND v.status = 'active'
+              ORDER BY p.name COLLATE NOCASE, p.product_id, v.sort_order, v.variant_id"
+        ))
+        .bind(&cat)
+        .bind(i64::from(limit))
+        .bind(i64::from(offset))
+        .fetch_all(r)
+        .await
+        .map_err(q)?;
+        let mut products: Vec<QuickProduct> = Vec::new();
+        for row in rows {
+            let h = hit(row, MatchedBy::Search, None)?;
+            match products.last_mut() {
+                Some(last) if last.product_id == h.product_id => last.variants.push(h),
+                _ => products.push(QuickProduct {
+                    product_id: h.product_id,
+                    name: h.name.clone(),
+                    variants: vec![h],
+                }),
+            }
+        }
+        Ok(QuickSelectPage {
+            categories: categories
+                .into_iter()
+                .map(|(id, name)| Ok((id.parse().map_err(q)?, name)))
+                .collect::<Result<_, QueryError>>()?,
+            total: u32::try_from(total).unwrap_or(u32::MAX),
+            products,
+        })
     }
 
     async fn tax_categories(&self) -> Result<Vec<TaxCategorySummary>, QueryError> {
@@ -282,6 +408,17 @@ impl CatalogQueries for SqliteStore {
                     .push_bind(t)
                     .push(")");
             }
+            if f.low_stock {
+                b.push(concat!(
+                    " AND EXISTS (SELECT 1 ",
+                    tracked_variants_with_stock!(),
+                    " AND (",
+                    sellable!(),
+                    " < 0 OR ",
+                    at_or_below_threshold!(),
+                    "))"
+                ));
+            }
             if let Some(q) = fts {
                 b.push(
                     " AND p.product_id IN (SELECT sv.product_id FROM product_search s
@@ -314,7 +451,7 @@ impl CatalogQueries for SqliteStore {
             .await
             .map_err(q)?;
 
-        let mut b = sqlx::QueryBuilder::new(
+        let mut b = sqlx::QueryBuilder::new(concat!(
             "SELECT p.product_id, p.name, p.status = 'archived', p.version, p.quick_select,
                (SELECT count(*) FROM product_variants v WHERE v.product_id = p.product_id AND v.status = 'active'),
                (SELECT v.sku FROM product_variants v WHERE v.product_id = p.product_id AND v.is_default = 1),
@@ -328,9 +465,16 @@ impl CatalogQueries for SqliteStore {
                EXISTS (SELECT 1 FROM stock_balances b JOIN product_variants v ON v.variant_id = b.variant_id
                  WHERE v.product_id = p.product_id AND v.status = 'active' AND v.track_stock = 1 AND b.bucket = 'sellable'
                    AND b.on_hand_milli < 0),
-               p.sync_status = 'conflict'
+               p.sync_status = 'conflict',
+               EXISTS (SELECT 1 ",
+            tracked_variants_with_stock!(),
+            " AND ",
+            sellable!(),
+            " >= 0 AND ",
+            at_or_below_threshold!(),
+            ")
              FROM products p",
-        );
+        ));
         filtered(&mut b, filter, fts);
         b.push(" ORDER BY p.name COLLATE NOCASE, p.product_id LIMIT ")
             .push_bind(i64::from(limit))
@@ -349,6 +493,7 @@ impl CatalogQueries for SqliteStore {
             i64,
             bool,
             i64,
+            bool,
             bool,
             bool,
         );
@@ -375,6 +520,7 @@ impl CatalogQueries for SqliteStore {
                     on_hand,
                     negative,
                     conflict,
+                    low,
                 )| {
                     Ok(ProductRow {
                         product_id: id.parse().map_err(q)?,
@@ -390,6 +536,7 @@ impl CatalogQueries for SqliteStore {
                         quick_select: quick,
                         on_hand: track.then(|| pos_domain::Quantity::from_milli(on_hand)),
                         negative_stock: negative,
+                        low_stock: low,
                         sync_conflict: conflict,
                     })
                 },
@@ -400,6 +547,67 @@ impl CatalogQueries for SqliteStore {
             total: u32::try_from(total).map_err(q)?,
         })
     }
+}
+
+impl SqliteStore {
+    /// The active product with this canonical barcode value, if any.
+    async fn barcode_hit(&self, value: &str) -> Result<Option<CatalogHit>, QueryError> {
+        type BarcodeHitRow = (
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            i64,
+            String,
+            bool,
+            i64,
+            String,
+            i64,
+        );
+        let row: Option<BarcodeHitRow> = sqlx::query_as(&barcode_hit_sql())
+            .bind(value)
+            .fetch_optional(self.db().readers())
+            .await
+            .map_err(q)?;
+        row.map(|row| {
+            let pack = (row.9 == "pack").then_some(row.10);
+            let base = (row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8);
+            hit(base, MatchedBy::Barcode, pack)
+        })
+        .transpose()
+    }
+}
+
+// The code lookups. Their unique indexes lead with `business_id` (ux_barcode_value,
+// ux_variant_sku), so each query names the till's business: without it SQLite walks the whole
+// index, about 6 ms per lookup at 100,000 barcodes, paid on every scan candidate and every
+// product save. `queries_search_their_unique_index` keeps it that way.
+
+const BARCODE_OWNER_SQL: &str =
+    "SELECT v.product_id FROM product_barcodes b JOIN product_variants v USING (variant_id)
+     WHERE b.business_id IN (SELECT business_id FROM businesses)
+       AND b.value_normalized = ? AND b.status = 'active'";
+
+const SKU_OWNER_SQL: &str = "SELECT product_id FROM product_variants
+     WHERE business_id IN (SELECT business_id FROM businesses)
+       AND sku = ? COLLATE NOCASE AND status = 'active'";
+
+fn sku_hit_sql() -> String {
+    format!(
+        "SELECT {HIT_COLUMNS} FROM product_variants v JOIN products p USING (product_id)
+         WHERE v.business_id IN (SELECT business_id FROM businesses)
+           AND v.sku = ? COLLATE NOCASE AND v.status = 'active' AND p.status = 'active'"
+    )
+}
+
+fn barcode_hit_sql() -> String {
+    format!(
+        "SELECT {HIT_COLUMNS}, b.qualifier, b.pack_qty_milli
+         FROM product_barcodes b JOIN product_variants v USING (variant_id) JOIN products p USING (product_id)
+         WHERE b.business_id IN (SELECT business_id FROM businesses)
+           AND b.value_normalized = ? AND b.status = 'active' AND v.status = 'active' AND p.status = 'active'"
+    )
 }
 
 #[cfg(test)]
@@ -414,5 +622,35 @@ mod tests {
             Some("\"name\"* \"x\"* \"or\"* \"y\"* \"near\"* \"a\"* \"b\"*")
         );
         assert_eq!(fts_query("  -- ").as_deref(), None);
+    }
+
+    /// Every code lookup searches its unique index; none walks it (see the note above).
+    #[tokio::test]
+    async fn queries_search_their_unique_index() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = crate::LocalDb::open(&crate::DbOptions::in_dir(dir.path()))
+            .await
+            .unwrap();
+        for (sql, index) in [
+            (super::BARCODE_OWNER_SQL.to_owned(), "ux_barcode_value"),
+            (super::SKU_OWNER_SQL.to_owned(), "ux_variant_sku"),
+            (super::sku_hit_sql(), "ux_variant_sku"),
+            (super::barcode_hit_sql(), "ux_barcode_value"),
+        ] {
+            let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .bind("x")
+                .fetch_all(db.readers())
+                .await
+                .unwrap();
+            let lines: Vec<&str> = plan.iter().map(|p| p.3.as_str()).collect();
+            assert!(
+                lines.iter().any(|l| l.starts_with("SEARCH") && l.contains(index)),
+                "{sql}\nplan: {lines:?}"
+            );
+            assert!(
+                !lines.iter().any(|l| l.starts_with("SCAN")),
+                "{sql}\nplan: {lines:?}"
+            );
+        }
     }
 }

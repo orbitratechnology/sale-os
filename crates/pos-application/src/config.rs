@@ -187,6 +187,36 @@ impl ConfigService {
         self.profile(ctx).await
     }
 
+    /// Records the business logo (SET-001): `Some("logo.png")` after the file was stored in
+    /// app data, `None` to remove it. Audited `business.updated` (`changed: ["logo"]`) and
+    /// sent as `business.updated`, like any other profile change.
+    pub async fn set_logo(
+        &self,
+        ctx: &CommandContext,
+        logo_path: Option<String>,
+        business_version: u64,
+    ) -> Result<ProfileView, AppError> {
+        ctx.authorize(Permission::SettingsEdit)?;
+        let cur = self.profile(ctx).await?;
+        stale(business_version, cur.business.version)?;
+        let old = &cur.business;
+        let ids = ctx.ids.as_ref();
+        let record = BusinessRecord {
+            logo_path,
+            version: old.version + 1,
+            updated_at: ctx.now(),
+            ..old.clone()
+        };
+        let entry = AuditEntry::new(ids, audit::BUSINESS_UPDATED, "business", record.business_id)
+            .with_metadata(serde_json::json!({ "changed": ["logo"], "removed": record.logo_path.is_none() }));
+        let set = WriteSet::builder(ctx.write_context())
+            .outbox(OutboxDraft::business_updated(ids, &record)?)
+            .put_business(record, Some(old.version))
+            .audit(entry);
+        self.store.apply(set.build()?).await?;
+        self.profile(ctx).await
+    }
+
     // ---------- categories ----------
 
     pub async fn categories(&self, ctx: &CommandContext) -> Result<Vec<CategoryRecord>, AppError> {

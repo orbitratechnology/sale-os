@@ -1,6 +1,7 @@
 use super::identity::IdentityError;
 use super::jwt::Claims;
 use super::{AuthState, USER_TOKEN_SECS, now_secs};
+use crate::extract::ApiJson;
 use crate::{AppState, Problem};
 use axum::extract::{ConnectInfo, FromRequestParts, State};
 use axum::http::request::Parts;
@@ -116,7 +117,7 @@ fn identity_error(e: IdentityError) -> Response {
     }
 }
 
-async fn signup(State(state): State<AppState>, ip: ClientIp, Json(c): Json<Credentials>) -> Response {
+async fn signup(State(state): State<AppState>, ip: ClientIp, ApiJson(c): ApiJson<Credentials>) -> Response {
     let auth: &AuthState = &state.auth;
     if let Err(wait) = auth
         .limiter
@@ -142,7 +143,7 @@ async fn signup(State(state): State<AppState>, ip: ClientIp, Json(c): Json<Crede
     }
 }
 
-async fn login(State(state): State<AppState>, ip: ClientIp, Json(c): Json<Credentials>) -> Response {
+async fn login(State(state): State<AppState>, ip: ClientIp, ApiJson(c): ApiJson<Credentials>) -> Response {
     let auth: &AuthState = &state.auth;
     let now = Instant::now();
     let by_ip = auth.limiter.attempt(&format!("login-ip:{}", ip.0), now);

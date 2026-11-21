@@ -14,12 +14,14 @@ import { ProductList } from "./features/catalog/ProductList";
 import { CategoriesScreen } from "./features/catalog/CategoriesScreen";
 import { ImportWizard } from "./features/catalog/ImportWizard";
 import { ReturnScreen } from "./features/returns/ReturnScreen";
+import type { ExchangeCredit } from "./features/returns/exchange";
 import { SalesScreen } from "./features/sales/SalesScreen";
 import { DrawerScreen } from "./features/cash/DrawerScreen";
 import { StockScreen } from "./features/stock/StockScreen";
 import { ReportsScreen } from "./features/reports/ReportsScreen";
 import { AuditScreen } from "./features/audit/AuditScreen";
 import { ErrorPanel } from "./features/shell/ErrorPanel";
+import { UnlockScreen } from "./features/shell/UnlockScreen";
 import { SettingsScreen } from "./features/settings/SettingsScreen";
 import { ConflictsScreen } from "./features/sync/ConflictsScreen";
 import { ScanPreferences } from "./features/scan/preferences";
@@ -36,6 +38,33 @@ export function App() {
   const [state, setState] = useState<BootstrapState | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "till" });
+  /** E04-T02: the wizard just finished; the till offers "Getting started" once. */
+  const [gettingStarted, setGettingStarted] = useState(false);
+  /** A return taken to the till as credit for new items; recorded when the exchange is settled. */
+  const [exchange, setExchange] = useState<ExchangeCredit | null>(null);
+
+  const place: Place = !state ? "loading" : !state.setupComplete || !state.workspace ? "setup" : !state.session || state.session.mustChangePin ? "signIn" : screen.kind;
+  useEffect(() => {
+    // Startup timing for scripts/ui-latency.mjs: the first screen a person can use is up.
+    if (place !== "loading" && performance.getEntriesByName(FIRST_SCREEN_MARK).length === 0) performance.mark(FIRST_SCREEN_MARK);
+    // The window title names the screen (WCAG 2.4.2), for the taskbar and screen readers.
+    document.title = `${TITLES[place]} · Sale OS`;
+    // A new screen starts focus at its heading, unless it focused a field itself; the till keeps
+    // focus on the page, where the scanner types (scanner-ready mode).
+    if (place === "till" || place === "loading") return;
+    const frame = requestAnimationFrame(() => {
+      // Focus left on a control that is no longer shown (the till hides as a screen opens over
+      // it) counts as no focus.
+      const active = document.activeElement;
+      if (active && active !== document.body && active.getClientRects().length > 0) return;
+      // The visible screen's heading (the till stays in the page, hidden, with its own).
+      const heading = [...document.querySelectorAll<HTMLElement>("main h1")].find((h) => h.getClientRects().length > 0);
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [place]);
 
   const apply = useCallback((res: Result<BootstrapState>) => {
     if (res.status === "ok") {
@@ -67,6 +96,7 @@ export function App() {
   // The shop's till preferences (E04-T03): scanner settings and the idle lock.
   const [scanPrefs, setScanPrefs] = useState<Partial<ScanDetectorConfig>>({});
   const [lockAfterSecs, setLockAfterSecs] = useState(0);
+  const [errorSound, setErrorSound] = useState(true);
   const userId = state?.session?.userId ?? null;
   const loadPrefs = useCallback(() => {
     void commands.appPreferences().then((res) => {
@@ -76,6 +106,7 @@ export function App() {
         maxInterKeyMs: res.data.scannerMaxKeyGapMs,
       });
       setLockAfterSecs(res.data.lockTimeoutSecs);
+      setErrorSound(res.data.errorSound);
     });
   }, []);
   useEffect(() => {
@@ -109,13 +140,20 @@ export function App() {
   if (error) {
     return (
       <main className="shell">
-        <ErrorPanel error={error} />
+        {error.code === "STORE_LOCKED" ? <UnlockScreen /> : <ErrorPanel error={error} />}
       </main>
     );
   }
   if (!state) return <main className="shell" aria-busy="true" />;
   if (!state.setupComplete || !state.workspace)
-    return <SetupWizard onDone={refresh} />;
+    return (
+      <SetupWizard
+        onDone={() => {
+          setGettingStarted(true);
+          refresh();
+        }}
+      />
+    );
   if (!state.session || state.session.mustChangePin) {
     return (
       <SignIn
@@ -128,6 +166,7 @@ export function App() {
   const workspace = state.workspace;
   // UI hiding only: Rust refuses edits by roles without CatalogEdit regardless.
   const canEdit = state.session.role !== "cashier";
+  const tillActive = screen.kind === "till";
   const view = (() => {
     switch (screen.kind) {
       case "returns":
@@ -138,6 +177,10 @@ export function App() {
             session={state.session}
             {...(screen.receipt ? { initialReceipt: screen.receipt } : {})}
             onBack={() => setScreen({ kind: "till" })}
+            onExchange={(credit) => {
+              setExchange(credit);
+              setScreen({ kind: "till" });
+            }}
           />
         );
       case "conflicts":
@@ -150,6 +193,7 @@ export function App() {
       case "settings":
         return (
           <SettingsScreen
+            initialGroup={screen.group}
             onBack={() => setScreen({ kind: "till" })}
             onChanged={loadPrefs}
             onRelinked={() => {
@@ -173,6 +217,7 @@ export function App() {
       case "audit":
         return (
           <AuditScreen
+            workspace={workspace}
             onBack={() => setScreen({ kind: "reports" })}
             onOpenProduct={(productId) =>
               setScreen({ kind: "editor", productId, returnTo: "audit" })
@@ -186,6 +231,7 @@ export function App() {
             workspace={workspace}
             canPost={canEdit}
             onBack={() => setScreen({ kind: "till" })}
+            onReturn={(receipt) => setScreen({ kind: "returns", receipt })}
           />
         );
       case "drawer":
@@ -236,7 +282,8 @@ export function App() {
             workspace={workspace}
             productId={screen.productId}
             {...(screen.barcode ? { barcode: screen.barcode } : {})}
-            canEdit={canEdit}
+            {...(screen.approvalToken ? { approvalToken: screen.approvalToken } : {})}
+            canEdit={canEdit || Boolean(screen.approvalToken)}
             onSaved={(productId, created) => {
               // From the unknown-barcode prompt: put the new item in the cart and go back (E07-T04).
               if (created && screen.barcode) {
@@ -254,8 +301,14 @@ export function App() {
           />
         );
       default:
-        return (
+        return null;
+    }
+  })();
+  // The till stays mounted under the other screens, hidden, so going back to it is instant
+  // (its cart, totals and layout are already there; it refreshes in the background).
+  const till = (
           <Checkout
+            active={tillActive}
             key={
               workspace.mode /* going live re-reads the drawer and the banner */
             }
@@ -271,33 +324,65 @@ export function App() {
             onReports={canEdit ? () => setScreen({ kind: "reports" }) : null}
             onWentLive={state.session.role === "owner" ? refresh : null}
             onSettings={
-              state.session.role === "owner"
-                ? () => setScreen({ kind: "settings" })
+              // Managers see only Settings → Devices (DeviceConfigure); owners see everything.
+              state.session.role !== "cashier"
+                ? (group?: string) => setScreen({ kind: "settings", group })
                 : null
             }
+            errorSound={errorSound}
+            exchange={exchange}
+            onExchangeEnd={() => setExchange(null)}
+            gettingStarted={gettingStarted}
+            onGettingStartedSeen={() => setGettingStarted(false)}
             onConflicts={
               state.session.role === "cashier"
                 ? null
                 : () => setScreen({ kind: "conflicts" })
             }
-            onCreateProduct={(barcode) =>
+            onCreateProduct={(barcode, approvalToken) =>
               setScreen({
                 kind: "editor",
                 productId: null,
                 barcode,
+                ...(approvalToken ? { approvalToken } : {}),
                 returnTo: "till",
               })
             }
           />
-        );
-    }
-  })();
+  );
   return (
     <ScanPreferences.Provider value={scanPrefs}>
+      <div className="till-host" hidden={!tillActive}>
+        {till}
+      </div>
       {view}
     </ScanPreferences.Provider>
   );
 }
+
+type Place = Screen["kind"] | "loading" | "setup" | "signIn";
+
+/** Performance marks read by scripts/ui-latency.mjs (pilot measurements). */
+export const FIRST_SCREEN_MARK = "sale-os:first-screen";
+
+const TITLES: Record<Place, string> = {
+  loading: "Starting",
+  setup: "Set up",
+  signIn: "Sign in",
+  till: "Till",
+  products: "Products",
+  categories: "Categories",
+  import: "Import products",
+  returns: "Returns",
+  sales: "Sales",
+  drawer: "Cash drawer",
+  stock: "Stock",
+  reports: "Reports",
+  audit: "Audit log",
+  settings: "Settings",
+  conflicts: "Sync conflicts",
+  editor: "Product",
+};
 
 type Screen =
   | { kind: "till" }
@@ -310,11 +395,13 @@ type Screen =
   | { kind: "stock" }
   | { kind: "reports" }
   | { kind: "audit" }
-  | { kind: "settings" }
+  | { kind: "settings"; group?: string | undefined }
   | { kind: "conflicts" }
   | {
       kind: "editor";
       productId: string | null;
       barcode?: string;
+      /** A manager approved a cashier creating this product (E07-T04). */
+      approvalToken?: string;
       returnTo: "till" | "products" | "audit";
     };

@@ -206,3 +206,116 @@ async fn every_role_can_view_the_list() {
         .unwrap_err();
     assert_eq!(err.error_code(), ErrorCode::PermissionDenied);
 }
+
+/// E09-T04 (POS-002): the quick-select grid lists flagged, active products by name, each with
+/// its active variants, with the categories that have any as tabs, a page at a time.
+#[tokio::test]
+async fn the_quick_select_grid_pages_flagged_products_with_their_variants() {
+    use pos_application::config::ConfigService;
+    use std::collections::BTreeMap;
+    let shop = common::shop().await;
+    let catalog = service(&shop);
+    let cfg = ConfigService {
+        store: Arc::new(shop.store.clone()),
+        config: Arc::new(shop.store.clone()),
+    };
+    let owner = &shop.owner;
+    let drinks = cfg
+        .save_category(owner, None, "Drinks", None, None)
+        .await
+        .unwrap();
+    let bakery = cfg
+        .save_category(owner, None, "Bakery", None, None)
+        .await
+        .unwrap();
+    let make = |name: &str, cat: Option<pos_domain::CategoryId>, quick: bool, variants: Vec<VariantInput>| {
+        let mut i = input(&shop, name, ProductType::Stock, variants);
+        i.category_id = cat;
+        i.quick_select = quick;
+        i
+    };
+    for (name, cat) in [
+        ("Tea", drinks.category_id),
+        ("Coffee", drinks.category_id),
+        ("Bun", bakery.category_id),
+    ] {
+        let p = make(
+            name,
+            Some(cat),
+            true,
+            vec![VariantInput::simple(Money::from_minor(150))],
+        );
+        catalog.create(owner, p).await.unwrap();
+    }
+    let sizes: Vec<VariantInput> = ["S", "L"]
+        .iter()
+        .map(|s| {
+            let mut v = VariantInput::simple(Money::from_minor(if *s == "S" { 200 } else { 300 }));
+            v.options = BTreeMap::from([("size".into(), (*s).into())]);
+            v
+        })
+        .collect();
+    catalog
+        .create(owner, make("Smoothie", Some(drinks.category_id), true, sizes))
+        .await
+        .unwrap();
+    catalog
+        .create(
+            owner,
+            make(
+                "Water",
+                Some(drinks.category_id),
+                false,
+                vec![VariantInput::simple(Money::from_minor(90))],
+            ),
+        )
+        .await
+        .unwrap();
+    let gone = catalog
+        .create(
+            owner,
+            make(
+                "Archived cake",
+                Some(bakery.category_id),
+                true,
+                vec![VariantInput::simple(Money::from_minor(90))],
+            ),
+        )
+        .await
+        .unwrap();
+    catalog.archive(owner, gone.id, gone.version).await.unwrap();
+
+    let all = catalog.quick_select(owner, None, 0, 48).await.unwrap();
+    let names: Vec<&str> = all.products.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Bun", "Coffee", "Smoothie", "Tea"],
+        "flagged and active only, by name"
+    );
+    assert_eq!(all.total, 4);
+    let tabs: Vec<&str> = all.categories.iter().map(|(_, n)| n.as_str()).collect();
+    assert_eq!(tabs, ["Bakery", "Drinks"]);
+    let smoothie = &all.products[2];
+    let labels: Vec<&str> = smoothie.variants.iter().map(|v| v.label.as_str()).collect();
+    assert_eq!(labels.len(), 2, "both sizes, for the variant picker: {labels:?}");
+
+    let drinks_tab = catalog
+        .quick_select(owner, Some(drinks.category_id), 0, 2)
+        .await
+        .unwrap();
+    assert_eq!(drinks_tab.total, 3);
+    let page1: Vec<&str> = drinks_tab.products.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(
+        page1,
+        ["Coffee", "Smoothie"],
+        "a page counts products, not variants"
+    );
+    let page2 = catalog
+        .quick_select(owner, Some(drinks.category_id), 2, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        page2.products.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        ["Tea"]
+    );
+}

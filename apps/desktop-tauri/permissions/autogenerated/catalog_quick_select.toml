@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-quick-select"
+description = "Enables the catalog_quick_select command without any pre-configured scope."
+commands.allow = ["catalog_quick_select"]
+
+[[permission]]
+identifier = "deny-catalog-quick-select"
+description = "Denies the catalog_quick_select command without any pre-configured scope."
+commands.deny = ["catalog_quick_select"]

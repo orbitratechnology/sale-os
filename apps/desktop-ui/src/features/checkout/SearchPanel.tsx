@@ -1,5 +1,9 @@
+import {
+  Search,
+} from "../../ui/icons";
 import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState, type KeyboardEvent } from "react";
 import { commands, type CatalogHit } from "../../ipc";
+import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 
 /** Search as you type (E09-T04). */
@@ -79,6 +83,7 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
     const open = hits.length > 0;
     return (
       <div className="search">
+        <Search />
         <input
           ref={input}
           type="search"
@@ -112,6 +117,11 @@ export const SearchPanel = forwardRef<SearchHandle, { exponent: number; onPick: 
                   {h.label && <span className="item-label"> {h.label}</span>}
                   {h.sku && <span className="small mono"> {h.sku}</span>}
                 </span>
+                {h.onHandMilli !== null && (
+                  <span className={BigInt(h.onHandMilli) > 0n ? "small num" : "small num out-of-stock"} data-testid="search-stock">
+                    {BigInt(h.onHandMilli) > 0n ? `${formatMilli(h.onHandMilli)} in stock` : "None in stock"}
+                  </span>
+                )}
                 <span className="num">{formatMoney(h.priceMinor, { exponent })}</span>
               </li>
             ))}

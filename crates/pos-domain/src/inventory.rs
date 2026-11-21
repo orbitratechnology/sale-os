@@ -5,10 +5,10 @@ use crate::{
     BusinessDate, ErrorCode, HasErrorCode, LocationId, Money, MovementId, Quantity, Timestamp, UserId,
     VariantId,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StockBucket {
     Sellable,
@@ -24,7 +24,7 @@ impl StockBucket {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MovementType {
     Opening,
@@ -57,7 +57,7 @@ impl MovementType {
 }
 
 /// What caused a movement.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MovementSource {
     Sale {
@@ -90,7 +90,7 @@ impl MovementSource {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StockMovement {
     pub id: MovementId,

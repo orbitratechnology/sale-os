@@ -265,6 +265,13 @@ enum Op {
         cell: f32,
         size: f32,
     },
+    /// The business logo: top-left corner at (`x`, `y`), `w` × `h` points.
+    Image {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     Rule {
         x1: f32,
         x2: f32,
@@ -280,13 +287,35 @@ struct Layout {
 /// The receipt PDF: `format` chooses the paper. The document is the stored one, so the PDF
 /// says exactly what the printed receipt said.
 pub fn render_pdf(doc: &ReceiptDocument, format: PdfFormat) -> Result<Vec<u8>, PdfError> {
+    render_pdf_with_logo(doc, format, None)
+}
+
+/// As [`render_pdf`], with the business logo at the top of sale and refund receipts
+/// (SET-001). A Z summary has none.
+pub fn render_pdf_with_logo(
+    doc: &ReceiptDocument,
+    format: PdfFormat,
+    logo: Option<&crate::logo::Logo>,
+) -> Result<Vec<u8>, PdfError> {
+    let logo = logo.filter(|l| l.width > 0 && l.height > 0 && doc.kind != DocumentKind::CashSession);
     let layout = match format {
-        PdfFormat::Receipt58 => roll(doc, 58.0, COLUMNS_58MM),
-        PdfFormat::Receipt80 => roll(doc, 80.0, COLUMNS_80MM),
-        PdfFormat::A4 if doc.kind == DocumentKind::CashSession => a4_grid(doc),
-        PdfFormat::A4 => a4_invoice(doc),
+        PdfFormat::Receipt58 => roll(doc, 58.0, COLUMNS_58MM, logo),
+        PdfFormat::Receipt80 => roll(doc, 80.0, COLUMNS_80MM, logo),
+        // The Z summary and the tax invoice are laid out as text on A4 (their particulars in
+        // the order the text renderer gives them).
+        PdfFormat::A4 if matches!(doc.kind, DocumentKind::CashSession | DocumentKind::TaxInvoice) => {
+            a4_grid(doc)
+        }
+        PdfFormat::A4 => a4_invoice(doc, logo),
     };
-    draw(&layout, doc)
+    draw(&layout, doc, logo)
+}
+
+/// The logo's size in points inside a `max_w` × `max_h` box, keeping its shape.
+fn fit(logo: &crate::logo::Logo, max_w: f32, max_h: f32) -> (f32, f32) {
+    let ratio = logo.height as f32 / logo.width as f32;
+    let w = max_w.min(max_h / ratio);
+    (w, w * ratio)
 }
 
 /// Font size at which a Noto Sans Mono character is exactly `cell` points wide.
@@ -301,23 +330,39 @@ fn mono_size(cell: f32) -> f32 {
 
 /// Continuous paper: the same lines as the preview and the printer, 1.5 mm per column,
 /// one page as long as the receipt.
-fn roll(doc: &ReceiptDocument, paper_mm: f32, columns: usize) -> Layout {
+fn roll(doc: &ReceiptDocument, paper_mm: f32, columns: usize, logo: Option<&crate::logo::Logo>) -> Layout {
     let lines = text::render(doc, columns);
     let cell = 1.5 * MM;
     let size = mono_size(cell);
     let line_h = size * 1.35;
     let margin_x = (paper_mm * MM - columns as f32 * cell) / 2.0;
     let margin_y = 4.0 * MM;
-    let per_page = (((MAX_PAGE_HEIGHT - 2.0 * margin_y) / line_h) as usize).max(1);
-    let pages: Vec<Vec<Op>> = lines
+    // The logo, centred above the first line, at most 40 × 25 mm.
+    let image = logo.map(|l| {
+        let (w, h) = fit(l, (columns as f32 * cell).min(40.0 * MM), 25.0 * MM);
+        (
+            Op::Image {
+                x: (paper_mm * MM - w) / 2.0,
+                y: margin_y,
+                w,
+                h,
+            },
+            h + 2.0 * MM,
+        )
+    });
+    let offset = image.as_ref().map_or(0.0, |(_, dy)| *dy);
+    let per_page = (((MAX_PAGE_HEIGHT - 2.0 * margin_y - offset) / line_h) as usize).max(1);
+    let mut pages: Vec<Vec<Op>> = lines
         .chunks(per_page)
-        .map(|chunk| {
+        .enumerate()
+        .map(|(page, chunk)| {
+            let top = margin_y + if page == 0 { offset } else { 0.0 };
             chunk
                 .iter()
                 .enumerate()
                 .map(|(i, l)| Op::Grid {
                     x: margin_x,
-                    y: margin_y + (i as f32 + 1.0) * line_h - line_h * 0.25,
+                    y: top + (i as f32 + 1.0) * line_h - line_h * 0.25,
                     text: l.text.trim_end().to_owned(),
                     bold: l.style == Style::Bold,
                     cell,
@@ -326,9 +371,15 @@ fn roll(doc: &ReceiptDocument, paper_mm: f32, columns: usize) -> Layout {
                 .collect()
         })
         .collect();
+    if let (Some((op, _)), Some(first)) = (image, pages.first_mut()) {
+        first.insert(0, op);
+    }
     let longest = lines.len().min(per_page);
     Layout {
-        page: (paper_mm * MM, 2.0 * margin_y + longest.max(1) as f32 * line_h),
+        page: (
+            paper_mm * MM,
+            2.0 * margin_y + offset + longest.max(1) as f32 * line_h,
+        ),
         pages,
     }
 }
@@ -442,7 +493,7 @@ const LINE: f32 = 13.0;
 
 /// A sale or refund as an A4 invoice: shop and receipt details, a table of items, totals,
 /// payments and the footer.
-fn a4_invoice(doc: &ReceiptDocument) -> Layout {
+fn a4_invoice(doc: &ReceiptDocument, logo: Option<&crate::logo::Logo>) -> Layout {
     let margin = 18.0 * MM;
     let mut p = Pager {
         pages: vec![Vec::new()],
@@ -494,6 +545,19 @@ fn a4_invoice(doc: &ReceiptDocument) -> Layout {
     }
     if doc.sandbox {
         info.push(("SANDBOX - PRACTICE SALE".into(), FontId::SansBold, BODY));
+    }
+    // The logo above the shop's name, at most 50 × 20 mm.
+    if let Some(l) = logo {
+        let (w, h) = fit(l, 50.0 * MM, 20.0 * MM);
+        if let Some(page) = p.pages.last_mut() {
+            page.push(Op::Image {
+                x: left,
+                y: p.y,
+                w,
+                h,
+            });
+        }
+        p.y += h + 4.0 * MM;
     }
     let top = p.y;
     for (i, (t, f, s)) in shop.iter().enumerate() {
@@ -688,12 +752,23 @@ fn a4_invoice(doc: &ReceiptDocument) -> Layout {
 
 // ---------- drawing ----------
 
-fn draw(layout: &Layout, doc: &ReceiptDocument) -> Result<Vec<u8>, PdfError> {
+fn draw(
+    layout: &Layout,
+    doc: &ReceiptDocument,
+    logo: Option<&crate::logo::Logo>,
+) -> Result<Vec<u8>, PdfError> {
+    let image = logo
+        .map(|l| {
+            krilla::image::Image::from_png(krilla::Data::from(l.png.clone()), true)
+                .map_err(|e| PdfError::Write(format!("logo: {e}")))
+        })
+        .transpose()?;
     let mut document = Document::new();
     let title = match doc.kind {
         DocumentKind::Sale => format!("Receipt {}", doc.meta.receipt_number),
         DocumentKind::Return => format!("Refund receipt {}", doc.meta.receipt_number),
         DocumentKind::CashSession => format!("Z summary {}", doc.meta.receipt_number),
+        DocumentKind::TaxInvoice => format!("Tax invoice {}", doc.meta.receipt_number),
     };
     document.set_metadata(
         krilla::metadata::Metadata::new()
@@ -741,6 +816,13 @@ fn draw(layout: &Layout, doc: &ReceiptDocument) -> Result<Vec<u8>, PdfError> {
                         let room = r.columns as f32 * cell;
                         put(&mut surface, &r, x + col as f32 * cell, *y, *size, Some(room));
                         col += r.columns;
+                    }
+                }
+                Op::Image { x, y, w, h } => {
+                    if let (Some(img), Some(size)) = (&image, Size::from_wh(*w, *h)) {
+                        surface.push_transform(&Transform::from_translate(*x, *y));
+                        surface.draw_image(img.clone(), size);
+                        surface.pop();
                     }
                 }
                 Op::Rule { x1, x2, y } => {

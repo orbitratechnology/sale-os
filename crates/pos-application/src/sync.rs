@@ -10,7 +10,7 @@
 use crate::queries::QueryError;
 use pos_domain::{Clock, Timestamp};
 use pos_sync::envelope::{MAX_PUSH_BYTES, MAX_PUSH_EVENTS};
-use pos_sync::pull::{BootstrapPage, ChangesResponse};
+use pos_sync::pull::{BootstrapPage, ChangesResponse, ReplayPage};
 use pos_sync::reports::{GroupBy, SalesReport};
 use pos_sync::{EventEnvelope, EventResult, PushRequest, PushResponse, ResultStatus};
 use std::sync::Arc;
@@ -111,6 +111,13 @@ pub trait SyncTransport: Send + Sync {
         let _ = page;
         Err(TransportError::Offline)
     }
+
+    /// `GET /v1/sync/replay` (E19-T03): this register's own events after `after`, to restore
+    /// a backup.
+    async fn replay(&self, after: u64, limit: u32) -> Result<ReplayPage, TransportError> {
+        let _ = (after, limit);
+        Err(TransportError::Offline)
+    }
 }
 
 /// Where the local side stands.
@@ -164,6 +171,12 @@ pub trait SyncStore: Send + Sync {
     /// cursor to pull from), in one transaction.
     async fn apply_bootstrap(&self, page: &BootstrapPage, at: Timestamp)
     -> Result<InboundReport, QueryError>;
+
+    /// Records how far a replay after a restore got (E19-T03).
+    async fn advance_replay(&self, after: u64) -> Result<(), QueryError>;
+    /// Ends the replay: the ack is the cloud's, new writes may sync again, and a fresh
+    /// bootstrap brings master data up to date.
+    async fn finish_replay(&self, ack_sequence: u64, at: Timestamp) -> Result<(), QueryError>;
 }
 
 /// Where the pull stands.
@@ -176,6 +189,9 @@ pub struct PullState {
     pub bootstrap_page: Option<String>,
     /// Outbox events the cloud has not accepted yet (pending, in flight or refused).
     pub unsent: u64,
+    /// After a restore: this register's events after this sequence are still to come back
+    /// from the cloud (E19-T03).
+    pub replay_after: Option<u64>,
 }
 
 /// What a pulled page did (`inbound_changes.outcome`, docs/backlog/04 0013).
@@ -583,7 +599,7 @@ impl SyncWorker {
     /// Pulls the next page of the change feed and applies it (E17-T07).
     pub async fn pull_once(&self) -> Result<PullReport, QueryError> {
         let state = self.store.pull_state().await?;
-        if !state.linked || state.bootstrap_page.is_some() {
+        if !state.linked || state.bootstrap_page.is_some() || state.replay_after.is_some() {
             return Ok(PullReport::idle());
         }
         match self
@@ -622,7 +638,9 @@ impl SyncWorker {
     /// stopped. `Next::Idle` once the snapshot is complete (the cursor is then set).
     pub async fn bootstrap_step(&self) -> Result<PullReport, QueryError> {
         let state = self.store.pull_state().await?;
-        match self.transport.bootstrap(state.bootstrap_page.clone()).await {
+        // An empty token is "from the first page" (a bootstrap started after a restore).
+        let page = state.bootstrap_page.clone().filter(|p| !p.is_empty());
+        match self.transport.bootstrap(page).await {
             Err(e) => {
                 self.store.record_push_failure(e.code(), self.clock.now()).await?;
                 let next = if e.is_transient() {
@@ -650,6 +668,68 @@ impl SyncWorker {
         }
     }
 }
+
+impl SyncWorker {
+    /// Re-creates the next page of this register's own events after a restore (E19-T03).
+    /// `Next::Idle` once all are back: the ack is the cloud's and a bootstrap follows.
+    pub async fn replay_step(
+        &self,
+        replayer: &dyn crate::replay::Replayer,
+    ) -> Result<PullReport, QueryError> {
+        let state = self.store.pull_state().await?;
+        let Some(after) = state.replay_after else {
+            return Ok(PullReport::idle());
+        };
+        if !state.linked {
+            return Ok(PullReport::idle());
+        }
+        let page = match self.transport.replay(after, REPLAY_LIMIT).await {
+            Ok(p) => p,
+            Err(e) => {
+                self.store.record_push_failure(e.code(), self.clock.now()).await?;
+                let next = if e.is_transient() {
+                    self.retry_later()
+                } else {
+                    Next::Stopped(e.code())
+                };
+                return Ok(PullReport {
+                    next,
+                    ..PullReport::idle()
+                });
+            }
+        };
+        let mut report = InboundReport::default();
+        for e in &page.events {
+            replayer
+                .replay(e)
+                .await
+                .map_err(|err| QueryError(format!("replaying event {}: {err}", e.local_sequence)))?;
+            report.applied += 1;
+        }
+        let received = page.events.len();
+        if page.has_more {
+            let last = page.events.last().map_or(after, |e| e.local_sequence);
+            self.store.advance_replay(last).await?;
+            return Ok(PullReport {
+                received,
+                report,
+                next: Next::Immediately,
+            });
+        }
+        self.store
+            .finish_replay(page.ack_sequence, self.clock.now())
+            .await?;
+        self.reset_backoff();
+        Ok(PullReport {
+            received,
+            report,
+            next: Next::Immediately,
+        })
+    }
+}
+
+/// Events per replay page.
+pub const REPLAY_LIMIT: u32 = 200;
 
 /// Changes per pull.
 pub const PULL_LIMIT: u32 = 500;

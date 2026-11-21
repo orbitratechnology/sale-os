@@ -4,7 +4,8 @@
 //! last tender may leave change. External tenders (card on a separate terminal, bank
 //! transfer, QR) are **recorded by the operator**: they are stored as confirmed by the
 //! operator, never as confirmed by a provider (PAY-003). A provider confirmation can only be
-//! made from a payment provider's approval, which does not exist in the MVP.
+//! made from a payment provider's approval: an approved [`crate::payment::PaymentAttempt`]
+//! (E10-T02), applied with [`settle_with_confirmed`].
 
 use crate::pricing::{PricingPolicy, cash_rounding};
 use crate::{ErrorCode, HasErrorCode, Money};
@@ -76,7 +77,7 @@ impl TenderStatus {
 
 /// Who confirmed a tender. `Provider` carries proof that cannot be built outside this module:
 /// there is no code path from operator input to a provider confirmation (AT-13).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfirmationSource {
     Operator,
@@ -92,11 +93,29 @@ impl ConfirmationSource {
     }
 }
 
-/// A payment provider's approval. Private field: only a `PaymentPort` result may make one,
-/// and the MVP has none (E10-T02 builds the flow behind a non-production port).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+/// A payment provider's approval. Private field: only an attempt the provider approved can
+/// make one ([`crate::payment::PaymentAttempt::sale_tender`]); operator input never can.
+/// Serialises as `{"reference": ...}` (the `sale.completed` v1 `ProviderApprovalV1`).
+///
+/// It also deserialises, for one reader only: a till restored from the cloud replays its own
+/// recorded `sale.completed` events (E19-T03), which must come back as they were. Operator
+/// input never reaches it: tenders typed at the till arrive as `TenderInput` (IPC
+/// `TenderInputDto`), which has no confirmation at all.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderApproval {
     reference: String,
+}
+
+impl ProviderApproval {
+    /// Crate-private on purpose: see the type's documentation.
+    pub(crate) fn from_approved_attempt(reference: String) -> Self {
+        Self { reference }
+    }
+
+    /// The provider's transaction reference.
+    pub fn reference(&self) -> &str {
+        &self.reference
+    }
 }
 
 /// One tender as entered at the till.
@@ -109,7 +128,7 @@ pub struct TenderInput {
     pub external_reference: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettledTender {
     pub kind: TenderKind,
     /// The part of the sale this tender pays.
@@ -161,6 +180,7 @@ impl HasErrorCode for SettlementError {
             SettlementError::Insufficient { .. } => ErrorCode::TenderInsufficient,
             SettlementError::OverTenderNonCash => ErrorCode::TenderOverpayNonCash,
             SettlementError::ChangeFromNonCash => ErrorCode::TenderChangeFromNonCash,
+            SettlementError::ReferenceLooksLikeCard => ErrorCode::CardDataRejected,
             _ => ErrorCode::ValidationFailed,
         }
     }
@@ -178,10 +198,24 @@ pub fn settle(
     tenders: &[TenderInput],
     policy: &PricingPolicy,
 ) -> Result<Settlement, SettlementError> {
-    if tenders.is_empty() {
+    settle_with_confirmed(total, Vec::new(), tenders, policy)
+}
+
+/// Like [`settle`], with tenders that were already confirmed elsewhere applied first: card
+/// payments a terminal approved (E10-T02, from
+/// [`crate::payment::PaymentAttempt::sale_tender`]). They are never cash and never give
+/// change, so applying them first cannot move change away from the last cash tender; each
+/// must still fit in what is due.
+pub fn settle_with_confirmed(
+    total: Money,
+    confirmed: Vec<SettledTender>,
+    tenders: &[TenderInput],
+    policy: &PricingPolicy,
+) -> Result<Settlement, SettlementError> {
+    if tenders.is_empty() && confirmed.is_empty() {
         return Err(SettlementError::NoTenders);
     }
-    let all_cash = tenders.iter().all(|t| t.kind.is_cash());
+    let all_cash = confirmed.is_empty() && tenders.iter().all(|t| t.kind.is_cash());
     let rounding = if all_cash {
         cash_rounding(total, policy)?
     } else {
@@ -189,7 +223,23 @@ pub fn settle(
     };
     let total_due = total.checked_add(rounding)?;
     let mut remaining = total_due;
-    let mut settled = Vec::with_capacity(tenders.len());
+    let mut settled = Vec::with_capacity(confirmed.len() + tenders.len());
+    for t in confirmed {
+        if t.kind.is_cash() || t.received.is_some() || t.change.minor() != 0 {
+            return Err(SettlementError::ChangeFromNonCash);
+        }
+        if t.amount.minor() <= 0 {
+            return Err(SettlementError::NonPositiveAmount);
+        }
+        if remaining.minor() == 0 {
+            return Err(SettlementError::TenderAfterPaid);
+        }
+        if t.amount > remaining {
+            return Err(SettlementError::OverTenderNonCash);
+        }
+        remaining = remaining.checked_sub(t.amount)?;
+        settled.push(t);
+    }
     for (i, t) in tenders.iter().enumerate() {
         if t.amount.minor() <= 0 {
             return Err(SettlementError::NonPositiveAmount);
@@ -374,7 +424,7 @@ mod tests {
         ] {
             let e = settle(m(1345), &[card(1345, Some(pan))], &policy()).unwrap_err();
             assert_eq!(e, SettlementError::ReferenceLooksLikeCard);
-            assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
+            assert_eq!(e.error_code(), ErrorCode::CardDataRejected);
             assert!(!e.to_string().contains("4111"), "the value is never echoed");
         }
         // Approval codes, short numbers and non-Luhn long numbers are fine.
@@ -404,6 +454,32 @@ mod tests {
         assert_eq!((s.rounding, s.total_due, s.change), (m(-2), m(1345), m(655)));
         let s = settle(m(1347), &[card(1000, None), cash(500)], &p).unwrap();
         assert_eq!((s.rounding, s.total_due, s.change), (m(0), m(1347), m(153)));
+    }
+
+    /// AT-13: whatever the till enters (any kind, any reference, even one that reads like an
+    /// approval), the tender is confirmed by the operator. Only a `PaymentPort` result can make
+    /// a provider confirmation, and `TenderInput` has no field that could carry one.
+    #[test]
+    fn at13_till_input_is_only_ever_operator_confirmed() {
+        for kind in [
+            TenderKind::CardExternal,
+            TenderKind::BankTransferExternal,
+            TenderKind::QrExternal,
+            TenderKind::OtherExternal,
+        ] {
+            for reference in [None, Some("APPROVED 123456"), Some("provider")] {
+                let input = TenderInput {
+                    kind,
+                    amount: m(500),
+                    external_reference: reference.map(Into::into),
+                };
+                let s = settle(m(500), &[input], &policy()).unwrap();
+                assert_eq!(s.tenders[0].confirmation, ConfirmationSource::Operator);
+                assert_eq!(s.tenders[0].confirmation.as_str(), "operator");
+            }
+        }
+        let s = settle(m(500), &[cash(500)], &policy()).unwrap();
+        assert_eq!(s.tenders[0].confirmation, ConfirmationSource::Operator);
     }
 
     #[test]

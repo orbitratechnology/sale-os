@@ -1,3 +1,6 @@
+import {
+  Printer,
+} from "../../ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { PrintJobDto } from "../../ipc/bindings";
@@ -76,6 +79,7 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
     <>
       <div className="print-controls" aria-live="polite">
         <button type="button" className="secondary" disabled={busy} onClick={() => void run(print)}>
+          <Printer />
           {job ? "Print another copy" : "Print receipt"}
         </button>
         <span className="small" data-testid="print-status">
@@ -84,6 +88,7 @@ export function PrintControls({ source, autoPrint }: { source: ReceiptSource; au
       </div>
       {source.kind === "sale" && source.id && <SavePdf saleId={source.id} returnId={null} />}
       {source.kind === "return" && <SavePdf saleId={null} returnId={source.id} />}
+      {source.kind === "taxInvoice" && <SavePdf saleId={null} returnId={null} taxInvoiceOf={source.id} />}
     </>
   );
 }

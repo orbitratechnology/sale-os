@@ -314,6 +314,8 @@ pub struct PrintJobRecord {
     pub job_id: pos_domain::PrintJobId,
     pub receipt_id: pos_domain::ReceiptId,
     pub adapter: &'static str,
+    /// Which printer, in words ("192.168.1.50:9100", "COM3 @ 9600"); `None` for the virtual one.
+    pub target: Option<String>,
     /// `true`: printed with the REPRINT marker (RCP-007).
     pub reprint: bool,
     pub status: PrintStatus,
@@ -322,6 +324,27 @@ pub struct PrintJobRecord {
     pub requested_by: pos_domain::UserId,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+}
+
+/// Who caused a payment attempt's change (`payment_attempt_events.source`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AttemptEventSource {
+    /// A staff member: cancel from the till, resolve, start.
+    Operator,
+    /// The terminal or provider's answer.
+    Provider,
+    /// The till itself (e.g. the terminal could not be reached).
+    System,
+}
+
+impl AttemptEventSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            AttemptEventSource::Operator => "operator",
+            AttemptEventSource::Provider => "provider",
+            AttemptEventSource::System => "system",
+        }
+    }
 }
 
 // ---------- sales history (E12-T03) ----------
@@ -489,6 +512,53 @@ pub struct StockHistoryRow {
     pub actor_name: String,
 }
 
+/// A posted stock document as recorded (E11-T05: opened from a history row or an audit entry).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StockDocumentView {
+    pub document_id: pos_domain::InventoryDocumentId,
+    /// `R01-IN-000042`.
+    pub document_no: String,
+    /// `opening`, `receipt`, `adjustment` or `write_off`.
+    pub doc_type: String,
+    /// Adjustments and write-offs: `damage`, `loss`, `theft`, `count_correction`, `expired`, `other`.
+    pub reason: Option<String>,
+    pub supplier_name: Option<String>,
+    pub reference: Option<String>,
+    pub note: Option<String>,
+    pub local_time: String,
+    pub actor_name: String,
+    pub approver_name: Option<String>,
+    /// One per stock movement written (a damage adjustment writes two per line).
+    pub lines: Vec<StockDocumentLine>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StockDocumentLine {
+    pub variant_id: pos_domain::VariantId,
+    /// The product name with the variant label, as the item is called today.
+    pub name: String,
+    pub sku: Option<String>,
+    pub movement_type: String,
+    pub bucket: String,
+    pub delta: pos_domain::Quantity,
+    pub unit_cost: Option<pos_domain::Money>,
+}
+
+/// A tax invoice to record (D-02). The number is allocated by the store:
+/// `{number_prefix}{register code}_{seq:05}`, e.g. `26NOV_` + `R01` + `_00042`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaxInvoiceRecord {
+    pub id: pos_domain::TaxInvoiceId,
+    pub sale_id: pos_domain::SaleId,
+    /// `YYMMM_` from the invoice date in the business's time zone.
+    pub number_prefix: String,
+    pub purchaser_tin: String,
+    pub purchaser_name: String,
+    pub purchaser_address: Vec<String>,
+    pub issued_by: pos_domain::UserId,
+    pub issued_at: Timestamp,
+}
+
 // ---------- cash sessions (E15-T02) ----------
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -624,4 +694,55 @@ pub struct ImportRowRecord {
     pub parsed: Option<serde_json::Value>,
     pub status: ImportRowStatus,
     pub errors: Vec<pos_domain::catalog::import::RowError>,
+}
+
+// ---------- devices attached to this till (E20-T11, ADR-024) ----------
+
+/// What a device is for.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceKind {
+    ReceiptPrinter,
+    Scanner,
+    PaymentTerminal,
+    CustomerDisplay,
+}
+
+impl DeviceKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            DeviceKind::ReceiptPrinter => "receipt_printer",
+            DeviceKind::Scanner => "scanner",
+            DeviceKind::PaymentTerminal => "payment_terminal",
+            DeviceKind::CustomerDisplay => "customer_display",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [
+            DeviceKind::ReceiptPrinter,
+            DeviceKind::Scanner,
+            DeviceKind::PaymentTerminal,
+            DeviceKind::CustomerDisplay,
+        ]
+        .into_iter()
+        .find(|k| k.as_str() == s)
+    }
+}
+
+/// One device attached to this till. `config` is the adapter's own configuration (address,
+/// port, model profile…), validated by the device driver before it is stored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeviceRecord {
+    pub device_id: pos_domain::DeviceId,
+    pub register_id: pos_domain::RegisterId,
+    pub kind: DeviceKind,
+    /// Which one of its kind: "main" for the receipt printer, scanner and terminal.
+    pub role: String,
+    pub name: String,
+    pub config: serde_json::Value,
+    pub enabled: bool,
+    pub version: u64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }

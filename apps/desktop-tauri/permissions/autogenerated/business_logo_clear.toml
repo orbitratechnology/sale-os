@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-business-logo-clear"
+description = "Enables the business_logo_clear command without any pre-configured scope."
+commands.allow = ["business_logo_clear"]
+
+[[permission]]
+identifier = "deny-business-logo-clear"
+description = "Denies the business_logo_clear command without any pre-configured scope."
+commands.deny = ["business_logo_clear"]

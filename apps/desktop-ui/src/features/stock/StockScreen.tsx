@@ -1,3 +1,8 @@
+import { TabList, tabPanelProps } from "../../ui/Tabs";
+import {
+  ArrowLeft,
+  Boxes,
+} from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { AdjustReason, DocumentType, PostedDocumentDto } from "../../ipc/bindings";
@@ -5,7 +10,8 @@ import { formatMilli, scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
-import { StockOverview } from "./StockOverview";
+import { RecordView, type RecordRef } from "../records/RecordView";
+import { INITIAL_OVERVIEW, StockOverview, type OverviewState } from "./StockOverview";
 
 const KINDS: { value: DocumentType; label: string; post: string }[] = [
   { value: "receipt", label: "Receive goods", post: "Post goods received" },
@@ -45,14 +51,37 @@ function signedMilli(input: string, allowSign: boolean): string | null {
  * Posting is one transaction in Rust; a posted document cannot be edited, only corrected by
  * a new one.
  */
-export function StockScreen({ workspace, canPost, onBack }: { workspace: Workspace; canPost: boolean; onBack: () => void }) {
+export function StockScreen({
+  workspace,
+  canPost,
+  onBack,
+  onReturn,
+}: {
+  workspace: Workspace;
+  canPost: boolean;
+  onBack: () => void;
+  /** "Return items" on a sale opened from the history. */
+  onReturn: (receiptNumber: string) => void;
+}) {
   // Managers and owners land on posting (receiving is the common job); cashiers only see stock.
   const [view, setView] = useState<"post" | "onHand">(canPost ? "post" : "onHand");
+  const [overview, setOverview] = useState<OverviewState>(INITIAL_OVERVIEW);
+  const [record, setRecord] = useState<RecordRef | null>(null);
+  if (record) {
+    return <RecordView record={record} workspace={workspace} backLabel="Back to stock" onBack={() => setRecord(null)} onReturn={onReturn} />;
+  }
+  const overviewPanel = <StockOverview state={overview} onState={setOverview} onRecord={setRecord} />;
   if (view === "onHand" || !canPost) {
     return (
       <main className="sales">
         <StockHeader canPost={canPost} view="onHand" onView={setView} onBack={onBack} />
-        <StockOverview />
+        {canPost ? (
+          <div className="stack" {...tabPanelProps("stock", "onHand")}>
+            {overviewPanel}
+          </div>
+        ) : (
+          overviewPanel
+        )}
       </main>
     );
   }
@@ -82,20 +111,27 @@ function StockHeader({
   return (
     <>
       <header className="returns-header">
-        <h1>Stock</h1>
+        <h1 className="page-title">
+          <Boxes />
+          Stock
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>
       {canPost && (
-        <div className="receipt-widths" role="tablist" aria-label="Stock">
-          <button type="button" role="tab" aria-selected={view === "post"} className={view === "post" ? "" : "secondary"} onClick={() => onView("post")}>
-            Receive and adjust
-          </button>
-          <button type="button" role="tab" aria-selected={view === "onHand"} className={view === "onHand" ? "" : "secondary"} onClick={() => onView("onHand")}>
-            On hand
-          </button>
-        </div>
+        <TabList
+          label="Stock"
+          idBase="stock"
+          className="receipt-widths"
+          tabs={[
+            { value: "post", label: "Receive and adjust" },
+            { value: "onHand", label: "On hand" },
+          ]}
+          selected={view}
+          onSelect={onView}
+        />
       )}
     </>
   );
@@ -125,7 +161,11 @@ function PostDocument({
   const signed = kind === "adjustment" && (reason === "count_correction" || reason === "other");
   const postLabel = KINDS.find((k) => k.value === kind)?.post ?? "Post";
 
-  useEffect(() => codeInput.current?.focus(), []);
+  // Ready for the first scan, unless the user arrived here by arrowing along the view tabs:
+  // then focus stays on the tab, so the arrow keys keep working.
+  useEffect(() => {
+    if (document.activeElement?.getAttribute("role") !== "tab") codeInput.current?.focus();
+  }, []);
 
   const add = useCallback(async (raw: string) => {
     const text = raw.trim();
@@ -199,26 +239,33 @@ function PostDocument({
   return (
     <main className="sales">
       <StockHeader canPost view="post" onView={onView} onBack={onBack} />
+      <div className="stack" {...tabPanelProps("stock", "post")}>
       <section className="card return-form" aria-label="Stock document">
-        <div className="receipt-widths" role="radiogroup" aria-label="What are you doing?">
+        {/* Native radios: one Tab stop, arrow keys move between them, announced as a group. */}
+        <fieldset className="segmented">
+          <legend className="visually-hidden">What are you doing?</legend>
           {KINDS.map((k) => (
-            <button
-              key={k.value}
-              type="button"
-              role="radio"
-              aria-checked={kind === k.value}
-              className={kind === k.value ? "" : "secondary"}
-              onClick={() => {
-                setKind(k.value);
-                setPosted(null);
-                setError(null);
-                codeInput.current?.focus(); // ready for the next scan
-              }}
-            >
+            <label key={k.value}>
+              <input
+                type="radio"
+                name="stock-kind"
+                value={k.value}
+                checked={kind === k.value}
+                onChange={() => {
+                  setKind(k.value);
+                  setPosted(null);
+                  setError(null);
+                }}
+                onClick={(e) => {
+                  // A pointer click readies the code field for the next scan; arrow keys
+                  // (which also fire click, with detail 0) keep focus in the group.
+                  if (e.detail > 0) codeInput.current?.focus();
+                }}
+              />
               {k.label}
-            </button>
+            </label>
           ))}
-        </div>
+        </fieldset>
         {kind === "adjustment" && (
           <label>
             Reason
@@ -333,6 +380,7 @@ function PostDocument({
           </button>
         </div>
       </section>
+      </div>
     </main>
   );
 }

@@ -1,3 +1,7 @@
+import {
+  ArrowLeft,
+  ReceiptText,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SaleDetailDto_Serialize as Detail } from "../../ipc/bindings";
@@ -8,6 +12,7 @@ import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 import { REASON_LABEL, TENDER_LABEL } from "./labels";
 import { SaleSyncMark } from "../sync/SaleSyncMark";
+import { TaxInvoicePanel } from "./TaxInvoicePanel";
 
 /**
  * One completed sale as recorded (E12-T03): lines, discounts, tax, tenders with who
@@ -15,10 +20,13 @@ import { SaleSyncMark } from "../sync/SaleSyncMark";
  */
 export function SaleDetail({
   saleId,
+  backLabel = "Back to sales",
   onBack,
   onReturn,
 }: {
   saleId: string;
+  /** Where Esc and the back button go: the sales list, the stock history, the audit log. */
+  backLabel?: string;
   onBack: () => void;
   onReturn: (receiptNumber: string) => void;
 }) {
@@ -56,11 +64,13 @@ export function SaleDetail({
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>
+        <h1 className="page-title">
+          <ReceiptText />
           Sale <span className="mono">{sale.receiptNumber}</span>
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
-          Back to sales <kbd>Esc</kbd>
+          <ArrowLeft />
+          {backLabel} <kbd>Esc</kbd>
         </button>
       </header>
       <section className="card sale-detail" aria-label="Sale detail">
@@ -180,6 +190,7 @@ export function SaleDetail({
 
         <PrintControls source={{ kind: "sale", id: sale.saleId }} autoPrint={false} />
         {showReceipt && <ReceiptPreview source={{ kind: "sale", id: sale.saleId }} />}
+        <TaxInvoicePanel saleId={sale.saleId} hasVat={sale.taxTotalMinor !== "0"} />
         <div className="actions">
           <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
             {showReceipt ? "Hide receipt" : "Show receipt"}

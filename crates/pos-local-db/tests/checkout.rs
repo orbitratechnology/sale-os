@@ -317,6 +317,7 @@ async fn the_sale_keeps_its_snapshot_when_the_product_changes() {
     // The stored receipt is unchanged too: receipts are never rebuilt from the catalogue.
     let receipts = pos_application::receipts::ReceiptService {
         receipts: Arc::new(t.shop.store.clone()),
+        printer: None,
     };
     let r = receipts.for_sale(&t.shop.owner, None, Some(58)).await.unwrap();
     assert_eq!(r.document.lines[0].name, "Tea");
@@ -371,7 +372,7 @@ async fn refusals_write_nothing() {
         )
         .await
         .unwrap_err();
-    assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
+    assert_eq!(e.error_code(), ErrorCode::CardDataRejected);
     assert_eq!(count(&t, "SELECT count(*) FROM sales").await, 0);
     assert_eq!(
         count(

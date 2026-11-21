@@ -1,7 +1,14 @@
+import {
+  ArrowLeft,
+  Upload,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { Column, ImportCommitDto, ImportPreviewDto, ImportSummaryDto, MappingEntryDto, OnDuplicateDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+
+/** How often the progress bar asks how far the commit has got. */
+const PROGRESS_POLL_MS = 250;
 
 const COLUMNS: { column: Column; label: string; help?: string; required?: boolean }[] = [
   { column: "name", label: "Product name", required: true },
@@ -46,6 +53,24 @@ export function ImportWizard({ onClose }: { onClose: (imported: boolean) => void
   const [policy, setPolicy] = useState<OnDuplicateDto>("skip");
   const [error, setError] = useState<IpcError | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Rows written of rows to write, while a commit runs. */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const committingJob = step.kind === "committing" ? step.preview.jobId : null;
+  useEffect(() => {
+    if (!committingJob) return;
+    let live = true;
+    const poll = () =>
+      void commands.importProductsProgress(committingJob).then((res) => {
+        if (live && res.status === "ok") setProgress({ done: res.data.rowsDone, total: res.data.rowsTotal });
+      });
+    poll();
+    const t = setInterval(poll, PROGRESS_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+      setProgress(null);
+    };
+  }, [committingJob]);
   const [saved, setSaved] = useState<string | null>(null);
 
   const jobId = step.kind === "choose" ? null : step.preview.jobId;
@@ -115,8 +140,12 @@ export function ImportWizard({ onClose }: { onClose: (imported: boolean) => void
   return (
     <main className="sales import-wizard">
       <header className="returns-header">
-        <h1>Import products</h1>
+        <h1 className="page-title">
+          <Upload />
+          Import products
+        </h1>
         <button type="button" className="secondary" disabled={step.kind === "committing"} onClick={() => void close()}>
+          <ArrowLeft />
           {committed ? "Back to products" : "Cancel"} <kbd>Esc</kbd>
         </button>
       </header>
@@ -276,10 +305,23 @@ export function ImportWizard({ onClose }: { onClose: (imported: boolean) => void
             )}
           </p>
           {step.kind === "committing" && (
-            <p role="status" className="small">
-              Importing {step.summary.productsToCreate + step.summary.productsToUpdate} products, 500 at a time. Each batch is saved
-              whole; if the app is closed, importing again finishes the rest.
-            </p>
+            <div className="import-progress">
+              <progress
+                aria-label="Import progress"
+                max={progress?.total || 1}
+                value={progress?.done ?? 0}
+                data-testid="import-progress"
+              />
+              <p className="small" data-testid="import-progress-text">
+                {progress && progress.total > 0
+                  ? `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} rows (${Math.floor((progress.done * 100) / progress.total)}%)`
+                  : "Starting…"}
+              </p>
+              <p role="status" className="small">
+                Importing {step.summary.productsToCreate + step.summary.productsToUpdate} products, 500 at a time. Each batch is saved
+                whole; if the app is closed, importing again finishes the rest.
+              </p>
+            </div>
           )}
         </section>
       )}

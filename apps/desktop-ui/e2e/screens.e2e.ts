@@ -127,6 +127,18 @@ describe("first run (E04-T02)", () => {
     const [login] = await calls(page, "auth_login");
     expect(login).toMatchObject({ pin: "1234" });
     await page.getByLabel("Status").getByText("Olu").waitFor();
+    // Steps 5–7: "Getting started" opens once, and each step goes where it is done.
+    const start = page.getByRole("dialog", { name: "Getting started" });
+    await start.waitFor();
+    await start.getByRole("button", { name: "Add staff" }).click();
+    await page.getByRole("tab", { name: "Staff", selected: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    expect(await start.count()).toBe(0);
+    // Offered again from the SANDBOX banner until the till goes live.
+    await page.getByRole("note").getByRole("button", { name: "Getting started" }).click();
+    await start.getByRole("button", { name: "Business details" }).click();
+    await page.getByRole("tab", { name: "Business", selected: true }).waitFor();
   });
 });
 
@@ -251,11 +263,47 @@ describe("checkout (E09-T03..T06)", () => {
     expect(await search.evaluate((el) => el === document.activeElement)).toBe(true);
   });
 
+  it("an unknown code beeps once with the message, unless the shop turned the tone off (E07-T04)", async () => {
+    for (const on of [true, false]) {
+      const page = await open("signIn");
+      await page.evaluate((sound) => {
+        const w = window as unknown as { __tones: number; AudioContext: unknown };
+        w.__tones = 0;
+        // A stand-in audio device that counts tones.
+        w.AudioContext = class {
+          currentTime = 0;
+          destination = {};
+          createGain() {
+            return { gain: { value: 0 }, connect: (d: unknown) => d };
+          }
+          createOscillator() {
+            return { type: "", frequency: { value: 0 }, connect: (g: { connect: (d: unknown) => unknown }) => g, start: () => (w.__tones += 1), stop: () => undefined };
+          }
+        };
+        window.__fake.errorSound = sound;
+      }, on);
+      await page.getByRole("button", { name: /Olu/ }).click();
+      await page.keyboard.type("1234");
+      await page.keyboard.press("Enter");
+      await page.getByRole("region", { name: "Cart lines" }).waitFor();
+      await expect.poll(() => calls(page, "app_preferences").then((c) => c.length)).toBeGreaterThan(0);
+      await scan(page, "9300633603209");
+      await page.getByText("No product with code").waitFor();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __tones: number }).__tones)).toBe(on ? 1 : 0);
+      await page.close();
+    }
+  });
+
   it("search: type, arrow down, Enter adds; manual code entry uses the scan path", async () => {
     const page = await checkout();
     await page.keyboard.press("F2");
     await page.keyboard.type("c");
-    await page.getByRole("listbox", { name: "Search results" }).waitFor();
+    const results = page.getByRole("listbox", { name: "Search results" });
+    await results.waitFor();
+    // On-hand stock beside each stock-tracked result; none is flagged.
+    await expect
+      .poll(() => results.getByTestId("search-stock").allTextContents())
+      .toEqual(expect.arrayContaining(["40 in stock", "3 in stock", "None in stock"]));
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "cart_add_variant"));
@@ -268,6 +316,24 @@ describe("checkout (E09-T03..T06)", () => {
     await page.waitForFunction(() => window.__ipc.some((c) => c.cmd === "scan_submit"));
     expect((await calls(page, "scan_submit"))[0]).toMatchObject({ raw: "COLA", source: "manual" });
     expect(await field.inputValue()).toBe("");
+  });
+
+  it("a full disk: the sale is not saved, the cashier is told, the cart is kept (E19-T02)", async () => {
+    const page = await checkout();
+    await scan(page, "4006381333931");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 1);
+    await page.evaluate(() => (window.__fake.diskFull = true));
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Payment" });
+    await pay.waitFor();
+    await page.keyboard.press("Enter");
+    await pay.getByText(/Cannot save — disk full\. Nothing was saved and the cart is kept\./).waitFor();
+    expect(await page.getByRole("dialog", { name: "Sale completed" }).count()).toBe(0);
+    // Space is freed: the same cart completes.
+    await page.evaluate(() => (window.__fake.diskFull = false));
+    await pay.getByRole("button", { name: "Complete sale" }).click();
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    expect(await lines(page)).toEqual(["Cola 330ml x1"]);
   });
 
   it("clear and void ask first; a cashier's void needs a manager", async () => {
@@ -298,6 +364,72 @@ describe("checkout (E09-T03..T06)", () => {
     await page.getByRole("dialog", { name: "Clear the cart?" }).getByRole("button", { name: "Clear cart" }).click();
     await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 0);
     expect((await calls(page, "cart_clear"))[0]).toMatchObject({ revision: 1 });
+  });
+
+  it("park with F5, serve someone else, resume with Shift+F5; a cashier's discard needs a manager (POS-012)", async () => {
+    const page = await checkout();
+    // Nothing to park yet: F5 does nothing (and does not reload the page).
+    await page.keyboard.press("F5");
+    expect(await page.getByRole("dialog").count()).toBe(0);
+    await scan(page, COLA);
+    await scan(page, COLA);
+    await page.waitForFunction(() => document.querySelector("[data-testid=qty]")?.textContent === "2");
+
+    await page.keyboard.press("F5");
+    const park = page.getByRole("dialog", { name: "Park this cart?" });
+    await park.getByLabel(/^Label/).fill("blue coat");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 0);
+    await page.getByRole("button", { name: /^Parked \(1\)/ }).waitFor();
+    expect((await calls(page, "cart_park"))[0]).toMatchObject({ label: "blue coat" });
+
+    // The next customer.
+    await scan(page, CRISPS);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("Shift+F5");
+    const parked = page.getByRole("dialog", { name: "Parked carts" });
+    await parked.getByText("Park or finish the current sale to resume one of these.").waitFor();
+    const row = parked.getByTestId("parked-row").first();
+    expect(await row.getByRole("rowheader").textContent()).toBe("blue coat");
+    expect(await row.getByRole("button", { name: "Resume" }).isDisabled()).toBe(true);
+    await page.keyboard.press("Escape");
+    await parked.waitFor({ state: "detached" });
+
+    // That customer is done (cleared here for brevity); Enter resumes the first parked cart.
+    await page.getByRole("button", { name: "Clear cart" }).click();
+    await page.getByRole("dialog", { name: "Clear the cart?" }).getByRole("button", { name: "Clear cart" }).click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=cart-line]").length === 0);
+    await page.keyboard.press("Shift+F5");
+    await parked.getByTestId("parked-row").first().waitFor();
+    await page.keyboard.press("Enter");
+    await parked.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelector("[data-testid=qty]")?.textContent === "2");
+    await page.getByRole("button", { name: /^Parked \(0\)/ }).waitFor();
+
+    // Park it again; a cashier discards it: reason, then a manager's PIN.
+    await page.keyboard.press("F5");
+    await page.keyboard.press("Enter"); // no label
+    await page.getByRole("button", { name: /^Parked \(1\)/ }).waitFor();
+    await page.evaluate(() => {
+      if (window.__fake.session) window.__fake.session.role = "cashier";
+    });
+    await page.keyboard.press("Shift+F5");
+    await parked.getByTestId("parked-row").first().getByRole("button", { name: "Discard…" }).click();
+    const group = parked.getByRole("group", { name: "Discard a parked cart" });
+    await group.getByLabel("Reason").fill("customer left");
+    await group.getByRole("button", { name: "Discard cart" }).click();
+    await page.getByRole("dialog", { name: "Manager approval" }).waitFor();
+    expect(await calls(page, "cart_discard_parked")).toHaveLength(1);
+  });
+
+  it("anyone signed in can save a diagnostics file for support (E19-T07)", async () => {
+    const page = await checkout();
+    await page.evaluate(() => {
+      if (window.__fake.session) window.__fake.session.role = "cashier";
+    });
+    await page.getByRole("button", { name: "Save diagnostics…" }).click();
+    await page.getByText("Diagnostics saved to /home/user/Documents/sale-os-diagnostics-2026-11-05T0920.zip").waitFor();
+    expect(await calls(page, "diagnostics_export")).toHaveLength(1);
   });
 
   it("F12 locks: back to sign-in", async () => {
@@ -360,7 +492,16 @@ describe("layout and accessibility (E09-T03, E09-T05)", () => {
       let bg = "rgba(0, 0, 0, 0)";
       for (let n: Element | null = el; n && /rgba\(.*, 0\)/.test(bg); n = n.parentElement) bg = getComputedStyle(n).backgroundColor;
       const s = getComputedStyle(el);
-      return { size: parseInt(s.fontSize, 10), color: s.color, bg };
+      // Computed colours may be oklch(); paint each on a canvas to read it back as sRGB.
+      const rgb = (css: string) => {
+        const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+        if (!ctx) return css;
+        ctx.fillStyle = css;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return `rgb(${r}, ${g}, ${b})`;
+      };
+      return { size: parseInt(s.fontSize, 10), color: rgb(s.color), bg: rgb(bg) };
     });
     expect(style.size).toBeGreaterThanOrEqual(48);
     const [hi, lo] = [luminance(style.color), luminance(style.bg)].sort((a, b) => b - a);
@@ -505,7 +646,7 @@ describe("payment (E10-T03, E09-T08)", () => {
     await pay.getByLabel(/^Reference/).fill("4111 1111 1111 1111");
     await pay.getByRole("button", { name: /^Record/ }).click();
     await pay.getByRole("button", { name: "Complete sale" }).click();
-    await pay.getByRole("alert").filter({ hasText: "not valid" }).waitFor();
+    await pay.getByRole("alert").filter({ hasText: "looks like a card number" }).waitFor();
     expect(await page.getByRole("dialog", { name: "Sale completed" }).count()).toBe(0);
     await page.keyboard.press("Escape");
     await pay.waitFor({ state: "detached" });
@@ -656,6 +797,92 @@ describe("returns (E12-T04)", () => {
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
 
+  it("an exchange: colas back, other items taken, only the difference paid; both recorded together", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await sellThreeColas(page);
+
+    // Two colas (2.40) come back; nothing is recorded on this screen.
+    await findSale(page, "R01-000001");
+    await page.getByText("Sale R01-000001").waitFor();
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("2");
+    await page.getByTestId("refund-total").filter({ hasText: "2.40" }).waitFor();
+    await page.getByLabel("Reason").selectOption("wrong_item");
+    await page.getByRole("button", { name: "Exchange for other items" }).click();
+    const banner = page.getByTestId("exchange-banner");
+    await banner.waitFor();
+    expect(await banner.textContent()).toContain("Cola 330ml ×2 from R01-000001");
+    expect(await banner.textContent()).toContain("Credit 2.40");
+    expect(await calls(page, "return_create")).toEqual([]);
+
+    // Three bags of crisps (2.55): 0.15 to pay.
+    for (let i = 0; i < 3; i++) await scan(page, CRISPS);
+    await page.waitForFunction(() => document.querySelector("[data-testid=cart-line] [data-testid=qty]")?.textContent === "3");
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Settle the exchange" });
+    expect(await pay.getByTestId("exchange-credit").textContent()).toBe("-2.40");
+    expect(await pay.getByTestId("remaining").textContent()).toBe("0.15");
+    await page.keyboard.press("Enter"); // exact cash
+
+    // A cashier: the manager approves the return part.
+    const approval = page.getByRole("dialog", { name: "Manager approval" });
+    await approval.getByText("a return").waitFor();
+    await approval.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+
+    const done = page.getByRole("dialog", { name: "Exchange completed" });
+    await done.waitFor();
+    expect(await done.getByTestId("exchange-return").textContent()).toContain("R01-R-000001");
+    // Focus starts on "New sale", so Enter finishes.
+    await page.waitForFunction(() => document.activeElement?.textContent?.startsWith("New sale") === true);
+    await done.getByText("R01-000002").waitFor();
+    const sent = await calls(page, "exchange_complete");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({
+      lines: [{ quantityMilli: "2000", disposition: "restock" }],
+      reason: "wrong_item",
+      refunds: [],
+      tenders: [{ kind: "cash", amountMinor: "15", reference: null }],
+      approvalTokenId: expect.any(String),
+    });
+    expect(await calls(page, "checkout_complete")).toHaveLength(1); // the colas, not the exchange
+    await page.keyboard.press("Enter");
+    await done.waitFor({ state: "detached" });
+    // The exchange is over: the banner is gone and Pay is Pay again.
+    expect(await page.getByTestId("exchange-banner").count()).toBe(0);
+    await page.getByRole("button", { name: /^Pay/ }).waitFor();
+  });
+
+  it("the returned value covers the new items: the rest is given back; cancelling records nothing", async () => {
+    const page = await checkout();
+    await sellThreeColas(page);
+    await findSale(page, "R01-000001");
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("3");
+    await page.getByTestId("refund-total").filter({ hasText: "3.60" }).waitFor();
+    await page.getByRole("button", { name: "Exchange for other items" }).click();
+    // Changed their mind: nothing was recorded.
+    await page.getByTestId("exchange-banner").getByRole("button", { name: "Cancel exchange" }).click();
+    expect(await page.getByTestId("exchange-banner").count()).toBe(0);
+
+    await findSale(page, "R01-000001");
+    await page.getByLabel("Quantity to return: Cola 330ml").fill("3");
+    await page.getByTestId("refund-total").filter({ hasText: "3.60" }).waitFor();
+    await page.getByRole("button", { name: "Exchange for other items" }).click();
+    await scan(page, CRISPS); // 0.85
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    const pay = page.getByRole("dialog", { name: "Settle the exchange" });
+    expect(await pay.getByTestId("give-back").textContent()).toBe("2.75");
+    await pay.getByRole("button", { name: "Complete exchange" }).click();
+    const done = page.getByRole("dialog", { name: "Exchange completed" });
+    expect(await done.getByTestId("change").textContent()).toBe("2.75");
+    expect((await calls(page, "exchange_complete"))[0]).toMatchObject({ refunds: [], tenders: [] });
+  });
+
   it("an owner refunds to a card with no approval; the screen passes axe", async () => {
     const page = await checkout();
     await sellThreeColas(page);
@@ -716,6 +943,45 @@ describe("sales history (E12-T03)", () => {
   }
 
   const receipts = (page: Page) => page.getByTestId("sale-row").locator("button.link").allTextContents();
+
+  it("a VAT-registered buyer gets a tax invoice from the sale detail: TINs checked, one per sale (D-02)", async () => {
+    const page = await twoSales();
+    await page.getByRole("button", { name: "R01-000001" }).click();
+    const detail = page.getByRole("region", { name: "Sale detail" });
+    await detail.waitFor();
+    const panel = detail.getByRole("region", { name: "Tax invoice" });
+    await panel.getByRole("button", { name: "Issue tax invoice" }).click();
+    const dialog = page.getByRole("dialog", { name: "Issue a tax invoice" });
+    // Focus starts on the TIN.
+    await page.waitForFunction(() => document.activeElement?.getAttribute("inputmode") === "numeric");
+    await page.keyboard.type("12345");
+    await dialog.getByLabel("Buyer's name").fill("Ceylon Office Supplies (Pvt) Ltd");
+    await dialog.getByLabel(/Buyer's address/).fill("45 Duplication Road\nColombo 04");
+    await dialog.getByRole("button", { name: "Issue tax invoice" }).click();
+    await dialog.getByRole("alert").waitFor();
+    await dialog.getByLabel(/Buyer's TIN/).fill("114-223-344");
+    await dialog.getByRole("button", { name: "Issue tax invoice" }).click();
+    await dialog.waitFor({ state: "detached" });
+    expect(await panel.getByTestId("tax-invoice-number").textContent()).toBe("26NOV_R01_00001");
+    expect((await calls(page, "tax_invoice_issue")).at(-1)).toMatchObject({
+      purchaserTin: "114-223-344",
+      purchaserName: "Ceylon Office Supplies (Pvt) Ltd",
+      purchaserAddress: ["45 Duplication Road", "Colombo 04"],
+    });
+    // Shown, printed and saved like a receipt.
+    const shown = panel.getByRole("figure", { name: "Tax invoice 26NOV_R01_00001" });
+    expect(await shown.getByTestId("receipt-text").textContent()).toContain("Purchaser TIN: 114223344");
+    await panel.getByRole("button", { name: "Print receipt" }).click();
+    await panel.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
+    expect(await calls(page, "tax_invoice_print")).toHaveLength(1);
+    await panel.getByRole("button", { name: "Save A4 PDF" }).click();
+    await panel.getByTestId("pdf-status").filter({ hasText: "Saved tax-invoice-26NOV_R01_00001.pdf." }).waitFor();
+    // Coming back to the sale, the invoice is there and cannot be issued twice.
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "R01-000001" }).click();
+    await page.getByRole("region", { name: "Tax invoice" }).getByTestId("tax-invoice-number").waitFor();
+    expect(await page.getByRole("button", { name: "Issue tax invoice" }).count()).toBe(0);
+  });
 
   it("newest first; filters by payment and receipt number; detail, reprint and return", async () => {
     const page = await twoSales();
@@ -902,6 +1168,35 @@ describe("cash drawer (E15-T02)", () => {
     });
     expect(serious).toEqual([]);
   });
+  it("closing warns about parked carts, which stay parked (POS-012)", async () => {
+    const page = await till("checkout");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F10");
+    await page.getByLabel(/Opening float/).fill("50");
+    await page.keyboard.press("Enter");
+    await page.getByText("R01-Z-0001").waitFor();
+    expect(await page.getByTestId("parked-warning").count()).toBe(0);
+    await page.keyboard.press("Escape");
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F5");
+    await page.getByRole("dialog", { name: "Park this cart?" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: /^Parked \(1\)/ }).waitFor();
+
+    await page.keyboard.press("F10");
+    const warning = page.getByRole("main").getByTestId("parked-warning");
+    await warning.waitFor();
+    expect(await warning.textContent()).toContain("1 cart is parked on this till");
+    await page.getByLabel(/Counted cash/).fill("50");
+    await page.keyboard.press("Enter");
+    const confirm = page.getByRole("dialog", { name: "Close the drawer?" });
+    await confirm.getByTestId("parked-warning").waitFor();
+    await confirm.getByRole("button", { name: "Close drawer" }).click();
+    await page.getByRole("region", { name: "Drawer closed" }).waitFor();
+    // Closing touched no parked cart.
+    expect(await calls(page, "cart_discard_parked")).toHaveLength(0);
+  });
 });
 
 describe("stock (E11-T02/T03)", () => {
@@ -918,14 +1213,14 @@ describe("stock (E11-T02/T03)", () => {
     await page.keyboard.type(COLA, { delay: 5 });
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => (document.querySelector("[aria-label='Quantity: Cola 330ml']") as HTMLInputElement | null)?.value === "2");
-    await page.getByLabel("Scan or type a code").fill("CASE12");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CASE12");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => (document.querySelector("[aria-label='Quantity: Cola 330ml']") as HTMLInputElement | null)?.value === "14");
-    await page.getByLabel("Scan or type a code").fill("CRISP");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CRISP");
     await page.keyboard.press("Enter");
     await page.getByLabel("Quantity: Crisps").fill("24");
     await page.getByLabel("Unit cost: Crisps").fill("0.40");
-    await page.getByLabel("Scan or type a code").fill("NOPE");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("NOPE");
     await page.keyboard.press("Enter");
     await page.getByRole("alert").filter({ hasText: "No item has the code NOPE" }).waitFor();
     await page.getByLabel("Supplier (optional)").fill("Wholesale Ltd");
@@ -947,7 +1242,7 @@ describe("stock (E11-T02/T03)", () => {
     // An "other" adjustment needs a note; a count correction may be negative.
     await page.getByRole("radio", { name: "Adjust stock" }).click();
     await page.getByLabel("Reason").selectOption("other");
-    await page.getByLabel("Scan or type a code").fill("CHOC");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CHOC");
     await page.keyboard.press("Enter");
     await page.getByLabel("Quantity: Chocolate bar").fill("-1");
     expect(await page.getByLabel("Unit cost: Chocolate bar").count()).toBe(0);
@@ -961,7 +1256,7 @@ describe("stock (E11-T02/T03)", () => {
     });
     // A loss cannot be negative: refused on the screen before Rust.
     await page.getByLabel("Reason").selectOption("loss");
-    await page.getByLabel("Scan or type a code").fill("CHOC");
+    await page.getByRole("main").getByLabel("Scan or type a code").fill("CHOC");
     await page.keyboard.press("Enter");
     await page.getByLabel("Quantity: Chocolate bar").fill("-1");
     await page.getByRole("button", { name: "Post adjustment" }).click();
@@ -994,6 +1289,13 @@ describe("stock (E11-T02/T03)", () => {
     const row = page.getByRole("row", { name: /Chocolate bar/ });
     await row.getByText("Negative stock").waitFor();
     expect(await page.getByRole("row", { name: /Crisps/ }).getByText("Negative stock").count()).toBe(0);
+    // Crisps: 3 on hand, low at 5. Cola: 40, low at 12.
+    await page.getByRole("row", { name: /Crisps/ }).getByText("Low stock").waitFor();
+    // The low-stock filter: low and negative, nothing else.
+    await page.getByRole("main").getByLabel("Stock").selectOption("low");
+    await page.waitForFunction(() => document.querySelector("[data-testid=product-total]")?.textContent === "2 products");
+    expect(await page.getByTestId("product-row").allTextContents()).toEqual(["Chocolate bar", "Crisps"]);
+    expect((await calls(page, "product_list")).at(-1)).toMatchObject({ filter: { lowStock: true, trackStock: null } });
   });
 
   it("a cashier sees stock on hand and its history, but cannot receive or adjust", async () => {
@@ -1006,7 +1308,7 @@ describe("stock (E11-T02/T03)", () => {
     const onHand = page.getByRole("region", { name: "Stock on hand" });
     await onHand.getByText("calculated from recorded movements").waitFor();
     expect(await page.getByRole("tab", { name: "Receive and adjust" }).count()).toBe(0);
-    expect(await page.getByLabel("Scan or type a code").count()).toBe(0);
+    expect(await page.getByRole("main").getByLabel("Scan or type a code").count()).toBe(0);
     await onHand.getByTestId("onhand-row").nth(2).waitFor();
     expect(await onHand.getByTestId("onhand-row").nth(0).textContent()).toContain("Negative");
     await onHand.getByRole("button", { name: "Cola 330ml" }).click();
@@ -1020,6 +1322,41 @@ describe("stock (E11-T02/T03)", () => {
     expect(rows[1]).toContain("Goods received");
     await onHand.getByLabel("Low and negative only").check();
     await page.waitForFunction(() => document.querySelectorAll("[data-testid=onhand-row]").length === 2);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("a history row opens its stock document or sale; Esc comes back to the same history", async () => {
+    const page = await checkout();
+    await scan(page, COLA);
+    await page.locator("[data-testid=cart-line]").first().waitFor();
+    await page.keyboard.press("F9");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "On hand" }).click();
+    const onHand = page.getByRole("region", { name: "Stock on hand" });
+    await onHand.getByRole("button", { name: "Cola 330ml" }).click();
+    const history = page.getByRole("region", { name: "History: Cola 330ml" });
+
+    await history.getByRole("button", { name: "R01-IN-000001" }).click();
+    const doc = page.getByRole("region", { name: "Stock document" });
+    await doc.waitFor();
+    expect(await page.getByRole("heading", { level: 1 }).textContent()).toContain("Goods received");
+    expect(await doc.textContent()).toContain("Wholesale Ltd");
+    expect(await doc.getByTestId("document-line").allTextContents()).toEqual([
+      expect.stringContaining("+24"),
+      expect.stringContaining("+12"),
+    ]);
+    await page.keyboard.press("Escape");
+    // Back where it was: the same item's history, focus on the link that opened the document.
+    await page.waitForFunction(() => document.activeElement?.textContent === "R01-IN-000001");
+
+    await history.getByRole("button", { name: "R01-000001" }).click();
+    await page.getByRole("region", { name: "Sale detail" }).waitFor();
+    await page.getByRole("button", { name: /Back to stock/ }).click();
+    await history.waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
   });
@@ -1052,7 +1389,7 @@ describe("reports (E14-T03)", () => {
     await page.getByRole("button", { name: "Reports" }).click();
     await page.getByRole("heading", { name: "Reports" }).waitFor();
     await page.getByTestId("scope-badge").filter({ hasText: "This device only" }).waitFor();
-    const sales = page.getByRole("region", { name: "Daily sales" });
+    const sales = page.getByRole("tabpanel", { name: "Daily sales" });
     expect(await sales.getByTestId("sales-total").textContent()).toBe("3.04");
     expect(await sales.getByTestId("net-incl").textContent()).toBe("3.04");
     expect(await sales.getByTestId("day-row").count()).toBe(1);
@@ -1068,7 +1405,7 @@ describe("reports (E14-T03)", () => {
     expect(week.to).toBe(range.to);
 
     await page.getByRole("tab", { name: "Payments" }).click();
-    const mix = page.getByRole("region", { name: "Payments" });
+    const mix = page.getByRole("tabpanel", { name: "Payments" });
     await mix.getByTestId("mix-row").nth(1).waitFor();
     const rows = await mix.getByTestId("mix-row").allTextContents();
     expect(rows[0]).toContain("Card");
@@ -1078,12 +1415,12 @@ describe("reports (E14-T03)", () => {
     await page.getByTestId("scope-badge").filter({ hasText: "This device only" }).waitFor();
 
     await page.getByRole("tab", { name: "Top products" }).click();
-    const top = page.getByRole("region", { name: "Top products" });
+    const top = page.getByRole("tabpanel", { name: "Top products" });
     await top.getByTestId("top-row").nth(2).waitFor();
     expect(await top.getByTestId("top-row").first().textContent()).toContain("Cola 330ml");
 
     await page.getByRole("tab", { name: "Stock" }).click();
-    const stock = page.getByRole("region", { name: "Stock" });
+    const stock = page.getByRole("tabpanel", { name: "Stock" });
     await stock.getByText("calculated from recorded movements").waitFor();
     await stock.getByTestId("stock-row").nth(2).waitFor();
     await stock.getByLabel("Low and negative only").check();
@@ -1152,6 +1489,11 @@ describe("reports (E14-T03)", () => {
     await page.getByRole("region", { name: "Sale detail" }).waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("heading", { name: "Audit log" }).waitFor();
+    // A stock document opens too, and Esc comes back to the entry that opened it.
+    await entries.getByRole("button", { name: "R01-IN-000001" }).click();
+    await page.getByRole("region", { name: "Stock document" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.textContent === "R01-IN-000001");
     // A product opens the editor.
     await page.getByRole("region", { name: "Audit entries" }).getByRole("button", { name: "Cola 330ml" }).click();
     await page.getByLabel(/^Name/).first().waitFor();
@@ -1255,7 +1597,7 @@ describe("settings (E04-T03)", () => {
     await page.getByRole("tab", { name: "Receipts" }).click();
     const footer = page.getByLabel(/Lines at the bottom of receipts/);
     await footer.fill("Thank you\n\nNo refunds without a receipt");
-    await page.getByRole("region", { name: "Receipts" }).getByRole("button", { name: "Save" }).click();
+    await page.getByRole("tabpanel", { name: "Receipts" }).getByRole("button", { name: "Save" }).click();
     await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 3);
     expect(await calls(page, "settings_update")).toEqual([
       { key: "inventory.allow_negative", valueJson: "false", baseVersion: 1 },
@@ -1353,6 +1695,228 @@ describe("business profile (E04-T03)", () => {
   });
 });
 
+describe("quick-select grid (E09-T04, POS-002)", () => {
+  /** Cola and Crisps on the grid, plus a Smoothie in two sizes, in two categories. */
+  async function stocked(extra = 0): Promise<Page> {
+    const page = await checkout();
+    await page.evaluate((more) => {
+      const f = window.__fake;
+      const drinks = { categoryId: crypto.randomUUID(), name: "Drinks" };
+      const snacks = { categoryId: crypto.randomUUID(), name: "Snacks" };
+      for (const p of f.products) {
+        if (p.name === "Cola 330ml") Object.assign(p, { quick: true, category: drinks });
+        if (p.name === "Crisps") Object.assign(p, { quick: true, category: snacks });
+      }
+      const smoothie = crypto.randomUUID();
+      for (const [label, price] of [["S", 200n], ["L", 300n]] as const) {
+        f.products.push({ variantId: crypto.randomUUID(), productId: smoothie, name: "Smoothie", sku: `SM-${label}`, barcodes: {}, priceMinor: price, quick: true, category: drinks, label });
+      }
+      for (let i = 0; i < more; i++) {
+        f.products.push({ variantId: crypto.randomUUID(), productId: crypto.randomUUID(), name: `Item ${String(i).padStart(2, "0")}`, sku: `IT${i}`, barcodes: {}, priceMinor: 100n, quick: true });
+      }
+    }, extra);
+    return page;
+  }
+
+  it("Shift+F2 opens it; a tap adds one; a product with sizes asks which; tabs filter", async () => {
+    const page = await stocked();
+    await page.keyboard.press("Shift+F2");
+    const dialog = page.getByRole("dialog", { name: "Quick items" });
+    await dialog.waitFor();
+    const tiles = dialog.getByTestId("quick-tile");
+    await expect.poll(() => tiles.allTextContents()).toEqual(["Cola 330ml1.20", "Crisps0.85", "Smoothie2.00–3.002 options"]);
+    for (const box of await Promise.all((await tiles.all()).map((t) => t.boundingBox()))) {
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    // Scans wait while the grid is open.
+    await scan(page, CRISPS);
+    expect(await calls(page, "scan_submit")).toHaveLength(0);
+    await tiles.filter({ hasText: "Cola 330ml" }).click();
+    await dialog.getByRole("status").filter({ hasText: "Added Cola 330ml." }).waitFor();
+    expect((await calls(page, "cart_add_variant")).at(-1)).toMatchObject({ qtyMilli: null, via: "quickSelect" });
+    await tiles.filter({ hasText: "Smoothie" }).click();
+    const sizes = dialog.getByRole("group", { name: "Choose a Smoothie" });
+    await sizes.getByRole("button", { name: /^L/ }).click();
+    await dialog.getByRole("status").filter({ hasText: "Added Smoothie L." }).waitFor();
+    await dialog.getByRole("tab", { name: "Snacks" }).click();
+    await expect.poll(() => tiles.allTextContents()).toEqual(["Crisps0.85"]);
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    expect(await lines(page)).toHaveLength(2);
+  });
+
+  it("pages 24 tiles at a time", async () => {
+    const page = await stocked(30);
+    await page.getByRole("button", { name: /Quick items/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Quick items" });
+    await expect.poll(() => dialog.getByTestId("quick-tile").count()).toBe(24);
+    await dialog.getByText("Page 1 of 2").waitFor();
+    await dialog.getByRole("button", { name: "Next" }).click();
+    await expect.poll(() => dialog.getByTestId("quick-tile").count()).toBe(9);
+    expect((await calls(page, "catalog_quick_select")).at(-1)).toEqual({ categoryId: null, offset: 24, limit: 24 });
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await dialog.waitFor({ state: "detached" });
+  });
+});
+
+describe("cart recovery (E09-T02, POS-011)", () => {
+  /** Signs in as Cal after the fake was given a cart left open by the last run. */
+  async function recovered(repriced: boolean): Promise<Page> {
+    const page = await open("signIn");
+    await page.evaluate((mark) => {
+      const f = window.__fake;
+      const [a, b] = f.products;
+      if (!a || !b) return;
+      f.lines = [
+        { lineId: crypto.randomUUID(), variantId: a.variantId, qtyMilli: 2000n, discountPpm: null },
+        { lineId: crypto.randomUUID(), variantId: b.variantId, qtyMilli: 1000n, discountPpm: null },
+      ];
+      f.recoverable = true;
+      f.repricedOnRecovery = mark ? [f.lines[1]?.lineId ?? ""] : [];
+    }, repriced);
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    return page;
+  }
+
+  it("after a restart the open sale is offered back; Resume keeps it and marks the changed price", async () => {
+    const page = await recovered(true);
+    const dialog = page.getByRole("dialog", { name: "Recovered cart" });
+    await dialog.waitFor();
+    expect(await dialog.getByRole("heading").textContent()).toMatch(/^Recovered cart \(2 items, .+\)$/);
+    expect(await dialog.getByTestId("recovery-repriced").textContent()).toContain("1 price has changed since");
+    // Scans wait while the prompt is open, and a scanner's Enter does not answer it.
+    await scan(page, CRISPS);
+    expect(await calls(page, "scan_submit")).toHaveLength(0);
+    expect(await dialog.count()).toBe(1);
+    // Resume has the focus when the prompt opens; Enter on it resumes.
+    await dialog.getByRole("button", { name: "Resume" }).focus();
+    await page.keyboard.press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    expect(await lines(page)).toHaveLength(2);
+    await page.getByRole("region", { name: "Cart lines" }).getByText("price changed").waitFor();
+    expect(await calls(page, "cart_recovery_resume")).toHaveLength(1);
+    // Offered once: locking and signing in again asks Rust, which has nothing to offer.
+    const asked = (await calls(page, "cart_recovery")).length;
+    await page.keyboard.press("F12");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await expect.poll(() => calls(page, "cart_recovery").then((c) => c.length)).toBeGreaterThan(asked);
+    expect(await page.getByRole("dialog", { name: "Recovered cart" }).count()).toBe(0);
+  });
+
+  it("Discard empties the cart with the revision the prompt showed", async () => {
+    const page = await recovered(false);
+    const dialog = page.getByRole("dialog", { name: "Recovered cart" });
+    await dialog.waitFor();
+    expect(await dialog.getByTestId("recovery-repriced").count()).toBe(0);
+    await dialog.getByRole("button", { name: "Discard" }).click();
+    await dialog.waitFor({ state: "detached" });
+    await expect.poll(() => lines(page).then((l) => l.length)).toBe(0);
+    const discards = await calls(page, "cart_recovery_discard");
+    expect(discards).toHaveLength(1);
+    expect(typeof discards[0]?.revision).toBe("number");
+  });
+});
+
+describe("staff (E05-T06)", () => {
+  it("the owner adds, edits, resets a PIN and deactivates; mistakes are shown; the last owner stays", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Staff" }).click();
+    const table = page.getByRole("table", { name: "Staff" });
+    await expect.poll(() => table.getByTestId("role-badge").allTextContents()).toEqual(["Owner", "Manager", "Cashier"]);
+    const add = page.getByRole("form", { name: "Add a staff member" });
+    const panel = page.getByRole("tabpanel", { name: "Staff" });
+    // A taken name, then two PINs that differ: refused with the reason.
+    await add.getByLabel("Name").fill("mia");
+    await add.getByLabel("PIN (4–8 digits)").fill("5555");
+    await add.getByLabel("PIN again").fill("5555");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByRole("alert").filter({ hasText: "Another active staff member already has this name." }).waitFor();
+    await add.getByLabel("Name").fill("Tom");
+    await add.getByLabel("PIN again").fill("5556");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByRole("alert").filter({ hasText: "The two PINs differ." }).waitFor();
+    await add.getByLabel("PIN again").fill("5555");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByText("Tom can now sign in as cashier.").waitFor();
+    expect((await calls(page, "staff_create")).at(-1)).toEqual({ input: { displayName: "Tom", role: "cashier", pin: "5555" } });
+    // Tom becomes a manager.
+    await table.getByRole("button", { name: "Edit Tom" }).click();
+    const edit = page.getByRole("form", { name: "Edit Tom" });
+    await edit.getByLabel("Role").selectOption("manager");
+    await edit.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => table.getByTestId("role-badge").allTextContents()).toEqual(["Owner", "Manager", "Cashier", "Manager"]);
+    expect((await calls(page, "staff_update")).at(-1)).toMatchObject({ input: { displayName: null, role: "manager", baseVersion: 1 } });
+    // Cal forgot their PIN: a temporary one, changed at the next sign-in.
+    await table.getByRole("button", { name: "Reset PIN for Cal" }).click();
+    const pin = page.getByRole("form", { name: "New PIN for Cal" });
+    await pin.getByLabel("Temporary PIN", { exact: true }).fill("9999");
+    await pin.getByLabel("Temporary PIN again").fill("9999");
+    await pin.getByRole("button", { name: "Set PIN" }).click();
+    await table.getByText("new PIN at next sign-in").waitFor();
+    // The only owner cannot be deactivated.
+    await table.getByRole("button", { name: "Deactivate Olu" }).click();
+    await page.getByRole("group", { name: "Deactivate Olu" }).getByRole("button", { name: "Deactivate" }).click();
+    await table.getByRole("alert").filter({ hasText: "at least one active owner" }).waitFor();
+    await page.getByRole("group", { name: "Deactivate Olu" }).getByRole("button", { name: "Keep" }).click();
+    // Cal leaves: no longer on the PIN pad, history kept.
+    await table.getByRole("button", { name: "Deactivate Cal" }).click();
+    await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
+    await page.getByTestId("staff-inactive").filter({ hasText: "Deactivated: Cal" }).waitFor();
+    // No PIN is ever shown back.
+    expect(await page.getByRole("main").textContent()).not.toContain("9999");
+    const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
+    await page.addScriptTag({ path: axePath });
+    const violations = await page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id);
+    });
+    expect(violations).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F12");
+    await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
+    await page.getByRole("button", { name: /Tom/ }).waitFor();
+    expect(await page.getByRole("button", { name: /Cal/ }).count()).toBe(0);
+  });
+});
+
+describe("business logo (SET-001)", () => {
+  it("the owner chooses a logo through the system dialog, sees it, and removes it", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Business" }).click();
+    const row = page.getByRole("region", { name: "Logo" });
+    await row.getByText("No logo.").waitFor();
+    // Cancelling the dialog changes nothing.
+    await row.getByRole("button", { name: "Choose a logo…" }).click();
+    await expect.poll(() => calls(page, "business_logo_choose").then((c) => c.length)).toBe(1);
+    expect(await row.getByRole("img").count()).toBe(0);
+    // A file that is not an image is refused with the reason.
+    await page.evaluate(() => {
+      window.__fake.logoFile = "notAnImage";
+    });
+    await row.getByRole("button", { name: "Choose a logo…" }).click();
+    await row.getByRole("alert").filter({ hasText: "That file is not a PNG or JPEG image." }).waitFor();
+    await page.evaluate(() => {
+      window.__fake.logoFile = "image";
+    });
+    await row.getByRole("button", { name: "Choose a logo…" }).click();
+    await row.getByRole("img", { name: "The business logo" }).waitFor();
+    expect(await row.getByRole("alert").count()).toBe(0);
+    expect((await calls(page, "business_logo_choose")).at(-1)).toEqual({ businessVersion: 1 });
+    await row.getByRole("button", { name: "Remove logo" }).click();
+    await row.getByText("No logo.").waitFor();
+    expect(await calls(page, "business_logo_clear")).toEqual([{ businessVersion: 2 }]);
+  });
+});
+
 describe("taxes (E06-T05)", () => {
   it("a VAT change on a date: end the old rate, add the new one, swap it into the category", async () => {
     const page = await checkout();
@@ -1408,12 +1972,15 @@ describe("taxes (E06-T05)", () => {
     expect(violations).toEqual([]);
   });
 
-  it("a manager has no Taxes page; Settings is the owner's", async () => {
+  it("a manager has no Taxes page: Settings shows them only Devices (DeviceConfigure)", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Mia/ }).click();
     await page.keyboard.type("2222");
     await page.keyboard.press("Enter");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
-    expect(await page.getByRole("button", { name: "Settings" }).count()).toBe(0);
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("heading", { name: "Receipt printer", exact: true }).waitFor();
+    expect(await page.getByRole("tab").allTextContents()).toEqual(["Devices"]);
+    expect(await page.getByRole("alert").count()).toBe(0);
   });
 });

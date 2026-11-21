@@ -47,3 +47,23 @@ hook.
 - **WebView2 itself has not been measured yet** (Windows work is deferred). Chromium is the
   same engine, so these results are a strong proxy. The Raw Input fallback stays on the
   roadmap risk list until E20-T02 measures real scanners on Windows.
+
+## Amendment (2026-11-20, E21-T03)
+
+A hardware check found that at 50 ms per character (older cordless and Bluetooth scanners)
+every scan was swallowed with no feedback, codes under 4 characters never arrived, and the
+GS1 separator (Ctrl+]) was dropped. The detector now:
+
+- **Recognises slow scanners by rhythm.** A suffix-terminated burst of at least 6 characters
+  whose gaps sit close to their median (85% within 0.5–1.8× the median), averaging up to
+  120 ms, is a scan marked `speed: "slow"`. Human typing is irregular and stays out.
+- **Accepts codes of 2+ characters when the suffix ends them at scanner speed**, unless a
+  burst was discarded in the previous 300 ms. That guard keeps the truncation protection
+  above: the tail of an interrupted scan is never delivered as a short code.
+- **Keeps GS:** Ctrl+] inside a burst becomes `\x1d` in the scan for GS1 decoding in Rust. A
+  lone Ctrl+] is still a shortcut.
+- **Reports a fast burst that ended without the configured suffix** (`missing_suffix`), and
+  the till explains the setting instead of failing silently.
+
+Evidence: 34 unit tests, and Chromium e2e (slow scanner, short code, GS, human rhythm), run
+4 times in a row with no failures.

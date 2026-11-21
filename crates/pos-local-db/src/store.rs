@@ -99,9 +99,55 @@ async fn apply_in_transaction(
     let ctx = ws.context();
     let mut applied = AppliedWriteSet::default();
 
+    // E19-T03: after a restore on a linked register, nothing new that syncs is written until
+    // this register's events after the backup are back from the cloud (their sequences and
+    // numbers are taken).
+    match ws.replay() {
+        None if !ws.outbox().is_empty() => {
+            let pending: Option<i64> = sqlx::query_scalar("SELECT replay_after FROM sync_state WHERE id = 1")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_sqlx)?
+                .flatten();
+            if pending.is_some() {
+                return Err(WriteError::ReplayPending);
+            }
+        }
+        None => {}
+        Some(r) => {
+            let have: i64 = sqlx::query_scalar("SELECT count(*) FROM outbox_events WHERE event_id = ?")
+                .bind(r.event_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            if have > 0 {
+                // Already here: in the backup but not yet acknowledged when it was made, or a
+                // page applied twice. Only its outcome is the cloud's now.
+                sqlx::query(
+                    "UPDATE outbox_events SET status = ?, handled_at = coalesce(handled_at, ?)
+                     WHERE event_id = ? AND status IN ('pending', 'in_flight')",
+                )
+                .bind(r.status)
+                .bind(ctx.occurred_at.as_millis())
+                .bind(r.event_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                tx.commit().await.map_err(map_sqlx)?;
+                return Ok(applied);
+            }
+            for (counter, n) in &r.numbers {
+                set_counter(&mut tx, ctx, counter.column_name(), n.saturating_sub(1)).await?;
+            }
+        }
+    }
+
     run_ops(&mut tx, ctx, ws.ops(), &mut st, &mut applied).await?;
 
-    write_outbox(&mut tx, ctx, ws.outbox(), &mut st, &mut applied).await?;
+    match ws.replay() {
+        None => write_outbox(&mut tx, ctx, ws.outbox(), &mut st, &mut applied).await?,
+        Some(r) => write_replayed(&mut tx, ctx, &ws.outbox()[0], r, &mut applied).await?,
+    }
 
     for a in ws.audit() {
         st.step()?;
@@ -731,8 +777,9 @@ pub(crate) async fn run_ops(
                     st.step()?;
                     sqlx::query(
                         "INSERT INTO cart_lines (cart_line_id, cart_id, position, variant_id, quantity_milli,
-                           unit_price_override_minor, line_discount_json, added_via, last_scan_event_id, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           unit_price_override_minor, line_discount_json, added_via, last_scan_event_id, created_at, updated_at,
+                           label_kind, label_price_minor, price_seen_minor)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     )
                     .bind(l.id.to_string())
                     .bind(cart.id.to_string())
@@ -745,6 +792,16 @@ pub(crate) async fn run_ops(
                     .bind(scan_id)
                     .bind(now)
                     .bind(now)
+                    .bind(match l.label {
+                        Some(pos_domain::cart::CartLabel::Weight) => Some("weight"),
+                        Some(pos_domain::cart::CartLabel::Price { .. }) => Some("price"),
+                        None => None,
+                    })
+                    .bind(match l.label {
+                        Some(pos_domain::cart::CartLabel::Price { price }) => Some(price.minor()),
+                        _ => None,
+                    })
+                    .bind(l.variant.price.minor())
                     .execute(&mut *tx)
                     .await
                     .map_err(map_sqlx)?;
@@ -1275,12 +1332,78 @@ pub(crate) async fn run_ops(
                 }
                 applied.receipt_numbers.insert(*number_slot, number);
             }
+            WriteOp::InsertTaxInvoice { invoice, number_slot } => {
+                // The register's next number. One writer at a time (ADR-008), so max + 1 is
+                // safe; UNIQUE (register_id, invoice_seq) backs it up.
+                st.step()?;
+                let (seq, code): (i64, String) = sqlx::query_as(
+                    "SELECT coalesce((SELECT max(invoice_seq) FROM tax_invoices WHERE register_id = ?1), 0) + 1,
+                       (SELECT code FROM registers WHERE register_id = ?1)",
+                )
+                .bind(ctx.register_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                let number = format!("{}{code}_{seq:05}", invoice.number_prefix);
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO tax_invoices (tax_invoice_id, business_id, register_id, sale_id, invoice_seq, invoice_number,
+                       purchaser_tin, purchaser_name, purchaser_address, issued_by, issued_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(invoice.id.to_string())
+                .bind(ctx.business_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(invoice.sale_id.to_string())
+                .bind(seq)
+                .bind(&number)
+                .bind(&invoice.purchaser_tin)
+                .bind(&invoice.purchaser_name)
+                .bind(serde_json::to_string(&invoice.purchaser_address).map_err(|e| WriteError::Io(e.to_string()))?)
+                .bind(invoice.issued_by.to_string())
+                .bind(invoice.issued_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                applied.receipt_numbers.insert(*number_slot, number);
+            }
+            WriteOp::PutDevice(d) => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO devices (device_id, register_id, kind, role, name, config_json, enabled, version,
+                       created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ON CONFLICT (device_id) DO UPDATE SET role = ?4, name = ?5, config_json = ?6, enabled = ?7,
+                       version = ?8, updated_at = ?10",
+                )
+                .bind(d.device_id.to_string())
+                .bind(d.register_id.to_string())
+                .bind(d.kind.as_str())
+                .bind(&d.role)
+                .bind(&d.name)
+                .bind(d.config.to_string())
+                .bind(d.enabled)
+                .bind(i64::try_from(d.version).unwrap_or(i64::MAX))
+                .bind(d.created_at.as_millis())
+                .bind(d.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::RemoveDevice(id) => {
+                st.step()?;
+                sqlx::query("DELETE FROM devices WHERE device_id = ?")
+                    .bind(id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
             WriteOp::PutPrintJob { job, detail } => {
                 st.step()?;
                 sqlx::query(
                     "INSERT INTO print_jobs (job_id, receipt_id, adapter, target, copy_kind, status, attempt_count, last_error_code,
                        requested_by, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     VALUES (?1, ?2, ?3, ?11, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT (job_id) DO UPDATE SET status = ?5, attempt_count = ?6, last_error_code = ?7, updated_at = ?10",
                 )
                 .bind(job.job_id.to_string())
@@ -1293,6 +1416,7 @@ pub(crate) async fn run_ops(
                 .bind(job.requested_by.to_string())
                 .bind(job.created_at.as_millis())
                 .bind(job.updated_at.as_millis())
+                .bind(&job.target)
                 .execute(&mut *tx)
                 .await
                 .map_err(map_sqlx)?;
@@ -1370,6 +1494,73 @@ pub(crate) async fn run_ops(
                     });
                 }
             }
+            WriteOp::ParkCart {
+                cart_id,
+                expected_revision,
+                label,
+                parked_by,
+            } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'parked', parked_label = ?1, parked_at = ?2, parked_by = ?3,
+                       updated_at = ?2, closed_at = ?2, revision = revision + 1
+                     WHERE cart_id = ?4 AND register_id = ?5 AND revision = ?6 AND status = 'open'",
+                )
+                .bind(label)
+                .bind(ctx.occurred_at.as_millis())
+                .bind(parked_by.to_string())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .bind(as_i64(*expected_revision)?)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch {
+                        expected: Some(*expected_revision),
+                    });
+                }
+            }
+            WriteOp::ResumeCart { cart_id } => {
+                st.step()?;
+                // Another open cart (one with lines, made meanwhile) trips the unique index:
+                // the caller's view is stale.
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'open', parked_label = NULL, parked_at = NULL, parked_by = NULL,
+                       closed_at = NULL, updated_at = ?1, revision = revision + 1
+                     WHERE cart_id = ?2 AND register_id = ?3 AND status = 'parked'",
+                )
+                .bind(ctx.occurred_at.as_millis())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| match map_sqlx(e) {
+                    WriteError::UniqueViolation { .. } => WriteError::CartRevisionMismatch { expected: None },
+                    other => other,
+                })?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch { expected: None });
+                }
+            }
+            WriteOp::DiscardParkedCart { cart_id, reason } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE carts SET status = 'voided', void_reason = ?1, updated_at = ?2, closed_at = ?2,
+                       revision = revision + 1
+                     WHERE cart_id = ?3 AND register_id = ?4 AND status = 'parked'",
+                )
+                .bind(reason)
+                .bind(ctx.occurred_at.as_millis())
+                .bind(cart_id.to_string())
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::CartRevisionMismatch { expected: None });
+                }
+            }
             WriteOp::PutLoginThrottle(t) => {
                 st.step()?;
                 sqlx::query(
@@ -1418,6 +1609,153 @@ pub(crate) async fn run_ops(
                     return Err(WriteError::Io(format!(
                         "conflict {conflict_id} is no longer open"
                     )));
+                }
+            }
+            WriteOp::PutPaymentAttempt {
+                attempt: a,
+                expected,
+                source,
+                detail,
+            } => {
+                let card = match a.approval() {
+                    Some(pos_domain::payment::Approval::Provider(c)) => Some(c),
+                    _ => None,
+                };
+                let reference = match a.approval() {
+                    Some(pos_domain::payment::Approval::Provider(c)) => Some(c.provider_ref()),
+                    Some(pos_domain::payment::Approval::Operator { reference }) => reference.as_deref(),
+                    None => None,
+                };
+                st.step()?;
+                match expected {
+                    None => {
+                        sqlx::query(
+                            "INSERT INTO payment_attempts (attempt_id, business_id, register_id, cart_id, kind, provider,
+                               amount_minor, currency_code, status, approval_source, provider_ref, auth_code, card_brand,
+                               masked_pan, status_reason, tender_id, created_by, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        )
+                        .bind(a.id().to_string())
+                        .bind(ctx.business_id.to_string())
+                        .bind(ctx.register_id.to_string())
+                        .bind(a.cart_id().to_string())
+                        .bind(a.kind().as_str())
+                        .bind(a.provider())
+                        .bind(a.amount().minor())
+                        .bind(a.currency().as_str())
+                        .bind(a.status().as_str())
+                        .bind(a.approval().map(|x| x.source()))
+                        .bind(reference)
+                        .bind(card.and_then(|c| c.auth_code()))
+                        .bind(card.and_then(|c| c.card_brand()))
+                        .bind(card.and_then(|c| c.masked_pan()).map(|m| m.as_str()))
+                        .bind(a.status_reason())
+                        .bind(a.tender_id().map(|t| t.to_string()))
+                        .bind(a.created_by().to_string())
+                        .bind(a.created_at().as_millis())
+                        .bind(a.updated_at().as_millis())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                    }
+                    Some(from) => {
+                        let done = sqlx::query(
+                            "UPDATE payment_attempts SET status = ?1, approval_source = ?2, provider_ref = ?3,
+                               auth_code = ?4, card_brand = ?5, masked_pan = ?6, status_reason = ?7, updated_at = ?8
+                             WHERE attempt_id = ?9 AND status = ?10 AND tender_id IS NULL",
+                        )
+                        .bind(a.status().as_str())
+                        .bind(a.approval().map(|x| x.source()))
+                        .bind(reference)
+                        .bind(card.and_then(|c| c.auth_code()))
+                        .bind(card.and_then(|c| c.card_brand()))
+                        .bind(card.and_then(|c| c.masked_pan()).map(|m| m.as_str()))
+                        .bind(a.status_reason())
+                        .bind(a.updated_at().as_millis())
+                        .bind(a.id().to_string())
+                        .bind(from.as_str())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                        if done.rows_affected() != 1 {
+                            return Err(WriteError::PaymentAttemptChanged);
+                        }
+                    }
+                }
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO payment_attempt_events (attempt_id, seq, from_status, to_status, source, detail_json,
+                       actor_user_id, occurred_at)
+                     VALUES (?1, (SELECT coalesce(max(seq), 0) + 1 FROM payment_attempt_events WHERE attempt_id = ?1),
+                       ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .bind(a.id().to_string())
+                .bind(expected.map(|s| s.as_str()))
+                .bind(a.status().as_str())
+                .bind(source.as_str())
+                .bind(detail.to_string())
+                .bind(ctx.actor.map(|u| u.to_string()))
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::UsePaymentAttempt {
+                attempt_id,
+                tender_id,
+                cart_id,
+                amount,
+                approved_by,
+            } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE payment_attempts SET tender_id = ?1, updated_at = ?2
+                     WHERE attempt_id = ?3 AND status = 'approved' AND tender_id IS NULL AND kind = 'sale'
+                       AND cart_id = ?4 AND amount_minor = ?5 AND approval_source = ?6 AND register_id = ?7",
+                )
+                .bind(tender_id.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .bind(attempt_id.to_string())
+                .bind(cart_id.to_string())
+                .bind(amount.minor())
+                .bind(*approved_by)
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::PaymentAttemptUnusable);
+                }
+                // The tender row was inserted by the sale earlier in this transaction; this
+                // completes it with the connector that took the payment.
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE tenders SET provider_code = (SELECT provider FROM payment_attempts WHERE attempt_id = ?1)
+                     WHERE tender_id = ?2 AND tender_type = 'card_external' AND amount_minor = ?3 AND provider_code IS NULL",
+                )
+                .bind(attempt_id.to_string())
+                .bind(tender_id.to_string())
+                .bind(amount.minor())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::PaymentAttemptUnusable);
+                }
+            }
+            WriteOp::CheckCartPayments { cart_id } => {
+                st.step()?;
+                let open: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM payment_attempts
+                     WHERE cart_id = ? AND (status IN ('pending','reconciliation_required')
+                                            OR (status = 'approved' AND tender_id IS NULL))",
+                )
+                .bind(cart_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if open > 0 {
+                    return Err(WriteError::PaymentUnresolved);
                 }
             }
             WriteOp::EndSession { session_id, reason } => {
@@ -1473,6 +1811,76 @@ pub(crate) async fn write_outbox(
         applied.outbox.push((e.event_id, seq));
     }
 
+    Ok(())
+}
+
+/// Sets a register-local counter (E19-T03: before re-creating an event, so the next
+/// allocation gives the event its original number).
+async fn set_counter(
+    tx: &mut SqliteConnection,
+    ctx: &WriteContext,
+    name: &str,
+    value: u64,
+) -> Result<(), WriteError> {
+    sqlx::query(
+        "INSERT INTO register_counters (register_id, name, value) VALUES (?1, ?2, ?3)
+         ON CONFLICT (register_id, name) DO UPDATE SET value = ?3",
+    )
+    .bind(ctx.register_id.to_string())
+    .bind(name)
+    .bind(as_i64(value)?)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_sqlx)?;
+    Ok(())
+}
+
+/// Writes the original event a replay re-creates: its id, sequence and payload as the cloud
+/// has them, already handled with the cloud's outcome (E19-T03).
+async fn write_replayed(
+    tx: &mut SqliteConnection,
+    ctx: &WriteContext,
+    draft: &pos_application::OutboxDraft,
+    r: &pos_application::Replay,
+    applied: &mut AppliedWriteSet,
+) -> Result<(), WriteError> {
+    let current: Option<i64> = sqlx::query_scalar(
+        "SELECT value FROM register_counters WHERE register_id = ? AND name = 'outbox_seq'",
+    )
+    .bind(ctx.register_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_sqlx)?;
+    if current.unwrap_or(0) >= as_i64(r.local_sequence)? {
+        return Err(WriteError::Corrupt(format!(
+            "outbox sequence {} is already taken; the replay must come before new events",
+            r.local_sequence
+        )));
+    }
+    set_counter(tx, ctx, "outbox_seq", r.local_sequence).await?;
+    sqlx::query(
+        "INSERT INTO outbox_events (event_id, business_id, location_id, register_id, local_sequence, event_type,
+           schema_version, aggregate_type, aggregate_id, base_version, occurred_at, payload_json, status,
+           handled_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?11, ?11)",
+    )
+    .bind(r.event_id.to_string())
+    .bind(ctx.business_id.to_string())
+    .bind(ctx.location_id.to_string())
+    .bind(ctx.register_id.to_string())
+    .bind(as_i64(r.local_sequence)?)
+    .bind(&r.event_type)
+    .bind(i64::from(draft.schema_version))
+    .bind(draft.aggregate.aggregate_type)
+    .bind(&draft.aggregate.aggregate_id)
+    .bind(draft.base_version.map(as_i64).transpose()?)
+    .bind(ctx.occurred_at.as_millis())
+    .bind(r.payload.to_string())
+    .bind(r.status)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_sqlx)?;
+    applied.outbox.push((r.event_id, r.local_sequence));
     Ok(())
 }
 
@@ -1592,6 +2000,7 @@ fn map_sqlx(e: sqlx::Error) -> WriteError {
         match code & 0xff {
             5 | 6 => return WriteError::Busy,
             11 | 26 => return WriteError::Corrupt(db.message().to_owned()),
+            13 => return WriteError::DiskFull,
             _ => {}
         }
     }

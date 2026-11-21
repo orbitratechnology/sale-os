@@ -13,11 +13,19 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 |---|---|---|---|
 | `inventory.allow_negative` | true / false | `true` | **Allow selling below zero stock.** On: sell anyway and flag the item for a stock check. Off: refuse the sale and list the items. |
 
+## Products
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `catalog.default_unit` | one of "ea", "kg", "g", "l", "ml", "m", "cm", "box", "pack" | `"ea"` | **Unit for new products.** What a new product is sold by, in the product editor and for CSV rows without a unit. |
+| `catalog.default_track_stock` | true / false | `true` | **Track stock for new products.** Off: new products are not stock-tracked unless you turn it on (editor) or the CSV says so. |
+
 ## Cash drawer
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `cash.require_session_for_sale` | true / false | `true` | **Sales need an open drawer.** In live mode, a sale or a cash refund needs an open cash drawer session. Practice sales never do. |
+| `drawer.open_on_cash_sale` | true / false | `true` | **Open the drawer after a cash sale.** Sends the opening pulse through the receipt printer when cash is taken. Never for card-only sales. |
 
 ## Security
 
@@ -41,5 +49,7 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
+| `scanner.variable_measure_rules` | up to 10 lines × 64 chars | `[]` | **Scale and price labels.** One rule per line: prefixes, layout, price|weight|count, decimals. E.g. `21 PPIIIIIVVVVVC price 2` or `2 PIIIIIXVVVVC price 2` (US). P prefix, I item, V value, X price check, C check digit. |
 | `scanner.suffix` | one of "Enter", "Tab", "none" | `"Enter"` | **Key the scanner sends after a code.** Match the scanner's setting. "none" ends a code by the pause after it. |
 | `scanner.max_key_gap_ms` | whole number 10–100 | `35` | **Fastest typing that counts as a scan (ms between keys).** Raise it for slow wireless scanners; people type far slower than any scanner. |
+| `scanner.error_sound` | true / false | `true` | **Beep when a code is not found or an action is refused.** A short low tone. The message is always shown on screen too. |

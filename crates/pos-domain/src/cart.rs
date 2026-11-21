@@ -57,6 +57,20 @@ pub struct CartLine {
     pub price_override: Option<Money>,
     pub line_discount: Option<Discount>,
     pub added_via: AddVia,
+    /// Scanned from a scale label (BAR-009): its weight or price came from the label, so the
+    /// quantity cannot be changed and the line never merges with another.
+    #[serde(default)]
+    pub label: Option<CartLabel>,
+}
+
+/// What a scale label set on a line.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum CartLabel {
+    /// The quantity is the label's weight; the price is the shelf price per unit.
+    Weight,
+    /// The line costs exactly the label's price.
+    Price { price: Money },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +113,8 @@ pub enum CartError {
     ReasonRequired,
     #[error("prices cannot be negative")]
     NegativePrice,
+    #[error("this item's weight or price comes from its label: remove the line and scan it again")]
+    LabelledQuantity,
     #[error(transparent)]
     Arithmetic(#[from] ArithmeticError),
 }
@@ -175,6 +191,7 @@ impl Cart {
             .find(|l| l.variant.variant_id == variant.variant_id)
             && last.price_override.is_none()
             && last.line_discount.is_none()
+            && last.label.is_none()
         {
             last.quantity = last.quantity.checked_add(qty)?;
             // Keep the freshest catalogue snapshot (price edits made while the cart is open).
@@ -191,6 +208,35 @@ impl Cart {
             price_override: None,
             line_discount: None,
             added_via: via,
+            label: None,
+        });
+        self.touch();
+        Ok(CartChange::LineAdded(id))
+    }
+
+    /// Adds a line of its own that later adds never merge into by quantity: a weight, count
+    /// or price read from a scale or GS1 label (E21-T02) belongs to that one label.
+    pub fn add_separate(
+        &mut self,
+        variant: SellableVariant,
+        qty: Quantity,
+        via: AddVia,
+        ids: &dyn IdGenerator,
+    ) -> Result<CartChange, CartError> {
+        self.ensure_open()?;
+        qty.validate_for_unit(variant.unit.allows_fraction())?;
+        if !qty.is_positive() {
+            return Err(CartError::Quantity(crate::quantity::QuantityError::NotPositive));
+        }
+        let id = CartLineId::generate(ids);
+        self.lines.push(CartLine {
+            id,
+            variant,
+            quantity: qty,
+            price_override: None,
+            line_discount: None,
+            added_via: via,
+            label: None,
         });
         self.touch();
         Ok(CartChange::LineAdded(id))
@@ -200,6 +246,9 @@ impl Cart {
     pub fn set_quantity(&mut self, line: CartLineId, qty: Quantity) -> Result<CartChange, CartError> {
         self.ensure_open()?;
         let l = self.line_mut(line)?;
+        if l.label.is_some() {
+            return Err(CartError::LabelledQuantity);
+        }
         qty.validate_for_unit(l.variant.unit.allows_fraction())?;
         l.quantity = qty;
         self.touch();
@@ -261,6 +310,18 @@ impl Cart {
         Ok(CartChange::Cleared { lines })
     }
 
+    /// POS-012: sets the cart aside with its lines, so the till can serve someone else. An
+    /// empty cart cannot be parked.
+    pub fn park(&mut self, expected_revision: u64) -> Result<(), CartError> {
+        self.ensure_open()?;
+        self.check_revision(expected_revision)?;
+        if self.lines.is_empty() {
+            return Err(CartError::Empty);
+        }
+        self.status = CartStatus::Parked;
+        Ok(())
+    }
+
     /// RET-001: abandons the draft with a reason. Nothing is sold, no stock moves.
     pub fn void(&mut self, expected_revision: u64, reason: &str) -> Result<CartChange, CartError> {
         self.ensure_open()?;
@@ -285,6 +346,10 @@ impl Cart {
                 unit_price: l.price_override.unwrap_or(l.variant.price),
                 line_discount: l.line_discount.clone(),
                 taxes: l.variant.taxes.clone(),
+                fixed_gross: match l.label {
+                    Some(CartLabel::Price { price }) => Some(price),
+                    _ => None,
+                },
             })
             .collect()
     }

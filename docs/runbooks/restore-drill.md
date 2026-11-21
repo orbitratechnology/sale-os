@@ -1,0 +1,115 @@
+# Restore drill (E19-T03, PRD §13)
+
+How to bring a till back from a backup, and how to rehearse it. Run the drill once before a
+shop goes live and again after any change to backups or the database.
+
+## Where backups are
+
+| | Where | Kept |
+|---|---|---|
+| Daily | `<app data>/backups/pos.daily.<time>.db` | 14 |
+| Hourly, when anything changed | `pos.hourly.<time>.db` | 24 |
+| When the app closes | `pos.shutdown.<time>.db` | 5 |
+| Before a database upgrade | `pos.pre-migrate-v<from>-v<to>-<time>.db` | 10 |
+| Made by hand ("Back up now") | `pos.manual.<time>.db` | 20 |
+| The database a restore replaced | `pos.pre_restore.<time>.db` | 5 |
+
+`<app data>` is `%APPDATA%\dev.saleos.pos` on Windows. Each backup has a `.json`
+description beside it (when, why, schema version, last outbox sequence, number of sales).
+When the owner has chosen a **second folder** (Settings → Backups), every new backup is also
+copied there, such as a USB stick that goes home at night. A backup is written under a temporary
+name and renamed when complete, so a file named like a backup is always whole.
+
+## Restoring (the owner, in the app)
+
+1. Settings → **Backups**. Pick the backup from just before the problem; **Check** it (a full
+   `integrity_check`). "Damaged" or "From a newer version" backups cannot be restored.
+2. **Restore…**, read the warning, tick "I understand that sales … after <time> will be lost",
+   **Restore and restart**.
+3. The app keeps the database it replaces as a "Before a restore" backup, puts the backup in
+   place, records `backup.restored` (who, which backup, what was kept), and restarts. Sign in
+   again.
+4. Check: the sales history ends at the backup's time; stock and the drawer match it.
+
+**A till linked to the cloud** loses nothing: its sales, returns, stock documents and drawer
+sessions after the backup come back from the cloud.
+
+- Restore only while the till is online; the app refuses otherwise. The backup must have been
+  made since the till was linked as it is now (not before linking or before a relink).
+- There is no loss checkbox. After the restart, the till first fetches its own events from the
+  cloud, with their original receipt numbers, then re-downloads products, prices, staff and
+  settings. Until the events are back, a sale cannot be completed (the cart is kept; the
+  message says why). With a normal connection this takes seconds.
+- Check: the sales history matches the cloud's for this till; the next receipt number follows
+  the last one.
+
+**Undoing a restore:** restore the "Before a restore" backup the same way.
+
+## Encryption and the recovery key (ADR-023)
+
+The database and every backup are encrypted. The key is in this computer's keychain, under the
+Windows account that runs Sale OS.
+
+- **At install, and again at go-live:** the owner opens Settings → Backups → Show recovery key,
+  writes it on paper, keeps it away from the till (with the shop's other important papers), and
+  presses "I have written it down". Do not photograph it or email it.
+- The Windows account that runs the till must have a password. Without one, the keychain (and
+  so the data) is protected only by physical access to the PC.
+- **A new PC, a reinstalled Windows, or a backup brought from another till:** Sale OS opens on
+  "This till's data is locked". Type the recovery key of the till the data came from. It is
+  checked against the data, kept in the new keychain, and the app restarts.
+- **No recovery key** means the backups cannot be opened anywhere. A linked till still has its
+  sales in the cloud: install fresh and link to the business again. An unlinked one has no
+  other copy.
+
+## If the app does not start
+
+The app's own restore screen needs the app to open. If the database itself will not open:
+
+1. Close Sale OS.
+2. In `<app data>`, move `pos.db`, `pos.db-wal` and `pos.db-shm` into a new folder named
+   `damaged-<date>` (keep them for support; never delete them).
+3. Copy the chosen backup to `<app data>\pos.db` (from `backups\` or the second folder).
+4. Start Sale OS. An older backup is upgraded on start-up, after its own pre-upgrade backup. If
+   the backup came from another computer, it asks for that till's recovery key first.
+
+## The drill
+
+Automated, run on every CI build:
+
+- `crates/pos-local-db/tests/backup.rs`
+  - Back up after 2 sales, sell 2 more, restore: 2 sales remain and the database passes
+    `integrity_check`.
+  - The replaced database is kept as a pre-restore backup with all 4; restoring it brings
+    them back.
+  - A damaged backup and one from a newer app are refused without touching the live
+    database.
+  - Retention keeps 24 hourly backups; copying to a second folder gives a whole, checkable
+    copy.
+- `apps/desktop-tauri/tests/permissions.rs`
+  (`a_restore_puts_the_till_back_to_the_backup_and_records_it`): the same over the app's
+  commands, as the owner. It is refused until the loss is confirmed; afterwards the product
+  made after the backup is gone, `backup.restored` is recorded and the replaced database is
+  kept.
+- `crates/sync-e2e/tests/restore.rs`: a linked till sells 3, backs up, sells 2 and makes a
+  product, all synced; the restore brings back 3; until the replay is done a sale is refused
+  with `SYNC_REPLAY_PENDING`; then the 5 sales are back with their receipt numbers, the product
+  with the bootstrap, stock counts all 5, nothing is waiting, the next sale is number 6 and the
+  cloud holds 6 sales, each once.
+- Browser tests (`e2e/cloud.e2e.ts`, "backups"): the owner's page, with "Back up now", the
+  second folder, Check, the confirmation, and a linked till's restore (refused offline, no
+  loss checkbox).
+
+By hand, on the pilot machine before go-live (record the date and the result below):
+
+1. Make three sales. **Back up now**. Make two more sales.
+2. Choose a second folder on a USB stick; check a backup appears there.
+3. Restore the manual backup. After the restart, sales history shows three sales.
+4. Restore the "Before a restore" backup. Five sales again.
+5. Close the app, remove `pos.db`, copy the latest backup from the USB stick to `pos.db`
+   ("If the app does not start"), start: the till opens with the backup's sales.
+
+| Date | Machine | Who | Result |
+|---|---|---|---|
+| 2026-11-18 | Linux CI container (automated steps) | CI | Passed |
+| — | Pilot Windows machine | — | Not yet run |

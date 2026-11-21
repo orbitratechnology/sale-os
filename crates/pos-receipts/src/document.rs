@@ -27,6 +27,8 @@ pub enum DocumentKind {
     Sale,
     Return,
     CashSession,
+    /// A VAT tax invoice for a registered buyer (D-02, Sri Lanka Gazette 2481/22).
+    TaxInvoice,
 }
 
 impl DocumentKind {
@@ -61,6 +63,49 @@ pub struct ReceiptDocument {
     /// The Z summary of a closed cash session (kind `cash_session` only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<ZSection>,
+    /// The tax invoice's own particulars (kind `tax_invoice` only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tax_invoice: Option<TaxInvoiceSection>,
+}
+
+/// What a tax invoice states besides the shop's header (Gazette 2481/22, Annexure I). Amounts
+/// are in the sale's currency to its minor units; lines and totals exclude VAT.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxInvoiceSection {
+    /// The supplier's TIN as on the VAT registration certificate (9 digits).
+    pub supplier_tin: String,
+    pub purchaser_tin: String,
+    pub purchaser_name: String,
+    pub purchaser_address: Vec<String>,
+    /// `MM/DD/YYYY`, as the gazette prescribes.
+    pub invoice_date: String,
+    pub supply_date: String,
+    /// The till receipt of the sale it invoices.
+    pub sale_receipt: String,
+    pub lines: Vec<TaxInvoiceLine>,
+    /// Total value of supply, excluding VAT.
+    pub value_of_supply: Money,
+    /// VAT charged, per rate (one row for a single rate).
+    pub vat: Vec<TaxRow>,
+    /// Total consideration including VAT.
+    pub total: Money,
+    /// Mode of payment (optional on the invoice; shown when known).
+    pub payment: Vec<String>,
+    /// Lines of the sale left off because they carry no VAT (exempt or outside its scope).
+    pub omitted_lines: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxInvoiceLine {
+    pub description: String,
+    /// Display quantity with its unit, e.g. "2" or "1.5 kg".
+    pub quantity: String,
+    /// Unit price excluding VAT, after discounts (amount ÷ quantity).
+    pub unit_price: Money,
+    /// Amount excluding VAT.
+    pub amount: Money,
 }
 
 /// What a Z summary adds: the session, its takings and the drawer count (E15-T02).
@@ -130,6 +175,7 @@ pub fn z_summary(
         change: Money::ZERO,
         footer: Vec::new(),
         barcode: z.session_number.clone(),
+        tax_invoice: None,
         z: Some(ZSection {
             opened_local: z.opened_local.clone(),
             opened_by: z.opened_by.clone(),
@@ -227,6 +273,51 @@ pub struct ReceiptContext {
     pub cashier_name: String,
 }
 
+/// A tax invoice for a VAT-registered buyer, built from what the sale recorded. The number
+/// is [`PENDING_NUMBER`] until the store allocates it (`meta.receiptNumber` and `barcode`).
+pub fn tax_invoice(
+    ctx: &ReceiptContext,
+    meta: Meta,
+    sandbox: bool,
+    currency_exponent: u8,
+    section: TaxInvoiceSection,
+) -> ReceiptDocument {
+    ReceiptDocument {
+        version: CONTENT_VERSION,
+        kind: DocumentKind::TaxInvoice,
+        original_receipt: Some(section.sale_receipt.clone()),
+        copy: CopyKind::Original,
+        sandbox,
+        header: Header {
+            business_name: ctx.business_name.clone(),
+            address_lines: ctx.address_lines.clone(),
+            phone: ctx.phone.clone(),
+            // Printed as "Supplier TIN" in the invoice's own block.
+            tax_registration_no: None,
+            lines: Vec::new(),
+        },
+        barcode: meta.receipt_number.clone(),
+        meta,
+        currency_exponent,
+        lines: Vec::new(),
+        totals: Totals {
+            subtotal: section.value_of_supply,
+            line_discounts: Money::ZERO,
+            order_discount: Money::ZERO,
+            order_discount_label: None,
+            tax: section.vat.clone(),
+            prices_include_tax: false,
+            rounding: Money::ZERO,
+            total: section.total,
+        },
+        tenders: Vec::new(),
+        change: Money::ZERO,
+        footer: Vec::new(),
+        z: None,
+        tax_invoice: Some(section),
+    }
+}
+
 /// The receipt number before the store allocates it (filled in inside the transaction).
 pub const PENDING_NUMBER: &str = "";
 
@@ -307,6 +398,7 @@ pub fn sale_receipt(
         footer: ctx.footer_lines.clone(),
         barcode: receipt_number.into(),
         z: None,
+        tax_invoice: None,
     }
 }
 
@@ -383,6 +475,7 @@ pub fn return_receipt(
         footer: ctx.footer_lines.clone(),
         barcode: return_number.into(),
         z: None,
+        tax_invoice: None,
     }
 }
 

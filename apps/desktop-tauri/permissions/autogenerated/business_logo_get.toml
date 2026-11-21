@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-business-logo-get"
+description = "Enables the business_logo_get command without any pre-configured scope."
+commands.allow = ["business_logo_get"]
+
+[[permission]]
+identifier = "deny-business-logo-get"
+description = "Denies the business_logo_get command without any pre-configured scope."
+commands.deny = ["business_logo_get"]

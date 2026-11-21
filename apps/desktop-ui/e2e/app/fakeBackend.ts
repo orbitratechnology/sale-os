@@ -9,6 +9,7 @@ import type { CartLine, CartView, CatalogHit, IpcError, Session, SignInUser, Wor
 import type {
   CategoryDto_Serialize as CategoryDto,
   Permission,
+  Role,
   ProductDto_Serialize as ProductDto,
   ProductInputDto_Deserialize as ProductInput,
   TaxCategoryConfigDto,
@@ -22,11 +23,19 @@ export interface FakeProduct {
   sku: string;
   barcodes: Record<string, number>; // code → units per scan
   priceMinor: bigint;
+  /** E09-T04: on the quick-select grid, in this category; `label` names a variant. */
+  quick?: boolean;
+  category?: { categoryId: string; name: string };
+  label?: string;
 }
 
 interface StaffUser extends SignInUser {
   pin: string;
   failed: number;
+  /** Staff management (E05-T06); absent means active, version 1. */
+  active?: boolean;
+  version?: number;
+  mustChangePin?: boolean;
 }
 
 export interface FakeState {
@@ -36,8 +45,16 @@ export interface FakeState {
   products: FakeProduct[];
   lines: { lineId: string; variantId: string; qtyMilli: bigint; discountPpm: number | null }[];
   orderDiscountPpm: number | null;
+  /** E09-T02: the cart was left open by the last run (offered once); these lines were repriced. */
+  recoverable?: boolean;
+  repricedOnRecovery?: string[];
   cartId: string;
   revision: number;
+  /** ADR-023: the data is encrypted and this computer lacks the key. */
+  locked?: boolean;
+  recoveryKeyConfirmed?: boolean;
+  /** POS-012: carts set aside, oldest first. */
+  parked: { cartId: string; label: string | null; parkedAt: string; parkedByName: string; lines: FakeState["lines"]; orderDiscountPpm: number | null }[];
   seenScans: Set<string>;
   lockedUntil: number | null;
   /** Issued approval tokens: id → scope (single use). */
@@ -51,6 +68,12 @@ export interface FakeState {
   /** Completed sales with their lines, for returns. */
   sales: FakeSale[];
   /** The cash drawer (E15-T02). Totals are kept simply: cash net of change, and the count. */
+  /** E19-T03: backups (newest first), the second folder, and whether a restore restarted the app. */
+  backups?: { id: string; kind: string; createdAt: string; sizeKb: number; sales: number; secondFolderOnly: boolean }[];
+  backupFolder?: string | null;
+  restartedFrom?: string | null;
+  /** E19-T02: the disk is full, so nothing can be saved. */
+  diskFull?: boolean;
   drawer: {
     required: boolean;
     seq: number;
@@ -67,6 +90,12 @@ export interface FakeState {
   returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
   printScript: string[];
+  /** This till's devices (E20-T11). */
+  devices: { deviceId: string; kind: string; role: string; name: string; configJson: string; enabled: boolean; version: number }[];
+  /** Drawer pulses sent (no sale and cash sales). */
+  drawerOpens: string[];
+  /** Card-terminal attempts (E22-T02, sandbox rules: .01 declines, .02 uncertain). */
+  attempts: Map<string, { cartId: string; amountMinor: string; status: string; polls: number; used: boolean; reason: string | null }>;
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
   printed: number;
   /** What the next "Save as" dialogs answer: a file name, or null for Cancel. */
@@ -74,9 +103,15 @@ export interface FakeState {
   /** What the next "Open" dialog picks: CSV text and a file name, or null for Cancel. */
   openFile: { name: string; text: string } | null;
   /** Import jobs by id: the rows and what validation decided. */
-  imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[] }>;
+  imports: Map<string, { name: string; header: string[]; rows: string[][]; status: string; valid: number[]; done?: number }>;
+  /** A commit writes one row per this many ms (0: at once), so its progress bar can be seen. */
+  importStepMs: number;
   /** The business profile besides the name and till name (which live in `workspace`). */
-  business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number };
+  business: { legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; version: number; registerVersion: number; logo?: string | null };
+  /** `scanner.error_sound` (E07-T04). */
+  errorSound?: boolean;
+  /** SET-001: what the logo dialog hands over next (`null`: the owner cancels). */
+  logoFile?: "image" | "notAnImage" | null;
   /** Product categories (E06-T05). */
   categories: CategoryDto[];
   /** Tax configuration (E06-T05). */
@@ -114,9 +149,11 @@ export interface FakeSale {
   totalMinor: bigint;
   changeMinor: bigint;
   returns: { returnId: string; returnNumber: string; totalMinor: bigint; reason: string; refunds: string[] }[];
+  /** D-02: the tax invoice issued for it, if any. */
+  taxInvoice?: { number: string; purchaserTin: string; purchaserName: string; purchaserAddress: string[] };
 }
 
-export type Preset = "fresh" | "signIn" | "checkout";
+export type Preset = "fresh" | "signIn" | "checkout" | "locked";
 
 let n = 0;
 const id = () => `0190a5b0-0000-7000-8000-${String(++n).padStart(12, "0")}`;
@@ -150,7 +187,8 @@ function dtoFor(p: FakeProduct): ProductDto {
         priceMinor: p.priceMinor.toString(),
         costMinor: null,
         trackStock: true,
-        lowStockThresholdMilli: null,
+        // As in the stock report below.
+        lowStockThresholdMilli: ({ "Cola 330ml": "12000", Crisps: "5000" } as Record<string, string>)[p.name] ?? null,
         scanQtyMilli: "1000",
         barcodes: Object.entries(p.barcodes).map(([raw, n]) => ({
           value: raw,
@@ -169,7 +207,8 @@ const TAX = "0190a5b0-0000-7000-8000-00000000ta01";
 const RATE = "0190a5b0-0000-7000-8000-00000000ra01";
 
 export function initialState(preset: Preset): FakeState {
-  const s = initialStateInner(preset);
+  const s = initialStateInner(preset === "locked" ? "signIn" : preset);
+  if (preset === "locked") s.locked = true;
   for (const p of s.products) s.catalog.set(p.productId, dtoFor(p));
   return s;
 }
@@ -187,6 +226,7 @@ function initialStateInner(preset: Preset): FakeState {
     orderDiscountPpm: null,
     cartId: id(),
     revision: 0,
+    parked: [],
     seenScans: new Set(),
     lockedUntil: null,
     tokens: new Map(),
@@ -200,10 +240,14 @@ function initialStateInner(preset: Preset): FakeState {
     exports: 0,
     settings: new Map(FAKE_SETTINGS.map((d) => [d.key, { valueJson: d.defaultJson, version: 1 }])),
     printScript: [],
+    devices: [],
+    drawerOpens: [],
+    attempts: new Map(),
     printJobs: new Map(),
     printed: 0,
     saveAs: [],
     openFile: null,
+    importStepMs: 0,
     imports: new Map(),
     business: { legalName: null, taxRegistrationNo: "GB123456789", addressLines: ["1 High Street", "Leeds LS1 1AA"], phone: null, email: null, version: 1, registerVersion: 1 },
     categories: [],
@@ -213,25 +257,78 @@ function initialStateInner(preset: Preset): FakeState {
   };
 }
 
+const staffDto = (u: StaffUser) => ({
+  userId: u.userId,
+  displayName: u.displayName,
+  role: u.role,
+  active: u.active !== false,
+  mustChangePin: u.mustChangePin ?? false,
+  version: u.version ?? 1,
+});
+
+function ownerOnly(s: FakeState) {
+  if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
+}
+
+/** Rust's name rules: required, at most 40 characters, unique among active staff. */
+function staffName(s: FakeState, raw: string, except: string | null): string {
+  const name = raw.trim();
+  if (!name) fail("VALIDATION_FAILED", { field: "displayName" });
+  if ([...name].length > 40) fail("VALIDATION_FAILED", { field: "displayName", value: "40" });
+  if (s.users.some((u) => u.active !== false && u.userId !== except && u.displayName.toLowerCase() === name.toLowerCase()))
+    fail("VALIDATION_FAILED", { field: "displayName", value: "taken" });
+  return name;
+}
+
+function staffAt(s: FakeState, userId: string, baseVersion: number): StaffUser {
+  const u = s.users.find((x) => x.userId === userId) ?? fail("VALIDATION_FAILED");
+  if ((u.version ?? 1) !== baseVersion) fail("CONFLICT_VERSION");
+  return u;
+}
+
+function lastOwner(s: FakeState, u: StaffUser) {
+  if (!s.users.some((x) => x.userId !== u.userId && x.role === "owner" && x.active !== false))
+    fail("VALIDATION_FAILED", { field: "role", value: "lastOwner" });
+}
+
 function fail(code: IpcError["code"], details: IpcError["details"] = null): never {
   const e: IpcError = { code, message: code, retryable: false, correlationId: id(), details };
   throw e;
 }
 
+function attemptDto(attemptId: string, x: { cartId: string; amountMinor: string; status: string; used: boolean; reason: string | null }) {
+  const ok = x.status === "approved";
+  return {
+    attemptId, cartId: x.cartId, provider: "sandbox", amountMinor: x.amountMinor, status: x.status, reason: x.reason,
+    providerRef: ok ? `SBX-${attemptId.slice(-6)}` : null, authCode: ok ? "123456" : null, cardBrand: ok ? "VISA" : null, maskedPan: ok ? "****4242" : null,
+    usable: ok && !x.used,
+  };
+}
+
 const div = (a: bigint, b: bigint) => (a >= 0n ? (a + b / 2n) / b : (a - b / 2n) / b);
 
 /** Sellable on hand per product name, matching the fake stock report. */
+const FAKE_DOCUMENT = "0190a5b0-0000-7000-8000-00000000d0c1";
 const FAKE_STOCK: Record<string, bigint> = { "Chocolate bar": -2000n, "Cola 330ml": 40000n, Crisps: 3000n };
 
 /** A few registry entries, shaped like Rust's (crates/pos-application/src/settings.rs). */
 const FAKE_SETTINGS = [
   { key: "inventory.allow_negative", group: "Inventory", label: "Allow selling below zero stock", help: "On: sell anyway.", kind: { type: "bool" }, defaultJson: "true" },
+  { key: "catalog.default_unit", group: "Products", label: "Unit for new products", help: "What a new product is sold by.", kind: { type: "choice", options: ['"ea"', '"kg"', '"g"', '"l"', '"ml"', '"m"', '"cm"', '"box"', '"pack"'] }, defaultJson: '"ea"' },
+  { key: "catalog.default_track_stock", group: "Products", label: "Track stock for new products", help: "Off: not stock-tracked.", kind: { type: "bool" }, defaultJson: "true" },
   { key: "discount.cashier_max_ppm", group: "Security", label: "Largest discount a cashier may give", help: "Above this, a manager approves.", kind: { type: "ppm" }, defaultJson: "100000" },
   { key: "security.lock_timeout_secs", group: "Security", label: "Lock the till after this many idle seconds", help: "0 never locks.", kind: { type: "int", min: 0, max: 3600 }, defaultJson: "300" },
   { key: "receipt.paper_width_mm", group: "Receipts", label: "Paper width (mm)", help: "58 or 80.", kind: { type: "choice", options: ["58", "80"] }, defaultJson: "80" },
   { key: "receipt.footer_lines", group: "Receipts", label: "Lines at the bottom of receipts", help: "Up to 5 lines.", kind: { type: "lines", maxLines: 5, maxChars: 48 }, defaultJson: "[]" },
   { key: "scanner.suffix", group: "Scanner", label: "Key the scanner sends after a code", help: "Match the scanner.", kind: { type: "choice", options: ['"Enter"', '"Tab"', '"none"'] }, defaultJson: '"Enter"' },
 ] as const;
+
+function parkedList(s: FakeState) {
+  return s.parked.map((p) => {
+    const total = view({ ...s, lines: p.lines, orderDiscountPpm: p.orderDiscountPpm }).totalMinor;
+    return { cartId: p.cartId, label: p.label, parkedAt: p.parkedAt, parkedByName: p.parkedByName, lines: p.lines.length, totalMinor: total };
+  });
+}
 
 export function view(s: FakeState): CartView {
   const lines: CartLine[] = s.lines.map((l) => {
@@ -262,6 +359,7 @@ export function view(s: FakeState): CartView {
         const have = FAKE_STOCK[p.name];
         return have !== undefined && l.qtyMilli > have ? have.toString() : null;
       })(),
+      scaleLabel: null,
     };
   });
   const subtotal = lines.reduce((a, l) => a + BigInt(l.grossMinor), 0n);
@@ -290,7 +388,7 @@ export function view(s: FakeState): CartView {
 }
 
 function hit(p: FakeProduct): CatalogHit {
-  return { productId: p.productId, variantId: p.variantId, name: p.name, label: "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search" };
+  return { productId: p.productId, variantId: p.variantId, name: p.name, label: p.label ?? "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search", onHandMilli: null };
 }
 
 /** The approval rule Rust applies (authorize_with_approval): cashiers need a covering token. */
@@ -325,7 +423,40 @@ function add(s: FakeState, p: FakeProduct, qtyMilli: bigint): string {
 const workspace: Workspace = { businessName: "Corner Shop", registerName: "Till 1", registerCode: "R01", currencyCode: "GBP", currencyExponent: 2, mode: "sandbox" };
 
 /** Handles one command. Throws an IpcError-shaped object for refusals, as Tauri does. */
+/** The real app's IPC card-data guard (E19-T05), simplified: any Luhn-valid 13–19 digit run. */
+function cardLike(v: unknown, key = ""): boolean {
+  if (typeof v === "string") {
+    if (["pin", "ownerPin", "password", "raw", "query", "barcode", "recoveryKey", "id"].includes(key)) return false;
+    if (/(Id|Ids|Ms)$/.test(key) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return false;
+    return v
+      .replace(/[ -]/g, "")
+      .split(/\D+/)
+      .some((run) => {
+        if (run.length < 13 || run.length > 19) return false;
+        let sum = 0;
+        [...run].reverse().forEach((c, i) => {
+          let d = Number(c);
+          if (i % 2) d = d * 2 > 9 ? d * 2 - 9 : d * 2;
+          sum += d;
+        });
+        return sum % 10 === 0;
+      });
+  }
+  if (Array.isArray(v)) return v.some((x) => cardLike(x, key));
+  if (v && typeof v === "object") return Object.entries(v).some(([k, x]) => cardLike(x, k));
+  return false;
+}
+
+export const RECOVERY_KEY = "0123ABCD-4567EF01-89ABCDEF-01234567-89ABCDEF-01234567-89ABCDEF-01234567";
+
 export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): unknown {
+  if (cardLike(a)) fail("CARD_DATA_REJECTED");
+  if (s.locked) {
+    if (cmd !== "db_unlock") fail("STORE_LOCKED");
+    if (String(a.recoveryKey).replace(/[\s-]/g, "").toUpperCase() !== RECOVERY_KEY.replace(/-/g, "")) fail("STORE_LOCKED");
+    s.locked = false;
+    return null;
+  }
   switch (cmd) {
     case "app_bootstrap_state":
       return { setupComplete: s.setupComplete, workspace: s.setupComplete ? workspace : null, session: s.session };
@@ -339,7 +470,46 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       return { ownerUserId: owner.userId, registerCode: "R01" };
     }
     case "auth_list_users":
-      return s.users.map(({ userId, displayName, role }) => ({ userId, displayName, role }));
+      return s.users.filter((u) => u.active !== false).map(({ userId, displayName, role }) => ({ userId, displayName, role }));
+    case "staff_list":
+      ownerOnly(s);
+      return s.users.map(staffDto);
+    case "staff_create": {
+      ownerOnly(s);
+      const input = a.input as { displayName: string; role: Role; pin: string };
+      const name = staffName(s, input.displayName, null);
+      if (!/^\d{4,8}$/.test(input.pin)) fail("VALIDATION_FAILED", { field: "pin" });
+      const u: StaffUser = { userId: id(), displayName: name, role: input.role, pin: input.pin, failed: 0, active: true, version: 1 };
+      s.users.push(u);
+      return staffDto(u);
+    }
+    case "staff_update": {
+      ownerOnly(s);
+      const input = a.input as { userId: string; baseVersion: number; displayName: string | null; role: Role | null };
+      const u = staffAt(s, input.userId, input.baseVersion);
+      if (input.displayName !== null) u.displayName = staffName(s, input.displayName, u.userId);
+      if (input.role !== null && input.role !== "owner" && u.role === "owner") lastOwner(s, u);
+      if (input.role !== null) u.role = input.role;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
+    case "staff_deactivate": {
+      ownerOnly(s);
+      const u = staffAt(s, String(a.userId), Number(a.baseVersion));
+      if (u.role === "owner") lastOwner(s, u);
+      u.active = false;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
+    case "staff_reset_pin": {
+      ownerOnly(s);
+      const u = staffAt(s, String(a.userId), Number(a.baseVersion));
+      if (!/^\d{4,8}$/.test(String(a.pin))) fail("VALIDATION_FAILED", { field: "pin" });
+      u.pin = String(a.pin);
+      u.mustChangePin = true;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
     case "auth_login": {
       const u = s.users.find((x) => x.userId === a.userId) ?? fail("VALIDATION_FAILED");
       if (s.lockedUntil !== null && s.lockedUntil > Date.now()) fail("AUTH_LOCKED_OUT", { remainingAttempts: null, retryAtMs: String(s.lockedUntil) });
@@ -368,6 +538,13 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       s.session = null;
       return null;
+    case "catalog_new_product_defaults": {
+      needSession(s);
+      return {
+        unit: JSON.parse(s.settings.get("catalog.default_unit")?.valueJson ?? '"ea"') as string,
+        trackStock: (s.settings.get("catalog.default_track_stock")?.valueJson ?? "true") !== "false",
+      };
+    }
     case "tax_list":
       needSession(s);
       return s.taxCategories
@@ -459,14 +636,22 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     }
     case "product_list": {
       needSession(s);
-      const f = a.filter as { query: string; status: string; trackStock: boolean | null; categoryId: string | null };
+      const f = a.filter as { query: string; status: string; trackStock: boolean | null; categoryId: string | null; lowStock?: boolean };
+      // Low, like Rust's rule: a tracked variant below zero, or at or below its threshold.
+      const level = (p: { name: string; variants: { trackStock: boolean; lowStockThresholdMilli?: string | null }[] }) => {
+        const have = FAKE_STOCK[p.name] ?? 0n;
+        const tracked = p.variants.filter((v) => v.trackStock);
+        if (tracked.length === 0) return "none";
+        if (have < 0n) return "negative";
+        return tracked.some((v) => v.lowStockThresholdMilli != null && have <= BigInt(v.lowStockThresholdMilli)) ? "low" : "ok";
+      };
       const offset = Number(a.offset);
       const limit = Number(a.limit);
       if (s.bigCatalog !== null) {
         const total = s.bigCatalog;
         const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => {
           const n = offset + i;
-          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false, syncConflict: false };
+          return { productId: `big-${n}`, name: `Item ${String(n).padStart(6, "0")}`, archived: false, version: 1, variantCount: 1, sku: `SKU${n}`, priceMinMinor: "100", priceMaxMinor: "100", barcodeCount: 1, trackStock: true, quickSelect: false, onHandMilli: "0", negativeStock: false, lowStock: false, syncConflict: false };
         });
         return { rows, total };
       }
@@ -475,6 +660,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         .filter((p) => (f.status === "all" ? true : f.status === "archived" ? p.archived : !p.archived))
         .filter((p) => f.trackStock === null || p.variants.some((v) => v.trackStock) === f.trackStock)
         .filter((p) => !f.categoryId || p.categoryId === f.categoryId)
+        .filter((p) => !f.lowStock || level(p) === "low" || level(p) === "negative")
         .filter((p) => !q || p.name.toLowerCase().includes(q) || p.variants.some((v) => v.sku?.toLowerCase().startsWith(q) || v.barcodes.some((b) => b.raw.includes(q))))
         .sort((x, y) => x.name.localeCompare(y.name));
       const rows = all.slice(offset, offset + limit).map((p) => {
@@ -487,6 +673,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           barcodeCount: p.variants.reduce((n, v) => n + v.barcodes.length, 0), trackStock: p.variants.some((v) => v.trackStock), quickSelect: p.quickSelect,
           onHandMilli: p.variants.some((v) => v.trackStock) ? (FAKE_STOCK[p.name] ?? 0n).toString() : null,
           negativeStock: (FAKE_STOCK[p.name] ?? 0n) < 0n,
+          lowStock: level(p) === "low",
           syncConflict: s.cloud.conflicts > 0 && p.name === "Cola 330ml",
         };
       });
@@ -496,9 +683,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       return s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND");
     case "product_create":
+    case "product_create_from_scan":
     case "product_update": {
-      if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
       const input = a.product as ProductInput;
+      if (cmd === "product_create_from_scan") {
+        // E07-T04: a cashier needs a manager's approval for this barcode; the product carries it.
+        const code = String(a.barcode).trim();
+        approve(s, "barcode_create_from_scan", null, a.approvalTokenId, code);
+        if (!input.variants.some((v) => (v.barcodes ?? []).some((b) => b.raw.trim() === code))) fail("VALIDATION_FAILED");
+      } else if (needSession(s).role === "cashier") fail("PERMISSION_DENIED");
       const existing = cmd === "product_update" ? (s.catalog.get(String(a.productId)) ?? fail("CATALOG_NOT_FOUND")) : null;
       if (existing && existing.version !== a.baseVersion) fail("CONFLICT_VERSION");
       if (!input.name.trim()) fail("VALIDATION_FAILED", { field: "name" });
@@ -512,7 +705,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         productId, name: input.name, description: input.description ?? null, categoryId: input.categoryId ?? null, productType: input.productType, unit: input.unit,
         taxCategoryId: input.taxCategoryId, quickSelect: input.quickSelect, archived: false, version: (existing?.version ?? 0) + 1,
         variants: input.variants.map((v, i) => ({
-          variantId: v.variantId ?? id(), isDefault: i === 0, sku: v.sku ?? null, options: v.options, priceMinor: v.priceMinor, costMinor: null,
+          variantId: v.variantId ?? id(), isDefault: i === 0, sku: v.sku ?? null, options: v.options, priceMinor: v.priceMinor, costMinor: v.costMinor ?? null,
           trackStock: v.trackStock, lowStockThresholdMilli: v.lowStockThresholdMilli ?? null, scanQtyMilli: v.scanQtyMilli ?? "1000",
           barcodes: (v.barcodes ?? []).map((b) => ({ value: b.raw, raw: b.raw, symbology: "code128", qualifier: b.qualifier, packQtyMilli: b.packQtyMilli ?? "1000" })),
           archived: false,
@@ -538,17 +731,28 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       if (a.cartId !== s.cartId || a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
       if (s.lines.length === 0) fail("CART_EMPTY");
       if (s.drawer.required && !s.drawer.session) fail("CASH_SESSION_REQUIRED");
+      // Nothing is written: the cart stays as it was.
+      if (s.diskFull) fail("STORE_DISK_FULL");
       // The same rules as pos_domain::settlement::settle.
       const total = BigInt(view(s).totalMinor);
       let remaining = total;
       let tendered = 0n;
-      const tenders = a.tenders as { kind: string; amountMinor: string; reference: string | null }[];
+      const terminal = (a.terminal ?? []) as { attemptId: string; amountMinor: string }[];
+      for (const t of terminal) {
+        const att = s.attempts.get(t.attemptId);
+        if (!att || att.status !== "approved" || att.used || att.cartId !== s.cartId || att.amountMinor !== t.amountMinor) fail("VALIDATION_FAILED");
+      }
+      if ([...s.attempts.values()].some((x) => x.cartId === s.cartId && (x.status === "pending" || x.status === "reconciliation_required"))) fail("VALIDATION_FAILED");
+      const tenders = [
+        ...(terminal.map((t) => ({ kind: "card_external", amountMinor: t.amountMinor, reference: `SBX-${t.attemptId.slice(-6)}` }))),
+        ...(a.tenders as { kind: string; amountMinor: string; reference: string | null }[]),
+      ];
       for (const [i, t] of tenders.entries()) {
         const amount = BigInt(t.amountMinor);
         if (amount <= 0n || remaining === 0n) fail("VALIDATION_FAILED");
         if (t.kind !== "cash" && amount > remaining) fail("TENDER_OVERPAY_NON_CASH");
         if (t.kind === "cash" && amount > remaining && i < tenders.length - 1) fail("TENDER_CHANGE_FROM_NON_CASH");
-        if (t.reference && /\d{13,19}/.test(t.reference.replace(/[ -]/g, ""))) fail("VALIDATION_FAILED");
+        if (t.reference && /\d{13,19}/.test(t.reference.replace(/[ -]/g, ""))) fail("CARD_DATA_REJECTED");
         remaining -= amount < remaining ? amount : remaining;
         tendered += amount;
       }
@@ -574,13 +778,21 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         changeMinor: tendered - total,
         returns: [],
       });
+      for (const t of terminal) {
+        const att = s.attempts.get(t.attemptId);
+        if (att) att.used = true;
+      }
       s.lines = [];
       s.orderDiscountPpm = null;
       s.cartId = id();
       s.revision = 0;
+      const tookCash = tenders.some((t) => t.kind === "cash");
+      const hasDrawer = s.devices.some((d) => d.kind === "receipt_printer");
+      if (tookCash && hasDrawer) s.drawerOpens.push("cash_sale");
       return {
         saleId, receiptNumber, totalMinor: total.toString(), tenderedMinor: tendered.toString(),
         changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0, autoPrint: false,
+        drawer: tookCash && hasDrawer ? "opened" : "none",
       };
     }
     case "return_find": {
@@ -594,6 +806,24 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         })),
       };
     }
+    case "exchange_complete": {
+      // The same rules as pos_application::exchange::complete; Rust records both in one
+      // transaction, the fake checks everything before writing either.
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      approve(s, "return_create", null, a.approvalTokenId, sale.saleId);
+      const plan = handle(s, "return_preview", { saleId: a.saleId, lines: a.lines }) as { totalMinor: string };
+      const refunds = a.refunds as { kind: string; amountMinor: string; reference: string | null }[];
+      const tenders = a.tenders as { kind: string; amountMinor: string; reference: string | null }[];
+      const credit = BigInt(plan.totalMinor) - refunds.reduce((t, r) => t + BigInt(r.amountMinor), 0n);
+      if (credit <= 0n) fail("VALIDATION_FAILED");
+      if (tenders.length > 0 && credit >= BigInt(view(s).totalMinor)) fail("VALIDATION_FAILED");
+      const cash = { kind: "cash", amountMinor: credit.toString(), reference: null };
+      const sold = handle(s, "checkout_complete", { cartId: a.cartId, revision: a.revision, tenders: [cash, ...tenders] });
+      const ret = handle(s, "exchange_return", { ...a, refunds: [cash, ...refunds] });
+      return { return: ret, sale: sold };
+    }
+    case "exchange_return":
     case "return_preview":
     case "return_create": {
       needSession(s);
@@ -742,10 +972,24 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     }
     case "stock_history": {
       needSession(s);
+      // The sale row points at the latest sale here, when there is one, so it can be opened.
+      const sale = s.sales[s.sales.length - 1];
       return [
-        { movementId: id(), localTime: "2026-11-07 10:05", movementType: "sale", bucket: "sellable", deltaMilli: "-2000", sourceType: "sale", sourceId: id(), sourceNumber: "R01-000004", actorName: "Cal" },
-        { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: id(), sourceNumber: "R01-IN-000001", actorName: "Mia" },
+        { movementId: id(), localTime: "2026-11-07 10:05", movementType: "sale", bucket: "sellable", deltaMilli: "-2000", sourceType: "sale", sourceId: sale?.saleId ?? id(), sourceNumber: sale?.receiptNumber ?? "R01-000004", actorName: "Cal" },
+        { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: FAKE_DOCUMENT, sourceNumber: "R01-IN-000001", actorName: "Mia" },
       ];
+    }
+    case "stock_document_get": {
+      needSession(s);
+      if (a.documentId !== FAKE_DOCUMENT) fail("VALIDATION_FAILED");
+      return {
+        documentId: FAKE_DOCUMENT, documentNo: "R01-IN-000001", docType: "receipt", reason: null, supplierName: "Wholesale Ltd", reference: "INV-8812", note: null,
+        localTime: "2026-11-07 08:30", actorName: "Mia", approverName: null,
+        lines: [
+          { variantId: id(), name: "Cola 330ml", sku: "COLA", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", unitCostMinor: "35" },
+          { variantId: id(), name: "Crisps", sku: "CRISP", movementType: "receipt", bucket: "sellable", deltaMilli: "12000", unitCostMinor: null },
+        ],
+      };
     }
     case "audit_list": {
       const me = needSession(s);
@@ -762,6 +1006,10 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         {
           auditId: id(), localTime: "2026-11-07 08:00", action: "catalog.product_created", actorName: "Olu", approverName: null,
           entityType: "product", entityId: firstProduct?.productId ?? id(), entityLabel: firstProduct?.name ?? "?", metadata: "{}", userId: s.users[0]?.userId,
+        },
+        {
+          auditId: id(), localTime: "2026-11-07 08:30", action: "inventory.receipt_posted", actorName: "Mia", approverName: null,
+          entityType: "inventory_document", entityId: FAKE_DOCUMENT, entityLabel: "R01-IN-000001", metadata: "{}", userId: s.users[0]?.userId,
         },
         {
           auditId: id(), localTime: "2026-11-07 07:55", action: "auth.login", actorName: "Olu", approverName: null,
@@ -833,6 +1081,61 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       };
       s.cloud.kept[key] = report;
       return report;
+    }
+    case "backup_status":
+    case "backup_now":
+    case "backup_choose_folder":
+    case "backup_clear_folder":
+    case "backup_verify":
+    case "backup_restore":
+    case "data_export_full":
+    case "security_recovery_key":
+    case "security_recovery_key_confirmed": {
+      const me = needSession(s);
+      if (me.role !== "owner") fail("PERMISSION_DENIED");
+      s.backups ??= [
+        { id: "pos.daily.1793955600000.db", kind: "daily", createdAt: new Date(2026, 10, 5, 8, 0).toISOString(), sizeKb: 2310, sales: 40, secondFolderOnly: false },
+        { id: "pos.hourly.1793952000000.db.damaged", kind: "hourly", createdAt: new Date(2026, 10, 5, 7, 0).toISOString(), sizeKb: 2290, sales: 38, secondFolderOnly: false },
+      ];
+      const status = () => ({
+        backups: s.backups,
+        secondFolder: s.backupFolder ?? null,
+        secondFolderProblem: null,
+        linked: s.cloud.linkState === "linked",
+        encrypted: true,
+        encryptionProblem: null,
+        recoveryKeyConfirmed: s.recoveryKeyConfirmed ?? false,
+      });
+      if (cmd === "security_recovery_key") return RECOVERY_KEY;
+      if (cmd === "security_recovery_key_confirmed") {
+        s.recoveryKeyConfirmed = true;
+        return status();
+      }
+      if (cmd === "backup_now") {
+        const made = { id: `pos.manual.${Date.now()}.db`, kind: "manual", createdAt: new Date().toISOString(), sizeKb: 2320, sales: s.sales.length, secondFolderOnly: false };
+        s.backups.unshift(made);
+        return made;
+      }
+      if (cmd === "data_export_full") {
+        const answer = s.saveAs.length ? s.saveAs.shift() : "sale-os-export-2026-11-05.zip";
+        if (answer == null) return null;
+        s.exports += 1;
+        return { path: `/home/user/Documents/${answer}`, fileName: answer, tables: 44, rows: 1234 };
+      }
+      if (cmd === "backup_choose_folder") s.backupFolder = "/media/usb/SaleOS";
+      if (cmd === "backup_clear_folder") s.backupFolder = null;
+      if (cmd === "backup_verify") {
+        const damaged = String(a.backupId).endsWith(".damaged");
+        return { restorable: !damaged, problem: damaged ? "page 12 is never used" : null, tooNew: false };
+      }
+      if (cmd === "backup_restore") {
+        if (s.cloud.linkState === "linked") {
+          if (!s.cloud.online) fail("SYNC_OFFLINE");
+        } else if (!a.confirmLoss) fail("VALIDATION_FAILED");
+        s.restartedFrom = String(a.backupId);
+        return null;
+      }
+      return status();
     }
     case "sync_status": {
       needSession(s);
@@ -972,7 +1275,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "app_preferences": {
       needSession(s);
       const get = (k: string) => JSON.parse(s.settings.get(k)?.valueJson ?? "null") as unknown;
-      return { scannerSuffix: get("scanner.suffix"), scannerMaxKeyGapMs: 35, lockTimeoutSecs: get("security.lock_timeout_secs") };
+      return { scannerSuffix: get("scanner.suffix"), scannerMaxKeyGapMs: 35, lockTimeoutSecs: get("security.lock_timeout_secs"), errorSound: s.errorSound ?? true };
     }
     case "auth_lock":
       needSession(s);
@@ -1068,6 +1371,48 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const text = ["Corner Shop".padStart(Math.floor((cols + 11) / 2)), "*** REFUND ***", "-".repeat(cols), `Return ${r.number}`, pad("REFUND TOTAL", amount)];
       return { receiptNumber: r.number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t.startsWith("REFUND TOTAL") })) };
     }
+    case "tax_invoice_issue":
+    case "tax_invoice_get": {
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      if (cmd === "tax_invoice_issue") {
+        // The same rules as pos_application::tax_invoice::issue.
+        if (sale.taxInvoice) fail("VALIDATION_FAILED");
+        const tin = String(a.purchaserTin).replace(/[ -]/g, "");
+        if (!/^\d{9}$/.test(tin)) fail("VALIDATION_FAILED");
+        const address = (a.purchaserAddress as string[]).map((l) => l.trim()).filter(Boolean);
+        if (!String(a.purchaserName).trim() || address.length === 0 || address.length > 4) fail("VALIDATION_FAILED");
+        const seq = s.sales.filter((x) => x.taxInvoice).length + 1;
+        sale.taxInvoice = { number: `26NOV_R01_${String(seq).padStart(5, "0")}`, purchaserTin: tin, purchaserName: String(a.purchaserName).trim(), purchaserAddress: address };
+      }
+      const ti = sale.taxInvoice;
+      if (!ti) return null;
+      const cols = a.widthMm === 58 ? 32 : 48;
+      const pad = (l: string, r: string) => l + " ".repeat(Math.max(1, cols - l.length - r.length)) + r;
+      const money = (m: bigint) => `${m / 100n}.${String(m % 100n).padStart(2, "0")}`;
+      const vat = div(sale.totalMinor, 6n);
+      const text = [
+        "TAX INVOICE",
+        "Supplier TIN: 104567890",
+        ti.purchaserName,
+        ...ti.purchaserAddress,
+        `Purchaser TIN: ${ti.purchaserTin}`,
+        pad("Invoice no.", ti.number),
+        pad("Date of invoice", "11/20/2026"),
+        pad("Total value of supply", money(sale.totalMinor - vat)),
+        pad("VAT 20%", money(vat)),
+        pad("TOTAL INCL. VAT", money(sale.totalMinor)),
+      ];
+      return { receiptNumber: ti.number, columns: cols, sandbox: true, lines: text.map((t) => ({ text: t, bold: t === "TAX INVOICE" || t.startsWith("TOTAL") })) };
+    }
+    case "tax_invoice_export_pdf": {
+      needSession(s);
+      const sale = s.sales.find((x) => x.saleId === a.saleId) ?? fail("VALIDATION_FAILED");
+      if (!sale.taxInvoice) fail("VALIDATION_FAILED");
+      const answer = s.saveAs.length ? s.saveAs.shift() : `tax-invoice-${sale.taxInvoice.number}.pdf`;
+      return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
+    }
+    case "tax_invoice_print":
     case "cash_session_z_print":
     case "return_receipt_print":
     case "receipt_print":
@@ -1076,7 +1421,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       needSession(s);
       let jobId = String(a.jobId ?? "");
       let job = s.printJobs.get(jobId);
-      if (cmd === "receipt_print" || cmd === "return_receipt_print" || cmd === "cash_session_z_print") {
+      if (cmd === "receipt_print" || cmd === "return_receipt_print" || cmd === "cash_session_z_print" || cmd === "tax_invoice_print") {
         jobId = id();
         job = { status: "queued", reprint: s.printed > 0, errorCode: null, attempts: 0 };
         s.printJobs.set(jobId, job);
@@ -1100,6 +1445,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       return { jobId, ...job };
     }
     case "business_profile_get":
+    case "business_logo_choose":
+    case "business_logo_clear":
+    case "business_logo_get":
     case "business_profile_update": {
       if (needSession(s).role !== "owner") fail("PERMISSION_DENIED");
       const b = s.business;
@@ -1107,8 +1455,22 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         name: workspace.businessName, legalName: b.legalName, taxRegistrationNo: b.taxRegistrationNo, addressLines: b.addressLines,
         phone: b.phone, email: b.email, registerName: workspace.registerName, registerCode: workspace.registerCode, countryCode: "GB",
         timezone: "Europe/London", currencyCode: workspace.currencyCode, pricesIncludeTax: true, businessVersion: b.version, registerVersion: b.registerVersion,
+        hasLogo: Boolean(b.logo),
       });
       if (cmd === "business_profile_get") return view();
+      if (cmd === "business_logo_get") return b.logo ?? null;
+      if (cmd === "business_logo_choose" || cmd === "business_logo_clear") {
+        if (cmd === "business_logo_choose") {
+          const file = s.logoFile ?? null;
+          if (file === null) return null;
+          if (file === "notAnImage") fail("VALIDATION_FAILED", { field: "logo", value: "notAnImage" });
+        }
+        if (a.businessVersion !== b.version) fail("CONFLICT_VERSION");
+        // A 1×1 PNG stands for the stored logo.
+        b.logo = cmd === "business_logo_choose" ? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" : null;
+        b.version += 1;
+        return view();
+      }
       if (a.businessVersion !== b.version || a.registerVersion !== b.registerVersion) fail("CONFLICT_VERSION");
       const input = a.input as { name: string; legalName: string | null; taxRegistrationNo: string | null; addressLines: string[]; phone: string | null; email: string | null; registerName: string };
       const opt = (v: string | null) => v?.trim() || null;
@@ -1143,6 +1505,11 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const synonyms: Record<string, string> = { name: "name", price: "price", sku: "sku", barcode: "barcode", variant: "variant", unit: "unit" };
       const mapping = header.flatMap((h, index) => (synonyms[h.toLowerCase()] ? [{ column: synonyms[h.toLowerCase()], index }] : []));
       return { jobId, fileName: s.openFile.name, encoding: "utf8", delimiter: ",", header, sample: lines.slice(0, 10), totalRows: lines.length, mapping };
+    }
+    case "import_products_progress": {
+      needSession(s);
+      const job = s.imports.get(String(a.jobId)) ?? fail("VALIDATION_FAILED");
+      return { rowsDone: job.done ?? 0, rowsTotal: job.valid.length };
     }
     case "import_products_validate":
     case "import_products_commit":
@@ -1206,7 +1573,21 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
           variants: [{ variantId: id(), isDefault: true, sku: null, options: {}, priceMinor: String(Math.round(parseFloat((r[1] ?? "0").replace(",", ".")) * 100)), costMinor: null, trackStock: true, lowStockThresholdMilli: null, scanQtyMilli: "1000", barcodes: [], archived: false }],
         });
       }
-      return { productsCreated: job.valid.length, productsUpdated: 0, rowsCommitted: job.valid.length };
+      const result = { productsCreated: job.valid.length, productsUpdated: 0, rowsCommitted: job.valid.length };
+      if (s.importStepMs === 0) {
+        job.done = job.valid.length;
+        return result;
+      }
+      job.done = 0;
+      return new Promise((resolve) => {
+        const t = setInterval(() => {
+          job.done = (job.done ?? 0) + 1;
+          if (job.done >= job.valid.length) {
+            clearInterval(t);
+            resolve(result);
+          }
+        }, s.importStepMs);
+      });
     }
     case "receipt_export_pdf": {
       needSession(s);
@@ -1232,10 +1613,10 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       if (s.seenScans.has(String(a.scanEventId))) return { outcome: "duplicate", cart: view(s) };
       s.seenScans.add(String(a.scanEventId));
       const p = s.products.find((x) => raw in x.barcodes || x.sku.toLowerCase() === raw.toLowerCase());
-      if (!p) return { outcome: "notFound", code: raw };
+      if (!p) return { outcome: "notFound", code: raw, hint: /[àéèçù]/.test(raw) ? "keyboard_layout:azerty_fr" : null };
       const before = s.lines.length;
       const lineId = add(s, p, BigInt(p.barcodes[raw] ?? 1) * 1000n);
-      return { outcome: s.lines.length > before ? "added" : "incremented", cart: view(s), lineId };
+      return { outcome: s.lines.length > before ? "added" : "incremented", cart: view(s), lineId, hint: null };
     }
     case "catalog_lookup_code": {
       needSession(s);
@@ -1247,7 +1628,24 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "catalog_search": {
       needSession(s);
       const q = String(a.query).toLowerCase();
-      return s.products.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().startsWith(q)).map(hit);
+      return s.products
+        .filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().startsWith(q))
+        .map((p) => ({ ...hit(p), onHandMilli: String(FAKE_STOCK[p.name] ?? 0n) }));
+    }
+    case "catalog_quick_select": {
+      needSession(s);
+      const quick = s.products.filter((p) => p.quick);
+      const categories = [...new Map(quick.filter((p) => p.category).map((p) => [p.category?.categoryId, p.category])).values()];
+      const inTab = quick.filter((p) => a.categoryId === null || p.category?.categoryId === a.categoryId);
+      const byProduct = new Map<string, FakeProduct[]>();
+      for (const p of [...inTab].sort((x, y) => x.name.localeCompare(y.name))) byProduct.set(p.productId, [...(byProduct.get(p.productId) ?? []), p]);
+      const all = [...byProduct.values()];
+      const page = all.slice(Number(a.offset), Number(a.offset) + Number(a.limit));
+      return {
+        categories: categories.sort((x, y) => (x?.name ?? "").localeCompare(y?.name ?? "")),
+        total: all.length,
+        products: page.map((vs) => ({ productId: vs[0]?.productId, name: vs[0]?.name, variants: vs.map(hit) })),
+      };
     }
     case "cart_add_variant": {
       needSession(s);
@@ -1284,6 +1682,27 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.orderDiscountPpm = (a.discount as { ratePpm: number } | null)?.ratePpm ?? null;
       s.revision += 1;
       return view(s);
+    case "cart_recovery": {
+      needSession(s);
+      if (!s.recoverable || s.lines.length === 0) {
+        s.recoverable = false;
+        return null;
+      }
+      const v = view(s);
+      return { cartId: s.cartId, revision: s.revision, lines: s.lines.length, totalMinor: v.totalMinor, repricedLines: s.repricedOnRecovery?.length ?? 0 };
+    }
+    case "cart_recovery_resume":
+      needSession(s);
+      s.recoverable = false;
+      return { ...view(s), repricedLines: s.repricedOnRecovery ?? [] };
+    case "cart_recovery_discard":
+      needSession(s);
+      if (a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
+      s.recoverable = false;
+      s.lines = [];
+      s.orderDiscountPpm = null;
+      s.revision += 1;
+      return view(s);
     case "cart_clear":
       needSession(s);
       if (a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
@@ -1291,6 +1710,49 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.orderDiscountPpm = null;
       s.revision += 1;
       return view(s);
+    case "diagnostics_export": {
+      needSession(s);
+      const answer = s.saveAs.length ? s.saveAs.shift() : "sale-os-diagnostics-2026-11-05T0920.zip";
+      if (answer == null) return null;
+      return { path: `/home/user/Documents/${answer}`, fileName: answer, files: 3, integrityOk: true, stockDrift: 0 };
+    }
+    case "cart_park": {
+      const me = needSession(s);
+      if (!s.lines.length) fail("CART_EMPTY");
+      if (a.revision !== s.revision) fail("CART_REVISION_MISMATCH");
+      if (s.parked.length >= 20) fail("VALIDATION_FAILED");
+      s.parked.push({ cartId: s.cartId, label: (a.label as string | null) ?? null, parkedAt: new Date().toISOString(), parkedByName: me.displayName, lines: s.lines, orderDiscountPpm: s.orderDiscountPpm });
+      s.lines = [];
+      s.orderDiscountPpm = null;
+      s.cartId = id();
+      s.revision = 0;
+      return view(s);
+    }
+    case "cart_parked_list":
+      needSession(s);
+      return parkedList(s);
+    case "cart_resume": {
+      needSession(s);
+      const at = s.parked.findIndex((p) => p.cartId === a.cartId);
+      if (at < 0) fail("CART_REVISION_MISMATCH");
+      if (s.lines.length) fail("VALIDATION_FAILED");
+      const [p] = s.parked.splice(at, 1);
+      if (!p) fail("CART_REVISION_MISMATCH");
+      s.cartId = p.cartId;
+      s.lines = p.lines;
+      s.orderDiscountPpm = p.orderDiscountPpm;
+      s.revision = 1;
+      return view(s);
+    }
+    case "cart_discard_parked": {
+      needSession(s);
+      approve(s, "cart_void", null, a.approvalTokenId, String(a.cartId));
+      if (!String(a.reason ?? "").trim()) fail("VALIDATION_FAILED");
+      const at = s.parked.findIndex((p) => p.cartId === a.cartId);
+      if (at < 0) fail("CART_REVISION_MISMATCH");
+      s.parked.splice(at, 1);
+      return parkedList(s);
+    }
     case "cart_void": {
       needSession(s);
       if (s.lines.length) approve(s, "cart_void", null, a.approvalTokenId);
@@ -1300,6 +1762,116 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.cartId = id();
       s.revision = 0;
       return view(s);
+    }
+    // ---------- devices, drawer, card terminal (E20-T11, E22-T02) ----------
+    case "plugin:event|listen":
+      return 1;
+    case "plugin:event|unlisten":
+      return null;
+    case "printer_status": {
+      needSession(s);
+      const p = s.devices.find((d) => d.kind === "receipt_printer");
+      if (!p) return { configured: false, adapter: "virtual", target: null, state: "unknown", message: null, drawer: false, drawerOpen: null };
+      const c = JSON.parse(p.configJson) as { connection: { host?: string; port?: number } };
+      return { configured: true, adapter: "escpos_net", target: `${c.connection.host}:${c.connection.port}`, state: "ready", message: null, drawer: true, drawerOpen: false };
+    }
+    case "devices_list": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      return s.devices;
+    }
+    case "printer_profiles":
+      needSession(s);
+      return [
+        { id: "generic-escpos-80mm-48", vendor: "Generic", name: "ESC/POS 80 mm (48 columns)", dialect: "EscPos", columns: 48, columnsFontB: 64, paperWidthMm: 80, cutter: true, drawer: true, barcode: true, qr: true, statusQuery: true, textSupported: true, verified: true, notes: null },
+        { id: "TM-T88V", vendor: "Epson", name: "TM-T88V", dialect: "EscPos", columns: 42, columnsFontB: 56, paperWidthMm: 80, cutter: true, drawer: true, barcode: true, qr: true, statusQuery: true, textSupported: true, verified: true, notes: null },
+        { id: "TSP143IIIU", vendor: "Star Micronics", name: "TSP143III", dialect: "StarLine", columns: 48, columnsFontB: null, paperWidthMm: 80, cutter: true, drawer: true, barcode: false, qr: false, statusQuery: false, textSupported: false, verified: false, notes: "Image-only" },
+      ];
+    case "devices_discover":
+      needSession(s);
+      return {
+        serialPorts: [{ port: "COM5", kind: { kind: "usb", vid: 0x04b8, pid: 0x0e28, manufacturer: "EPSON", product: "TM-T20III", serialNumber: null }, vendor: "Epson", likely: "printer", likelySure: true, label: "COM5: Epson TM-T20III (likely printer)" }],
+        deviceFiles: [],
+        queues: ["EPSON TM-T20III Receipt"],
+        network: a.subnet ? [{ host: "192.168.1.50", port: 9100, identified: { maker: "EPSON", model: "TM-T88V", modelId: null }, profileId: "TM-T88V" }] : [],
+        networkProblem: null,
+      };
+    case "device_save": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const input = a.input as { deviceId: string | null; kind: string; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
+      const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string };
+      if (input.kind === "receipt_printer" && config.connection?.kind === "network" && !config.connection.host) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "connection.host", value: null, ownerProductId: null, remainingMinor: null });
+      const old = s.devices.find((d) => d.deviceId === input.deviceId);
+      if (old && old.version !== input.baseVersion) fail("CONFLICT_VERSION");
+      const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role: "main", name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
+      s.devices = [...s.devices.filter((d) => d.deviceId !== dev.deviceId && !(d.kind === dev.kind && !old)), dev];
+      return dev;
+    }
+    case "device_remove":
+      needSession(s);
+      s.devices = s.devices.filter((d) => d.deviceId !== a.deviceId);
+      return null;
+    case "printer_test":
+      needSession(s);
+      s.printed += 1;
+      return { outcome: "printed", message: "Printed. Check the ruler fits one line and the accents look right." };
+    case "drawer_open": {
+      const me = needSession(s);
+      if (!s.devices.some((d) => d.kind === "receipt_printer")) fail("DEVICE_UNAVAILABLE");
+      if (me.role === "cashier") {
+        const token = a.approvalTokenId ? s.tokens.get(String(a.approvalTokenId)) : undefined;
+        if (!token) fail("APPROVAL_REQUIRED", { remainingAttempts: null, retryAtMs: null, scope: { permission: "drawer_open", entityId: "register", maxPpm: null }, field: null, value: null, ownerProductId: null, remainingMinor: null });
+        s.tokens.delete(String(a.approvalTokenId));
+      }
+      s.drawerOpens.push(`no_sale:${String(a.reason)}`);
+      return null;
+    }
+    case "payment_attempts": {
+      needSession(s);
+      if (!s.devices.some((d) => d.kind === "payment_terminal")) fail("DEVICE_UNAVAILABLE");
+      return [...s.attempts.entries()].filter(([, x]) => x.cartId === a.cartId).map(([k, x]) => attemptDto(k, x));
+    }
+    case "payment_start": {
+      needSession(s);
+      if (!s.devices.some((d) => d.kind === "payment_terminal")) fail("DEVICE_UNAVAILABLE");
+      const attemptId = id();
+      const att = { cartId: String(a.cartId), amountMinor: String(a.amountMinor), status: "pending", polls: 0, used: false, reason: null as string | null };
+      s.attempts.set(attemptId, att);
+      return attemptDto(attemptId, att);
+    }
+    case "payment_poll": {
+      needSession(s);
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      if (att.status === "pending") {
+        att.polls += 1;
+        const cents = BigInt(att.amountMinor) % 100n;
+        if (cents === 1n) [att.status, att.reason] = ["declined", "Declined by the sandbox terminal (amount ends in .01)"];
+        else if (cents === 2n) [att.status, att.reason] = ["reconciliation_required", "the terminal timed out"];
+        else att.status = "approved";
+      }
+      return attemptDto(String(a.attemptId), att);
+    }
+    case "payment_cancel": {
+      needSession(s);
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      att.status = "cancelled";
+      return attemptDto(String(a.attemptId), att);
+    }
+    case "payment_resolve": {
+      const me = needSession(s);
+      if (me.role === "cashier" && !a.approvalTokenId) fail("APPROVAL_REQUIRED", { remainingAttempts: null, retryAtMs: null, scope: { permission: "cart_void", entityId: String(a.attemptId), maxPpm: null }, field: null, value: null, ownerProductId: null, remainingMinor: null });
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      const r = a.resolution as { outcome: string };
+      att.status = r.outcome === "approved" ? "approved" : r.outcome;
+      att.reason = String(a.reason);
+      return attemptDto(String(a.attemptId), att);
+    }
+    case "payment_reverse": {
+      needSession(s);
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      att.status = "reversed";
+      return attemptDto(String(a.attemptId), att);
     }
     default:
       throw new Error(`fake backend: unhandled command ${cmd}`);

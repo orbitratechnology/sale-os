@@ -44,13 +44,16 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | ReceiptReprint | ✓ | ✓ | ✓ | Every reprint is audited and marked as a REPRINT copy |
 | ReturnCreate | ✓ | ✓ | approval | `returns.cashier_requires_approval` (default true) |
 | ReturnApprove | ✓ | ✓ | – | |
-| CatalogEdit, BarcodeCreateFromScan, CatalogImport, CatalogExport | ✓ | ✓ | – | |
+| CatalogEdit, CatalogImport, CatalogExport | ✓ | ✓ | – | |
+| BarcodeCreateFromScan | ✓ | ✓ | approval | E07-T04: "Ask a manager" from the not-found prompt. The approval covers one product carrying that scanned barcode (`product_create_from_scan`); everything else in the catalogue stays CatalogEdit. |
 | InventoryReceive | ✓ | ✓ | – | |
 | InventoryAdjust | ✓ | ✓ | – | |
 | CashSessionClose, CashSessionViewVariance | ✓ | ✓ | close only (blind count) | |
 | ReportsView, ReportsExport | ✓ | ✓ | – | |
 | AuditView, SettingsEdit, StaffManage, DeviceLink, SyncManage | ✓ | – | – | |
 | ConflictResolve | ✓ | ✓ | – | |
+| DeviceConfigure | ✓ | ✓ | – | This till's printers, scanners and terminals; test print (ADR-024) |
+| DrawerOpen | ✓ | ✓ | approval | "No sale": opens the cash drawer with a reason, audited as `cash_drawer.opened` (E20-T05) |
 | DevtoolsUse | debug builds only | | | |
 
 "approval" means the command fails with `APPROVAL_REQUIRED` unless the call carries a valid
@@ -78,6 +81,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `product_list` | CatalogView | `{ filter, page } → Paged<ProductRow>` | E06-T06a |
 | `product_get` | CatalogView | `{ productId } → ProductDto` | E06-T02 |
 | `product_create` / `product_update` | CatalogEdit | `{ product, baseVersion? } → ProductDto` | E06-T02 |
+| `product_create_from_scan` | CatalogEdit, or a BarcodeCreateFromScan approval for `barcode` | `{ product, barcode, approvalTokenId? } → ProductDto` (the product must carry `barcode`) | E07-T04 |
 | `product_archive` | CatalogEdit | `{ productId, baseVersion } → ()` | E06-T02 |
 | `catalog_lookup_code` | CatalogView | `{ code } → { kind:'barcode'\|'sku', variant } \| null` | E06-T04 |
 | `catalog_search` | CatalogView | `{ query, limit } → [SearchHit]` | E06-T04 |
@@ -100,10 +104,14 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `sales_list` / `sales_get` | SalesView | `{ filter: { from?, to?, receipt?, cashierUserId?, tender? }, after?, limit? } → { rows, next? }`; `{ saleId } → SaleDetailDto`. Finding by receipt number is the `receipt` filter (full number or its digits), and `return_find` for returns, so there is no separate `sales_find_by_receipt` | E12-T03 |
 | `return_preview` | ReturnCreate | `{ saleId, lines } → ReturnPlanDto` | E12-T01 |
 | `return_create` | ReturnCreate (+ approval) | `ReturnRequest → ReturnDto` | E12-T02 |
+| `exchange_complete` | ReturnCreate (+ approval), SaleComplete (+ ExternalTenderRecord when needed) | `{ saleId, lines, reason, note?, refunds, approvalTokenId?, cartId, revision, tenders } → { return: ReturnDto, sale: CompletedSaleDto }`: the return and the sale of the cart in one transaction; the returned value is a cash refund and a cash payment of the same amount | E12-T02 |
+| `tax_invoice_issue` / `tax_invoice_get` | SaleComplete / SalesView | D-02 (Sri Lanka): `{ saleId, purchaserTin, purchaserName, purchaserAddress[] } → ReceiptDto` (one per sale, numbered `YYMMM_<register>_XXXXX`; audited `tax_invoice.issued`); `{ saleId, widthMm? } → ReceiptDto \| null` | D-02 |
+| `tax_invoice_print` / `tax_invoice_export_pdf` | SalesView | `{ saleId } → PrintJobDto`; `{ saleId, paper } → { path, fileName } \| null` | D-02 |
 | `inventory_overview` / `inventory_history` | InventoryView | | E11-T05 |
 | `inventory_post_document` | InventoryReceive (opening/receipt) / InventoryAdjust (adjustment/write_off) | `InventoryDocumentDraft → DocumentDto` | E11-T02/T03 |
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
 | `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
+| `stock_document_get` | InventoryView | `{ documentId } → { documentNo, docType, reason?, supplierName?, reference?, note?, localTime, actorName, approverName?, lines[] }` | E11-T05 |
 | `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
 | `settings_get` / `settings_update` | SettingsEdit (owner) | `→ [{ key, group, label, help, kind, valueJson, defaultJson, version }]`; `{ key, valueJson, baseVersion } → setting` (unknown key or wrong type: `VALIDATION_FAILED`; stale version: `CONFLICT_VERSION`). Registry and defaults: docs/settings.md (generated) | E04-T03 |
 | `business_profile_get` / `business_profile_update` | SettingsEdit (owner) | `→ BusinessProfileDto` (name, legal name, tax registration no., address lines, phone, email, this till's name; country, time zone, currency and tax mode read-only); `{ input, businessVersion, registerVersion } → BusinessProfileDto`. Only what changed is written; `business.updated` (audit metadata: the names of the changed fields) and `register.upserted` (audit `register.updated` from/to). Invalid input: `VALIDATION_FAILED` with `details.field` (and `details.value` = the maximum length) | E04-T03 |
@@ -124,7 +132,8 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `sync_conflicts_list` / `sync_conflict_resolve` | ConflictResolve | `{ conflictId, choice: per-field 'local'\|'server'\|value } → ()` | E18-T02 |
 | `sync_repair_queue` / `sync_repair_action` | SyncManage | | E17-T09 |
 | `backup_now` / `backup_list` / `backup_restore` | SettingsEdit (owner) | | E19-T03 |
-| `diagnostics_export` | session | `{ saveTo } → ()` | E19-T07 |
+| `data_export_full` | SettingsEdit (owner) | `{} → { path, fileName, tables, rows } \| null`: Rust asks where to save (ZIP) and writes every table as CSV plus `manifest.json` (`docs/export-format.md`); no PIN hashes; audited `data.exported` (null: cancelled) | E19-T04 |
+| `diagnostics_export` | session | `{} → { path, fileName, files, integrityOk, stockDrift } \| null`: Rust asks where to save the ZIP (null: cancelled) | E19-T07 |
 | `dev_scanner_*`, `dev_printer_*`, `dev_payment_*`, `dev_network_*` | DevtoolsUse (debug builds) | Scenario controls | E07-T03, E13-T06, E10-T02, E17-T10 |
 
 ## 2. Error model
@@ -209,7 +218,7 @@ the action available (PRD §5.1).
 | `GET /v1/sync/changes?cursor=&limit=` | device | `→ { changes:[Change], nextCursor, hasMore }` | `Change = { serverSeq, aggregateType, aggregateId, version?, kind, originRegisterId?, snapshot }` |
 | `POST /v1/sync/events` | device | `PushRequest → PushResponse` (see below) | Up to 200 events or 2 MB per request |
 | `GET /v1/sync/ack` | device | `→ { registerId, ackSequence, serverTime }` | `registerId` comes from the token. The query parameter in the PRD is dropped as redundant. |
-| `GET /v1/catalog/products?query=&page=` | user | `→ Paged<ProductDto>` | Admin read-only in the MVP |
+| `GET /v1/catalog/products?businessId=&query=&page=&pageSize=` | user | `→ { items:[{ productId, version, product }], page, pageSize, total }` | Admin read-only in the MVP. Archived products included; `query` matches part of a name or SKU, or a whole barcode. `404` for a business the account does not belong to (E16-T06) |
 | `POST /v1/catalog/products` | user | `{ product, expectedVersion } → ProductDto \| 409 CONFLICT_VERSION` | Present in the PRD. Implemented through the same applier as device events (origin = cloud). P1 UI. |
 | `GET /v1/reports/sales?from=&to=&groupBy=day\|register\|tender` | user or device | `→ { groupBy, from, to, currencyCode, currencyExponent, rows, asOf, completeness:{ registers:[{ registerId, code, name, lastAckAt, pendingKnown, current }] } }` (device: its own business; user: `businessId` required, member only, else 404) | `completeness` drives the "fully synchronized vs last-synced" label (PRD §15). `current`: heard from within 5 min with nothing unsent, from the `unsent` count each register sends with `GET /v1/sync/changes` (E14-T05) |
 
@@ -332,12 +341,13 @@ staff.created, staff.updated, staff.deactivated, staff.pin_reset,
 settings.updated, business.created, business.updated, location.upserted, register.updated, mode.changed,
 catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed, catalog.category_saved,
 tax.config_updated,
-cart.cleared, cart.voided, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
+cart.cleared, cart.voided, cart.parked, cart.resumed, cart.parked_discarded, cart.price_overridden, cart.discount_applied, cart.recovered, cart.recovery_discarded,
 sale.completed, tender.recorded_external, tender.status_changed,
-return.completed, refund.recorded,
+return.completed, refund.recorded, tax_invoice.issued,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
+device.saved, device.removed, device.test_printed, cash_drawer.opened,
 cash_session.opened, cash_session.closed,
-report.exported, data.exported, backup.created, backup.restored,
+report.exported, data.exported, backup.created, backup.restored, backup.event_restored, security.recovery_key_viewed,
 sync.linked, sync.device_revoked, sync.conflict_resolved, sync.event_rejected
 ```

@@ -8,7 +8,7 @@ use desktop_tauri_lib::{AppServices, COMMANDS};
 use pos_application::auth::{Argon2PinHasher, PinHasher};
 use pos_domain::{Permission, Role, role_has};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tauri::Manager;
 use tauri::ipc::{CallbackFn, InvokeBody, InvokeResponseBody};
@@ -132,6 +132,7 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"userId": UNKNOWN_ID, "baseVersion": 1, "pin": "5555"}),
         ),
         ("tax_list", Perm(CatalogView), json!({})),
+        ("catalog_new_product_defaults", Perm(CatalogView), json!({})),
         ("categories_list", Perm(CatalogView), json!({})),
         // An empty name: permitted roles get VALIDATION_FAILED and nothing is written.
         (
@@ -174,6 +175,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"jobId": UNKNOWN_ID}),
         ),
         (
+            "import_products_progress",
+            Perm(CatalogImport),
+            json!({"jobId": UNKNOWN_ID}),
+        ),
+        (
             "import_products_error_report",
             Perm(CatalogImport),
             json!({"jobId": UNKNOWN_ID}),
@@ -191,11 +197,27 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
                    "phone": null, "email": null, "registerName": "X"}, "businessVersion": 999, "registerVersion": 999}),
         ),
         (
+            "business_logo_choose",
+            Perm(SettingsEdit),
+            json!({"businessVersion": 1}),
+        ),
+        (
+            "business_logo_clear",
+            Perm(SettingsEdit),
+            json!({"businessVersion": 1}),
+        ),
+        ("business_logo_get", Perm(SettingsEdit), json!({})),
+        (
             "product_list",
             Perm(CatalogView),
             json!({"filter": {"query": "", "status": "active", "trackStock": null, "categoryId": null}, "offset": 0, "limit": 10}),
         ),
         ("product_get", Perm(CatalogView), json!({"productId": UNKNOWN_ID})),
+        (
+            "product_create_from_scan",
+            Perm(BarcodeCreateFromScan),
+            json!({"product": product["product"].clone(), "barcode": "NOT-ON-IT", "approvalTokenId": null}),
+        ),
         ("product_create", Perm(CatalogEdit), product),
         ("product_update", Perm(CatalogEdit), update),
         (
@@ -204,6 +226,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"productId": UNKNOWN_ID, "baseVersion": 1}),
         ),
         ("catalog_lookup_code", Perm(CatalogView), json!({"code": "NOPE"})),
+        (
+            "catalog_quick_select",
+            Perm(CatalogView),
+            json!({"categoryId": null, "offset": 0, "limit": 24}),
+        ),
         (
             "catalog_search",
             Perm(CatalogView),
@@ -215,6 +242,9 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"scanEventId": UNKNOWN_ID, "raw": "NOPE", "source": "scanner"}),
         ),
         ("cart_current", Perm(SaleComplete), json!({})),
+        ("cart_recovery", Perm(SaleComplete), json!({})),
+        ("cart_recovery_resume", Perm(SaleComplete), json!({})),
+        ("cart_recovery_discard", Perm(CartClear), json!({"revision": 0})),
         (
             "cart_add_variant",
             Perm(SaleComplete),
@@ -252,10 +282,24 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"revision": 0, "reason": "harness", "approvalTokenId": null}),
         ),
         ("cart_clear", Perm(CartClear), json!({"revision": 0})),
+        // POS-012. A stale revision: allowed roles get past the permission check, and the
+        // harness's cart keeps its line.
+        (
+            "cart_park",
+            Perm(SaleComplete),
+            json!({"revision": 99999, "label": "harness"}),
+        ),
+        ("cart_parked_list", Perm(SaleComplete), json!({})),
+        ("cart_resume", Perm(SaleComplete), json!({"cartId": UNKNOWN_ID})),
+        (
+            "cart_discard_parked",
+            Perm(CartVoid),
+            json!({"cartId": UNKNOWN_ID, "reason": "harness", "approvalTokenId": null}),
+        ),
         (
             "checkout_complete",
             Perm(SaleComplete),
-            json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}]}),
+            json!({"cartId": UNKNOWN_ID, "revision": 0, "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}], "terminal": null}),
         ),
         (
             "receipt_get",
@@ -285,6 +329,37 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(ReturnCreate),
             json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}],
                    "reason": "changed_mind", "note": null, "refunds": [{"kind": "cash", "amountMinor": "100", "reference": null}], "approvalTokenId": null}),
+        ),
+        // D-02 tax invoices: issuing is part of selling; reading, printing and saving need
+        // sales access.
+        (
+            "tax_invoice_issue",
+            Perm(SaleComplete),
+            json!({"saleId": UNKNOWN_ID, "purchaserTin": "114223344", "purchaserName": "Buyer Ltd",
+                   "purchaserAddress": ["1 Road"]}),
+        ),
+        (
+            "tax_invoice_get",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "widthMm": null}),
+        ),
+        (
+            "tax_invoice_print",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID}),
+        ),
+        (
+            "tax_invoice_export_pdf",
+            Perm(SalesView),
+            json!({"saleId": UNKNOWN_ID, "paper": "a4"}),
+        ),
+        // Same rule as a return: a cashier gets APPROVAL_REQUIRED.
+        (
+            "exchange_complete",
+            Perm(ReturnCreate),
+            json!({"saleId": UNKNOWN_ID, "lines": [{"saleLineId": UNKNOWN_ID, "quantityMilli": "1000", "disposition": "restock"}],
+                   "reason": "wrong_item", "note": null, "refunds": [], "approvalTokenId": null,
+                   "cartId": UNKNOWN_ID, "revision": 1, "tenders": []}),
         ),
         (
             "return_receipt_get",
@@ -326,6 +401,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(InventoryView),
             json!({"variantId": UNKNOWN_ID, "limit": 10}),
         ),
+        (
+            "stock_document_get",
+            Perm(InventoryView),
+            json!({"documentId": UNKNOWN_ID}),
+        ),
         // Owner only (diagnostics).
         ("stock_rebuild", Perm(SettingsEdit), json!({})),
         (
@@ -344,6 +424,30 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"range": {"from": "2026-01-01", "to": "2026-01-31"}, "by": "value", "limit": 10}),
         ),
         ("reports_stock", Perm(ReportsView), json!({"lowOnly": false})),
+        ("backup_status", Perm(SettingsEdit), json!({})),
+        ("backup_now", Perm(SettingsEdit), json!({})),
+        ("backup_choose_folder", Perm(SettingsEdit), json!({})),
+        ("backup_clear_folder", Perm(SettingsEdit), json!({})),
+        (
+            "backup_verify",
+            Perm(SettingsEdit),
+            json!({"backupId": "none.db"}),
+        ),
+        (
+            "backup_restore",
+            Perm(SettingsEdit),
+            json!({"backupId": "none.db", "confirmLoss": false}),
+        ),
+        ("data_export_full", Perm(SettingsEdit), json!({})),
+        ("security_recovery_key", Perm(SettingsEdit), json!({})),
+        ("diagnostics_export", Session, json!({})),
+        ("security_recovery_key_confirmed", Perm(SettingsEdit), json!({})),
+        // Only acts on a locked database; refused (as a validation error) otherwise.
+        (
+            "db_unlock",
+            Public,
+            json!({"recoveryKey": "00000000-00000000-00000000-00000000-00000000-00000000-00000000-00000000"}),
+        ),
         (
             "reports_cloud_sales",
             Perm(ReportsView),
@@ -377,6 +481,64 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             "cash_session_z_print",
             Perm(CashSessionViewVariance),
             json!({"sessionId": null}),
+        ),
+        // Devices (E20-T11, ADR-024). No real device in tests: allowed calls reach the
+        // virtual printer or report DEVICE_UNAVAILABLE.
+        ("devices_list", Perm(DeviceConfigure), json!({})),
+        (
+            "device_save",
+            Perm(DeviceConfigure),
+            json!({"input": {"deviceId": null, "kind": "payment_terminal", "role": null, "name": "", "configJson": "{\"provider\":\"nope\"}", "enabled": true, "baseVersion": null}}),
+        ),
+        (
+            "device_remove",
+            Perm(DeviceConfigure),
+            json!({"deviceId": UNKNOWN_ID}),
+        ),
+        ("printer_status", Session, json!({})),
+        ("printer_test", Perm(DeviceConfigure), json!({})),
+        ("printer_profiles", Perm(DeviceConfigure), json!({})),
+        (
+            "devices_discover",
+            Perm(DeviceConfigure),
+            json!({"subnet": null, "port": null}),
+        ),
+        // A cashier gets APPROVAL_REQUIRED (no sale needs a manager).
+        (
+            "drawer_open",
+            Perm(DrawerOpen),
+            json!({"reason": "harness", "approvalTokenId": null}),
+        ),
+        // Card terminal (E22-T02): none configured, so allowed calls get DEVICE_UNAVAILABLE.
+        (
+            "payment_start",
+            Perm(SaleComplete),
+            json!({"cartId": UNKNOWN_ID, "amountMinor": "100"}),
+        ),
+        (
+            "payment_poll",
+            Perm(SaleComplete),
+            json!({"attemptId": UNKNOWN_ID}),
+        ),
+        (
+            "payment_cancel",
+            Perm(SaleComplete),
+            json!({"attemptId": UNKNOWN_ID}),
+        ),
+        (
+            "payment_attempts",
+            Perm(SaleComplete),
+            json!({"cartId": UNKNOWN_ID}),
+        ),
+        (
+            "payment_resolve",
+            Perm(CartVoid),
+            json!({"attemptId": UNKNOWN_ID, "resolution": {"outcome": "declined", "reference": null}, "reason": "harness", "approvalTokenId": null}),
+        ),
+        (
+            "payment_reverse",
+            Perm(CartVoid),
+            json!({"attemptId": UNKNOWN_ID, "reason": "harness", "approvalTokenId": null}),
         ),
     ]
 }
@@ -498,7 +660,9 @@ fn start_with(
         services = services.with_file_dialog(d);
     }
     let app = mock_builder()
-        .invoke_handler(desktop_tauri_lib::specta_builder::<MockRuntime>().invoke_handler())
+        .invoke_handler(desktop_tauri_lib::guarded_invoke_handler(
+            &desktop_tauri_lib::specta_builder::<MockRuntime>(),
+        ))
         .build(tauri::generate_context!())
         .unwrap();
     app.manage(services);
@@ -1264,8 +1428,18 @@ fn a_products_import_over_ipc() {
         ),
         (Some(22), Some(20))
     );
+    let before = invoke(&w, "import_products_progress", json!({"jobId": job})).unwrap();
+    assert_eq!(
+        (before["rowsDone"].as_u64(), before["rowsTotal"].as_u64()),
+        (Some(0), Some(22))
+    );
     let done = invoke(&w, "import_products_commit", json!({"jobId": job})).unwrap();
     assert_eq!(done["productsCreated"], 20);
+    let after = invoke(&w, "import_products_progress", json!({"jobId": job})).unwrap();
+    assert_eq!(
+        (after["rowsDone"].as_u64(), after["rowsTotal"].as_u64()),
+        (Some(22), Some(22))
+    );
     let list = invoke(
         &w,
         "product_list",
@@ -1351,6 +1525,13 @@ fn at01_new_business_twenty_products_and_a_cash_sale() {
     assert_eq!(by_sku["name"], "White Bread");
     let by_name = invoke(&w, "catalog_search", json!({"query": "banan", "limit": 5})).unwrap();
     assert_eq!(by_name[0]["name"], "Bananas");
+    // E09-T04: stock on hand comes with each stock-tracked result (nothing received yet).
+    let stock = &by_name[0]["onHandMilli"];
+    if by_name[0]["trackStock"] == true {
+        assert_eq!(stock, "0");
+    } else {
+        assert_eq!(stock, &Value::Null);
+    }
     // The test cash sale: two scans (one barcode, one SKU), paid in cash with change.
     let mut cart = Value::Null;
     for (i, code) in ["4006381333931", "BREAD-W"].iter().enumerate() {
@@ -1386,4 +1567,722 @@ fn at01_new_business_twenty_products_and_a_cash_sale() {
         .collect();
     assert!(text.iter().any(|l| l.trim() == "Corner Shop"), "{text:?}");
     assert!(text.iter().any(|l| l.contains("Tax no. GB123456789")), "{text:?}");
+}
+
+/// E19-T03 over IPC: a backup, a change after it, then the restore (which needs the owner to
+/// confirm the loss on an unlinked till). The restored database has no trace of the change,
+/// records who restored what, and keeps the replaced database as a `pre_restore` backup.
+#[test]
+fn a_restore_puts_the_till_back_to_the_backup_and_records_it() {
+    let (dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let made = invoke(&w, "backup_now", json!({})).unwrap();
+    let id = made["id"].as_str().unwrap().to_owned();
+    assert_eq!(made["kind"], "manual");
+    let check = invoke(&w, "backup_verify", json!({"backupId": id})).unwrap();
+    assert_eq!(check["restorable"], true, "{check}");
+
+    // A product made after the backup.
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    invoke(&w, "product_create", product).unwrap();
+
+    // Not confirmed: refused, nothing changes.
+    let refused = invoke(
+        &w,
+        "backup_restore",
+        json!({"backupId": id, "confirmLoss": false}),
+    );
+    assert_eq!(
+        code("backup_restore", &refused).as_deref(),
+        Some("VALIDATION_FAILED")
+    );
+    let status = invoke(&w, "backup_status", json!({})).unwrap();
+    assert_eq!(status["linked"], false);
+    assert!(
+        status["backups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["id"] == id.as_str())
+    );
+
+    invoke(&w, "backup_restore", json!({"backupId": id, "confirmLoss": true})).unwrap();
+
+    // What the app finds when it starts again.
+    tauri::async_runtime::block_on(async {
+        let db = pos_local_db::LocalDb::open(&pos_local_db::DbOptions::in_dir(dir.path()))
+            .await
+            .unwrap();
+        let q = |sql: &'static str| {
+            let db = db.clone();
+            async move {
+                sqlx::query_scalar::<_, i64>(sql)
+                    .fetch_one(db.readers())
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(
+            q("SELECT count(*) FROM products").await,
+            0,
+            "the product after the backup is gone"
+        );
+        assert_eq!(
+            q("SELECT count(*) FROM audit_events WHERE action = 'backup.restored'").await,
+            1
+        );
+        assert!(
+            db.backups()
+                .iter()
+                .any(|b| b.meta.kind == pos_local_db::backup::BackupKind::PreRestore),
+            "the replaced database is kept"
+        );
+        db.close().await;
+    });
+}
+
+/// A save dialog for the full export: answers with a path in `dir`, or cancels.
+struct ZipDialog {
+    to: Option<std::path::PathBuf>,
+}
+
+impl desktop_tauri_lib::FileDialog for ZipDialog {
+    fn ask(
+        &self,
+        suggested: &str,
+        filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter, ("ZIP", ["zip"].as_slice()));
+        assert!(
+            suggested.starts_with("sale-os-export-") && suggested.ends_with(".zip"),
+            "{suggested}"
+        );
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(self.to.clone());
+        rx
+    }
+}
+
+/// E19-T04 over IPC: the owner saves the export where the dialog says; it is audited with the
+/// file's name. Cancelling writes and records nothing.
+#[test]
+fn the_owner_exports_all_data_and_it_is_audited() {
+    let out = tempfile::tempdir().unwrap();
+    for to in [None, Some(out.path().join("everything"))] {
+        let (_dir, _app, w) = start_with(Some(Arc::new(ZipDialog { to: to.clone() })));
+        let created = invoke(
+            &w,
+            "setup_create_workspace",
+            json!({"input": workspace_input("Shop", "1234")}),
+        )
+        .unwrap();
+        let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+        invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+        let done = invoke(&w, "data_export_full", json!({})).unwrap();
+        let audited = invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "data.exported", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap();
+        let rows = audited["rows"].as_array().unwrap().len();
+        if to.is_none() {
+            assert_eq!(done, Value::Null);
+            assert_eq!(rows, 0);
+            continue;
+        }
+        assert_eq!(done["fileName"], "everything.zip");
+        assert!(done["tables"].as_u64().unwrap() > 20, "{done}");
+        let bytes = std::fs::read(out.path().join("everything.zip")).unwrap();
+        assert_eq!(&bytes[..4], b"PK\x03\x04");
+        assert_eq!(rows, 1);
+        assert_eq!(audited["rows"][0]["entityId"], "everything.zip");
+    }
+}
+
+/// Every string (and empty optional) argument position in `args`, as a JSON pointer and the
+/// guard's dotted path, with the key it sits under.
+fn text_positions(args: &Value) -> Vec<(String, String, String)> {
+    fn walk(v: &Value, pointer: &str, dotted: &str, key: &str, out: &mut Vec<(String, String, String)>) {
+        match v {
+            Value::String(_) | Value::Null => out.push((pointer.into(), dotted.into(), key.into())),
+            Value::Array(items) => {
+                for (i, x) in items.iter().enumerate() {
+                    walk(x, &format!("{pointer}/{i}"), &format!("{dotted}[{i}]"), key, out);
+                }
+            }
+            Value::Object(map) => {
+                for (k, x) in map {
+                    let d = if dotted.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{dotted}.{k}")
+                    };
+                    walk(x, &format!("{pointer}/{k}"), &d, k, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(args, "", "", "", &mut out);
+    out
+}
+
+/// E19-T05 / PAY-005: a test card number typed into any text argument of any command is
+/// refused before the command runs (a swipe, for scans and searches); and afterwards it is
+/// nowhere on disk: not in the database, its WAL, the backups, or the logs.
+#[test]
+fn a_card_number_typed_anywhere_is_refused_and_stored_nowhere() {
+    const PAN: &str = "4111 1111 1111 1111";
+    const SWIPE: &str = "%B4111111111111111^TEST/CARD^2512101000000000000?";
+    let logs = tempfile::tempdir().unwrap();
+    let log = pos_observability::init(&pos_observability::LogConfig {
+        dir: Some(logs.path().to_path_buf()),
+        file_prefix: "sweep".into(),
+        retention_days: 1,
+        stderr: false,
+        default_filter: "debug".into(),
+    })
+    .ok();
+    let (dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    invoke(&w, "backup_now", json!({})).unwrap();
+
+    let never_stored = [
+        "pin",
+        "ownerPin",
+        "password",
+        "newPin",
+        "currentPin",
+        "recoveryKey",
+    ];
+    let mut swept = 0;
+    for (cmd, _, args) in cases() {
+        for (pointer, dotted, key) in text_positions(&args) {
+            // Identifiers the app made (ids, epoch milliseconds) are not typed text.
+            if never_stored.contains(&key.as_str())
+                || key == "id"
+                || key.ends_with("Id")
+                || key.ends_with("Ids")
+                || key.ends_with("Ms")
+            {
+                continue;
+            }
+            let mut a = args.clone();
+            let typed = if key == "raw" || key == "query" || key == "barcode" {
+                SWIPE
+            } else {
+                PAN
+            };
+            *a.pointer_mut(&pointer).unwrap() = Value::String(format!("note {typed}"));
+            let e = invoke(&w, cmd, a).expect_err(cmd);
+            assert_eq!(e["code"], "CARD_DATA_REJECTED", "{cmd} {dotted}: {e}");
+            assert_eq!(e["details"]["field"], dotted.as_str(), "{cmd}");
+            // Not even part of the number comes back. The correlation id is a random UUID and
+            // can contain "4111" by chance (it did once on CI), so it is left out of the check.
+            let mut shown = e.clone();
+            shown.as_object_mut().unwrap().remove("correlationId");
+            assert!(
+                !shown.to_string().contains("4111"),
+                "the refusal repeats the number: {e}"
+            );
+            swept += 1;
+        }
+    }
+    assert!(swept > 80, "only {swept} text arguments were tried");
+    // Typed with dashes, too.
+    let e = invoke(
+        &w,
+        "product_create",
+        json!({"product": {"name": "4111-1111-1111-1111"}}),
+    )
+    .unwrap_err();
+    assert_eq!(e["details"]["field"], "product.name");
+
+    drop(w);
+    drop(log); // flushes the log file
+    let mut files = Vec::new();
+    for root in [dir.path(), logs.path()] {
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for entry in std::fs::read_dir(&d).unwrap() {
+                let p = entry.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    assert!(files.iter().any(|f| f.extension().is_some_and(|e| e == "db")));
+    assert!(
+        files.iter().any(|f| f.starts_with(logs.path())),
+        "the test wrote no logs to check"
+    );
+    for f in &files {
+        let bytes = std::fs::read(f).unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        for needle in ["4111111111111111", "4111 1111 1111 1111", "4111-1111-1111-1111"] {
+            assert!(!text.contains(needle), "{} holds the card number", f.display());
+        }
+    }
+    let logged: String = files
+        .iter()
+        .filter(|f| f.starts_with(logs.path()))
+        .map(|f| std::fs::read_to_string(f).unwrap())
+        .collect();
+    assert!(
+        logged.contains("card data refused at the IPC boundary"),
+        "the refusals were logged (and the log was read)"
+    );
+    eprintln!("{swept} text arguments refused; {} files clean", files.len());
+}
+
+/// The app over a given data folder and key store (ADR-023).
+fn start_keyed(
+    dir: &std::path::Path,
+    keys: Arc<dyn desktop_tauri_lib::db_key::DbKeyStore>,
+) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) {
+    let hasher: Arc<dyn PinHasher> = Arc::new(Argon2PinHasher::with_params(256, 1, 1));
+    let services = tauri::async_runtime::block_on(AppServices::start_with(dir, None, hasher, keys));
+    let app = mock_builder()
+        .invoke_handler(desktop_tauri_lib::guarded_invoke_handler(
+            &desktop_tauri_lib::specta_builder::<MockRuntime>(),
+        ))
+        .build(tauri::generate_context!())
+        .unwrap();
+    app.manage(services);
+    let w = WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    (app, w)
+}
+
+/// ADR-023 over IPC: the till's data is encrypted with a key from the keychain; the owner can
+/// read the recovery key (audited); on a computer whose keychain lacks the key, the app is
+/// locked until the recovery key is typed, and a wrong one is refused.
+#[test]
+fn encrypted_till_recovery_key_and_unlock() {
+    use desktop_tauri_lib::db_key::MemoryDbKey;
+    let dir = tempfile::tempdir().unwrap();
+    let keychain = Arc::new(MemoryDbKey::default());
+    let recovery;
+    {
+        let (_app, w) = start_keyed(dir.path(), keychain.clone());
+        let created = invoke(
+            &w,
+            "setup_create_workspace",
+            json!({"input": workspace_input("Shop", "1234")}),
+        )
+        .unwrap();
+        let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+        invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+        let status = invoke(&w, "backup_status", json!({})).unwrap();
+        assert_eq!(status["encrypted"], true, "{status}");
+        assert_eq!(status["recoveryKeyConfirmed"], false);
+        recovery = invoke(&w, "security_recovery_key", json!({}))
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(recovery.split('-').count(), 8);
+        let status = invoke(&w, "security_recovery_key_confirmed", json!({})).unwrap();
+        assert_eq!(status["recoveryKeyConfirmed"], true);
+        let audited = invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "security.recovery_key_viewed", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap();
+        assert_eq!(audited["rows"].as_array().unwrap().len(), 1);
+        assert!(
+            !audited.to_string().contains(&recovery),
+            "the key is not in the audit log"
+        );
+        // Not locked: unlocking is refused.
+        let e = invoke(&w, "db_unlock", json!({"recoveryKey": recovery})).unwrap_err();
+        assert_eq!(e["code"], "VALIDATION_FAILED");
+        invoke(&w, "auth_logout", json!({})).unwrap();
+    }
+    let bytes = std::fs::read(dir.path().join("pos.db")).unwrap();
+    assert!(!bytes.starts_with(b"SQLite format 3"), "encrypted on disk");
+
+    // A new Windows account (an empty keychain): locked, and the app says so.
+    let empty = Arc::new(MemoryDbKey::default());
+    {
+        let (_app, w) = start_keyed(dir.path(), empty.clone());
+        let e = invoke(&w, "app_bootstrap_state", json!({})).unwrap_err();
+        assert_eq!(e["code"], "STORE_LOCKED", "{e}");
+        let wrong = "0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD-0123ABCD";
+        let e = invoke(&w, "db_unlock", json!({"recoveryKey": wrong})).unwrap_err();
+        assert_eq!(e["code"], "STORE_LOCKED");
+        let e = invoke(&w, "db_unlock", json!({"recoveryKey": "too short"})).unwrap_err();
+        assert_eq!(e["code"], "VALIDATION_FAILED");
+        assert!(empty.0.lock().unwrap().is_none(), "nothing kept from a wrong key");
+        invoke(&w, "db_unlock", json!({"recoveryKey": recovery.to_lowercase()})).unwrap();
+    }
+    // After the restart it opens.
+    let (_app, w) = start_keyed(dir.path(), empty);
+    let state = invoke(&w, "app_bootstrap_state", json!({})).unwrap();
+    assert_eq!(state["setupComplete"], true);
+}
+
+/// Saves to a fixed folder, whatever the suggested name.
+struct SaveInto(std::path::PathBuf);
+
+impl desktop_tauri_lib::FileDialog for SaveInto {
+    fn ask(
+        &self,
+        suggested: &str,
+        _filter: (&str, &[&str]),
+    ) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Some(self.0.join(suggested)));
+        rx
+    }
+}
+
+/// The entries of a ZIP whose local headers carry their sizes (as Sale OS writes them).
+fn unzip(bytes: &[u8]) -> BTreeMap<String, String> {
+    use std::io::Read;
+    let u16_at = |i: usize| u16::from_le_bytes([bytes[i], bytes[i + 1]]) as usize;
+    let u32_at = |i: usize| u32::from_le_bytes(bytes[i..i + 4].try_into().unwrap());
+    let mut out = BTreeMap::new();
+    let mut i = 0;
+    while u32_at(i) == 0x0403_4b50 {
+        let compressed = u32_at(i + 18) as usize;
+        let (name_len, extra_len) = (u16_at(i + 26), u16_at(i + 28));
+        let name = String::from_utf8(bytes[i + 30..i + 30 + name_len].to_vec()).unwrap();
+        let start = i + 30 + name_len + extra_len;
+        let mut text = String::new();
+        flate2::read::DeflateDecoder::new(&bytes[start..start + compressed])
+            .read_to_string(&mut text)
+            .unwrap();
+        out.insert(name, text);
+        i = start + compressed;
+    }
+    out
+}
+
+/// E19-T07: the diagnostics bundle holds the till's state and the redacted logs, and no PIN
+/// hash, payload or card number.
+#[test]
+fn the_diagnostics_bundle_tells_support_enough_and_nothing_private() {
+    let out = tempfile::tempdir().unwrap();
+    let (dir, _app, w) = start_with(Some(Arc::new(SaveInto(out.path().to_path_buf()))));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    let owner = created["ownerUserId"].as_str().unwrap().to_owned();
+    invoke(&w, "auth_login", json!({"userId": owner, "pin": "1234"})).unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Zebra Biscuits Deluxe");
+    invoke(&w, "product_create", product).unwrap();
+    // A log line that slipped a card number through (redaction at write time is the first line
+    // of defence; the bundle masks again).
+    std::fs::create_dir_all(dir.path().join("logs")).unwrap();
+    std::fs::write(
+        dir.path().join("logs/sale-os.2026-11-19.log"),
+        "{\"msg\":\"reference 4111 1111 1111 1111 refused\"}\n",
+    )
+    .unwrap();
+
+    let done = invoke(&w, "diagnostics_export", json!({})).unwrap();
+    let peek = unzip(&std::fs::read(out.path().join(done["fileName"].as_str().unwrap())).unwrap());
+    let peek: Value = serde_json::from_str(&peek["diagnostics.json"]).unwrap();
+    assert_eq!(
+        done["integrityOk"], true,
+        "{}",
+        peek["database"]["integrityCheck"]
+    );
+    assert_eq!(done["stockDrift"], 0);
+    assert_eq!(done["files"], 2);
+    let name = done["fileName"].as_str().unwrap();
+    assert!(
+        name.starts_with("sale-os-diagnostics-") && name.ends_with(".zip"),
+        "{name}"
+    );
+    let files = unzip(&std::fs::read(out.path().join(name)).unwrap());
+    let diag: Value = serde_json::from_str(&files["diagnostics.json"]).unwrap();
+    assert_eq!(diag["database"]["integrityCheck"], json!(["ok"]));
+    assert!(diag["database"]["schemaVersion"].as_i64().unwrap() >= 18);
+    assert!(!diag["database"]["recentAudit"].as_array().unwrap().is_empty());
+    assert!(!diag["database"]["settings"].as_array().unwrap().is_empty());
+    assert!(
+        diag["database"]["outbox"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["events"].as_i64() > Some(0))
+    );
+    assert_eq!(
+        diag["app"]["encrypted"], false,
+        "this harness runs without a keychain"
+    );
+
+    let all: String = files.values().cloned().collect();
+    let hashes: Vec<String> = tauri::async_runtime::block_on(async {
+        let db = pos_local_db::LocalDb::open(&pos_local_db::DbOptions::in_dir(dir.path()))
+            .await
+            .unwrap();
+        let h = sqlx::query_scalar("SELECT pin_hash FROM staff_users")
+            .fetch_all(db.readers())
+            .await
+            .unwrap();
+        db.close().await;
+        h
+    });
+    for h in &hashes {
+        assert!(!all.contains(h.as_str()), "a PIN hash is in the bundle");
+    }
+    assert!(!all.contains("$argon2"));
+    assert!(
+        !all.contains("Zebra Biscuits Deluxe"),
+        "no event payloads or business records"
+    );
+    assert!(!all.contains("4111 1111 1111 1111"), "the card number is masked");
+    assert!(
+        files["logs/sale-os.2026-11-19.log"].contains("1111]"),
+        "masked, last four kept"
+    );
+}
+
+/// Hands over each path in turn when asked to open a file.
+#[derive(Default)]
+struct LogoDialog {
+    files: std::sync::Mutex<Vec<std::path::PathBuf>>,
+}
+
+impl desktop_tauri_lib::FileDialog for LogoDialog {
+    fn ask(&self, _: &str, _: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(None);
+        rx
+    }
+    fn open(&self, filter: (&str, &[&str])) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        assert_eq!(filter, ("Images", ["png", "jpg", "jpeg"].as_slice()));
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = tx.send(Some(self.files.lock().unwrap().remove(0)));
+        rx
+    }
+}
+
+#[test]
+fn the_owner_sets_and_removes_the_business_logo() {
+    // SET-001: Rust opens the dialog; the image is shrunk to a PNG in app data and recorded
+    // on the business. A file that is not an image is refused and changes nothing.
+    let files = tempfile::tempdir().unwrap();
+    let jpeg = files.path().join("shop logo.jpg");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../crates/pos-receipts/tests/fixtures/logo-800x600.jpg"
+        ),
+        &jpeg,
+    )
+    .unwrap();
+    let text = files.path().join("notes.png");
+    std::fs::write(&text, "not an image").unwrap();
+    let dialog = Arc::new(LogoDialog::default());
+    *dialog.files.lock().unwrap() = vec![jpeg, text];
+    let (dir, _app, w) = start_with(Some(dialog));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let profile = invoke(&w, "business_profile_get", json!({})).unwrap();
+    assert_eq!(profile["hasLogo"], false);
+    assert_eq!(invoke(&w, "business_logo_get", json!({})).unwrap(), Value::Null);
+
+    let set = invoke(
+        &w,
+        "business_logo_choose",
+        json!({"businessVersion": profile["businessVersion"]}),
+    )
+    .unwrap();
+    assert_eq!(set["hasLogo"], true);
+    let stored = std::fs::read(dir.path().join("logo.png")).unwrap();
+    assert!(stored.starts_with(b"\x89PNG"));
+    let url = invoke(&w, "business_logo_get", json!({})).unwrap();
+    assert!(url.as_str().unwrap().starts_with("data:image/png;base64,"));
+
+    let refused = invoke(
+        &w,
+        "business_logo_choose",
+        json!({"businessVersion": set["businessVersion"]}),
+    )
+    .unwrap_err();
+    assert_eq!(refused["code"], "VALIDATION_FAILED");
+    assert_eq!(refused["details"]["field"], "logo");
+    assert_eq!(refused["details"]["value"], "notAnImage");
+    assert_eq!(
+        std::fs::read(dir.path().join("logo.png")).unwrap(),
+        stored,
+        "unchanged"
+    );
+
+    let cleared = invoke(
+        &w,
+        "business_logo_clear",
+        json!({"businessVersion": set["businessVersion"]}),
+    )
+    .unwrap();
+    assert_eq!(cleared["hasLogo"], false);
+    assert!(!dir.path().join("logo.png").exists());
+    assert_eq!(invoke(&w, "business_logo_get", json!({})).unwrap(), Value::Null);
+}
+
+#[test]
+fn a_network_printer_saved_over_ipc_prints_the_next_receipt_and_kicks_the_drawer() {
+    // E20-T11 through the shell: Settings → Devices saves a network printer (the profile's
+    // 42 columns), the next sale's receipt reaches it over TCP, the cash sale pulses the
+    // drawer, and the status bar sees it. A small TCP printer stands in for the hardware.
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let received = Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let sink = received.clone();
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut c) = conn else { continue };
+            c.set_read_timeout(Some(std::time::Duration::from_millis(300)))
+                .ok();
+            let mut data = Vec::new();
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = c.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                data.extend_from_slice(&buf[..n]);
+            }
+            if !data.is_empty() {
+                sink.lock().unwrap().push(data);
+            }
+        }
+    });
+
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let status = invoke(&w, "printer_status", json!({})).unwrap();
+    assert_eq!(status["configured"], false);
+
+    // A bad address is refused at its field and nothing is stored.
+    let bad = invoke(
+        &w,
+        "device_save",
+        json!({"input": {"deviceId": null, "kind": "receipt_printer", "role": null, "name": "Front",
+            "configJson": "{\"connection\":{\"kind\":\"network\",\"host\":\"\",\"port\":9100},\"profileId\":\"TM-T88V\"}",
+            "enabled": true, "baseVersion": null}}),
+    )
+    .unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    assert_eq!(bad["details"]["field"], "connection.host");
+
+    let config =
+        json!({"connection": {"kind": "network", "host": "127.0.0.1", "port": port}, "profileId": "TM-T88V"});
+    let saved = invoke(
+        &w,
+        "device_save",
+        json!({"input": {"deviceId": null, "kind": "receipt_printer", "role": null, "name": "Front",
+            "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+    )
+    .unwrap();
+    assert_eq!(saved["version"], 1);
+    let status = invoke(&w, "printer_status", json!({})).unwrap();
+    assert_eq!(status["configured"], true);
+    assert_eq!(status["adapter"], "escpos_net");
+    assert_eq!(status["drawer"], true);
+
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Café crème");
+    product["product"]["variants"][0]["sku"] = json!("CAFE");
+    invoke(&w, "product_create", product).unwrap();
+    let cart = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": "0190a5b0-0000-7000-8000-00000000000b", "raw": "CAFE", "source": "manual"}),
+    )
+    .unwrap()["cart"]
+        .clone();
+    let done = invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "100", "reference": null}], "terminal": null}),
+    )
+    .unwrap();
+    assert_eq!(done["drawer"], "opened", "{done}");
+    // The preview uses the printer's width.
+    let receipt = invoke(
+        &w,
+        "receipt_get",
+        json!({"saleId": done["saleId"], "widthMm": null}),
+    )
+    .unwrap();
+    assert_eq!(receipt["columns"], 42);
+    let job = invoke(&w, "receipt_print", json!({"saleId": done["saleId"]})).unwrap();
+    assert_eq!(job["status"], "completed", "{job}");
+    // Give the in-test printer a moment to record the connection's bytes.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let jobs = received.lock().unwrap().clone();
+    // The drawer pulse (ESC p) and the receipt (with "Caf" + an accented byte, not '?').
+    assert!(
+        jobs.iter().any(|j| j.windows(2).any(|w| w == [0x1b, b'p'])),
+        "drawer pulse sent"
+    );
+    let receipt_job = jobs
+        .iter()
+        .find(|j| j.windows(4).any(|w| w == b"Caf\x82" || w == b"Caf\xe9"))
+        .expect("receipt with é");
+    assert!(!receipt_job.windows(4).any(|w| w == b"Caf?"));
+    // Removing it goes back to the virtual printer.
+    invoke(&w, "device_remove", json!({"deviceId": saved["deviceId"]})).unwrap();
+    assert_eq!(
+        invoke(&w, "printer_status", json!({})).unwrap()["configured"],
+        false
+    );
 }

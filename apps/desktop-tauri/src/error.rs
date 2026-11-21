@@ -27,9 +27,11 @@ pub struct ErrorDetails {
     /// `APPROVAL_REQUIRED`: what to get approved (pass it to `auth_request_approval`).
     pub scope: Option<pos_domain::ApprovalScope>,
     /// Validation and duplicate errors: the input at fault, for an inline message
-    /// (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+    /// (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`;
+    /// staff: `displayName`, `pin`, `role`).
     pub field: Option<String>,
-    /// The offending value when there is one (the SKU or barcode).
+    /// The offending value when there is one (the SKU or barcode). Staff errors put the rule
+    /// here: `taken`, the maximum length, `same` (PIN) or `lastOwner`.
     pub value: Option<String>,
     /// `CATALOG_DUPLICATE_*`: the product that already uses the value.
     pub owner_product_id: Option<pos_domain::ProductId>,
@@ -64,6 +66,25 @@ fn catalog_details(e: &pos_domain::catalog::CatalogError) -> Option<ErrorDetails
     })
 }
 
+/// Which staff-form input a staff error is about, and which rule it broke.
+fn staff_details(e: &pos_domain::staff::StaffError) -> Option<ErrorDetails> {
+    use pos_domain::staff::{MAX_NAME_LEN, StaffError as S};
+    let at = |field: &str, value: Option<String>| ErrorDetails {
+        field: Some(field.into()),
+        value,
+        ..ErrorDetails::default()
+    };
+    Some(match e {
+        S::PinFormat => at("pin", None),
+        S::SamePin => at("pin", Some("same".into())),
+        S::NameRequired => at("displayName", None),
+        S::NameTooLong => at("displayName", Some(MAX_NAME_LEN.to_string())),
+        S::NameTaken => at("displayName", Some("taken".into())),
+        S::LastOwner => at("role", Some("lastOwner".into())),
+        S::Deactivated | S::NotFound => return None,
+    })
+}
+
 impl IpcError {
     /// Maps any catalogued error and logs it with a correlation id.
     pub fn from_error<E: HasErrorCode + std::fmt::Display>(e: &E) -> Self {
@@ -93,6 +114,11 @@ impl IpcError {
                 ..ErrorDetails::default()
             })),
             AppError::Catalog(c) => catalog_details(c).map(Box::new),
+            AppError::Staff(s) => staff_details(s).map(Box::new),
+            AppError::DeviceConfig { field, .. } => Some(Box::new(ErrorDetails {
+                field: Some(field.clone()),
+                ..ErrorDetails::default()
+            })),
             AppError::Config(c) => Some(Box::new(ErrorDetails {
                 field: Some(c.field().into()),
                 value: match c {
@@ -184,6 +210,32 @@ mod tests {
 mod details_tests {
     use super::*;
     use pos_application::context::AppError;
+
+    #[test]
+    fn staff_errors_name_the_input_and_the_rule() {
+        use pos_domain::staff::StaffError as S;
+        let d = |e: S| {
+            IpcError::from_app(&AppError::Staff(e))
+                .details
+                .map(|d| (d.field, d.value))
+        };
+        assert_eq!(
+            d(S::NameTaken),
+            Some((Some("displayName".into()), Some("taken".into())))
+        );
+        assert_eq!(
+            d(S::NameTooLong),
+            Some((Some("displayName".into()), Some("40".into())))
+        );
+        assert_eq!(d(S::PinFormat), Some((Some("pin".into()), None)));
+        assert_eq!(
+            d(S::LastOwner),
+            Some((Some("role".into()), Some("lastOwner".into())))
+        );
+        assert_eq!(d(S::NotFound), None);
+        let e = IpcError::from_app(&AppError::Staff(S::PinFormat));
+        assert_eq!(e.code, ErrorCode::ValidationFailed);
+    }
 
     #[test]
     fn sign_in_errors_carry_structured_details() {

@@ -20,6 +20,7 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
         "pos-device-virtual",
         &["pos-device-ports", "pos-domain", "pos-receipts"],
     ),
+    ("pos-device-hw", &["pos-device-ports", "pos-domain"]),
     ("pos-cloud-db", &["pos-domain", "pos-sync"]),
     ("pos-sync-http", &["pos-domain", "pos-application", "pos-sync"]),
     ("pos-testkit", &["pos-domain"]),
@@ -34,6 +35,7 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
             "pos-sync-http",
             "pos-device-ports",
             "pos-device-virtual",
+            "pos-device-hw",
             "pos-receipts",
             "pos-observability",
         ],
@@ -44,6 +46,11 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
     ),
     ("xtask", &[]),
     ("sync-e2e", &[]),
+    (
+        "pos-bench",
+        &["pos-domain", "pos-application", "pos-local-db", "pos-sync"],
+    ),
+    ("pos-devtools", &["pos-domain", "pos-application", "pos-local-db"]),
 ];
 
 /// External crates that must never appear in a crate's normal dependency tree.

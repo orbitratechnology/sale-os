@@ -141,7 +141,16 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
   };
 
   return (
-    <form aria-label="Business details" noValidate onSubmit={(e) => void save(e)}>
+    <>
+      <LogoRow
+        profile={profile}
+        onChanged={(p) => {
+          setProfile(p);
+          onChanged();
+        }}
+        onConflict={load}
+      />
+      <form aria-label="Business details" noValidate onSubmit={(e) => void save(e)}>
       {(Object.keys(LABELS) as (keyof Draft)[]).map(input)}
       <div className="setting-row">
         <span>
@@ -170,6 +179,91 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
           </span>
         )}
       </p>
-    </form>
+      </form>
+    </>
+  );
+}
+
+const LOGO_PROBLEMS: Record<string, string> = {
+  tooLarge: "That file is larger than 10 MB. Choose a smaller image.",
+  notAnImage: "That file is not a PNG or JPEG image.",
+  unreadable: "That image could not be read. Try saving it again as PNG.",
+};
+
+/**
+ * The business logo (SET-001): chosen through the system dialog (Rust opens it), kept as a
+ * PNG of at most 512 px, and printed at the top of receipts saved as PDF.
+ */
+function LogoRow({
+  profile,
+  onChanged,
+  onConflict,
+}: {
+  profile: BusinessProfileDto;
+  onChanged: (p: BusinessProfileDto) => void;
+  onConflict: () => void;
+}) {
+  const [fetched, setFetched] = useState<{ version: number; url: string | null } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!profile.hasLogo) return;
+    let live = true;
+    const version = profile.businessVersion;
+    void commands.businessLogoGet().then((res) => {
+      if (live && res.status === "ok") setFetched({ version, url: res.data });
+    });
+    return () => {
+      live = false;
+    };
+  }, [profile.hasLogo, profile.businessVersion]);
+  const url = profile.hasLogo && fetched?.version === profile.businessVersion ? fetched.url : null;
+
+  const failed = (e: IpcError) => {
+    if (e.code === "CONFLICT_VERSION") {
+      setProblem("Someone changed the business details meanwhile; try again.");
+      onConflict();
+    } else setProblem(e.details?.field === "logo" ? (LOGO_PROBLEMS[e.details.value ?? ""] ?? describeError(e)) : describeError(e));
+  };
+  const choose = async () => {
+    setBusy(true);
+    const res = await commands.businessLogoChoose(profile.businessVersion);
+    setBusy(false);
+    if (res.status !== "ok") return failed(res.error);
+    setProblem(null);
+    if (res.data) onChanged(res.data);
+  };
+  const remove = async () => {
+    const res = await commands.businessLogoClear(profile.businessVersion);
+    if (res.status !== "ok") return failed(res.error);
+    setProblem(null);
+    onChanged(res.data);
+  };
+
+  return (
+    <section className="setting-row" aria-label="Logo">
+      <span>
+        <strong>Logo</strong>
+        <span className="small">PNG or JPEG. Shown at the top of receipts saved as PDF.</span>
+      </span>
+      <div>
+        {url ? <img src={url} alt="The business logo" className="logo-preview" /> : <p className="small">{profile.hasLogo ? "Loading…" : "No logo."}</p>}
+        <p>
+          <button type="button" className="secondary" disabled={busy} onClick={() => void choose()}>
+            {profile.hasLogo ? "Change logo…" : "Choose a logo…"}
+          </button>{" "}
+          {profile.hasLogo && (
+            <button type="button" className="secondary" onClick={() => void remove()}>
+              Remove logo
+            </button>
+          )}
+        </p>
+        {problem && (
+          <p role="alert" className="field-error">
+            {problem}
+          </p>
+        )}
+      </div>
+    </section>
   );
 }

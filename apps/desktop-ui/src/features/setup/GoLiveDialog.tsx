@@ -1,3 +1,4 @@
+import { Modal } from "../../ui/Modal";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import { PinPad } from "../auth/PinPad";
@@ -38,8 +39,7 @@ export function GoLiveDialog({ onDone, onCancel }: { onDone: () => void; onCance
     e.code === "VALIDATION_FAILED" ? "Finish or clear the cart and close the practice drawer session first." : describeError(e);
 
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Go live" className="dialog card approval">
+    <Modal label="Go live" className="approval">
         <h2>Go live</h2>
         <p>From now on, sales on this till are real: they count in reports and need an open cash drawer.</p>
         <ul className="small">
@@ -60,7 +60,6 @@ export function GoLiveDialog({ onDone, onCancel }: { onDone: () => void; onCance
             Stay in practice mode
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

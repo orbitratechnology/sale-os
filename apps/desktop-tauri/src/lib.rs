@@ -2,13 +2,20 @@
 //! service, map errors (ADR-012). Business rules live in `pos-domain` / `pos-application`.
 
 mod app_commands;
+mod backup_commands;
+mod backups;
+mod card_guard;
 mod cash_commands;
 mod command_names;
 mod commands;
 mod config_commands;
+pub mod db_key;
+mod device_commands;
+mod diagnostics_commands;
 mod dto;
 mod error;
 mod import_commands;
+mod payment_commands;
 mod report_commands;
 mod sale_commands;
 mod services;
@@ -49,6 +56,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         app_commands::app_preferences,
         app_commands::auth_lock,
         sale_commands::tax_list,
+        sale_commands::catalog_new_product_defaults,
         config_commands::categories_list,
         config_commands::category_save,
         config_commands::category_archive,
@@ -58,20 +66,29 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         config_commands::tax_category_save,
         config_commands::business_profile_get,
         config_commands::business_profile_update,
+        config_commands::business_logo_choose,
+        config_commands::business_logo_clear,
+        config_commands::business_logo_get,
         import_commands::import_products_open,
         import_commands::import_products_validate,
         import_commands::import_products_commit,
+        import_commands::import_products_progress,
         import_commands::import_products_error_report,
         import_commands::import_products_cancel,
         sale_commands::product_list,
         sale_commands::product_get,
         sale_commands::product_create,
+        sale_commands::product_create_from_scan,
         sale_commands::product_update,
         sale_commands::product_archive,
         sale_commands::catalog_lookup_code,
         sale_commands::catalog_search,
+        sale_commands::catalog_quick_select,
         sale_commands::scan_submit,
         sale_commands::cart_current,
+        sale_commands::cart_recovery,
+        sale_commands::cart_recovery_resume,
+        sale_commands::cart_recovery_discard,
         sale_commands::cart_add_variant,
         sale_commands::cart_set_quantity,
         sale_commands::cart_remove_line,
@@ -80,6 +97,10 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::cart_override_price,
         sale_commands::cart_clear,
         sale_commands::cart_void,
+        sale_commands::cart_park,
+        sale_commands::cart_parked_list,
+        sale_commands::cart_resume,
+        sale_commands::cart_discard_parked,
         sale_commands::checkout_complete,
         sale_commands::receipt_get,
         sale_commands::receipt_print,
@@ -88,6 +109,11 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::return_find,
         sale_commands::return_preview,
         sale_commands::return_create,
+        sale_commands::exchange_complete,
+        sale_commands::tax_invoice_issue,
+        sale_commands::tax_invoice_get,
+        sale_commands::tax_invoice_print,
+        sale_commands::tax_invoice_export_pdf,
         sale_commands::return_receipt_get,
         sale_commands::return_receipt_print,
         sale_commands::receipt_export_pdf,
@@ -97,12 +123,24 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sale_commands::stock_verify,
         sale_commands::stock_overview,
         sale_commands::stock_history,
+        sale_commands::stock_document_get,
         sale_commands::stock_rebuild,
         report_commands::reports_sales_summary,
         report_commands::reports_tender_mix,
         report_commands::reports_top_products,
         report_commands::reports_stock,
         report_commands::reports_cloud_sales,
+        backup_commands::backup_status,
+        backup_commands::backup_now,
+        backup_commands::backup_choose_folder,
+        backup_commands::backup_clear_folder,
+        backup_commands::backup_verify,
+        backup_commands::backup_restore,
+        backup_commands::data_export_full,
+        backup_commands::security_recovery_key,
+        backup_commands::security_recovery_key_confirmed,
+        backup_commands::db_unlock,
+        diagnostics_commands::diagnostics_export,
         report_commands::export_csv,
         report_commands::audit_list,
         cash_commands::cash_session_current,
@@ -119,6 +157,20 @@ pub fn specta_builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         sync_commands::sale_sync_state,
         sync_commands::sync_conflicts_list,
         sync_commands::sync_conflict_resolve,
+        device_commands::devices_list,
+        device_commands::device_save,
+        device_commands::device_remove,
+        device_commands::printer_status,
+        device_commands::printer_test,
+        device_commands::printer_profiles,
+        device_commands::devices_discover,
+        device_commands::drawer_open,
+        payment_commands::payment_start,
+        payment_commands::payment_poll,
+        payment_commands::payment_cancel,
+        payment_commands::payment_resolve,
+        payment_commands::payment_reverse,
+        payment_commands::payment_attempts,
     ])
 }
 
@@ -132,13 +184,20 @@ pub fn export_bindings(path: &Path) -> Result<(), String> {
         .map_err(|e| format!("{e:?}"))
 }
 
+/// The command handler the app uses: the registry behind the card-data guard (E19-T05).
+pub fn guarded_invoke_handler<R: tauri::Runtime>(
+    builder: &tauri_specta::Builder<R>,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    card_guard::guard(builder.invoke_handler())
+}
+
 /// Starts the desktop application.
 pub fn run() {
     let builder = specta_builder::<tauri::Wry>();
     tauri::Builder::default()
         // Rust-side only: no `dialog:*` permission is granted to the WebView.
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(builder.invoke_handler())
+        .invoke_handler(guarded_invoke_handler(&builder))
         .setup(move |app| {
             builder.mount_events(app);
             let dir = app.path().app_data_dir()?;
@@ -153,16 +212,52 @@ pub fn run() {
             .map_err(|e| eprintln!("logging unavailable: {e}"))
             .ok();
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Sale OS starting");
+            let handle = app.handle().clone();
             let services = tauri::async_runtime::block_on(AppServices::start(&dir, log))
-                .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())));
+                .with_file_dialog(std::sync::Arc::new(NativeFileDialog(app.handle().clone())))
+                .with_restart(std::sync::Arc::new(move || handle.restart()));
+            // Serial scanners (E21-T04): every scan and health change goes to the window, which
+            // submits scans exactly like keyboard-wedge ones.
+            if let Some((mut scans, mut health)) = services.scanner_events() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    loop {
+                        tokio::select! {
+                            s = scans.recv() => match s {
+                                Ok(scan) => { let _ = handle.emit("scanner://scan", scan); }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(_) => break,
+                            },
+                            h = health.recv() => match h {
+                                Ok(h) => { let _ = handle.emit("scanner://status", h); }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(_) => break,
+                            },
+                        }
+                    }
+                });
+            }
             app.manage(services);
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, "Sale OS failed to start");
             eprintln!("Sale OS failed to start: {e}");
             std::process::exit(1);
+        })
+        .run(|app, event| {
+            // E19-T03: a backup each time the app closes normally.
+            if let tauri::RunEvent::Exit = event
+                && let Some(backups) = app.state::<AppServices>().backups.clone()
+            {
+                match tauri::async_runtime::block_on(backups.make(pos_local_db::backup::BackupKind::Shutdown))
+                {
+                    Ok(b) => tracing::info!(file = %b.id, "shutdown backup written"),
+                    Err(e) => tracing::warn!(error = %e, "shutdown backup failed"),
+                }
+            }
         });
 }
 
@@ -200,6 +295,19 @@ impl services::FileDialog for NativeFileDialog {
             dialog = dialog.set_parent(&window);
         }
         dialog.pick_file(move |chosen| {
+            let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
+        });
+        rx
+    }
+
+    fn folder(&self) -> tokio::sync::oneshot::Receiver<Option<std::path::PathBuf>> {
+        use tauri_plugin_dialog::DialogExt;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut dialog = self.0.dialog().file();
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.pick_folder(move |chosen| {
             let _ = tx.send(chosen.and_then(|p| p.into_path().ok()));
         });
         rx

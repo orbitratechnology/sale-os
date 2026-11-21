@@ -18,7 +18,7 @@ ignore = [
   # able to plant a `-wal` file there can already change the data. Backup restore (opening a
   # file the user picks) must not ship until this is fixed.
   # Remove when sqlx allows libsqlite3-sys >= 0.39. Review by 2027-02-01.
-  { id = "RUSTSEC-2026-0459", reason = "no sqlx release accepts the patched libsqlite3-sys; app opens only its own database; review 2027-02-01" },
+  { id = "RUSTSEC-2026-0459", reason = "no sqlx release accepts the patched libsqlite3-sys; app opens only its own database, and backups from elsewhere only as a private copy without siblings; review 2027-02-01" },
   # Unmaintained, not vulnerable. PDF receipts shape text with it, and krilla (the PDF writer,
   # latest 0.8.2) depends on it too, so replacing our own use with harfrust would not remove
   # it. Remove when krilla moves to harfrust. Review by 2027-02-01.

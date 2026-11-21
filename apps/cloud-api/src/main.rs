@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         }
         "--help" | "-h" | "help" => {
             println!(
-                "usage: cloud-api [serve|migrate]\n\nEnvironment: POS_BIND_ADDR, DATABASE_URL, POS_DEBUG_ROUTES, POS_MIN_APP_VERSION, POS_LATEST_APP_VERSION, POS_UPDATE_URL, POS_JWT_SIGNING_KEY, POS_JWT_ISSUER, POS_ARGON2_MEMORY_KIB, POS_ARGON2_PASSES, POS_TRUST_PROXY"
+                "usage: cloud-api [serve|migrate]\n\nEnvironment: POS_BIND_ADDR, DATABASE_URL, POS_DEBUG_ROUTES, POS_MIN_APP_VERSION, POS_LATEST_APP_VERSION, POS_UPDATE_URL, POS_DELETION_GRACE_DAYS, POS_JWT_SIGNING_KEY, POS_JWT_ISSUER, POS_ARGON2_MEMORY_KIB, POS_ARGON2_PASSES, POS_TRUST_PROXY"
             );
             Ok(())
         }
@@ -49,6 +49,23 @@ async fn serve(config: Config) -> anyhow::Result<()> {
             "POS_JWT_SIGNING_KEY is required (32 bytes, base64, from the platform secret store)"
         );
         tracing::warn!("no POS_JWT_SIGNING_KEY: using a random key; tokens end at restart");
+    }
+    // E19-T10: remove businesses whose deletion grace period has ended, hourly.
+    if let Some(pool) = db.clone() {
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                every.tick().await;
+                match pos_cloud_db::retention::purge_due(&pool, chrono::Utc::now()).await {
+                    Ok(ids) => {
+                        for id in ids {
+                            tracing::warn!(business_id = %id, "cloud business deleted: its grace period ended");
+                        }
+                    }
+                    Err(e) => tracing::error!(error = %e, "deleting due businesses failed"),
+                }
+            }
+        });
     }
     let addr = config.bind_addr;
     let app = router(AppState::new(config, db));

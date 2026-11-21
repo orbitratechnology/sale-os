@@ -56,12 +56,38 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "On: sell anyway and flag the item for a stock check. Off: refuse the sale and list the items.",
     },
     SettingDef {
+        key: "catalog.default_unit",
+        kind: SettingKind::Choice(&[
+            "\"ea\"", "\"kg\"", "\"g\"", "\"l\"", "\"ml\"", "\"m\"", "\"cm\"", "\"box\"", "\"pack\"",
+        ]),
+        default: "\"ea\"",
+        group: "Products",
+        label: "Unit for new products",
+        help: "What a new product is sold by, in the product editor and for CSV rows without a unit.",
+    },
+    SettingDef {
+        key: "catalog.default_track_stock",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Products",
+        label: "Track stock for new products",
+        help: "Off: new products are not stock-tracked unless you turn it on (editor) or the CSV says so.",
+    },
+    SettingDef {
         key: "cash.require_session_for_sale",
         kind: SettingKind::Bool,
         default: "true",
         group: "Cash drawer",
         label: "Sales need an open drawer",
         help: "In live mode, a sale or a cash refund needs an open cash drawer session. Practice sales never do.",
+    },
+    SettingDef {
+        key: "drawer.open_on_cash_sale",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Cash drawer",
+        label: "Open the drawer after a cash sale",
+        help: "Sends the opening pulse through the receipt printer when cash is taken. Never for card-only sales.",
     },
     SettingDef {
         key: "discount.cashier_max_ppm",
@@ -134,6 +160,17 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "Up to 5 lines, e.g. the returns policy.",
     },
     SettingDef {
+        key: "scanner.variable_measure_rules",
+        kind: SettingKind::Lines {
+            max_lines: 10,
+            max_chars: 64,
+        },
+        default: "[]",
+        group: "Scanner",
+        label: "Scale and price labels",
+        help: "One rule per line: prefixes, layout, price|weight|count, decimals. E.g. `21 PPIIIIIVVVVVC price 2` or `2 PIIIIIXVVVVC price 2` (US). P prefix, I item, V value, X price check, C check digit.",
+    },
+    SettingDef {
         key: "scanner.suffix",
         kind: SettingKind::Choice(&["\"Enter\"", "\"Tab\"", "\"none\""]),
         default: "\"Enter\"",
@@ -148,6 +185,14 @@ pub const REGISTRY: &[SettingDef] = &[
         group: "Scanner",
         label: "Fastest typing that counts as a scan (ms between keys)",
         help: "Raise it for slow wireless scanners; people type far slower than any scanner.",
+    },
+    SettingDef {
+        key: "scanner.error_sound",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Scanner",
+        label: "Beep when a code is not found or an action is refused",
+        help: "A short low tone. The message is always shown on screen too.",
     },
 ];
 
@@ -217,6 +262,15 @@ pub fn validate(key: &str, value: &Value) -> Result<&'static SettingDef, Setting
             }
         }
     }
+    if d.key == "scanner.variable_measure_rules" {
+        let lines: Vec<String> = value
+            .as_array()
+            .map(|a| a.iter().filter_map(|l| l.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        if let Err(e) = pos_domain::catalog::variable_measure_rules(&lines) {
+            return wrong(format!("valid label rules ({e})"));
+        }
+    }
     Ok(d)
 }
 
@@ -252,6 +306,8 @@ pub struct Preferences {
     pub scanner_suffix: String,
     pub scanner_max_key_gap_ms: u32,
     pub lock_timeout_secs: u32,
+    /// E07-T04: a tone with a not-found or refusal message.
+    pub error_sound: bool,
 }
 
 impl SettingsService {
@@ -341,6 +397,7 @@ impl SettingsService {
                 .as_u64()
                 .and_then(|n| u32::try_from(n).ok())
                 .unwrap_or(300),
+            error_sound: get("scanner.error_sound").as_bool().unwrap_or(true),
         })
     }
 }

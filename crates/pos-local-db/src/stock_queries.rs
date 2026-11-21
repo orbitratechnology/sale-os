@@ -94,6 +94,94 @@ impl StockQueries for SqliteStore {
             .collect()
     }
 
+    async fn stock_document(
+        &self,
+        document: pos_domain::InventoryDocumentId,
+    ) -> Result<Option<pos_application::records::StockDocumentView>, QueryError> {
+        type Head = (
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            i64,
+            String,
+            Option<String>,
+            String,
+        );
+        let head: Option<Head> = sqlx::query_as(
+            "SELECT d.document_no, d.doc_type, d.reason_code, d.supplier_name, d.reference, d.note, d.occurred_at,
+               coalesce(u.display_name, ''), a.display_name, b.timezone
+             FROM inventory_documents d
+             JOIN businesses b ON b.business_id = d.business_id
+             LEFT JOIN staff_users u ON u.user_id = d.actor_user_id
+             LEFT JOIN staff_users a ON a.user_id = d.approver_user_id
+             WHERE d.document_id = ?",
+        )
+        .bind(document.to_string())
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        let Some((no, doc_type, reason, supplier, reference, note, at, actor, approver, zone)) = head else {
+            return Ok(None);
+        };
+        type Line = (
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            i64,
+            Option<i64>,
+        );
+        let lines: Vec<Line> = sqlx::query_as(
+            "SELECT m.variant_id, p.name, v.label, v.sku, m.movement_type, m.bucket, m.quantity_delta_milli, m.unit_cost_minor
+             FROM stock_movements m
+             JOIN product_variants v ON v.variant_id = m.variant_id
+             JOIN products p ON p.product_id = v.product_id
+             WHERE m.source_type = 'inventory_document' AND m.source_id = ?
+             ORDER BY m.rowid",
+        )
+        .bind(document.to_string())
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        let lines = lines
+            .into_iter()
+            .map(|(v, name, label, sku, kind, bucket, delta, cost)| {
+                Ok(pos_application::records::StockDocumentLine {
+                    variant_id: v.parse().map_err(q)?,
+                    name: if label.is_empty() {
+                        name
+                    } else {
+                        format!("{name} · {label}")
+                    },
+                    sku,
+                    movement_type: kind,
+                    bucket,
+                    delta: Quantity::from_milli(delta),
+                    unit_cost: cost.map(pos_domain::Money::from_minor),
+                })
+            })
+            .collect::<Result<_, QueryError>>()?;
+        Ok(Some(pos_application::records::StockDocumentView {
+            document_id: document,
+            document_no: no,
+            doc_type,
+            reason,
+            supplier_name: supplier,
+            reference,
+            note,
+            local_time: pos_domain::time::local_date_time(pos_domain::Timestamp::from_millis(at), &zone)
+                .unwrap_or_default(),
+            actor_name: actor,
+            approver_name: approver,
+            lines,
+        }))
+    }
+
     async fn stock_drift(&self) -> Result<Vec<pos_application::records::StockDrift>, QueryError> {
         let rows: Vec<(String, String, String, i64, i64)> = sqlx::query_as(
             "WITH m AS (SELECT location_id, variant_id, bucket, sum(quantity_delta_milli) AS q

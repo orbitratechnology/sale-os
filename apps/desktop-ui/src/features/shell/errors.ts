@@ -10,6 +10,8 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   APPROVAL_REQUIRED: "This needs a manager's approval.",
   APPROVAL_INVALID: "That approval cannot be used: it was already used, has expired, or the approver cannot approve this.",
   VALIDATION_FAILED: "That value is not valid. Check it and try again.",
+  CARD_DATA_REJECTED:
+    "That looks like a card number, so it was not saved. Never type card numbers into Sale OS: take card payments on the card terminal.",
   CATALOG_NOT_FOUND: "That product no longer exists.",
   CATALOG_DUPLICATE_BARCODE: "Another product already uses that barcode.",
   CATALOG_DUPLICATE_SKU: "Another product already uses that SKU.",
@@ -22,10 +24,15 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   RETURN_REFUND_MISMATCH: "The refund must add up to exactly the amount being returned.",
   STORE_BUSY: "The till is busy. Try again.",
   STORE_IO: "Sale OS cannot read or write its database. Check disk space and that the data folder is on this computer.",
+  STORE_DISK_FULL: "Cannot save — disk full. Nothing was saved and the cart is kept. Free space on this computer, then try again.",
+  STORE_LOCKED:
+    "This data is encrypted and this computer does not have its key. Enter the recovery key the owner wrote down.",
   STORE_CORRUPT: "The local database looks damaged. Do not delete it; contact support to restore from a backup.",
   AUTH_CREDENTIALS_INVALID: "That email or password is not right for the cloud account.",
   AUTH_RATE_LIMITED: "Too many sign-in attempts. Wait a few minutes and try again.",
   AUTH_REQUIRED: "Sign in to the cloud account first.",
+  SYNC_REPLAY_PENDING:
+    "This till is getting its sales back from the cloud after a restore. The cart is kept; finish the sale once that is done (it needs the internet).",
   SYNC_OFFLINE: "The cloud could not be reached. Check the internet connection and try again; sales continue on this till.",
   SYNC_JOIN_NOT_ALLOWED: "This till already has live sales or products, so it cannot join another business. Create the cloud business from it instead.",
   SYNC_BUSINESS_ID_TAKEN: "Another cloud account already has this business. Sign in with that account, or contact support.",

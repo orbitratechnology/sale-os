@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 import { fileURLToPath } from "node:url";
+import { RECOVERY_KEY } from "./app/fakeBackend";
 
 let server: ViteDevServer;
 let browser: Browser;
@@ -320,5 +321,124 @@ describe("consolidated reports (E14-T05)", () => {
     await page.getByRole("button", { name: "By payment" }).click();
     await page.getByRole("alert").filter({ hasNotText: "Stale" }).waitFor();
     expect(await page.getByTestId("cloud-row").count()).toBe(0);
+  });
+});
+
+describe("backups (E19-T03)", () => {
+  async function backupsPage(setup: () => void = () => undefined): Promise<Page> {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=signIn`);
+    await page.evaluate(setup);
+    await page.getByRole("button", { name: /Olu/ }).click();
+    await page.keyboard.type("1234");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Backups" }).click();
+    await page.getByRole("heading", { name: "Backups", exact: true }).waitFor();
+    return page;
+  }
+
+  it("back up now, a second folder, a damaged backup, and a restore the owner confirms", async () => {
+    const page = await backupsPage();
+    const rows = page.getByTestId("backup-row");
+    expect(await rows.count()).toBe(2);
+    await page.getByRole("button", { name: "Back up now" }).click();
+    await page.getByRole("status").getByText(/Backed up:/).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll("[data-testid=backup-row]").length === 3);
+    expect(await rows.first().innerText()).toContain("Made by hand");
+
+    // No second folder yet: the risk is said; then one is chosen in the system dialog.
+    await page.getByText(/if this computer's disk fails, the backups go with it/).waitFor();
+    await page.getByRole("button", { name: "Choose a folder…" }).click();
+    await page.getByText("/media/usb/SaleOS").waitFor();
+
+    // Checking: the damaged one says so.
+    const damaged = rows.filter({ hasText: "Hourly" });
+    await damaged.getByRole("button", { name: "Check" }).click();
+    await damaged.getByRole("alert").getByText("Damaged").waitFor();
+    const daily = rows.filter({ hasText: "Daily" });
+    await daily.getByRole("button", { name: "Check" }).click();
+    await daily.getByText("Whole").waitFor();
+
+    // Restoring needs the loss confirmed.
+    await daily.getByRole("button", { name: "Restore…" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Restore a backup" });
+    await dialog.getByText(/will be lost/).waitFor();
+    const go = dialog.getByRole("button", { name: "Restore and restart" });
+    expect(await go.isDisabled()).toBe(true);
+    await dialog.getByRole("checkbox").check();
+    await go.click();
+    await page.getByRole("status").getByText(/Restored\. Sale OS is restarting/).waitFor();
+    expect(await page.evaluate(() => window.__fake.restartedFrom)).toBe("pos.daily.1793955600000.db");
+    expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: true });
+  });
+
+  it("encrypted: the owner reads the recovery key and confirms writing it down (ADR-023)", async () => {
+    const page = await backupsPage();
+    const section = page.getByRole("region", { name: "Encryption" });
+    await section.getByText(/data and its backups are encrypted/).waitFor();
+    await section.getByRole("alert").getByText(/Write the recovery key down/).waitFor();
+    await section.getByRole("button", { name: "Show recovery key" }).click();
+    expect(await section.getByTestId("recovery-key").textContent()).toBe(RECOVERY_KEY);
+    await section.getByRole("button", { name: "I have written it down" }).click();
+    await section.getByRole("button", { name: "Show recovery key" }).waitFor();
+    expect(await section.getByRole("alert").count()).toBe(0);
+    expect(await calls(page, "security_recovery_key_confirmed")).toHaveLength(1);
+  });
+
+  it("a locked till asks for the recovery key; a wrong one is refused", async () => {
+    const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.goto(`${base}/app-harness.html?preset=locked`);
+    await page.getByRole("heading", { name: "This till's data is locked" }).waitFor();
+    const input = page.getByLabel("Recovery key");
+    const unlock = page.getByRole("button", { name: "Unlock" });
+    expect(await unlock.isDisabled()).toBe(true);
+    await input.fill("FFFFFFFF-".repeat(7) + "FFFFFFFF");
+    await unlock.click();
+    await page.getByRole("alert").getByText(/does not have its key/).waitFor();
+    await input.fill(RECOVERY_KEY.toLowerCase().replace(/-/g, " "));
+    await unlock.click();
+    await page.getByText("Unlocked. Sale OS is restarting…").waitFor();
+  });
+
+  it("the owner exports all data; cancelling the save dialog does nothing", async () => {
+    const page = await backupsPage(() => {
+      window.__fake.saveAs = [null];
+    });
+    const button = page.getByRole("button", { name: "Export all data…" });
+    await button.click();
+    await page.waitForFunction(() => !document.querySelector("[aria-busy]"));
+    expect(await page.evaluate(() => window.__fake.exports)).toBe(0);
+    await button.click();
+    await page.getByText("Exported 1234 rows from 44 tables to /home/user/Documents/sale-os-export-2026-11-05.zip.").waitFor();
+    expect(await page.evaluate(() => window.__fake.exports)).toBe(1);
+    expect(await page.getByText("PINs are not included.").count()).toBe(1);
+  });
+
+  it("a linked till restores only online, and loses nothing", async () => {
+    const page = await backupsPage(() => {
+      window.__fake.cloud.linkState = "linked";
+      window.__fake.cloud.online = false;
+    });
+    await page.getByText(/its sales since the backup come back from the cloud/).waitFor();
+    await page.getByTestId("backup-row").first().getByRole("button", { name: "Restore…" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Restore a backup" });
+    await dialog.getByText(/come back from the cloud after the restart/).waitFor();
+    expect(await dialog.getByRole("checkbox").count()).toBe(0);
+    await dialog.getByRole("button", { name: "Restore and restart" }).click();
+    await page.getByText(/The cloud could not be reached/).waitFor();
+
+    await page.evaluate(() => (window.__fake.cloud.online = true));
+    await page.getByTestId("backup-row").first().getByRole("button", { name: "Restore…" }).click();
+    await dialog.getByRole("button", { name: "Restore and restart" }).click();
+    await page.getByText("Restored. Sale OS is restarting…").waitFor();
+    expect((await calls(page, "backup_restore")).at(-1)).toMatchObject({ confirmLoss: false });
   });
 });

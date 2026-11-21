@@ -16,6 +16,7 @@ to the action below.
 | `APPROVAL_REQUIRED` |  | A manager approval is needed (`details.permission`, `details.scope`). | Open the approval dialog, then retry with the token. |
 | `APPROVAL_INVALID` |  | The approval token expired, was already used, or is out of scope. | Ask for approval again. |
 | `VALIDATION_FAILED` |  | Input failed validation. `details.fields` lists the field errors. | Show inline field errors. |
+| `CARD_DATA_REJECTED` |  | A text field held what looks like a card number (a Luhn-valid run of 13–19 digits) or a card swipe. It was refused before anything was saved or logged (PAY-005); `details.field` names the field. | Say card numbers are never typed into Sale OS (card payments go through the card terminal) and clear the field. |
 | `CATALOG_DUPLICATE_BARCODE` |  | The barcode belongs to another active product (`details.owner`). | Link to the owning product. |
 | `CATALOG_DUPLICATE_SKU` |  | The SKU belongs to another active product. | Show the conflicting product. |
 | `CATALOG_NOT_FOUND` |  | The product or variant does not exist. | Refresh the list. |
@@ -34,10 +35,13 @@ to the action below.
 | `CASH_SESSION_ALREADY_OPEN` |  | This register already has an open cash session. | Show the open session. |
 | `PRINT_ADAPTER_UNAVAILABLE` |  | No printer adapter is available. | Offer PDF export instead. |
 | `PRINT_UNKNOWN_OUTCOME` |  | The printer did not confirm the job. | Ask whether it printed; reprint only on request. |
+| `DEVICE_UNAVAILABLE` |  | A printer, drawer, scanner or terminal is not set up, not connected, or did not answer. The message says which and why. | Show the message and a link to Settings → Devices. |
 | `STORE_BUSY` | yes | The local database is briefly busy. Retryable. | Retry automatically up to 3 times, then show. |
 | `STORE_IO` |  | The local database could not be read or written. Nothing was saved. | Show the error; offer diagnostics. |
+| `STORE_DISK_FULL` |  | The disk holding the local database is full. Nothing was saved; what was open (the cart) is kept. | Show "Cannot save — disk full" and keep the cart; the owner frees space, then the cashier tries again. |
 | `STORE_CORRUPT` |  | The local database failed an integrity check. | Stop and guide the owner to restore a backup. |
 | `STORE_SCHEMA_TOO_NEW` |  | The database was written by a newer app version. It was not modified. | Ask the user to update the app. |
+| `STORE_LOCKED` |  | The database (or the backup) is encrypted and this computer does not have its key: the keychain entry is missing, or it came from another computer (ADR-023). | Ask the owner for the recovery key they wrote down and offer the recovery-key screen; never suggest deleting the database. |
 | `SYNC_NOT_LINKED` |  | This register is not linked to a cloud account. | Open the link wizard. |
 | `SYNC_DEVICE_REVOKED` |  | The owner disconnected this register from the cloud. | Explain; local sales continue. |
 | `SYNC_UPGRADE_REQUIRED` |  | The cloud requires a newer app (`details.minVersion`). | Prompt to update; local sales continue. |
@@ -49,6 +53,7 @@ to the action below.
 | `SYNC_REGISTER_IN_USE` |  | Another device is linked to this register; linking this one disconnects it. | Ask the owner to confirm replacing the other device. |
 | `SYNC_BUSINESS_ID_TAKEN` |  | Another cloud account already owns a business with this ID. | Explain; link to another business or contact support. |
 | `SYNC_OFFLINE` |  | The cloud could not be reached (no connection, a timeout, or a server error). | Check the connection and try again; local sales continue. |
+| `SYNC_REPLAY_PENDING` |  | After a restore, this linked till is bringing back its own sales from the cloud. Nothing new is saved until that is done (the cart is kept). | Say so and keep the cart; it needs the internet. Try again when the status bar shows it is done. |
 | `SYNC_JOIN_NOT_ALLOWED` |  | This register already has live sales or products, so it cannot join another business (joining replaces its data). | Explain; offer to create a cloud business from this register instead. |
 | `NOT_FOUND` |  | No such cloud record for this account or device (also the answer for another business's records). | Refresh the list. |
 | `CONFLICT_VERSION` |  | Someone else changed this record first. | Open the conflict view. |

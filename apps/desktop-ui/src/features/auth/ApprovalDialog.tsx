@@ -1,3 +1,4 @@
+import { Modal } from "../../ui/Modal";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type ApprovalScope, type IpcError, type SignInUser } from "../../ipc";
 import { ppmToPercent } from "../../lib/decimal";
@@ -73,8 +74,7 @@ export function ApprovalDialog({
   }, [approver, busy, pin, scope, onApproved]);
 
   return (
-    <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Manager approval" className="dialog card approval">
+    <Modal label="Manager approval" className="approval">
         <h2>Manager approval</h2>
         <p>This needs approval: {describeScope(scope)}.</p>
         {approvers.length === 0 && !error && <p className="small">No manager or owner is set up on this till.</p>}
@@ -118,7 +118,6 @@ export function ApprovalDialog({
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

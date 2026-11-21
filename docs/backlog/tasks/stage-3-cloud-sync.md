@@ -61,9 +61,9 @@ which uses a real Postgres and a real `cloud-api` and covers AT-06, AT-07 and AT
 ### E16-T06 · OpenAPI finalization and contract tests
 - **Size** S · **Deps** E16-T04, E17-T01
 - **Acceptance:**
-  - [ ] `pos-cloud.v1.yaml` covers every route in [07 §3](../07-contracts.md#3-cloud-rest-api-v1) with schemas and problem+json errors.
-  - [ ] A contract test validates real responses against the spec for every route (`schemathesis` in CI against a test instance).
-  - [ ] The desktop `HttpSyncTransport` DTOs deserialize the spec examples.
+  - [x] `pos-cloud.v1.yaml` covers every route in [07 §3](../07-contracts.md#3-cloud-rest-api-v1) with schemas and problem+json errors.
+  - [x] A contract test validates real responses against the spec for every route (`schemathesis` in CI against a test instance).
+  - [x] The desktop `HttpSyncTransport` DTOs deserialize the spec examples.
 
 ### E16-T07 · Deployment, environments and database backups
 - **Size** M · **Deps** E16-T01, D-06

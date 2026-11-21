@@ -15,6 +15,7 @@ pub enum ErrorCode {
     ApprovalRequired,
     ApprovalInvalid,
     ValidationFailed,
+    CardDataRejected,
     CatalogDuplicateBarcode,
     CatalogDuplicateSku,
     CatalogNotFound,
@@ -33,10 +34,13 @@ pub enum ErrorCode {
     CashSessionAlreadyOpen,
     PrintAdapterUnavailable,
     PrintUnknownOutcome,
+    DeviceUnavailable,
     StoreBusy,
     StoreIo,
+    StoreDiskFull,
     StoreCorrupt,
     StoreSchemaTooNew,
+    StoreLocked,
     SyncNotLinked,
     SyncDeviceRevoked,
     SyncUpgradeRequired,
@@ -48,6 +52,7 @@ pub enum ErrorCode {
     SyncRegisterInUse,
     SyncBusinessIdTaken,
     SyncOffline,
+    SyncReplayPending,
     SyncJoinNotAllowed,
     NotFound,
     ConflictVersion,
@@ -71,6 +76,7 @@ impl ErrorCode {
             ApprovalRequired => "APPROVAL_REQUIRED",
             ApprovalInvalid => "APPROVAL_INVALID",
             ValidationFailed => "VALIDATION_FAILED",
+            CardDataRejected => "CARD_DATA_REJECTED",
             CatalogDuplicateBarcode => "CATALOG_DUPLICATE_BARCODE",
             CatalogDuplicateSku => "CATALOG_DUPLICATE_SKU",
             CatalogNotFound => "CATALOG_NOT_FOUND",
@@ -89,10 +95,13 @@ impl ErrorCode {
             CashSessionAlreadyOpen => "CASH_SESSION_ALREADY_OPEN",
             PrintAdapterUnavailable => "PRINT_ADAPTER_UNAVAILABLE",
             PrintUnknownOutcome => "PRINT_UNKNOWN_OUTCOME",
+            DeviceUnavailable => "DEVICE_UNAVAILABLE",
             StoreBusy => "STORE_BUSY",
             StoreIo => "STORE_IO",
+            StoreDiskFull => "STORE_DISK_FULL",
             StoreCorrupt => "STORE_CORRUPT",
             StoreSchemaTooNew => "STORE_SCHEMA_TOO_NEW",
+            StoreLocked => "STORE_LOCKED",
             SyncNotLinked => "SYNC_NOT_LINKED",
             SyncDeviceRevoked => "SYNC_DEVICE_REVOKED",
             SyncUpgradeRequired => "SYNC_UPGRADE_REQUIRED",
@@ -104,6 +113,7 @@ impl ErrorCode {
             SyncRegisterInUse => "SYNC_REGISTER_IN_USE",
             SyncBusinessIdTaken => "SYNC_BUSINESS_ID_TAKEN",
             SyncOffline => "SYNC_OFFLINE",
+            SyncReplayPending => "SYNC_REPLAY_PENDING",
             SyncJoinNotAllowed => "SYNC_JOIN_NOT_ALLOWED",
             NotFound => "NOT_FOUND",
             ConflictVersion => "CONFLICT_VERSION",
@@ -154,6 +164,10 @@ impl ErrorCode {
             ValidationFailed => (
                 "Input failed validation. `details.fields` lists the field errors.",
                 "Show inline field errors.",
+            ),
+            CardDataRejected => (
+                "A text field held what looks like a card number (a Luhn-valid run of 13–19 digits) or a card swipe. It was refused before anything was saved or logged (PAY-005); `details.field` names the field.",
+                "Say card numbers are never typed into Sale OS (card payments go through the card terminal) and clear the field.",
             ),
             CatalogDuplicateBarcode => (
                 "The barcode belongs to another active product (`details.owner`).",
@@ -218,6 +232,10 @@ impl ErrorCode {
                 "The printer did not confirm the job.",
                 "Ask whether it printed; reprint only on request.",
             ),
+            DeviceUnavailable => (
+                "A printer, drawer, scanner or terminal is not set up, not connected, or did not answer. The message says which and why.",
+                "Show the message and a link to Settings → Devices.",
+            ),
             StoreBusy => (
                 "The local database is briefly busy. Retryable.",
                 "Retry automatically up to 3 times, then show.",
@@ -226,6 +244,10 @@ impl ErrorCode {
                 "The local database could not be read or written. Nothing was saved.",
                 "Show the error; offer diagnostics.",
             ),
+            StoreDiskFull => (
+                "The disk holding the local database is full. Nothing was saved; what was open (the cart) is kept.",
+                "Show \"Cannot save — disk full\" and keep the cart; the owner frees space, then the cashier tries again.",
+            ),
             StoreCorrupt => (
                 "The local database failed an integrity check.",
                 "Stop and guide the owner to restore a backup.",
@@ -233,6 +255,10 @@ impl ErrorCode {
             StoreSchemaTooNew => (
                 "The database was written by a newer app version. It was not modified.",
                 "Ask the user to update the app.",
+            ),
+            StoreLocked => (
+                "The database (or the backup) is encrypted and this computer does not have its key: the keychain entry is missing, or it came from another computer (ADR-023).",
+                "Ask the owner for the recovery key they wrote down and offer the recovery-key screen; never suggest deleting the database.",
             ),
             SyncNotLinked => (
                 "This register is not linked to a cloud account.",
@@ -277,6 +303,10 @@ impl ErrorCode {
             SyncOffline => (
                 "The cloud could not be reached (no connection, a timeout, or a server error).",
                 "Check the connection and try again; local sales continue.",
+            ),
+            SyncReplayPending => (
+                "After a restore, this linked till is bringing back its own sales from the cloud. Nothing new is saved until that is done (the cart is kept).",
+                "Say so and keep the cart; it needs the internet. Try again when the status bar shows it is done.",
             ),
             SyncJoinNotAllowed => (
                 "This register already has live sales or products, so it cannot join another business (joining replaces its data).",
@@ -381,7 +411,7 @@ mod tests {
             let d = code.doc();
             assert!(!d.meaning.is_empty() && !d.ui_action.is_empty(), "{code}");
         }
-        assert_eq!(seen.len(), 44);
+        assert_eq!(seen.len(), 49);
     }
 
     #[test]

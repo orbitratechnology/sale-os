@@ -42,7 +42,7 @@ Windows hardware (D-05):
   | 30-day sales report | < 1 s |
   | Sales list page | < 300 ms |
 
-- [ ] A regression job reruns a reduced suite on CI weekly and alerts on a regression above 20%.
+- [x] A regression job reruns a reduced suite on CI weekly and alerts on a regression above 20%.
 
 ### E19-T02 · Crash and power-loss campaign
 - **Size** M · **Deps** E02-T04, E09-T08, E12-T02, E17-T03 · **PRD** §14 (Crash recovery), §14.1, §16.3
@@ -53,7 +53,7 @@ Windows hardware (D-05):
 - **Acceptance:**
   - [ ] Zero partial commits and zero integrity-check failures across all runs.
   - [ ] No sale reported as committed to the UI is lost after a VM power-off (validates `synchronous=FULL`).
-  - [ ] When the disk is full, the sale is not saved, the cashier sees a clear "Cannot save — disk full" message, and the cart is preserved.
+  - [x] When the disk is full, the sale is not saved, the cashier sees a clear "Cannot save — disk full" message, and the cart is preserved.
 
 ### E19-T03 · Local backup automation and restore
 - **Size** M · **Deps** E02-T02 · **PRD** §13, §18 (user deletes or damages local data), §20
@@ -63,15 +63,15 @@ Windows hardware (D-05):
   - A restore UI for the owner: list backups, verify with `integrity_check`, then restore. Restore keeps the current database aside as `pre-restore-*.db`.
   - **Post-restore sync safety:** after a restore, the outbox may hold events the server already has, or may be missing events the server has. The client re-reads the server `ack` and re-pulls its own register's facts from the cloud so that sales already synced are re-materialized locally. If the restored outbox sequence is behind the server's, the next sequence numbers are re-based from `ack + 1`, so no `event_id` collision is possible.
 - **Acceptance:**
-  - [ ] Restoring an older backup on a linked register yields a local database that includes every sale the cloud has from this register (re-pulled), with no duplicates in the cloud.
-  - [ ] Restoring on an unlinked register shows a warning that sales after the backup time are lost, and the owner must confirm it.
-  - [ ] A backup restore drill is documented and run (PRD §13).
+  - [x] Restoring an older backup on a linked register yields a local database that includes every sale the cloud has from this register (re-pulled), with no duplicates in the cloud.
+  - [x] Restoring on an unlinked register shows a warning that sales after the backup time are lost, and the owner must confirm it.
+  - [x] A backup restore drill is documented and run (PRD §13).
 
 ### E19-T04 · Full business data export
 - **Size** S · **Deps** E14-T04 · **PRD** §2.2 (7), §13, §20
 - **Acceptance:**
-  - [ ] An owner-only export produces a ZIP of CSV (all tables in [04](../04-local-database.md) except secrets: no `pin_hash`) plus a JSON manifest with the schema version and counts.
-  - [ ] It is re-readable by a documented script (`docs/export-format.md`) and audited as `data.exported`.
+  - [x] An owner-only export produces a ZIP of CSV (all tables in [04](../04-local-database.md) except secrets: no `pin_hash`) plus a JSON manifest with the schema version and counts.
+  - [x] It is re-readable by a documented script (`docs/export-format.md`) and audited as `data.exported`.
 
 ### E19-T05 · Security review
 - **Size** M · **Deps** Stage 3 · **PRD** §13, §18
@@ -85,8 +85,8 @@ Windows hardware (D-05):
   - A PCI scope statement: confirm that no PAN, CVV, PIN or track data is stored or logged (grep the logs and database after the e2e suite).
 - **Acceptance:**
   - [ ] There is a threat model document. All high and critical findings are fixed or formally accepted by the product owner.
-  - [ ] A test runs the full e2e suite with a known test PAN typed into every free-text field, then asserts the PAN does not appear in the database, logs or outbox (the validation rejects it in reference fields, and other fields are checked for Luhn runs before logging).
-  - [ ] A decision record on local database encryption exists.
+  - [x] A test runs the full e2e suite with a known test PAN typed into every free-text field, then asserts the PAN does not appear in the database, logs or outbox (the validation rejects it in reference fields, and other fields are checked for Luhn runs before logging).
+  - [x] A decision record on local database encryption exists.
 
 ### E19-T06 · Signed installers and auto-update
 - **Size** M · **Deps** E01-T01, D-01 · **PRD** §13 (signed updates), §17 Stage 4
@@ -104,8 +104,8 @@ Windows hardware (D-05):
 ### E19-T07 · Diagnostics bundle
 - **Size** S · **Deps** E01-T04, E11-T06 · **PRD** §14 (Observability), §17 Stage 4
 - **Acceptance:**
-  - [ ] `diagnostics_export` produces a ZIP with the redacted logs (7 days), app/OS/WebView2 versions, the schema version, the `integrity_check` result, projection drift, sync state and counts, print-job states, settings (non-secret), and the last 100 audit actions (IDs only, no customer data).
-  - [ ] A test asserts the bundle contains no PIN hashes, tokens or full payloads.
+  - [x] `diagnostics_export` produces a ZIP with the redacted logs (7 days), app/OS/WebView2 versions, the schema version, the `integrity_check` result, projection drift, sync state and counts, print-job states, settings (non-secret), and the last 100 audit actions (IDs only, no customer data).
+  - [x] A test asserts the bundle contains no PIN hashes, tokens or full payloads.
 
 ### E19-T08 · Usability and accessibility validation in shops
 - **Size** M · **Deps** Stage 2 UI · **PRD** §17 Stage 4, §5.1, §14 (Accessibility)
@@ -121,8 +121,8 @@ Windows hardware (D-05):
 ### E19-T09 · Version policy enforcement
 - **Size** S · **Deps** E16-T04 · **PRD** §10.1 (app version policy)
 - **Acceptance:**
-  - [ ] Below `minSupported`, the server answers `426 SYNC_UPGRADE_REQUIRED`. The desktop keeps selling locally, queues events, and shows an update prompt.
-  - [ ] No local data is lost while waiting for the update.
+  - [x] Below `minSupported`, the server answers `426 SYNC_UPGRADE_REQUIRED`. The desktop keeps selling locally, queues events, and shows an update prompt.
+  - [x] No local data is lost while waiting for the update.
 
 ### E19-T10 · Data retention and deletion
 - **Size** S · **Deps** D-02, D-06 · **PRD** §13 ("define data retention and deletion behaviour before production launch")
@@ -133,11 +133,11 @@ Windows hardware (D-05):
 ### E19-T11 · Pilot runbook and support process
 - **Size** S · **Deps** E19-T03, E19-T07
 - **Acceptance:**
-  - [ ] Runbooks cover install, first run, linking, the daily close, restore from backup, a replaced PC (new install joins and bootstraps; old device revoked), revoked device recovery, the "sync attention needed" playbook, and how to collect diagnostics.
+  - [x] Runbooks cover install, first run, linking, the daily close, restore from backup, a replaced PC (new install joins and bootstraps; old device revoked), revoked device recovery, the "sync attention needed" playbook, and how to collect diagnostics.
   - [ ] There is an escalation path and an on-call rota for the pilot period.
 
 ### E19-T12 · MVP acceptance suite (AT-01…AT-13) automated
 - **Size** M · **Deps** all · **PRD** §16.4, §20
 - **Acceptance:**
-  - [ ] Every AT in [08 §3](../08-test-strategy.md#3-mvp-acceptance-tests-prd-164--automation-mapping) is implemented as a named, automated test and runs green on the Windows reference machine and in CI.
+  - [ ] Every AT in [08 §3](../08-test-strategy.md#3-mvp-acceptance-tests-prd-164--automation-mapping) is implemented as a named, automated test and runs green on the Windows reference machine and in CI. *(Automated: `cargo xtask acceptance`, green on Linux and in the CI job on Windows and Linux; the reference machine run is to do.)*
   - [ ] The report is attached to the pilot go/no-go decision.

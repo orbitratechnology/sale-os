@@ -115,7 +115,8 @@ async fn scanning_builds_a_priced_cart() {
     assert_eq!(
         scan(&t, "999999").await,
         ScanOutcome::NotFound {
-            code: "999999".into()
+            code: "999999".into(),
+            hint: None,
         }
     );
     assert_eq!(t.carts.current(ctx).await.unwrap().cart.revision, 4);
@@ -137,6 +138,95 @@ async fn the_cart_survives_a_restart() {
     assert_eq!(after.cart.lines[0].quantity, before.cart.lines[0].quantity);
     assert_eq!(after.cart.lines[0].added_via, AddVia::ManualCode);
     assert_eq!(after.priced.total, before.priced.total);
+}
+
+/// E09-T02: after a restart the cart left open is offered once; Resume prices it as items
+/// sell now and marks the lines whose price changed.
+#[tokio::test]
+async fn a_recovered_cart_is_offered_once_and_resumed_at_todays_prices() {
+    let t = till(common::shop().await);
+    let p = cola(&t).await;
+    let ctx = &t.shop.owner;
+    for code in ["COLA", "COLA", "CASE12"] {
+        t.carts
+            .scan(ctx, code, new_id(), ScanSource::Manual)
+            .await
+            .unwrap();
+    }
+    let before = t.carts.current(ctx).await.unwrap();
+    assert_eq!(before.cart.lines.len(), 1, "a pack and units are one line");
+    // The price changes while the till is closed.
+    sqlx::query("UPDATE product_variants SET price_minor = 150 WHERE variant_id = ?")
+        .bind(p.variants[0].id.to_string())
+        .execute(t.shop.store.db().writer())
+        .await
+        .unwrap();
+    let restarted = cart_service(&t.shop);
+    let offer = restarted.recovery(ctx).await.unwrap().expect("offered");
+    assert_eq!(
+        (offer.cart_id, offer.lines, offer.repriced),
+        (before.cart.id, 1, 1)
+    );
+    assert_eq!(offer.total.minor(), 14 * 150);
+    // Asked again before answering (another sign-in): still offered.
+    assert!(restarted.recovery(ctx).await.unwrap().is_some());
+    let resumed = restarted.resume_recovered(ctx).await.unwrap();
+    assert_eq!(resumed.cart.id, before.cart.id);
+    assert_eq!(resumed.repriced_lines, vec![before.cart.lines[0].id]);
+    assert_eq!(resumed.priced.total.minor(), 14 * 150);
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'cart.recovered'")
+            .fetch_one(t.shop.store.db().readers())
+            .await
+            .unwrap();
+    assert_eq!(audited, 1);
+    // Answered: not offered again in this run, and the next change records the new price.
+    assert!(restarted.recovery(ctx).await.unwrap().is_none());
+    restarted
+        .scan(ctx, "COLA", new_id(), ScanSource::Manual)
+        .await
+        .unwrap();
+    let again = cart_service(&t.shop);
+    assert_eq!(again.recovery(ctx).await.unwrap().unwrap().repriced, 0);
+}
+
+/// E09-T02: Discard empties the cart and is audited as `cart.recovery_discarded`; an empty
+/// cart, or one started in this run, is never offered.
+#[tokio::test]
+async fn a_recovered_cart_can_be_discarded_and_an_empty_one_is_not_offered() {
+    let t = till(common::shop().await);
+    cola(&t).await;
+    let ctx = &t.shop.owner;
+    assert!(
+        t.carts.recovery(ctx).await.unwrap().is_none(),
+        "nothing open at start"
+    );
+    t.carts
+        .scan(ctx, "COLA", new_id(), ScanSource::Manual)
+        .await
+        .unwrap();
+    assert!(
+        t.carts.recovery(ctx).await.unwrap().is_none(),
+        "started in this run"
+    );
+
+    let restarted = cart_service(&t.shop);
+    let offer = restarted.recovery(ctx).await.unwrap().unwrap();
+    let stale = restarted.discard_recovered(ctx, offer.revision + 1).await;
+    assert!(stale.is_err(), "the revision shown is checked");
+    let emptied = restarted.discard_recovered(ctx, offer.revision).await.unwrap();
+    assert!(emptied.cart.lines.is_empty());
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'cart.recovery_discarded'")
+            .fetch_one(t.shop.store.db().readers())
+            .await
+            .unwrap();
+    assert_eq!(audited, 1);
+    assert!(restarted.recovery(ctx).await.unwrap().is_none());
+    assert!(
+        cart_service(&t.shop).recovery(ctx).await.unwrap().is_none(),
+        "empty after a restart"
+    );
 }
 
 #[tokio::test]

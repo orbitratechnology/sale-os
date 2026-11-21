@@ -499,3 +499,272 @@ async fn a_failure_at_any_statement_leaves_no_return_behind() {
     }
     assert!(statement > 8, "only {statement} statements");
 }
+
+// ---------- exchanges: a return and a new sale in one transaction ----------
+
+fn checkout(t: &Shop) -> (Arc<CartService>, CheckoutService) {
+    let s = t.shop.store.clone();
+    let carts = Arc::new(CartService::new(
+        Arc::new(s.clone()),
+        Arc::new(s.clone()),
+        Arc::new(s.clone()),
+    ));
+    let checkout = CheckoutService {
+        carts: carts.clone(),
+        store: Arc::new(s.clone()),
+        setup: Arc::new(s.clone()),
+        stock: Arc::new(s.clone()),
+        receipts: Arc::new(s),
+    };
+    (carts, checkout)
+}
+
+/// The new items in the cart: their codes, scanned. Returns (cart id, revision).
+async fn new_items(t: &Shop, carts: &CartService, codes: &[&str]) -> (pos_domain::CartId, u64) {
+    for code in codes {
+        carts
+            .scan(
+                &t.shop.owner,
+                code,
+                ScanEventId::generate(&UuidV7Generator),
+                ScanSource::Manual,
+            )
+            .await
+            .unwrap();
+    }
+    let cart = carts.current(&t.shop.owner).await.unwrap().cart;
+    (cart.id, cart.revision)
+}
+
+fn exchange_of(
+    t: &Shop,
+    lines: Vec<ReturnLineRequest>,
+    cart: (pos_domain::CartId, u64),
+    refunds: Vec<TenderInput>,
+    tenders: Vec<TenderInput>,
+) -> pos_application::exchange::CreateExchange {
+    pos_application::exchange::CreateExchange {
+        ret: CreateReturn {
+            sale_id: t.sale.sale_id,
+            lines,
+            reason: ReturnReason::WrongItem,
+            note: None,
+            refunds,
+        },
+        cart_id: cart.0,
+        revision: cart.1,
+        tenders,
+    }
+}
+
+#[tokio::test]
+async fn an_exchange_records_the_return_and_the_new_sale_together() {
+    let t = after_a_sale().await;
+    let returns = service(&t, t.shop.store.clone());
+    let (carts, checkout) = checkout(&t);
+    // One tea (2.50) back to the shelf; two gift wraps (2.00) taken instead: 0.50 back in cash.
+    let cart = new_items(&t, &carts, &["WRAP", "WRAP"]).await;
+    let done = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(
+            &t,
+            vec![line(&t, "Tea", 1, Disposition::Restock)],
+            cart,
+            vec![],
+            vec![],
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(done.ret.return_number, "R01-R-000001");
+    assert_eq!(done.sale.receipt_number, "R01-000002");
+    assert_eq!(done.ret.ret.total.minor(), 250);
+    // The returned value is a cash refund and a cash payment of the same amount.
+    let refunds: Vec<_> = done
+        .ret
+        .ret
+        .refunds
+        .iter()
+        .map(|r| (r.tender.kind, r.tender.amount.minor()))
+        .collect();
+    assert_eq!(refunds, [(TenderKind::Cash, 250)]);
+    assert_eq!(done.sale.sale.total.minor(), 200);
+    let tender = &done.sale.sale.tenders[0].tender;
+    assert_eq!(
+        (
+            done.sale.sale.tenders.len(),
+            tender.kind,
+            tender.amount.minor(),
+            tender.received.map(|m| m.minor()),
+            tender.change.minor()
+        ),
+        (1, TenderKind::Cash, 200, Some(250), 50),
+        "the rest comes back as change"
+    );
+    // Both are recorded: the tea is back on the shelf, the cart is closed, each audit row
+    // names the other record, and both events wait for sync.
+    assert_eq!(count(&t, "SELECT count(*) FROM returns").await, 1);
+    assert_eq!(count(&t, "SELECT count(*) FROM sales").await, 2);
+    assert_eq!(
+        count(&t, "SELECT on_hand_milli FROM stock_balances b JOIN product_variants v ON v.variant_id = b.variant_id WHERE v.sku = 'TEA' AND b.bucket = 'sellable'").await,
+        -2_000,
+        "3 sold from nothing, 1 back"
+    );
+    assert_eq!(
+        count(&t, "SELECT count(*) FROM carts WHERE status = 'open'").await,
+        0
+    );
+    let linked: (String, String) = sqlx::query_as(
+        "SELECT (SELECT json_extract(metadata_json, '$.exchangeSale') FROM audit_events WHERE action = 'return.completed'),
+                (SELECT json_extract(metadata_json, '$.exchangeReturn') FROM audit_events WHERE action = 'sale.completed' AND entity_id = ?)",
+    )
+    .bind(done.sale.sale.id.to_string())
+    .fetch_one(t.shop.store.db().readers())
+    .await
+    .unwrap();
+    assert_eq!(
+        linked,
+        (done.sale.sale.id.to_string(), done.ret.ret.id.to_string())
+    );
+    assert_eq!(
+        count(
+            &t,
+            "SELECT count(*) FROM outbox_events WHERE event_type IN ('return.completed', 'sale.completed')"
+        )
+        .await,
+        3
+    );
+}
+
+#[tokio::test]
+async fn the_customer_pays_the_difference_or_takes_part_of_the_value_back() {
+    let t = after_a_sale().await;
+    let returns = service(&t, t.shop.store.clone());
+    let (carts, checkout) = checkout(&t);
+    // The gift wrap (1.00) back; a tea (2.50) taken: 1.50 more, by card.
+    let card = TenderInput {
+        kind: TenderKind::CardExternal,
+        amount: Money::from_minor(150),
+        external_reference: None,
+    };
+    let cart = new_items(&t, &carts, &["TEA"]).await;
+    let done = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(
+            &t,
+            vec![line(&t, "Gift wrap", 1, Disposition::Restock)],
+            cart,
+            vec![],
+            vec![card],
+        ),
+    )
+    .await
+    .unwrap();
+    let paid: Vec<_> = done
+        .sale
+        .sale
+        .tenders
+        .iter()
+        .map(|x| (x.tender.kind, x.tender.amount.minor()))
+        .collect();
+    assert_eq!(paid, [(TenderKind::Cash, 100), (TenderKind::CardExternal, 150)]);
+
+    // Two teas (5.00) back; one wrap (1.00) taken, 4.00 refunded by card instead of cash.
+    let card_back = TenderInput {
+        kind: TenderKind::CardExternal,
+        amount: Money::from_minor(400),
+        external_reference: None,
+    };
+    let cart = new_items(&t, &carts, &["WRAP"]).await;
+    let done = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(
+            &t,
+            vec![line(&t, "Tea", 2, Disposition::Restock)],
+            cart,
+            vec![card_back],
+            vec![],
+        ),
+    )
+    .await
+    .unwrap();
+    let refunds: Vec<_> = done
+        .ret
+        .ret
+        .refunds
+        .iter()
+        .map(|r| (r.tender.kind, r.tender.amount.minor()))
+        .collect();
+    assert_eq!(
+        refunds,
+        [(TenderKind::Cash, 100), (TenderKind::CardExternal, 400)]
+    );
+    assert_eq!(done.sale.sale.tenders[0].tender.change.minor(), 0);
+}
+
+#[tokio::test]
+async fn a_refused_exchange_records_neither_the_return_nor_the_sale() {
+    let t = after_a_sale().await;
+    let returns = service(&t, t.shop.store.clone());
+    let (carts, checkout) = checkout(&t);
+    let cart = new_items(&t, &carts, &["WRAP"]).await;
+    let tea = || vec![line(&t, "Tea", 1, Disposition::Restock)];
+    // The cart changed since it was shown.
+    let e = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(&t, tea(), (cart.0, cart.1 + 1), vec![], vec![]),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(e.error_code(), ErrorCode::CartRevisionMismatch);
+    // All of the value paid back: that is a return, not an exchange.
+    let e = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(&t, tea(), cart, vec![cash(250)], vec![]),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
+    // Paying on top when the returned value already covers the cart.
+    let e = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(&t, tea(), cart, vec![], vec![cash(100)]),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(e.error_code(), ErrorCode::ValidationFailed, "{e:?}");
+    // More back than was sold (RET-004).
+    let e = pos_application::exchange::complete(
+        &returns,
+        &checkout,
+        &t.shop.owner,
+        exchange_of(
+            &t,
+            vec![line(&t, "Tea", 4, Disposition::Restock)],
+            cart,
+            vec![],
+            vec![],
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(e.error_code(), ErrorCode::ReturnQtyExceeds);
+    assert_eq!(count(&t, "SELECT count(*) FROM returns").await, 0);
+    assert_eq!(count(&t, "SELECT count(*) FROM sales").await, 1);
+    assert_eq!(
+        count(&t, "SELECT count(*) FROM carts WHERE status = 'open'").await,
+        1
+    );
+}

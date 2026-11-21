@@ -48,6 +48,12 @@
 Each acceptance test is a named test in CI. `E19-T12` makes them a required, green gate on the
 reference machine.
 
+> **As built (E19-T12):** `cargo xtask acceptance` runs every AT and writes a report. The tests
+> it runs are listed by name in `xtask/src/acceptance.rs` (the names below were the plan; the
+> built tests kept the names they were given in their own tasks). A name that matches no test
+> fails the run, and the cloud checks count as *not run* without PostgreSQL, never as passed.
+> CI runs it on Windows and Linux (job `acceptance`) and keeps the report as an artefact.
+
 | AT | PRD statement (abridged) | Automated test | Layer | First green in |
 |---|---|---|---|---|
 | AT-01 | New business: profile, ≥ 20 products, test cash sale, no cloud | `e2e::at01_offline_first_business` (the network adapter is disabled in the VM, or the transport is forced offline) | E2E | Stage 2 (E09-T08) |

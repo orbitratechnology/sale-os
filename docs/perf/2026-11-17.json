@@ -1,0 +1,83 @@
+{
+  "date": "2026-11-17",
+  "scale": {
+    "variants": 50000,
+    "sale_lines": 500000,
+    "samples": 1000
+  },
+  "machine": "Intel(R) Xeon(R) Processor @ 2.10GHz, 4 threads, 15 GB RAM, linux",
+  "build": "release",
+  "dataset_seconds": 39,
+  "measures": [
+    {
+      "key": "barcode_lookup",
+      "name": "Barcode lookup",
+      "target_ms": 50,
+      "samples": 1000,
+      "p50_us": 107,
+      "p95_us": 155,
+      "max_us": 611,
+      "what": "`lookup_code` for a random one of the barcodes (normalise, look up, load the variant)"
+    },
+    {
+      "key": "add_to_cart",
+      "name": "Add item to visible cart",
+      "target_ms": 100,
+      "samples": 1000,
+      "p50_us": 6134,
+      "p95_us": 10948,
+      "max_us": 29073,
+      "what": "a scan through `CartService::scan` on a cart of 1 to 20 lines, returning the priced cart"
+    },
+    {
+      "key": "product_search",
+      "name": "Product search",
+      "target_ms": 150,
+      "samples": 1000,
+      "p50_us": 25466,
+      "p95_us": 36793,
+      "max_us": 104666,
+      "what": "`search` for 20 results, cycling through typical queries"
+    },
+    {
+      "key": "cash_sale_commit",
+      "name": "Cash-sale local commit",
+      "target_ms": 500,
+      "samples": 1000,
+      "p50_us": 6192,
+      "p95_us": 11608,
+      "max_us": 60872,
+      "what": "`complete_sale` for 3 lines paid in exact cash (one durable transaction, `synchronous=FULL`)"
+    },
+    {
+      "key": "report_30_days",
+      "name": "30-day sales report",
+      "target_ms": 1000,
+      "samples": 1000,
+      "p50_us": 27964,
+      "p95_us": 39051,
+      "max_us": 87578,
+      "what": "`sales_summary` for the last 30 days (figures per day and totals)"
+    },
+    {
+      "key": "sales_list_page",
+      "name": "Sales list page",
+      "target_ms": 300,
+      "samples": 1000,
+      "p50_us": 1710,
+      "p95_us": 11095,
+      "max_us": 47585,
+      "what": "`SalesService::list`, 50 rows: newest, a date range, a tender, a receipt number"
+    },
+    {
+      "key": "cold_launch",
+      "name": "Cold launch (backend)",
+      "target_ms": 5000,
+      "samples": 1000,
+      "p50_us": 5991,
+      "p95_us": 9229,
+      "max_us": 18819,
+      "what": "open the database (migration check, pragmas) and load the sign-in screen's staff list; the WebView's own start is not included"
+    }
+  ]
+}

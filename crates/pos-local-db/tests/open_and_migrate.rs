@@ -348,3 +348,36 @@ async fn core_schema_enforces_append_only_rules() {
     }
     db.close().await;
 }
+
+/// `close` leaves no connection open, even while other handles to the database are alive.
+/// SQLite deletes the `-wal` when its last connection closes, so a `-wal` left behind is an
+/// open connection. sqlx's pool `close` returned early 17 times in 40 here (see
+/// `LocalDb::close`); on Windows that open `-wal` failed the file swaps after a close.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn close_leaves_no_connection_open() {
+    let mut left_open = 0;
+    for _ in 0..40 {
+        let dir = tempfile::TempDir::new().unwrap();
+        let opts = pos_local_db::DbOptions::in_dir(dir.path());
+        let db = pos_local_db::LocalDb::open(&opts).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS t (x)")
+            .execute(db.writer())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO t VALUES (1)")
+            .execute(db.writer())
+            .await
+            .unwrap();
+        // Another handle stays alive, as in the app and the encryption tests.
+        let still_held = db.clone();
+        db.close().await;
+        if opts.path.with_file_name("pos.db-wal").exists() {
+            left_open += 1;
+        }
+        drop(still_held);
+    }
+    assert_eq!(
+        left_open, 0,
+        "a connection stayed open after close in {left_open} of 40 runs"
+    );
+}

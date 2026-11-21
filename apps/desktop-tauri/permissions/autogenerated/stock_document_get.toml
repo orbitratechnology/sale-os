@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stock-document-get"
+description = "Enables the stock_document_get command without any pre-configured scope."
+commands.allow = ["stock_document_get"]
+
+[[permission]]
+identifier = "deny-stock-document-get"
+description = "Denies the stock_document_get command without any pre-configured scope."
+commands.deny = ["stock_document_get"]

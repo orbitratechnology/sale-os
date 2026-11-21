@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tax-invoice-print"
+description = "Enables the tax_invoice_print command without any pre-configured scope."
+commands.allow = ["tax_invoice_print"]
+
+[[permission]]
+identifier = "deny-tax-invoice-print"
+description = "Denies the tax_invoice_print command without any pre-configured scope."
+commands.deny = ["tax_invoice_print"]

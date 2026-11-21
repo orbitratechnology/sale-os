@@ -1,3 +1,6 @@
+import {
+  ArrowLeft,
+} from "../../ui/icons";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { BarcodeQualifier, CategoryDto, ProductType, TaxCategoryDto, Unit } from "../../ipc/bindings";
@@ -19,6 +22,7 @@ import {
 } from "./draft";
 
 const UNITS: Unit[] = ["ea", "kg", "g", "l", "ml", "m", "cm", "box", "pack"];
+const isUnit = (u: string): u is Unit => (UNITS as string[]).includes(u);
 const TYPES: { value: ProductType; label: string }[] = [
   { value: "stock", label: "Stock item (counted)" },
   { value: "non_stock", label: "Non-stock item" },
@@ -42,6 +46,7 @@ export function ProductEditor({
   workspace,
   productId,
   barcode,
+  approvalToken,
   canEdit,
   onSaved,
   onClose,
@@ -50,6 +55,8 @@ export function ProductEditor({
   productId: string | null;
   /** From the unknown-barcode prompt: pre-filled on a new product (E07-T04). */
   barcode?: string;
+  /** A manager's approval for a cashier to create this one product (E07-T04). */
+  approvalToken?: string;
   canEdit: boolean;
   onSaved: (productId: string, created: boolean) => void;
   onClose: () => void;
@@ -68,7 +75,7 @@ export function ProductEditor({
   useEffect(() => {
     let live = true;
     void (async () => {
-      const [t, c] = await Promise.all([commands.taxList(), commands.categoriesList()]);
+      const [t, c, d] = await Promise.all([commands.taxList(), commands.categoriesList(), productId ? null : commands.catalogNewProductDefaults()]);
       if (!live) return;
       if (t.status === "error") return setFailure(t.error);
       setTaxes(t.data);
@@ -80,7 +87,9 @@ export function ProductEditor({
         setDraft(fromProduct(p.data, exponent));
       } else {
         const def = t.data.find((c) => c.isDefault) ?? t.data[0];
-        setDraft(blankDraft(def?.taxCategoryId ?? "", barcode));
+        // Without the settings (an older backend, or an error) the built-in defaults apply.
+        const defaults = d?.status === "ok" && isUnit(d.data.unit) ? { unit: d.data.unit, trackStock: d.data.trackStock } : undefined;
+        setDraft(blankDraft(def?.taxCategoryId ?? "", barcode, defaults));
       }
     })();
     return () => {
@@ -136,7 +145,9 @@ export function ProductEditor({
     const res =
       draft.productId && draft.version !== null
         ? await commands.productUpdate(draft.productId, draft.version, input)
-        : await commands.productCreate(input);
+        : barcode
+          ? await commands.productCreateFromScan(input, barcode, approvalToken ?? null)
+          : await commands.productCreate(input);
     setBusy(false);
     if (res.status === "error") {
       const d = res.error.details;
@@ -179,7 +190,8 @@ export function ProductEditor({
       <form onSubmit={(e) => void save(e)} noValidate aria-label="Product editor">
         <header className="products-head">
           <button type="button" className="secondary" onClick={onClose}>
-            ← Back <kbd>Esc</kbd>
+            <ArrowLeft />
+            Back <kbd>Esc</kbd>
           </button>
           <h1>{draft.productId ? draft.name || "Product" : "New product"}</h1>
           <span aria-live="polite" className="saved-note">
@@ -288,6 +300,7 @@ export function ProductEditor({
               <tr>
                 {hasAxes && <th scope="col">Variant</th>}
                 <th scope="col">Price ({workspace.currencyCode})</th>
+                {!ro && <th scope="col">Cost ({workspace.currencyCode})</th>}
                 <th scope="col">SKU</th>
                 <th scope="col">Barcodes</th>
                 <th scope="col">Low-stock alert</th>
@@ -304,6 +317,19 @@ export function ProductEditor({
                       <input aria-label={`Price for ${label}`} readOnly={ro} inputMode="decimal" className="num" value={v.price} onChange={(e) => setVariant(i, { price: e.target.value })} />
                       <Inline msg={at("price", i)} />
                     </td>
+                    {!ro && (
+                      <td>
+                        <input
+                          aria-label={`Cost for ${label}`}
+                          inputMode="decimal"
+                          className="num"
+                          placeholder="optional"
+                          value={v.cost}
+                          onChange={(e) => setVariant(i, { cost: e.target.value })}
+                        />
+                        <Inline msg={at("cost", i)} />
+                      </td>
+                    )}
                     <td>
                       <input aria-label={`SKU for ${label}`} readOnly={ro} value={v.sku} onChange={(e) => setVariant(i, { sku: e.target.value })} />
                       <Inline msg={problem?.field === "sku" && (problem.variant === i || problem.value === v.sku.trim()) ? problem.message : null} />

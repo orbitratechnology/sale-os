@@ -427,6 +427,9 @@ pub struct CatalogHitDto {
     pub scan_qty_milli: String,
     /// `"barcode"`, `"sku"` or `"search"`.
     pub matched_by: String,
+    /// Search results only (E09-T04): sellable stock on hand at this location, in
+    /// thousandths, for stock-tracked items; `null` otherwise.
+    pub on_hand_milli: Option<String>,
 }
 
 impl From<CatalogHit> for CatalogHitDto {
@@ -447,6 +450,7 @@ impl From<CatalogHit> for CatalogHitDto {
                 MatchedBy::Search => "search",
             }
             .into(),
+            on_hand_milli: None,
         }
     }
 }
@@ -468,6 +472,9 @@ pub struct ProductFilterDto {
     pub status: ProductStatusDto,
     pub track_stock: Option<bool>,
     pub category_id: Option<CategoryId>,
+    /// Only products that need restocking (low or negative); absent means no.
+    #[serde(default)]
+    pub low_stock: bool,
 }
 
 impl From<ProductFilterDto> for ProductFilter {
@@ -481,6 +488,7 @@ impl From<ProductFilterDto> for ProductFilter {
             },
             track_stock: f.track_stock,
             category_id: f.category_id,
+            low_stock: f.low_stock,
         }
     }
 }
@@ -503,9 +511,20 @@ pub struct ProductRowDto {
     pub on_hand_milli: Option<String>,
     /// A tracked variant is below zero: show the red "Negative stock" flag (INV-008).
     pub negative_stock: bool,
+    /// A tracked variant is at or below its low-stock threshold: an amber "Low stock" flag.
+    pub low_stock: bool,
     /// Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
     /// using the local values.
     pub sync_conflict: bool,
+}
+
+/// What a new product starts as.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NewProductDefaultsDto {
+    /// A unit code: `ea`, `kg`, `g`, `l`, `ml`, `m`, `cm`, `box` or `pack`.
+    pub unit: String,
+    pub track_stock: bool,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -536,6 +555,7 @@ impl ProductPageDto {
                     quick_select: r.quick_select,
                     on_hand_milli: r.on_hand.map(qty),
                     negative_stock: r.negative_stock,
+                    low_stock: r.low_stock,
                     sync_conflict: r.sync_conflict,
                 })
             })
@@ -596,6 +616,9 @@ pub struct CartLineDto {
     /// E11-T04: set when the cart holds more of this item than is in stock: what is on hand
     /// (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
     pub only_in_stock_milli: Option<String>,
+    /// BAR-009: `"weight"` or `"price"` when the line came from a scale label (its quantity
+    /// cannot be changed).
+    pub scale_label: Option<String>,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -698,6 +721,13 @@ impl CartViewDto {
                     quantity_milli: qty(l.quantity),
                     unit_price_minor: money(l.price_override.unwrap_or(l.variant.price)),
                     price_overridden: l.price_override.is_some(),
+                    scale_label: l.label.map(|x| {
+                        match x {
+                            pos_domain::cart::CartLabel::Weight => "weight",
+                            pos_domain::cart::CartLabel::Price { .. } => "price",
+                        }
+                        .to_owned()
+                    }),
                     line_discount: l.line_discount.as_ref().map(DiscountDto::from_domain),
                     gross_minor: money(p.gross),
                     discount_minor: money(discount),
@@ -755,13 +785,30 @@ pub enum AddViaDto {
 #[serde(tag = "outcome", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ScanOutcomeDto {
     /// A new line.
-    Added { cart: CartViewDto, line_id: CartLineId },
+    Added {
+        cart: CartViewDto,
+        line_id: CartLineId,
+        hint: Option<String>,
+    },
     /// An existing line's quantity went up (BAR-005).
-    Incremented { cart: CartViewDto, line_id: CartLineId },
+    Incremented {
+        cart: CartViewDto,
+        line_id: CartLineId,
+        hint: Option<String>,
+    },
     /// This delivery was already processed; the cart is unchanged.
     Duplicate { cart: CartViewDto },
-    /// Nothing matches. The cart is unchanged (BAR-006).
-    NotFound { code: String },
+    /// Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
+    /// problem: `keyboard_layout:<layout>` or `check_digit`.
+    NotFound { code: String, hint: Option<String> },
+}
+
+/// The scan hint as the UI receives it.
+pub fn scan_hint(h: &Option<pos_application::scan::ScanHint>) -> Option<String> {
+    h.as_ref().map(|h| match h {
+        pos_application::scan::ScanHint::KeyboardLayout(l) => format!("keyboard_layout:{l}"),
+        pos_application::scan::ScanHint::CheckDigitFailed => "check_digit".to_owned(),
+    })
 }
 
 // ---------- checkout ----------
@@ -804,6 +851,9 @@ pub struct CompletedSaleDto {
     pub negative_stock_items: u32,
     /// Print the receipt right away (`receipt.auto_print`).
     pub auto_print: bool,
+    /// The cash drawer after the sale: `opened`, `none` (not needed or no drawer) or
+    /// `failed: <why>` (the sale is complete either way).
+    pub drawer: String,
 }
 
 impl CompletedSaleDto {
@@ -820,6 +870,7 @@ impl CompletedSaleDto {
             sync_pending: c.outbox_sequence > 0,
             negative_stock_items: u32::try_from(c.negative_stock.len()).unwrap_or(u32::MAX),
             auto_print: c.auto_print,
+            drawer: "none".into(),
         }
     }
 }
@@ -842,6 +893,8 @@ pub struct ReceiptDto {
 pub struct ReceiptLineDto {
     pub text: String,
     pub bold: bool,
+    /// The receipt number, printed as a scannable barcode where the printer can.
+    pub barcode: bool,
 }
 
 impl ReceiptDto {
@@ -855,6 +908,7 @@ impl ReceiptDto {
                 .map(|l| ReceiptLineDto {
                     text: l.text.clone(),
                     bold: l.style == pos_receipts::text::Style::Bold,
+                    barcode: l.style == pos_receipts::text::Style::Barcode,
                 })
                 .collect(),
             sandbox: r.document.sandbox,
@@ -1003,6 +1057,15 @@ impl ReturnPlanDto {
                 .collect(),
         }
     }
+}
+
+/// An exchange's two records.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletedExchangeDto {
+    #[serde(rename = "return")]
+    pub ret: CompletedReturnDto,
+    pub sale: CompletedSaleDto,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -1837,6 +1900,67 @@ impl StockHistoryDto {
     }
 }
 
+/// A posted stock document, opened from a history row or an audit entry.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockDocumentDto {
+    pub document_id: pos_domain::InventoryDocumentId,
+    pub document_no: String,
+    /// `opening`, `receipt`, `adjustment` or `write_off`.
+    pub doc_type: String,
+    pub reason: Option<String>,
+    pub supplier_name: Option<String>,
+    pub reference: Option<String>,
+    pub note: Option<String>,
+    pub local_time: String,
+    pub actor_name: String,
+    pub approver_name: Option<String>,
+    pub lines: Vec<StockDocumentLineDto>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StockDocumentLineDto {
+    pub variant_id: VariantId,
+    pub name: String,
+    pub sku: Option<String>,
+    pub movement_type: String,
+    /// `sellable` or `damaged`.
+    pub bucket: String,
+    pub delta_milli: String,
+    pub unit_cost_minor: Option<String>,
+}
+
+impl StockDocumentDto {
+    pub fn from_view(d: pos_application::records::StockDocumentView) -> Self {
+        Self {
+            document_id: d.document_id,
+            document_no: d.document_no,
+            doc_type: d.doc_type,
+            reason: d.reason,
+            supplier_name: d.supplier_name,
+            reference: d.reference,
+            note: d.note,
+            local_time: d.local_time,
+            actor_name: d.actor_name,
+            approver_name: d.approver_name,
+            lines: d
+                .lines
+                .into_iter()
+                .map(|l| StockDocumentLineDto {
+                    variant_id: l.variant_id,
+                    name: l.name,
+                    sku: l.sku,
+                    movement_type: l.movement_type,
+                    bucket: l.bucket,
+                    delta_milli: qty(l.delta),
+                    unit_cost_minor: l.unit_cost.map(money),
+                })
+                .collect(),
+        }
+    }
+}
+
 // ---------- audit viewer (E15-T01) ----------
 
 #[derive(Debug, Default, Deserialize, Type)]
@@ -1991,6 +2115,8 @@ pub struct PreferencesDto {
     pub scanner_max_key_gap_ms: u32,
     /// 0: never lock.
     pub lock_timeout_secs: u32,
+    /// Beep with a not-found or refusal message (E07-T04).
+    pub error_sound: bool,
 }
 
 // ---------- categories and tax configuration (E06-T05) ----------
@@ -2104,6 +2230,8 @@ pub struct BusinessProfileDto {
     pub prices_include_tax: bool,
     pub business_version: u32,
     pub register_version: u32,
+    /// A logo is set (SET-001); `business_logo_get` returns it.
+    pub has_logo: bool,
 }
 
 impl BusinessProfileDto {
@@ -2124,6 +2252,7 @@ impl BusinessProfileDto {
             prices_include_tax: b.prices_include_tax,
             business_version: version_out(b.version)?,
             register_version: version_out(v.register.version)?,
+            has_logo: b.logo_path.is_some(),
         })
     }
 }
@@ -2278,6 +2407,14 @@ impl ImportSummaryDto {
                 .collect(),
         }
     }
+}
+
+/// A commit's progress: rows written of rows to write.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgressDto {
+    pub rows_done: u32,
+    pub rows_total: u32,
 }
 
 #[derive(Debug, Serialize, Type)]

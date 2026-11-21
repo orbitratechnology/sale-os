@@ -494,3 +494,90 @@ async fn price_overrides_and_voids_go_through_approval_for_a_cashier() {
     .await;
     assert_eq!(voids, 1);
 }
+
+/// E07-T04 (BAR-006): a cashier creates a product for an unknown barcode only with a
+/// manager's approval for that very barcode; the product must carry it, and the audit entry
+/// names the approver. Managers need no approval.
+#[tokio::test]
+async fn a_cashier_creates_a_product_for_an_unknown_barcode_with_a_manager_approval() {
+    use pos_domain::catalog::BarcodeInput;
+    let t = till().await;
+    let catalog = CatalogService {
+        store: Arc::new(t.shop.store.clone()),
+        catalog: Arc::new(t.shop.store.clone()),
+    };
+    let input = |code: &str| {
+        let mut v = VariantInput::simple(Money::from_minor(250));
+        v.barcodes = vec![BarcodeInput::alias(code)];
+        ProductInput {
+            name: format!("Item {code}"),
+            description: None,
+            category_id: None,
+            product_type: ProductType::Stock,
+            unit: Unit::Ea,
+            tax_category_id: t.shop.tax_category,
+            quick_select: false,
+            variants: vec![v],
+        }
+    };
+    let code = "5012345678900";
+    let asked = catalog
+        .create_from_scan(&t.cashier, input(code), code)
+        .await
+        .unwrap_err();
+    let AppError::ApprovalRequired(scope) = asked else {
+        panic!("{asked:?}")
+    };
+    assert_eq!(
+        (scope.permission, scope.entity_id.as_str()),
+        (Permission::BarcodeCreateFromScan, code)
+    );
+    // An approval for another barcode does not cover this one.
+    let other = approve(
+        &t,
+        ApprovalScope {
+            permission: Permission::BarcodeCreateFromScan,
+            entity_id: "4006381333931".into(),
+            max_ppm: None,
+        },
+    )
+    .await;
+    let refused = catalog
+        .create_from_scan(&with(&t.cashier, other), input(code), code)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.error_code(), ErrorCode::ApprovalInvalid);
+    let token = approve(&t, scope).await;
+    // The product must carry the scanned barcode.
+    let missing = catalog
+        .create_from_scan(&with(&t.cashier, token.clone()), input("4006381333931"), code)
+        .await
+        .unwrap_err();
+    assert_eq!(missing.error_code(), ErrorCode::ValidationFailed);
+    let created = catalog
+        .create_from_scan(&with(&t.cashier, token), input(code), code)
+        .await
+        .unwrap();
+    let approved = count(
+        &t,
+        &format!(
+            "SELECT count(*) FROM audit_events WHERE action = 'catalog.product_created'
+               AND entity_id = '{}' AND approver_user_id = '{}'",
+            created.id, t.manager
+        ),
+    )
+    .await;
+    assert_eq!(approved, 1);
+    // A manager needs none.
+    let mut manager = t.cashier.clone();
+    manager.actor = Some(Actor {
+        user_id: t.manager,
+        role: Role::Manager,
+        session_id: SessionId::generate(&UuidV7Generator),
+    });
+    let code2 = "4006381333931";
+    catalog
+        .create_from_scan(&manager, input(code2), code2)
+        .await
+        .unwrap();
+}

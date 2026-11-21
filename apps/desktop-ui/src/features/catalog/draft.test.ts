@@ -91,7 +91,7 @@ describe("draft → IPC input", () => {
         archived: false,
         version: 3,
         variants: [
-          { variantId: "v1", isDefault: true, sku: "T-S", options: { size: "S" }, priceMinor: "1500", costMinor: null, trackStock: true, lowStockThresholdMilli: null, scanQtyMilli: "1000", barcodes: [{ value: "x", raw: "CASE6", symbology: "code128", qualifier: "pack", packQtyMilli: "6000" }], archived: false },
+          { variantId: "v1", isDefault: true, sku: "T-S", options: { size: "S" }, priceMinor: "1500", costMinor: "820", trackStock: true, lowStockThresholdMilli: null, scanQtyMilli: "1000", barcodes: [{ value: "x", raw: "CASE6", symbology: "code128", qualifier: "pack", packQtyMilli: "6000" }], archived: false },
           { variantId: "v2", isDefault: false, sku: "T-M", options: { size: "M" }, priceMinor: "1600", costMinor: null, trackStock: true, lowStockThresholdMilli: "5000", scanQtyMilli: "1000", barcodes: [], archived: false },
         ],
       },
@@ -104,9 +104,22 @@ describe("draft → IPC input", () => {
     ]);
     const input = toInput(d, 2);
     if (isProblem(input)) throw new Error(input.message);
-    expect(input.variants.map((v) => [v.variantId, v.priceMinor])).toEqual([
-      ["v1", "1500"],
-      ["v2", "1600"],
+    // CAT-002: a stored cost is kept through an edit; none stays none.
+    expect(input.variants.map((v) => [v.variantId, v.priceMinor, v.costMinor])).toEqual([
+      ["v1", "1500", "820"],
+      ["v2", "1600", null],
     ]);
+  });
+
+  it("takes an optional cost, cleared by emptying it, and names a bad one", () => {
+    const base = blankDraft("t");
+    const draft = (cost: string) => ({ ...base, name: "Mug", variants: [{ ...at(base.variants), price: "4.50", cost }] });
+    const priced = toInput(draft("2.1"), 2);
+    if (isProblem(priced)) throw new Error(priced.message);
+    expect(at(priced.variants).costMinor).toBe("210");
+    const none = toInput(draft("  "), 2);
+    if (isProblem(none)) throw new Error(none.message);
+    expect(at(none.variants).costMinor).toBeNull();
+    expect(toInput(draft("abc"), 2)).toMatchObject({ field: "cost", variant: 0 });
   });
 });

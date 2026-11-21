@@ -34,8 +34,14 @@ async fn another_register_pulls_the_day_in_pages_and_resumes_from_its_cursor() {
     let mut seen = Vec::new();
     let mut pages = 0;
     loop {
+        // The first pull names no cursor, as a register's does.
+        let after = if cursor.is_empty() {
+            String::new()
+        } else {
+            format!("&cursor={cursor}")
+        };
         let (code, page) =
-            get::<ChangesResponse>(&s, &two, &format!("/v1/sync/changes?limit=10&cursor={cursor}")).await;
+            get::<ChangesResponse>(&s, &two, &format!("/v1/sync/changes?limit=10{after}")).await;
         assert_eq!(code, StatusCode::OK);
         let page = page.unwrap();
         pages += 1;
@@ -45,9 +51,9 @@ async fn another_register_pulls_the_day_in_pages_and_resumes_from_its_cursor() {
             break;
         }
     }
-    // 22 master changes (business, location, register, staff, a rate, a category, 12
+    // 27 master changes (business, location, register, staff, a rate, a category, 17
     // settings, 4 products) and 19 facts; the audit-free day has nothing else.
-    assert_eq!(seen.len(), 41);
+    assert_eq!(seen.len(), 46);
     assert_eq!(pages, 5);
     let seqs: Vec<i64> = seen.iter().map(|c| c.server_seq).collect();
     assert!(seqs.windows(2).all(|w| w[0] < w[1]), "in feed order: {seqs:?}");
@@ -94,8 +100,8 @@ async fn a_bootstrap_pages_through_every_aggregate_and_resumes_from_a_token() {
         token = page.next_page;
     }
     // Business, location, register 1 (register 2 has no snapshot yet), a rate, a category,
-    // 12 settings, the owner and 4 products; references first.
-    assert_eq!(entities.len(), 22);
+    // 17 settings, the owner and 4 products; references first.
+    assert_eq!(entities.len(), 27);
     let types: Vec<&str> = entities.iter().map(|e| e.aggregate_type.as_str()).collect();
     assert_eq!(&types[..3], ["business", "location", "register"]);
     assert_eq!(*types.last().unwrap(), "product");
@@ -103,7 +109,7 @@ async fn a_bootstrap_pages_through_every_aggregate_and_resumes_from_a_token() {
         .iter()
         .map(|e| (e.aggregate_type.as_str(), e.aggregate_id.as_str()))
         .collect();
-    assert_eq!(ids.len(), 22, "no aggregate twice");
+    assert_eq!(ids.len(), 27, "no aggregate twice");
     for e in &entities {
         assert!(e.version >= 1);
         pos_sync::parse_payload(&e.event_type, e.schema_version, &e.snapshot).unwrap();
@@ -264,4 +270,52 @@ async fn bench_serving_a_fifty_thousand_product_bootstrap() {
         started.elapsed()
     );
     assert!(entities >= 50_000);
+}
+
+/// E19-T03: a register gets its own pushed events back in order, with their aggregates and
+/// outcomes, in pages; another register of the business never sees them.
+#[tokio::test]
+async fn a_register_gets_its_own_events_back_for_a_restore() {
+    let Some(s) = state_with(fact_appliers()).await else {
+        return;
+    };
+    let one = tenant(&s, "Replay").await;
+    let two = second_register(&s, &one).await;
+    let day = end_of_day(&one);
+    push(&s, &one, &day).await;
+    let (code, page) = get::<pos_sync::pull::ReplayPage>(&s, &one, "/v1/sync/replay?after=0&limit=10").await;
+    assert_eq!(code, StatusCode::OK);
+    let page = page.unwrap();
+    assert!(page.has_more);
+    assert_eq!(page.ack_sequence, day.len() as u64);
+    let seqs: Vec<u64> = page.events.iter().map(|e| e.local_sequence).collect();
+    assert_eq!(seqs, (1..=10).collect::<Vec<_>>());
+    for (got, sent) in page.events.iter().zip(&day) {
+        assert_eq!(
+            (
+                got.event_id,
+                &got.event_type,
+                &got.aggregate_type,
+                &got.aggregate_id,
+                &got.payload
+            ),
+            (
+                sent.event_id,
+                &sent.event_type,
+                &sent.aggregate_type,
+                &sent.aggregate_id,
+                &sent.payload
+            )
+        );
+        assert_eq!(got.status, "applied");
+    }
+    let (_, rest) = get::<pos_sync::pull::ReplayPage>(&s, &one, "/v1/sync/replay?after=10&limit=500").await;
+    let rest = rest.unwrap();
+    assert!(!rest.has_more);
+    assert_eq!(rest.events.len(), day.len() - 10);
+    let (_, other) = get::<pos_sync::pull::ReplayPage>(&s, &two, "/v1/sync/replay?after=0").await;
+    assert!(
+        other.unwrap().events.is_empty(),
+        "never another register's events"
+    );
 }

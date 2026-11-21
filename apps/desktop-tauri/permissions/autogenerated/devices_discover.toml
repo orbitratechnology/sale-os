@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-devices-discover"
+description = "Enables the devices_discover command without any pre-configured scope."
+commands.allow = ["devices_discover"]
+
+[[permission]]
+identifier = "deny-devices-discover"
+description = "Denies the devices_discover command without any pre-configured scope."
+commands.deny = ["devices_discover"]

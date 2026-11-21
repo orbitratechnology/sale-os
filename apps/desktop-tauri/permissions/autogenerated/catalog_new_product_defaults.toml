@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-new-product-defaults"
+description = "Enables the catalog_new_product_defaults command without any pre-configured scope."
+commands.allow = ["catalog_new_product_defaults"]
+
+[[permission]]
+identifier = "deny-catalog-new-product-defaults"
+description = "Denies the catalog_new_product_defaults command without any pre-configured scope."
+commands.deny = ["catalog_new_product_defaults"]

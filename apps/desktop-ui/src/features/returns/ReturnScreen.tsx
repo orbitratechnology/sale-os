@@ -1,3 +1,4 @@
+import { ArrowLeft, ArrowRightLeft, Undo2 } from "../../ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { commands, type ApprovalScope, type IpcError, type Session, type Workspace } from "../../ipc";
 import type {
@@ -15,6 +16,7 @@ import { ApprovalDialog } from "../auth/ApprovalDialog";
 import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
+import type { ExchangeCredit } from "./exchange";
 
 const REASONS: { value: ReturnReason; label: string }[] = [
   { value: "changed_mind", label: "Changed mind" },
@@ -48,12 +50,18 @@ export function ReturnScreen({
   session,
   initialReceipt,
   onBack,
+  onExchange,
 }: {
   workspace: Workspace;
   session: Session;
   /** From a sale's detail: look this receipt up straight away. */
   initialReceipt?: string;
   onBack: () => void;
+  /**
+   * "Exchange for other items": take the chosen lines to the till as credit for new items.
+   * Nothing is recorded here; the till records the return and the new sale together.
+   */
+  onExchange?: (credit: ExchangeCredit) => void;
 }) {
   const [number, setNumber] = useState(initialReceipt ?? "");
   const [sale, setSale] = useState<ReturnableSaleDto | null>(null);
@@ -181,6 +189,26 @@ export function ReturnScreen({
     setError(res.error);
   }
 
+  function exchange() {
+    if (!sale || !lines || !plan || !onExchange) return;
+    const items = lines
+      .map((x) => {
+        const l = sale.lines.find((y) => y.saleLineId === x.saleLineId);
+        const name = l ? (l.label ? `${l.name} ${l.label}` : l.name) : "?";
+        return `${name} ×${formatMilli(x.quantityMilli)}`;
+      })
+      .join(", ");
+    onExchange({
+      saleId: sale.saleId,
+      receiptNumber: sale.receiptNumber,
+      lines,
+      reason,
+      note: note.trim() || null,
+      creditMinor: plan.totalMinor,
+      items,
+    });
+  }
+
   const setPick = (id: string, change: Partial<Pick>) => {
     setError(null);
     setPicks((all) => ({ ...all, [id]: { ...(all[id] ?? { qty: "", disposition: "restock" }), ...change } }));
@@ -211,6 +239,7 @@ export function ReturnScreen({
               Another return
             </button>
             <button type="button" onClick={onBack} autoFocus>
+              <ArrowLeft />
               Back to till <kbd>Enter</kbd>
             </button>
           </div>
@@ -222,8 +251,12 @@ export function ReturnScreen({
   return (
     <main className="returns">
       <header className="returns-header">
-        <h1>Returns</h1>
+        <h1 className="page-title">
+          <Undo2 />
+          Returns
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>
@@ -383,6 +416,12 @@ export function ReturnScreen({
             <button type="button" className="secondary" onClick={reset}>
               Different sale
             </button>
+            {onExchange && (
+              <button type="button" className="secondary" disabled={!plan || busy} onClick={exchange}>
+                <ArrowRightLeft />
+                Exchange for other items
+              </button>
+            )}
             <button type="submit" className="pay" disabled={!plan || busy}>
               {plan ? `Refund ${money(plan.totalMinor)}` : "Refund"}
             </button>

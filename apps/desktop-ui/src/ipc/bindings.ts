@@ -65,6 +65,11 @@ export const commands = {
 	 */
 	authLock: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("auth_lock")),
 	taxList: () => typedError<TaxCategoryDto[], IpcError_Serialize>(__TAURI_INVOKE("tax_list")),
+	/**
+	 *  What a new product starts as (settings `catalog.default_unit` and
+	 *  `catalog.default_track_stock`), for the editor's blank product. Anyone who sees the catalogue.
+	 */
+	catalogNewProductDefaults: () => typedError<NewProductDefaultsDto, IpcError_Serialize>(__TAURI_INVOKE("catalog_new_product_defaults")),
 	/**  Every category, archived ones included (flagged). */
 	categoriesList: () => typedError<CategoryDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("categories_list")),
 	/**  Creates (`categoryId: null`) or renames / moves a category; at most 3 levels, no cycles. */
@@ -93,6 +98,16 @@ export const commands = {
 	 */
 	businessProfileUpdate: (input: BusinessProfileInputDto_Deserialize, businessVersion: number, registerVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_profile_update", { input, businessVersion, registerVersion })),
 	/**
+	 *  Asks for a PNG or JPEG (the dialog opens from Rust), shrinks it to at most 512 px and
+	 *  keeps it as `logo.png` in app data, then records it on the business. `null` when the
+	 *  owner cancels. Receipts saved as PDF show it at the top.
+	 */
+	businessLogoChoose: (businessVersion: number) => typedError<BusinessProfileDto_Serialize | null, IpcError_Serialize>(__TAURI_INVOKE("business_logo_choose", { businessVersion })),
+	/**  Removes the logo from the business and from app data. */
+	businessLogoClear: (businessVersion: number) => typedError<BusinessProfileDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("business_logo_clear", { businessVersion })),
+	/**  The logo as a `data:image/png;base64,…` URL for the settings preview; `null` when none. */
+	businessLogoGet: () => typedError<string | null, IpcError_Serialize>(__TAURI_INVOKE("business_logo_get")),
+	/**
 	 *  Asks for a CSV file, reads it and stages it as an import job. `null` when the user
 	 *  cancels the dialog. The catalogue does not change.
 	 */
@@ -104,6 +119,11 @@ export const commands = {
 	 *  again: rows already committed are not imported twice.
 	 */
 	importProductsCommit: (jobId: ImportJobId) => typedError<ImportCommitDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_commit", { jobId })),
+	/**
+	 *  How far a running commit has got, for its progress bar. The screen asks every few hundred
+	 *  milliseconds while `import_products_commit` runs.
+	 */
+	importProductsProgress: (jobId: ImportJobId) => typedError<ImportProgressDto, IpcError_Serialize>(__TAURI_INVOKE("import_products_progress", { jobId })),
 	/**  Saves the rows that were not imported (with an `error` column) where the user chooses. */
 	importProductsErrorReport: (jobId: ImportJobId) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("import_products_error_report", { jobId })),
 	/**  Abandons an import that has not started committing. */
@@ -112,6 +132,12 @@ export const commands = {
 	productList: (filter: ProductFilterDto_Deserialize, offset: number, limit: number) => typedError<ProductPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_list", { filter, offset, limit })),
 	productGet: (productId: ProductId) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_get", { productId })),
 	productCreate: (product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create", { product })),
+	/**
+	 *  E07-T04: a product for a barcode the till did not know, created from the "not found"
+	 *  prompt. A cashier needs a manager's approval for that barcode (`approvalTokenId`); the
+	 *  product must carry `barcode`.
+	 */
+	productCreateFromScan: (product: ProductInputDto_Deserialize, barcode: string, approvalTokenId: ApprovalId | null) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_create_from_scan", { product, barcode, approvalTokenId })),
 	/**  `baseVersion` is the version the edit started from; a stale edit gives `CONFLICT_VERSION`. */
 	productUpdate: (productId: ProductId, baseVersion: number, product: ProductInputDto_Deserialize) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_update", { productId, baseVersion, product })),
 	productArchive: (productId: ProductId, baseVersion: number) => typedError<ProductDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("product_archive", { productId, baseVersion })),
@@ -119,12 +145,29 @@ export const commands = {
 	catalogLookupCode: (code: string) => typedError<CatalogHitDto_Serialize | null, IpcError_Serialize>(__TAURI_INVOKE("catalog_lookup_code", { code })),
 	catalogSearch: (query: string, limit: number) => typedError<CatalogHitDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("catalog_search", { query, limit })),
 	/**
+	 *  Products flagged for quick-select, by name, `limit` (at most 48) per page; `categoryId`
+	 *  narrows to one tab.
+	 */
+	catalogQuickSelect: (categoryId: CategoryId | null, offset: number, limit: number) => typedError<QuickSelectPageDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("catalog_quick_select", { categoryId, offset, limit })),
+	/**
 	 *  Every barcode delivery and every typed code (E07-T02). `scanEventId` is minted by the UI
 	 *  per delivery: a repeated delivery is reported as `duplicate` and changes nothing.
 	 */
 	scanSubmit: (scanEventId: ScanEventId, raw: string, source: ScanSourceDto) => typedError<ScanOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scan_submit", { scanEventId, raw, source })),
 	/**  The open cart, priced (also after a restart: POS-011). */
 	cartCurrent: () => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_current")),
+	/**
+	 *  After sign-in: the cart the app was closed with, until it is resumed or discarded.
+	 *  `null` when there is nothing to offer (asked again later, it stays `null`).
+	 */
+	cartRecovery: () => typedError<RecoveredCartDto | null, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery")),
+	/**  Resume: the recovered cart, priced as items sell now, with changed prices marked. */
+	cartRecoveryResume: () => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery_resume")),
+	/**
+	 *  Discard: empties the recovered cart (needs the right to clear a cart), audited as
+	 *  `cart.recovery_discarded`. `revision` is the one the prompt showed.
+	 */
+	cartRecoveryDiscard: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery_discard", { revision })),
 	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
 	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
 	/**  Zero is refused: use `cart_remove_line`. */
@@ -147,10 +190,26 @@ export const commands = {
 	 */
 	cartVoid: (revision: number, reason: string, approvalTokenId: ApprovalId | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_void", { revision, reason, approvalTokenId })),
 	/**
+	 *  POS-012: sets the cart aside (with an optional label, at most 40 characters) and returns
+	 *  a fresh empty one. An empty cart cannot be parked; at most 20 per register.
+	 */
+	cartPark: (revision: number, label: string | null) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_park", { revision, label })),
+	/**  POS-012: the parked carts on this register, oldest first, priced as they sell today. */
+	cartParkedList: () => typedError<ParkedCartDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("cart_parked_list")),
+	/**  POS-012: makes a parked cart the current one. The current cart must be empty. */
+	cartResume: (cartId: CartId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_resume", { cartId })),
+	/**
+	 *  POS-012: voids a parked cart without resuming it, with a reason; a cashier needs a
+	 *  manager's approval (as for voiding a sale). Returns the parked carts left.
+	 */
+	cartDiscardParked: (cartId: CartId, reason: string, approvalTokenId: ApprovalId | null) => typedError<ParkedCartDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("cart_discard_parked", { cartId, reason, approvalTokenId })),
+	/**
 	 *  Completes the sale (E09-T08): one transaction for the receipt number, sale, tenders,
 	 *  stock and audit, then a fresh cart. The UI shows "completed" only when this returns.
+	 *  `terminal`: approved card-terminal payments to include (E22-T02). Afterwards the cash
+	 *  drawer opens when cash was taken and `drawer.open_on_cash_sale` is on (E20-T05).
 	 */
-	checkoutComplete: (cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedSaleDto, IpcError_Serialize>(__TAURI_INVOKE("checkout_complete", { cartId, revision, tenders })),
+	checkoutComplete: (cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[], terminal: TerminalTenderDto[] | null) => typedError<CompletedSaleDto, IpcError_Serialize>(__TAURI_INVOKE("checkout_complete", { cartId, revision, tenders, terminal })),
 	/**
 	 *  A sale's receipt as stored at completion, rendered for 58 or 80 mm paper (E13-T03).
 	 *  `saleId: null` is the last sale on this till. `widthMm: null` uses the setting.
@@ -182,6 +241,24 @@ export const commands = {
 	 *  carries the scope) unless the shop turned that off.
 	 */
 	returnCreate: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null) => typedError<CompletedReturnDto, IpcError_Serialize>(__TAURI_INVOKE("return_create", { saleId, lines, reason, note, refunds, approvalTokenId })),
+	/**
+	 *  An exchange: the return and the sale of the current cart in one transaction. The
+	 *  returned value pays for the cart (recorded as a cash refund and a cash payment of the same
+	 *  amount); `tenders` is what the customer pays on top, `refunds` what of the returned value
+	 *  is paid back other than as change. Same approval rule as a return.
+	 */
+	exchangeComplete: (saleId: SaleId, lines: ReturnLineInputDto[], reason: ReturnReason, note: string | null, refunds: TenderInputDto_Deserialize[], approvalTokenId: ApprovalId | null, cartId: CartId, revision: number, tenders: TenderInputDto_Deserialize[]) => typedError<CompletedExchangeDto, IpcError_Serialize>(__TAURI_INVOKE("exchange_complete", { saleId, lines, reason, note, refunds, approvalTokenId, cartId, revision, tenders })),
+	/**
+	 *  D-02: issues the VAT tax invoice of a sale for a registered buyer (TIN, name, address as
+	 *  on their certificate). One per sale; numbered `YYMMM_<register>_XXXXX`.
+	 */
+	taxInvoiceIssue: (saleId: SaleId, purchaserTin: string, purchaserName: string, purchaserAddress: string[]) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_issue", { saleId, purchaserTin, purchaserName, purchaserAddress })),
+	/**  A sale's tax invoice as issued, for 58 or 80 mm paper; `null` if none was issued. */
+	taxInvoiceGet: (saleId: SaleId, widthMm: number | null) => typedError<ReceiptDto | null, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_get", { saleId, widthMm })),
+	/**  Prints a sale's tax invoice; later copies are marked as copies. */
+	taxInvoicePrint: (saleId: SaleId) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_print", { saleId })),
+	/**  Saves a sale's tax invoice as a PDF (receipt width or A4) where the user chooses. */
+	taxInvoiceExportPdf: (saleId: SaleId, paper: PdfPaperDto) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("tax_invoice_export_pdf", { saleId, paper })),
 	/**  A return's refund receipt as stored, rendered for 58 or 80 mm paper. */
 	returnReceiptGet: (returnId: ReturnId, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("return_receipt_get", { returnId, widthMm })),
 	/**  Prints a return's refund receipt (later copies are reprints). */
@@ -215,6 +292,8 @@ export const commands = {
 	stockOverview: (lowOnly: boolean) => typedError<StockReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("stock_overview", { lowOnly })),
 	/**  E11-T05: one item's stock movements, newest first, with what caused each. */
 	stockHistory: (variantId: VariantId, limit: number) => typedError<StockHistoryDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_history", { variantId, limit })),
+	/**  One posted stock document (goods received, adjustment, write-off, opening stock). */
+	stockDocumentGet: (documentId: InventoryDocumentId) => typedError<StockDocumentDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("stock_document_get", { documentId })),
 	/**
 	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
 	 *  transaction, audited. Returns what was wrong before.
@@ -234,6 +313,47 @@ export const commands = {
 	 *  `SYNC_NOT_LINKED` before this register is linked.
 	 */
 	reportsCloudSales: (range: DateRangeDto, groupBy: CloudGroupByDto) => typedError<CloudSalesReportDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("reports_cloud_sales", { range, groupBy })),
+	/**  The backups on this computer and in the second folder, newest first. */
+	backupStatus: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_status")),
+	/**  Makes a backup now (and its second copy), audited as `backup.created`. */
+	backupNow: () => typedError<BackupDto, IpcError_Serialize>(__TAURI_INVOKE("backup_now")),
+	/**  Asks for the second folder in the system dialog; cancelling changes nothing. */
+	backupChooseFolder: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_choose_folder")),
+	/**  Stops copying backups to a second folder. */
+	backupClearFolder: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_clear_folder")),
+	/**  A full `integrity_check` of one backup. */
+	backupVerify: (backupId: string) => typedError<BackupCheckDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("backup_verify", { backupId })),
+	/**
+	 *  Restores a backup, then restarts the app. The database it replaces is kept as a
+	 *  `pre_restore` backup. On a register that is not linked, sales made after the backup are
+	 *  lost: `confirm_loss` must say the owner saw that. A linked register gets them back from the
+	 *  cloud after the restart, so the cloud must be reachable now and the backup must be from this
+	 *  same link.
+	 */
+	backupRestore: (backupId: string, confirmLoss: boolean) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("backup_restore", { backupId, confirmLoss })),
+	/**
+	 *  E19-T04: every table of this till's database as CSV in one ZIP, with a manifest, saved where
+	 *  the owner chooses in the system dialog (null: cancelled; nothing written or audited). PIN
+	 *  hashes are left out. Audited `data.exported` with the file's name.
+	 */
+	dataExportFull: () => typedError<DataExportDto | null, IpcError_Serialize>(__TAURI_INVOKE("data_export_full")),
+	/**
+	 *  ADR-023: the database recovery key, for the owner to write down (audited
+	 *  `security.recovery_key_viewed`; the key itself is never recorded). Without it, a backup
+	 *  cannot be read on another computer.
+	 */
+	securityRecoveryKey: () => typedError<string, IpcError_Serialize>(__TAURI_INVOKE("security_recovery_key")),
+	/**  The owner wrote the recovery key down: the Backups page stops asking. */
+	securityRecoveryKeyConfirmed: () => typedError<BackupStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("security_recovery_key_confirmed")),
+	/**
+	 *  ADR-023: when the database is encrypted and this computer has no key for it (a new Windows
+	 *  account, a reinstalled PC, a backup copied from another till), the owner types the recovery
+	 *  key. It is checked against the database, kept in the keychain, and the app restarts. Needs
+	 *  no session (nobody can sign in to a locked database); refused when the database is open.
+	 */
+	dbUnlock: (recoveryKey: string) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("db_unlock", { recoveryKey })),
+	/**  Saves the bundle where the user chooses (null: cancelled; nothing written). */
+	diagnosticsExport: () => typedError<DiagnosticsDto | null, IpcError_Serialize>(__TAURI_INVOKE("diagnostics_export")),
 	/**
 	 *  Exports a dataset as CSV (RFC 4180, UTF-8 with BOM). Rust asks where to save it with
 	 *  the system dialog and writes the file (the WebView never names a path), then audits it
@@ -287,6 +407,38 @@ export const commands = {
 	 *  product) or `move` (to this product, from the one holding it).
 	 */
 	syncConflictResolve: (conflictId: string, choices: FieldChoiceDto_Deserialize[], identifiers: string | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_conflict_resolve", { conflictId, choices, identifiers })),
+	/**  Devices attached to this till (DeviceConfigure). */
+	devicesList: () => typedError<DeviceDto[], IpcError_Serialize>(__TAURI_INVOKE("devices_list")),
+	/**  Adds or changes a device; a printer is used from the next print, a scanner restarts. */
+	deviceSave: (input: DeviceInputDto_Deserialize) => typedError<DeviceDto, IpcError_Serialize>(__TAURI_INVOKE("device_save", { input })),
+	deviceRemove: (deviceId: DeviceId) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("device_remove", { deviceId })),
+	/**  The receipt printer's live state (any signed-in user: the status bar). */
+	printerStatus: () => typedError<PrinterStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("printer_status")),
+	/**  Prints a test page on the current printer: ruler, character set, barcode, cut. */
+	printerTest: () => typedError<TestPrintDto, IpcError_Serialize>(__TAURI_INVOKE("printer_test")),
+	/**  Printer models the till knows (Settings → Devices model picker). */
+	printerProfiles: () => typedError<PrinterProfileDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("printer_profiles")),
+	/**
+	 *  Finds printers and scanners: serial/USB ports with vendor hints, device files, printer
+	 *  queues, and, when `subnet` is given (a /24 or smaller), network printers on `port`.
+	 */
+	devicesDiscover: (subnet: string | null, port: number | null) => typedError<DiscoveryDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("devices_discover", { subnet, port })),
+	/**  "No sale": opens the cash drawer with a reason. Cashiers need a manager's approval. */
+	drawerOpen: (reason: string, approvalTokenId: ApprovalId | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("drawer_open", { reason, approvalTokenId })),
+	/**  Sends `amountMinor` of the open cart to the terminal. */
+	paymentStart: (cartId: CartId, amountMinor: string) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_start", { cartId, amountMinor })),
+	/**  Asks the terminal again (the UI calls this while the customer pays). */
+	paymentPoll: (attemptId: PaymentAttemptId) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_poll", { attemptId })),
+	paymentCancel: (attemptId: PaymentAttemptId) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_cancel", { attemptId })),
+	/**
+	 *  Settles an attempt whose outcome is unknown, after checking the terminal. A manager's
+	 *  decision: cashiers need an approval.
+	 */
+	paymentResolve: (attemptId: PaymentAttemptId, resolution: ResolutionDto_Deserialize, reason: string, approvalTokenId: ApprovalId | null) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_resolve", { attemptId, resolution, reason, approvalTokenId })),
+	/**  Gives back an approved payment whose sale was never completed (cart voided). */
+	paymentReverse: (attemptId: PaymentAttemptId, reason: string, approvalTokenId: ApprovalId | null) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_reverse", { attemptId, reason, approvalTokenId })),
+	/**  The open cart's card attempts, oldest first (to resume after a restart). */
+	paymentAttempts: (cartId: CartId) => typedError<PaymentAttemptDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("payment_attempts", { cartId })),
 };
 
 /* Types */
@@ -420,6 +572,73 @@ export type AuditRowDto_Serialize = {
 	metadata: string,
 };
 
+export type BackupCheckDto = BackupCheckDto_Serialize | BackupCheckDto_Deserialize;
+
+export type BackupCheckDto_Deserialize = {
+	restorable: boolean,
+	problem?: string | null,
+	tooNew: boolean,
+};
+
+export type BackupCheckDto_Serialize = {
+	restorable: boolean,
+	problem: string | null,
+	tooNew: boolean,
+};
+
+export type BackupDto = {
+	/**  The file name: how the UI names a backup (never a path). */
+	id: string,
+	/**  `hourly`, `daily`, `shutdown`, `pre_migration`, `manual` or `pre_restore`. */
+	kind: string,
+	/**  RFC 3339. */
+	createdAt: string,
+	sizeKb: number,
+	sales: number,
+	/**  Only in the second folder (the copy on this computer was pruned or lost). */
+	secondFolderOnly: boolean,
+};
+
+export type BackupStatusDto = BackupStatusDto_Serialize | BackupStatusDto_Deserialize;
+
+export type BackupStatusDto_Deserialize = {
+	backups: BackupDto[],
+	/**  Where the second copies go, as the system names the folder (shown to the owner). */
+	secondFolder?: string | null,
+	/**  The last copy to it failed with this. */
+	secondFolderProblem?: string | null,
+	/**
+	 *  A linked register gets its sales after the backup back from the cloud; an unlinked one
+	 *  loses them.
+	 */
+	linked: boolean,
+	/**  The database and backups are encrypted (ADR-023). */
+	encrypted: boolean,
+	/**  Why they are not, when they are not. */
+	encryptionProblem?: string | null,
+	/**  The owner confirmed writing the recovery key down. */
+	recoveryKeyConfirmed: boolean,
+};
+
+export type BackupStatusDto_Serialize = {
+	backups: BackupDto[],
+	/**  Where the second copies go, as the system names the folder (shown to the owner). */
+	secondFolder: string | null,
+	/**  The last copy to it failed with this. */
+	secondFolderProblem: string | null,
+	/**
+	 *  A linked register gets its sales after the backup back from the cloud; an unlinked one
+	 *  loses them.
+	 */
+	linked: boolean,
+	/**  The database and backups are encrypted (ADR-023). */
+	encrypted: boolean,
+	/**  Why they are not, when they are not. */
+	encryptionProblem: string | null,
+	/**  The owner confirmed writing the recovery key down. */
+	recoveryKeyConfirmed: boolean,
+};
+
 export type BarcodeDto = {
 	/**  Canonical form, the lookup key. */
 	value: string,
@@ -491,6 +710,8 @@ export type BusinessProfileDto_Deserialize = {
 	pricesIncludeTax: boolean,
 	businessVersion: number,
 	registerVersion: number,
+	/**  A logo is set (SET-001); `business_logo_get` returns it. */
+	hasLogo: boolean,
 };
 
 /**
@@ -512,6 +733,8 @@ export type BusinessProfileDto_Serialize = {
 	pricesIncludeTax: boolean,
 	businessVersion: number,
 	registerVersion: number,
+	/**  A logo is set (SET-001); `business_logo_get` returns it. */
+	hasLogo: boolean,
 };
 
 export type BusinessProfileInputDto = BusinessProfileInputDto_Serialize | BusinessProfileInputDto_Deserialize;
@@ -565,6 +788,11 @@ export type CartLineDto_Deserialize = {
 	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
 	 */
 	onlyInStockMilli?: string | null,
+	/**
+	 *  BAR-009: `"weight"` or `"price"` when the line came from a scale label (its quantity
+	 *  cannot be changed).
+	 */
+	scaleLabel?: string | null,
 };
 
 export type CartLineDto_Serialize = {
@@ -592,6 +820,11 @@ export type CartLineDto_Serialize = {
 	 *  (may be 0 or negative). A hint; selling anyway is the negative-stock policy's call.
 	 */
 	onlyInStockMilli: string | null,
+	/**
+	 *  BAR-009: `"weight"` or `"price"` when the line came from a scale label (its quantity
+	 *  cannot be changed).
+	 */
+	scaleLabel: string | null,
 };
 
 export type CartLineId = string;
@@ -721,6 +954,11 @@ export type CatalogHitDto_Deserialize = {
 	scanQtyMilli: string,
 	/**  `"barcode"`, `"sku"` or `"search"`. */
 	matchedBy: string,
+	/**
+	 *  Search results only (E09-T04): sellable stock on hand at this location, in
+	 *  thousandths, for stock-tracked items; `null` otherwise.
+	 */
+	onHandMilli?: string | null,
 };
 
 export type CatalogHitDto_Serialize = {
@@ -736,6 +974,11 @@ export type CatalogHitDto_Serialize = {
 	scanQtyMilli: string,
 	/**  `"barcode"`, `"sku"` or `"search"`. */
 	matchedBy: string,
+	/**
+	 *  Search results only (E09-T04): sellable stock on hand at this location, in
+	 *  thousandths, for stock-tracked items; `null` otherwise.
+	 */
+	onHandMilli: string | null,
 };
 
 export type CategoryDto = CategoryDto_Serialize | CategoryDto_Deserialize;
@@ -877,6 +1120,12 @@ export type CloudSalesReportDto_Serialize = {
 /**  What a column of the file means. */
 export type Column = "name" | "variant" | "parent_sku" | "sku" | "barcode" | "price" | "cost" | "unit" | "tax_category" | "category" | "track_stock" | "low_stock_threshold" | "scan_quantity" | "status";
 
+/**  An exchange's two records. */
+export type CompletedExchangeDto = {
+	return: CompletedReturnDto,
+	sale: CompletedSaleDto,
+};
+
 export type CompletedReturnDto = {
 	returnId: ReturnId,
 	returnNumber: string,
@@ -903,6 +1152,11 @@ export type CompletedSaleDto = {
 	negativeStockItems: number,
 	/**  Print the receipt right away (`receipt.auto_print`). */
 	autoPrint: boolean,
+	/**
+	 *  The cash drawer after the sale: `opened`, `none` (not needed or no drawer) or
+	 *  `failed: <why>` (the sale is complete either way).
+	 */
+	drawer: string,
 };
 
 export type ConflictDto = ConflictDto_Serialize | ConflictDto_Deserialize;
@@ -994,6 +1248,15 @@ export type CreatedWorkspaceDto = {
 	registerCode: string,
 };
 
+/**  A finished full data export (E19-T04). */
+export type DataExportDto = {
+	/**  Where the owner chose to save it (shown to the owner). */
+	path: string,
+	fileName: string,
+	tables: number,
+	rows: number,
+};
+
 export type DatabaseStatus = DatabaseStatus_Serialize | DatabaseStatus_Deserialize;
 
 export type DatabaseStatus_Deserialize = { state: "ready"; path: string; schemaVersion: number } | { state: "failed"; error: IpcError_Deserialize };
@@ -1011,11 +1274,77 @@ export type DayFiguresDto = {
 	figures: SalesFiguresDto,
 };
 
+export type DeviceDto = {
+	deviceId: DeviceId,
+	/**  `receipt_printer`, `scanner`, `payment_terminal` or `customer_display`. */
+	kind: string,
+	role: string,
+	name: string,
+	/**  The adapter's settings, as JSON text (see `PrinterConfig`, `ScannerConfig`). */
+	configJson: string,
+	enabled: boolean,
+	version: number,
+};
+
+export type DeviceId = string;
+
+export type DeviceInputDto = DeviceInputDto_Serialize | DeviceInputDto_Deserialize;
+
+export type DeviceInputDto_Deserialize = {
+	deviceId?: DeviceId | null,
+	kind: string,
+	role?: string | null,
+	name: string,
+	configJson: string,
+	enabled: boolean,
+	baseVersion?: number | null,
+};
+
+export type DeviceInputDto_Serialize = {
+	deviceId: DeviceId | null,
+	kind: string,
+	role: string | null,
+	name: string,
+	configJson: string,
+	enabled: boolean,
+	baseVersion: number | null,
+};
+
+export type DiagnosticsDto = {
+	/**  Where it was saved (shown to the user). */
+	path: string,
+	fileName: string,
+	files: number,
+	integrityOk: boolean,
+	/**  Stock balances that differ from their movements. */
+	stockDrift: number,
+};
+
 export type DiscountDto = DiscountDto_Serialize | DiscountDto_Deserialize;
 
 export type DiscountDto_Deserialize = { kind: "percent"; ratePpm: number; reason?: string | null } | { kind: "fixed"; amountMinor: string; reason?: string | null };
 
 export type DiscountDto_Serialize = { kind: "percent"; ratePpm: number; reason: string | null } | { kind: "fixed"; amountMinor: string; reason: string | null };
+
+export type DiscoveryDto = DiscoveryDto_Serialize | DiscoveryDto_Deserialize;
+
+export type DiscoveryDto_Deserialize = {
+	serialPorts: SerialCandidate_Deserialize[],
+	deviceFiles: string[],
+	queues: string[],
+	network: NetworkResponder_Deserialize[],
+	/**  Why the network scan did not run, when it did not. */
+	networkProblem?: string | null,
+};
+
+export type DiscoveryDto_Serialize = {
+	serialPorts: SerialCandidate_Serialize[],
+	deviceFiles: string[],
+	queues: string[],
+	network: NetworkResponder_Serialize[],
+	/**  Why the network scan did not run, when it did not. */
+	networkProblem: string | null,
+};
 
 /**  What happens to the returned goods (INV-009). */
 export type Disposition = 
@@ -1076,7 +1405,7 @@ export type DocumentType =
  *  Every error that can reach the UI or the REST API carries exactly one of these codes.
  *  The UI maps codes to actionable copy; `message` strings are for logs only.
  */
-export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "STORE_BUSY" | "STORE_IO" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "SYNC_OFFLINE" | "SYNC_JOIN_NOT_ALLOWED" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
+export type ErrorCode = "SESSION_LOCKED" | "AUTH_PIN_INVALID" | "AUTH_LOCKED_OUT" | "PERMISSION_DENIED" | "APPROVAL_REQUIRED" | "APPROVAL_INVALID" | "VALIDATION_FAILED" | "CARD_DATA_REJECTED" | "CATALOG_DUPLICATE_BARCODE" | "CATALOG_DUPLICATE_SKU" | "CATALOG_NOT_FOUND" | "SCAN_NOT_FOUND" | "SCAN_INVALID" | "CART_REVISION_MISMATCH" | "CART_EMPTY" | "PRICING_DISCOUNT_EXCEEDS" | "TENDER_INSUFFICIENT" | "TENDER_CHANGE_FROM_NON_CASH" | "TENDER_OVERPAY_NON_CASH" | "STOCK_NEGATIVE_BLOCKED" | "RETURN_QTY_EXCEEDS" | "RETURN_REFUND_MISMATCH" | "CASH_SESSION_REQUIRED" | "CASH_SESSION_ALREADY_OPEN" | "PRINT_ADAPTER_UNAVAILABLE" | "PRINT_UNKNOWN_OUTCOME" | "DEVICE_UNAVAILABLE" | "STORE_BUSY" | "STORE_IO" | "STORE_DISK_FULL" | "STORE_CORRUPT" | "STORE_SCHEMA_TOO_NEW" | "STORE_LOCKED" | "SYNC_NOT_LINKED" | "SYNC_DEVICE_REVOKED" | "SYNC_UPGRADE_REQUIRED" | "SYNC_OUT_OF_ORDER" | "AUTH_CREDENTIALS_INVALID" | "AUTH_EMAIL_TAKEN" | "AUTH_RATE_LIMITED" | "AUTH_REQUIRED" | "SYNC_REGISTER_IN_USE" | "SYNC_BUSINESS_ID_TAKEN" | "SYNC_OFFLINE" | "SYNC_REPLAY_PENDING" | "SYNC_JOIN_NOT_ALLOWED" | "NOT_FOUND" | "CONFLICT_VERSION" | "INTERNAL";
 
 /**  Typed `details` (07-contracts §2). Only the fields relevant to the code are set. */
 export type ErrorDetails = ErrorDetails_Serialize | ErrorDetails_Deserialize;
@@ -1091,10 +1420,14 @@ export type ErrorDetails_Deserialize = {
 	scope?: ApprovalScope_Deserialize | null,
 	/**
 	 *  Validation and duplicate errors: the input at fault, for an inline message
-	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`;
+	 *  staff: `displayName`, `pin`, `role`).
 	 */
 	field?: string | null,
-	/**  The offending value when there is one (the SKU or barcode). */
+	/**
+	 *  The offending value when there is one (the SKU or barcode). Staff errors put the rule
+	 *  here: `taken`, the maximum length, `same` (PIN) or `lastOwner`.
+	 */
 	value?: string | null,
 	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
 	ownerProductId?: ProductId | null,
@@ -1112,10 +1445,14 @@ export type ErrorDetails_Serialize = {
 	scope: ApprovalScope_Serialize | null,
 	/**
 	 *  Validation and duplicate errors: the input at fault, for an inline message
-	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`).
+	 *  (`name`, `sku`, `barcode`, `price`, `scanQty`, `lowStockThreshold`, `options`, `variants`;
+	 *  staff: `displayName`, `pin`, `role`).
 	 */
 	field: string | null,
-	/**  The offending value when there is one (the SKU or barcode). */
+	/**
+	 *  The offending value when there is one (the SKU or barcode). Staff errors put the rule
+	 *  here: `taken`, the maximum length, `same` (PIN) or `lastOwner`.
+	 */
 	value: string | null,
 	/**  `CATALOG_DUPLICATE_*`: the product that already uses the value. */
 	ownerProductId: ProductId | null,
@@ -1158,6 +1495,29 @@ export type FieldDiffDto = {
 	serverJson: string,
 };
 
+/**  What the printer said about itself (`GS I`). */
+export type IdentifiedPrinter = IdentifiedPrinter_Serialize | IdentifiedPrinter_Deserialize;
+
+/**  What the printer said about itself (`GS I`). */
+export type IdentifiedPrinter_Deserialize = {
+	/**  `GS I 66`, e.g. `EPSON`. */
+	maker?: string | null,
+	/**  `GS I 67`, e.g. `TM-T88V`. */
+	model?: string | null,
+	/**  `GS I 1`, a vendor-specific model number. */
+	modelId?: number | null,
+};
+
+/**  What the printer said about itself (`GS I`). */
+export type IdentifiedPrinter_Serialize = {
+	/**  `GS I 66`, e.g. `EPSON`. */
+	maker: string | null,
+	/**  `GS I 67`, e.g. `TM-T88V`. */
+	model: string | null,
+	/**  `GS I 1`, a vendor-specific model number. */
+	modelId: number | null,
+};
+
 export type ImportCommitDto = {
 	productsCreated: number,
 	productsUpdated: number,
@@ -1186,6 +1546,12 @@ export type ImportProblemDto = {
 	/**  `error`, `duplicate_in_file` or `duplicate_existing`. */
 	status: string,
 	messages: string[],
+};
+
+/**  A commit's progress: rows written of rows to write. */
+export type ImportProgressDto = {
+	rowsDone: number,
+	rowsTotal: number,
 };
 
 export type ImportSummaryDto = {
@@ -1242,6 +1608,13 @@ export type IpcError_Serialize = {
 	details: ErrorDetails_Serialize | null,
 };
 
+/**  What a device on a port probably is, from its USB vendor. */
+export type LikelyDevice = "printer" | "scanner" | 
+/**  The vendor makes both, or the id belongs to a chip used in both. */
+"either" | 
+/**  A generic USB-serial adapter: anything could be behind it. */
+"unknown";
+
 export type LinkMode = 
 /**  Create the cloud business from this register. */
 "create" | 
@@ -1279,6 +1652,31 @@ export type MoneyAddResult = {
 
 export type MovementId = string;
 
+export type NetworkResponder = NetworkResponder_Serialize | NetworkResponder_Deserialize;
+
+export type NetworkResponder_Deserialize = {
+	host: string,
+	port: number,
+	identified?: IdentifiedPrinter_Deserialize | null,
+	/**  The matching profile, when the printer identified itself. */
+	profileId?: string | null,
+};
+
+export type NetworkResponder_Serialize = {
+	host: string,
+	port: number,
+	identified: IdentifiedPrinter_Serialize | null,
+	/**  The matching profile, when the printer identified itself. */
+	profileId: string | null,
+};
+
+/**  What a new product starts as. */
+export type NewProductDefaultsDto = {
+	/**  A unit code: `ea`, `kg`, `g`, `l`, `ml`, `m`, `cm`, `box` or `pack`. */
+	unit: string,
+	trackStock: boolean,
+};
+
 export type NewStaffInput = {
 	displayName: string,
 	role: Role,
@@ -1287,10 +1685,81 @@ export type NewStaffInput = {
 
 export type OnDuplicateDto = "skip" | "update" | "error";
 
+/**  A parked cart in the list (POS-012). */
+export type ParkedCartDto = ParkedCartDto_Serialize | ParkedCartDto_Deserialize;
+
+/**  A parked cart in the list (POS-012). */
+export type ParkedCartDto_Deserialize = {
+	cartId: CartId,
+	label?: string | null,
+	/**  RFC 3339. */
+	parkedAt: string,
+	parkedByName: string,
+	lines: number,
+	/**  At today's prices, minor units as a decimal string. */
+	totalMinor: string,
+};
+
+/**  A parked cart in the list (POS-012). */
+export type ParkedCartDto_Serialize = {
+	cartId: CartId,
+	label: string | null,
+	/**  RFC 3339. */
+	parkedAt: string,
+	parkedByName: string,
+	lines: number,
+	/**  At today's prices, minor units as a decimal string. */
+	totalMinor: string,
+};
+
+export type PaymentAttemptDto = PaymentAttemptDto_Serialize | PaymentAttemptDto_Deserialize;
+
+export type PaymentAttemptDto_Deserialize = {
+	attemptId: PaymentAttemptId,
+	cartId: CartId,
+	provider: string,
+	amountMinor: string,
+	/**  `pending`, `approved`, `declined`, `cancelled`, `reversed`, `reconciliation_required`. */
+	status: string,
+	/**  Why it is in this state (decline reason, "the terminal timed out"…). */
+	reason?: string | null,
+	providerRef?: string | null,
+	authCode?: string | null,
+	cardBrand?: string | null,
+	/**  Last four digits at most (PAY-005). */
+	maskedPan?: string | null,
+	/**  Approved and not yet part of a sale: pass it to `checkout_complete`. */
+	usable: boolean,
+};
+
+export type PaymentAttemptDto_Serialize = {
+	attemptId: PaymentAttemptId,
+	cartId: CartId,
+	provider: string,
+	amountMinor: string,
+	/**  `pending`, `approved`, `declined`, `cancelled`, `reversed`, `reconciliation_required`. */
+	status: string,
+	/**  Why it is in this state (decline reason, "the terminal timed out"…). */
+	reason: string | null,
+	providerRef: string | null,
+	authCode: string | null,
+	cardBrand: string | null,
+	/**  Last four digits at most (PAY-005). */
+	maskedPan: string | null,
+	/**  Approved and not yet part of a sale: pass it to `checkout_complete`. */
+	usable: boolean,
+};
+
+export type PaymentAttemptId = string;
+
 /**  `receipt`: the receipt as printed, on the till's paper width; `a4`: an A4 page. */
 export type PdfPaperDto = "receipt" | "a4";
 
 export type Permission = "sale_complete" | "cart_line_discount" | "cart_order_discount" | "discount_above_threshold" | "price_override" | "cart_clear" | "cart_void" | "external_tender_record" | "sales_view" | "receipt_reprint" | "return_create" | "return_approve" | "catalog_view" | "catalog_edit" | "catalog_import" | "catalog_export" | "barcode_create_from_scan" | "inventory_view" | "inventory_receive" | "inventory_adjust" | "cash_session_open" | "cash_session_close" | "cash_session_view_variance" | "reports_view" | "reports_export" | "audit_view" | "settings_edit" | "staff_manage" | "device_link" | "sync_manage" | "conflict_resolve" | 
+/**  Set up this till's printers, scanners and payment terminals; test print (ADR-024). */
+"device_configure" | 
+/**  Open the cash drawer without a sale ("no sale", E20-T05). Cashiers need approval. */
+"drawer_open" | 
 /**  Simulators and dev panels; additionally restricted to debug builds by the shell. */
 "devtools_use";
 
@@ -1319,6 +1788,8 @@ export type PreferencesDto = {
 	scannerMaxKeyGapMs: number,
 	/**  0: never lock. */
 	lockTimeoutSecs: number,
+	/**  Beep with a not-found or refusal message (E07-T04). */
+	errorSound: boolean,
 };
 
 export type PrintJobDto = PrintJobDto_Serialize | PrintJobDto_Deserialize;
@@ -1350,6 +1821,76 @@ export type PrintJobDto_Serialize = {
 };
 
 export type PrintJobId = string;
+
+export type PrinterProfileDto = PrinterProfileDto_Serialize | PrinterProfileDto_Deserialize;
+
+export type PrinterProfileDto_Deserialize = {
+	id: string,
+	vendor: string,
+	name: string,
+	/**  `escPos`, `starLine` or `plainText`. */
+	dialect: string,
+	columns: number,
+	columnsFontB?: number | null,
+	paperWidthMm?: number | null,
+	cutter: boolean,
+	drawer: boolean,
+	barcode: boolean,
+	qr: boolean,
+	statusQuery: boolean,
+	textSupported: boolean,
+	/**  `false`: added by hand, not yet checked on a real printer. */
+	verified: boolean,
+	notes?: string | null,
+};
+
+export type PrinterProfileDto_Serialize = {
+	id: string,
+	vendor: string,
+	name: string,
+	/**  `escPos`, `starLine` or `plainText`. */
+	dialect: string,
+	columns: number,
+	columnsFontB: number | null,
+	paperWidthMm: number | null,
+	cutter: boolean,
+	drawer: boolean,
+	barcode: boolean,
+	qr: boolean,
+	statusQuery: boolean,
+	textSupported: boolean,
+	/**  `false`: added by hand, not yet checked on a real printer. */
+	verified: boolean,
+	notes: string | null,
+};
+
+export type PrinterStatusDto = PrinterStatusDto_Serialize | PrinterStatusDto_Deserialize;
+
+export type PrinterStatusDto_Deserialize = {
+	/**  False: no printer is set up; receipts go to the virtual printer (files) or PDF. */
+	configured: boolean,
+	adapter: string,
+	target?: string | null,
+	/**  `ready`, `warning`, `offline` or `unknown` (the link cannot report status). */
+	state: string,
+	/**  What to tell the cashier, e.g. "Paper is running out". */
+	message?: string | null,
+	drawer: boolean,
+	drawerOpen?: boolean | null,
+};
+
+export type PrinterStatusDto_Serialize = {
+	/**  False: no printer is set up; receipts go to the virtual printer (files) or PDF. */
+	configured: boolean,
+	adapter: string,
+	target: string | null,
+	/**  `ready`, `warning`, `offline` or `unknown` (the link cannot report status). */
+	state: string,
+	/**  What to tell the cashier, e.g. "Paper is running out". */
+	message: string | null,
+	drawer: boolean,
+	drawerOpen: boolean | null,
+};
 
 export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
 
@@ -1389,6 +1930,8 @@ export type ProductFilterDto_Deserialize = {
 	status: ProductStatusDto,
 	trackStock?: boolean | null,
 	categoryId?: CategoryId | null,
+	/**  Only products that need restocking (low or negative); absent means no. */
+	lowStock?: boolean,
 };
 
 export type ProductFilterDto_Serialize = {
@@ -1397,6 +1940,8 @@ export type ProductFilterDto_Serialize = {
 	status: ProductStatusDto,
 	trackStock: boolean | null,
 	categoryId: CategoryId | null,
+	/**  Only products that need restocking (low or negative); absent means no. */
+	lowStock: boolean,
 };
 
 export type ProductId = string;
@@ -1459,6 +2004,8 @@ export type ProductRowDto_Deserialize = {
 	onHandMilli?: string | null,
 	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
 	negativeStock: boolean,
+	/**  A tracked variant is at or below its low-stock threshold: an amber "Low stock" flag. */
+	lowStock: boolean,
 	/**
 	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
 	 *  using the local values.
@@ -1482,6 +2029,8 @@ export type ProductRowDto_Serialize = {
 	onHandMilli: string | null,
 	/**  A tracked variant is below zero: show the red "Negative stock" flag (INV-008). */
 	negativeStock: boolean,
+	/**  A tracked variant is at or below its low-stock threshold: an amber "Low stock" flag. */
+	lowStock: boolean,
 	/**
 	 *  Its last edit here conflicts with the cloud's version (E18): a badge; the till keeps
 	 *  using the local values.
@@ -1499,6 +2048,48 @@ export type ProductType =
 /**  Services; never stock-tracked. */
 "service";
 
+export type QuickProductDto = QuickProductDto_Serialize | QuickProductDto_Deserialize;
+
+export type QuickProductDto_Deserialize = {
+	productId: ProductId,
+	name: string,
+	/**  More than one: the till asks which. */
+	variants: CatalogHitDto_Deserialize[],
+};
+
+export type QuickProductDto_Serialize = {
+	productId: ProductId,
+	name: string,
+	/**  More than one: the till asks which. */
+	variants: CatalogHitDto_Serialize[],
+};
+
+export type QuickSelectCategoryDto = {
+	categoryId: CategoryId,
+	name: string,
+};
+
+/**  One page of the quick-select grid (E09-T04, POS-002). */
+export type QuickSelectPageDto = QuickSelectPageDto_Serialize | QuickSelectPageDto_Deserialize;
+
+/**  One page of the quick-select grid (E09-T04, POS-002). */
+export type QuickSelectPageDto_Deserialize = {
+	/**  The grid's tabs: categories that have quick-select products, in their order. */
+	categories: QuickSelectCategoryDto[],
+	/**  Products in the chosen tab, all pages. */
+	total: number,
+	products: QuickProductDto_Deserialize[],
+};
+
+/**  One page of the quick-select grid (E09-T04, POS-002). */
+export type QuickSelectPageDto_Serialize = {
+	/**  The grid's tabs: categories that have quick-select products, in their order. */
+	categories: QuickSelectCategoryDto[],
+	/**  Products in the chosen tab, all pages. */
+	total: number,
+	products: QuickProductDto_Serialize[],
+};
+
 export type ReceiptDto = {
 	receiptNumber: string,
 	/**  32 (58 mm paper) or 48 (80 mm). */
@@ -1511,6 +2102,20 @@ export type ReceiptDto = {
 export type ReceiptLineDto = {
 	text: string,
 	bold: boolean,
+	/**  The receipt number, printed as a scannable barcode where the printer can. */
+	barcode: boolean,
+};
+
+/**  The cart the last run left open (E09-T02, POS-011), for the "Recovered cart" prompt. */
+export type RecoveredCartDto = {
+	cartId: CartId,
+	/**  Send back with `cart_recovery_discard`. */
+	revision: number,
+	lines: number,
+	/**  At today's prices, minor units as a decimal string. */
+	totalMinor: string,
+	/**  Lines whose price changed since they were added (marked after Resume). */
+	repricedLines: number,
 };
 
 export type RepairAction = 
@@ -1590,6 +2195,30 @@ export type ReportScopeDto = {
 	scope: string,
 	/**  Milliseconds since the epoch, as a string. */
 	asOfMs: string,
+};
+
+/**
+ *  How the operator settles an attempt whose outcome is unknown, after looking at the
+ *  terminal: `approved` (with the slip's reference), `declined` or `cancelled`.
+ */
+export type ResolutionDto = ResolutionDto_Serialize | ResolutionDto_Deserialize;
+
+/**
+ *  How the operator settles an attempt whose outcome is unknown, after looking at the
+ *  terminal: `approved` (with the slip's reference), `declined` or `cancelled`.
+ */
+export type ResolutionDto_Deserialize = {
+	outcome: string,
+	reference?: string | null,
+};
+
+/**
+ *  How the operator settles an attempt whose outcome is unknown, after looking at the
+ *  terminal: `approved` (with the slip's reference), `declined` or `cancelled`.
+ */
+export type ResolutionDto_Serialize = {
+	outcome: string,
+	reference: string | null,
 };
 
 export type ReturnId = string;
@@ -1858,26 +2487,62 @@ export type ScanOutcomeDto = ScanOutcomeDto_Serialize | ScanOutcomeDto_Deseriali
 
 export type ScanOutcomeDto_Deserialize = 
 /**  A new line. */
-{ outcome: "added"; cart: CartViewDto_Deserialize; lineId: CartLineId } | 
+{ outcome: "added"; cart: CartViewDto_Deserialize; lineId: CartLineId; hint?: string | null } | 
 /**  An existing line's quantity went up (BAR-005). */
-{ outcome: "incremented"; cart: CartViewDto_Deserialize; lineId: CartLineId } | 
+{ outcome: "incremented"; cart: CartViewDto_Deserialize; lineId: CartLineId; hint?: string | null } | 
 /**  This delivery was already processed; the cart is unchanged. */
 { outcome: "duplicate"; cart: CartViewDto_Deserialize } | 
-/**  Nothing matches. The cart is unchanged (BAR-006). */
-{ outcome: "notFound"; code: string };
+/**
+ *  Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
+ *  problem: `keyboard_layout:<layout>` or `check_digit`.
+ */
+{ outcome: "notFound"; code: string; hint?: string | null };
 
 export type ScanOutcomeDto_Serialize = 
 /**  A new line. */
-{ outcome: "added"; cart: CartViewDto_Serialize; lineId: CartLineId } | 
+{ outcome: "added"; cart: CartViewDto_Serialize; lineId: CartLineId; hint: string | null } | 
 /**  An existing line's quantity went up (BAR-005). */
-{ outcome: "incremented"; cart: CartViewDto_Serialize; lineId: CartLineId } | 
+{ outcome: "incremented"; cart: CartViewDto_Serialize; lineId: CartLineId; hint: string | null } | 
 /**  This delivery was already processed; the cart is unchanged. */
 { outcome: "duplicate"; cart: CartViewDto_Serialize } | 
-/**  Nothing matches. The cart is unchanged (BAR-006). */
-{ outcome: "notFound"; code: string };
+/**
+ *  Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
+ *  problem: `keyboard_layout:<layout>` or `check_digit`.
+ */
+{ outcome: "notFound"; code: string; hint: string | null };
 
 /**  How a code reached `scan_submit`. */
 export type ScanSourceDto = "scanner" | "manual";
+
+export type SerialCandidate = SerialCandidate_Serialize | SerialCandidate_Deserialize;
+
+export type SerialCandidate_Deserialize = {
+	port: string,
+	kind: SerialPortKind_Deserialize,
+	vendor?: string | null,
+	likely: LikelyDevice,
+	/**  Whether `likely` comes from a vendor id we are sure about. */
+	likelySure: boolean,
+	/**  For the settings screen, e.g. "COM5: Epson TM-T20III (likely printer)". */
+	label: string,
+};
+
+export type SerialCandidate_Serialize = {
+	port: string,
+	kind: SerialPortKind_Serialize,
+	vendor: string | null,
+	likely: LikelyDevice,
+	/**  Whether `likely` comes from a vendor id we are sure about. */
+	likelySure: boolean,
+	/**  For the settings screen, e.g. "COM5: Epson TM-T20III (likely printer)". */
+	label: string,
+};
+
+export type SerialPortKind = SerialPortKind_Serialize | SerialPortKind_Deserialize;
+
+export type SerialPortKind_Deserialize = { kind: "usb"; vid: number; pid: number; manufacturer?: string | null; product?: string | null; serial_number?: string | null } | { kind: "bluetooth" } | { kind: "pci" } | { kind: "other" };
+
+export type SerialPortKind_Serialize = { kind: "usb"; vid: number; pid: number; manufacturer: string | null; product: string | null; serial_number: string | null } | { kind: "bluetooth" } | { kind: "pci" } | { kind: "other" };
 
 export type SessionDto = {
 	userId: UserId,
@@ -1949,6 +2614,65 @@ export type StaffUpdateInput_Serialize = {
 	baseVersion: number,
 	displayName: string | null,
 	role: Role | null,
+};
+
+/**  A posted stock document, opened from a history row or an audit entry. */
+export type StockDocumentDto = StockDocumentDto_Serialize | StockDocumentDto_Deserialize;
+
+/**  A posted stock document, opened from a history row or an audit entry. */
+export type StockDocumentDto_Deserialize = {
+	documentId: InventoryDocumentId,
+	documentNo: string,
+	/**  `opening`, `receipt`, `adjustment` or `write_off`. */
+	docType: string,
+	reason?: string | null,
+	supplierName?: string | null,
+	reference?: string | null,
+	note?: string | null,
+	localTime: string,
+	actorName: string,
+	approverName?: string | null,
+	lines: StockDocumentLineDto_Deserialize[],
+};
+
+/**  A posted stock document, opened from a history row or an audit entry. */
+export type StockDocumentDto_Serialize = {
+	documentId: InventoryDocumentId,
+	documentNo: string,
+	/**  `opening`, `receipt`, `adjustment` or `write_off`. */
+	docType: string,
+	reason: string | null,
+	supplierName: string | null,
+	reference: string | null,
+	note: string | null,
+	localTime: string,
+	actorName: string,
+	approverName: string | null,
+	lines: StockDocumentLineDto_Serialize[],
+};
+
+export type StockDocumentLineDto = StockDocumentLineDto_Serialize | StockDocumentLineDto_Deserialize;
+
+export type StockDocumentLineDto_Deserialize = {
+	variantId: VariantId,
+	name: string,
+	sku?: string | null,
+	movementType: string,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	deltaMilli: string,
+	unitCostMinor?: string | null,
+};
+
+export type StockDocumentLineDto_Serialize = {
+	variantId: VariantId,
+	name: string,
+	sku: string | null,
+	movementType: string,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	deltaMilli: string,
+	unitCostMinor: string | null,
 };
 
 export type StockDriftDto = {
@@ -2193,6 +2917,18 @@ export type TenderTotalDto = {
 	kind: TenderKind,
 	count: number,
 	amountMinor: string,
+};
+
+/**  An approved terminal payment to complete the sale with. */
+export type TerminalTenderDto = {
+	attemptId: PaymentAttemptId,
+	amountMinor: string,
+};
+
+export type TestPrintDto = {
+	/**  `printed`, `failed` or `uncertain`. */
+	outcome: string,
+	message: string,
 };
 
 export type TopByDto = "quantity" | "value";

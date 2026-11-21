@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backup-clear-folder"
+description = "Enables the backup_clear_folder command without any pre-configured scope."
+commands.allow = ["backup_clear_folder"]
+
+[[permission]]
+identifier = "deny-backup-clear-folder"
+description = "Denies the backup_clear_folder command without any pre-configured scope."
+commands.deny = ["backup_clear_folder"]

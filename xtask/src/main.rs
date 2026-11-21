@@ -7,7 +7,12 @@
 //! - `schema-release`        record the current schemas as released (when an app version ships)
 //! - `trace`                 verify every PRD P0 requirement is traced to a task
 //! - `crash-harness [--kills N] [--report FILE]`  kill-and-verify durability campaign (E02-T04)
+//! - `acceptance [--report DIR] [--only AT-01,..] [--kills N]`  the MVP acceptance suite (E19-T12)
+//! - `db-reset [--dir DIR] [--yes]`  delete the till database and create an empty one (E00-T04)
+//! - `seed --profile demo20|shop5k|bench50k [--seed N] [--dir DIR] [--yes]`  a new database with a
+//!   deterministic catalogue, written through the application services (E00-T04)
 
+mod acceptance;
 mod deps;
 mod trace;
 
@@ -26,9 +31,12 @@ fn main() -> Result<()> {
         Some("schema-release") => event_schemas("release"),
         Some("trace") => trace::run(&root()),
         Some("crash-harness") => crash_harness(&args[1..]),
+        Some("acceptance") => acceptance::run(&root(), &args[1..]),
+        Some("db-reset") => dev_tool("reset", &args[1..]),
+        Some("seed") => dev_tool("seed", &args[1..]),
         _ => {
             eprintln!(
-                "usage: cargo xtask <check-deps | gen-bindings [--check] | gen-schemas [--check] | schema-compat | schema-release | trace>"
+                "usage: cargo xtask <check-deps | gen-bindings [--check] | gen-schemas [--check] | schema-compat | schema-release | trace | crash-harness | acceptance | db-reset | seed>"
             );
             std::process::exit(2);
         }
@@ -40,6 +48,30 @@ fn root() -> PathBuf {
         .parent()
         .expect("xtask lives in the workspace root")
         .to_path_buf()
+}
+
+/// Runs `pos-dev` (crates/pos-devtools) in release mode: bench50k writes 50,000 variants.
+fn dev_tool(command: &str, args: &[String]) -> Result<()> {
+    let status = Command::new(env!("CARGO"))
+        .current_dir(root())
+        .args([
+            "run",
+            "--quiet",
+            "--release",
+            "-p",
+            "pos-devtools",
+            "--bin",
+            "pos-dev",
+            "--",
+            command,
+        ])
+        .args(args)
+        .status()
+        .context("running pos-dev")?;
+    if !status.success() {
+        bail!("pos-dev {command} failed (see above)");
+    }
+    Ok(())
 }
 
 /// Builds the harness in release mode (realistic timing) and runs it.

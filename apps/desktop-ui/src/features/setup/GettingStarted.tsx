@@ -1,0 +1,92 @@
+import { Modal } from "../../ui/Modal";
+import { useEffect, useRef } from "react";
+
+/**
+ * "Getting started" (E04-T02 steps 5–7): what is left after the wizard, each a button to the
+ * screen that does it. Shown once when the wizard finishes and offered from the SANDBOX
+ * banner until the till goes live. Nothing here is required: the till already sells.
+ */
+export function GettingStarted({
+  onProducts,
+  onStaff,
+  onBusiness,
+  onGoLive,
+  onClose,
+}: {
+  onProducts: () => void;
+  onStaff: () => void;
+  onBusiness: () => void;
+  onGoLive: () => void;
+  onClose: () => void;
+}) {
+  const first = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => first.current?.focus(), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [onClose]);
+
+  return (
+    <Modal label="Getting started" className="wide">
+        <h2>Getting started</h2>
+        <p>The till is ready to sell in practice (SANDBOX) mode. When you have a moment:</p>
+        <ol className="getting-started">
+          <li>
+            <div>
+              <span>
+                <strong>Products.</strong> Add them one by one, or import a CSV file from your supplier or old till.
+              </span>
+              <button type="button" className="secondary" ref={first} onClick={onProducts}>
+                Open Products <kbd>F6</kbd>
+              </button>
+            </div>
+          </li>
+          <li>
+            <div>
+              <span>
+                <strong>Staff.</strong> Give each cashier and manager their own PIN. Nobody shares the owner&apos;s.
+              </span>
+              <button type="button" className="secondary" onClick={onStaff}>
+                Add staff
+              </button>
+            </div>
+          </li>
+          <li>
+            <div>
+              <span>
+                <strong>Receipts.</strong> Check the details printed on receipts, and add your logo.
+              </span>
+              <button type="button" className="secondary" onClick={onBusiness}>
+                Business details
+              </button>
+            </div>
+          </li>
+          <li>
+            <strong>Practise</strong> a few sales, a return, and opening and closing the drawer. Practice sales are left out of
+            reports.
+          </li>
+          <li>
+            <div>
+              <span>
+                <strong>Go live</strong> when you are ready. You confirm with your PIN; practice sales stay out of reports.
+              </span>
+              <button type="button" className="secondary" onClick={onGoLive}>
+                Go live…
+              </button>
+            </div>
+          </li>
+        </ol>
+        <div className="actions">
+          <button type="button" onClick={onClose}>
+            Later
+          </button>
+        </div>
+    </Modal>
+  );
+}

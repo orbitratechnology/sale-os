@@ -16,6 +16,9 @@ pub struct Config {
     pub latest_app_version: String,
     /// `POS_UPDATE_URL`, optional.
     pub update_url: Option<String>,
+    /// `POS_DELETION_GRACE_DAYS` (E19-T10), default 30: how long a requested business
+    /// deletion can be cancelled before its data is removed.
+    pub deletion_grace_days: u32,
     /// `POS_JWT_SIGNING_KEY`: the Ed25519 private seed (32 bytes, base64). Required to serve.
     pub jwt_signing_key: Option<[u8; 32]>,
     /// `POS_JWT_ISSUER`, default `sale-os`.
@@ -47,6 +50,11 @@ impl Config {
             latest_app_version: get("POS_LATEST_APP_VERSION")
                 .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned()),
             update_url: get("POS_UPDATE_URL").filter(|s| !s.is_empty()),
+            deletion_grace_days: get("POS_DELETION_GRACE_DAYS")
+                .map(|d| d.parse::<u32>())
+                .transpose()
+                .map_err(|e| anyhow::anyhow!("POS_DELETION_GRACE_DAYS: {e}"))?
+                .unwrap_or(30),
             jwt_signing_key: get("POS_JWT_SIGNING_KEY")
                 .filter(|s| !s.is_empty())
                 .map(|k| {

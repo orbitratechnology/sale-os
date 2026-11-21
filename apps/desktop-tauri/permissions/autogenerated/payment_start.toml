@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-payment-start"
+description = "Enables the payment_start command without any pre-configured scope."
+commands.allow = ["payment_start"]
+
+[[permission]]
+identifier = "deny-payment-start"
+description = "Denies the payment_start command without any pre-configured scope."
+commands.deny = ["payment_start"]

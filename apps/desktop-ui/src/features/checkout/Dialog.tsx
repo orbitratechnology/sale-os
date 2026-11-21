@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Modal } from "../../ui/Modal";
 
 /**
  * A modal confirmation (E09-T03: destructive actions confirm). Focus starts on the input or
- * the confirm button; Esc cancels. Nothing behind it can be clicked while it is open.
+ * the confirm button; Esc cancels. A native modal dialog: nothing behind it can be reached,
+ * by mouse or by Tab, while it is open, and focus returns to where it was when it closes.
  */
 export function Dialog({
   title,
@@ -17,12 +19,13 @@ export function Dialog({
   children?: ReactNode;
   confirmLabel: string;
   danger?: boolean;
-  /** Ask for a value; confirm stays disabled while it is empty. */
-  input?: { label: string; initial?: string; inputMode?: "decimal" | "text" };
+  /** Ask for a value; confirm stays disabled while it is empty unless `optional`. */
+  input?: { label: string; initial?: string; inputMode?: "decimal" | "text"; optional?: boolean; maxLength?: number };
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }) {
   const [value, setValue] = useState(input?.initial ?? "");
+  const titleId = useId();
   const first = useRef<HTMLInputElement | HTMLButtonElement | null>(null);
   useEffect(() => {
     first.current?.focus();
@@ -41,14 +44,13 @@ export function Dialog({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (input && !value.trim()) return;
+    if (input && !input.optional && !value.trim()) return;
     onConfirm(value);
   };
 
   return (
-    <div className="backdrop">
-      <form role="dialog" aria-modal="true" aria-label={title} className="dialog card" onSubmit={submit}>
-        <h2>{title}</h2>
+    <Modal labelledBy={titleId} onSubmit={submit} onDismiss={onCancel}>
+        <h2 id={titleId}>{title}</h2>
         {children}
         {input && (
           <label>
@@ -58,6 +60,7 @@ export function Dialog({
                 first.current = el;
               }}
               inputMode={input.inputMode ?? "text"}
+              maxLength={input.maxLength}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
@@ -70,7 +73,7 @@ export function Dialog({
           <button
             type="submit"
             className={danger ? "danger" : undefined}
-            disabled={!!input && !value.trim()}
+            disabled={!!input && !input.optional && !value.trim()}
             ref={
               input
                 ? undefined
@@ -82,7 +85,6 @@ export function Dialog({
             {confirmLabel}
           </button>
         </div>
-      </form>
-    </div>
+    </Modal>
   );
 }

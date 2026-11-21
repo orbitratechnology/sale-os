@@ -803,6 +803,19 @@ stock movements update `stock_balances`.
 
 ---
 
+## 0017_parked_carts.sql (POS-012)
+
+```sql
+ALTER TABLE carts ADD COLUMN parked_label TEXT;     -- what the cashier typed, if anything (≤ 40 chars)
+ALTER TABLE carts ADD COLUMN parked_at INTEGER;
+ALTER TABLE carts ADD COLUMN parked_by TEXT REFERENCES staff_users(user_id);
+CREATE INDEX ix_carts_parked ON carts(register_id, parked_at) WHERE status = 'parked';
+```
+
+`status = 'parked'` was allowed from 0004. A parked cart keeps its lines; resuming sets it back
+to `open` (the one-open-cart index still holds) and clears the three columns; discarding sets
+`voided` with the reason. Carts stay local and are never synced (ADR-009).
+
 ## Performance indexes and dataset targets (NFR rows of PRD §14)
 
 | Query | Index | Target | Verified by |

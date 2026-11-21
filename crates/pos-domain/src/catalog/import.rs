@@ -408,6 +408,10 @@ pub struct ImportContext {
     pub default_tax_category: TaxCategoryId,
     /// Active categories: id and name.
     pub categories: Vec<(CategoryId, String)>,
+    /// `catalog.default_unit`: for rows without a unit.
+    pub default_unit: Unit,
+    /// `catalog.default_track_stock`: for rows with an empty `track_stock`.
+    pub default_track_stock: bool,
 }
 
 /// A row that read correctly, ready to be grouped.
@@ -531,7 +535,7 @@ pub fn parse_row(
     }
     let unit_text = get(Column::Unit).to_lowercase();
     let unit = if unit_text.is_empty() {
-        Some(Unit::Ea)
+        Some(ctx.default_unit)
     } else {
         let u = Unit::from_code(&unit_text);
         if u.is_none() {
@@ -623,10 +627,15 @@ pub fn parse_row(
         }
         c
     };
-    let track = boolean(get(Column::TrackStock)).unwrap_or_else(|k| {
-        err(Column::TrackStock, k);
-        true
-    });
+    let track_text = get(Column::TrackStock);
+    let track = if track_text.trim().is_empty() {
+        ctx.default_track_stock
+    } else {
+        boolean(track_text).unwrap_or_else(|k| {
+            err(Column::TrackStock, k);
+            true
+        })
+    };
     let archived = match get(Column::Status).to_lowercase().as_str() {
         "" | "active" => false,
         "archived" | "inactive" => true,
@@ -690,7 +699,7 @@ pub fn parse_row(
         barcodes,
         price_minor: price,
         cost_minor: cost,
-        unit: unit.unwrap_or(Unit::Ea).code().to_owned(),
+        unit: unit.unwrap_or(ctx.default_unit).code().to_owned(),
         tax_category_id: tax,
         category_id: category,
         track_stock: track,
@@ -876,6 +885,8 @@ mod tests {
             ],
             default_tax_category: std,
             categories: vec![(CategoryId::generate(&ids), "Drinks".into())],
+            default_unit: Unit::Ea,
+            default_track_stock: true,
         }
     }
 

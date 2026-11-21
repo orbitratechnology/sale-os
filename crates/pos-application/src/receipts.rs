@@ -7,12 +7,15 @@ use crate::queries::ReceiptQueries;
 use crate::{LocalStore, OutboxDraft, WriteSet};
 use pos_domain::{ErrorCode, Permission, ReceiptId, ReturnId, SaleId};
 use pos_receipts::ReceiptDocument;
-use pos_receipts::pdf::{PdfFormat, render_pdf};
+use pos_receipts::pdf::{PdfFormat, render_pdf_with_logo};
 use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, TextLine, render};
 use std::sync::Arc;
 
 pub struct ReceiptService {
     pub receipts: Arc<dyn ReceiptQueries>,
+    /// The till's printer: when it states its characters per line (a 42-column Epson, say),
+    /// the preview uses that width, so what the cashier sees is what prints (DEV-004).
+    pub printer: Option<Arc<dyn pos_device_ports::ReceiptOutputPort>>,
 }
 
 /// A receipt ready to show: the document and its lines for the chosen width.
@@ -72,16 +75,24 @@ impl ReceiptService {
         let actor = ctx.actor()?;
         let document: ReceiptDocument =
             serde_json::from_str(json).map_err(|e| AppError::Internal(format!("stored receipt: {e}")))?;
-        let width = match width_mm {
-            Some(w) => w,
-            None => {
-                self.receipts
+        let printer_columns = self
+            .printer
+            .as_ref()
+            .and_then(|p| p.capabilities().columns)
+            .map(|c| usize::from(c).clamp(24, 64));
+        let columns = match (width_mm, printer_columns) {
+            (Some(58), _) => COLUMNS_58MM,
+            (Some(_), _) => COLUMNS_80MM,
+            (None, Some(c)) => c,
+            (None, None) => {
+                let width = self
+                    .receipts
                     .receipt_info(ctx.register.register_id, actor.user_id)
                     .await?
-                    .paper_width_mm
+                    .paper_width_mm;
+                if width == 58 { COLUMNS_58MM } else { COLUMNS_80MM }
             }
         };
-        let columns = if width == 58 { COLUMNS_58MM } else { COLUMNS_80MM };
         Ok(RenderedReceipt {
             lines: render(&document, columns),
             document,
@@ -95,6 +106,8 @@ impl ReceiptService {
 pub enum ReceiptOf {
     Sale(SaleId),
     Return(ReturnId),
+    /// The sale's tax invoice (D-02).
+    TaxInvoice(SaleId),
 }
 
 /// The paper of a PDF: the receipt as printed (the till's paper width), or an A4 page.
@@ -129,12 +142,14 @@ impl ReceiptPdfService {
         ctx: &CommandContext,
         of: ReceiptOf,
         paper: PdfPaper,
+        logo: Option<&pos_receipts::logo::Logo>,
     ) -> Result<ReceiptPdf, AppError> {
         ctx.authorize(Permission::SalesView)?;
         let actor = ctx.actor()?;
         let stored = match of {
             ReceiptOf::Sale(id) => self.receipts.sale_receipt(id).await?,
             ReceiptOf::Return(id) => self.receipts.return_receipt(id).await?,
+            ReceiptOf::TaxInvoice(id) => self.receipts.tax_invoice_receipt(id).await?,
         };
         let (receipt_id, json) = stored.ok_or_else(|| {
             AppError::Validation("there is no receipt to save".into(), ErrorCode::ValidationFailed)
@@ -156,16 +171,18 @@ impl ReceiptPdfService {
                 }
             }
         };
-        let bytes = render_pdf(&document, format).map_err(|e| AppError::Internal(e.to_string()))?;
+        let bytes =
+            render_pdf_with_logo(&document, format, logo).map_err(|e| AppError::Internal(e.to_string()))?;
         let number: String = document
             .meta
             .receipt_number
             .chars()
-            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
             .collect();
         let kind = match of {
             ReceiptOf::Sale(_) => "receipt",
             ReceiptOf::Return(_) => "refund",
+            ReceiptOf::TaxInvoice(_) => "tax-invoice",
         };
         let suffix = if format == PdfFormat::A4 { "-A4" } else { "" };
         Ok(ReceiptPdf {

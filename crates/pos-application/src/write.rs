@@ -184,11 +184,41 @@ pub enum WriteOp {
     CloseCashSession {
         closed: pos_domain::cash::ClosedSession,
     },
+    /// Records a tax invoice (D-02): the store gives it the register's next sequence and the
+    /// number `{prefix}{register code}_{seq:05}`, reported in `receipt_numbers` under
+    /// `number_slot` (so its document, inserted after it, carries the number). Local only.
+    InsertTaxInvoice {
+        invoice: crate::records::TaxInvoiceRecord,
+        number_slot: NumberSlot,
+    },
+    /// Creates or replaces a device attached to this till (local only, ADR-024).
+    PutDevice(crate::records::DeviceRecord),
+    /// Removes a device from this till.
+    RemoveDevice(pos_domain::DeviceId),
     /// Creates or updates a print job and appends its state change to `print_job_events`
     /// (E13-T06). Local only.
     PutPrintJob {
         job: crate::records::PrintJobRecord,
         detail: serde_json::Value,
+    },
+    /// Sets the open cart aside (POS-012): `open` → `parked` with its label, if its revision
+    /// is still `expected_revision`. The lines stay.
+    ParkCart {
+        cart_id: pos_domain::CartId,
+        expected_revision: u64,
+        label: Option<String>,
+        parked_by: UserId,
+    },
+    /// Makes a parked cart the open one again (POS-012). Fails with `CartRevisionMismatch` if
+    /// it is no longer parked (resumed or discarded at the same time).
+    ResumeCart {
+        cart_id: pos_domain::CartId,
+    },
+    /// Voids a parked cart without resuming it (POS-012). Fails with `CartRevisionMismatch`
+    /// if it is no longer parked.
+    DiscardParkedCart {
+        cart_id: pos_domain::CartId,
+        reason: String,
     },
     /// Closes the open cart a sale was made from. Fails with `CartRevisionMismatch` if the
     /// cart changed since `expected_revision`.
@@ -226,6 +256,36 @@ pub enum WriteOp {
     ResolveConflict {
         conflict_id: String,
         resolution: serde_json::Value,
+    },
+    /// Stores a payment attempt (E10-T02) and appends the change to `payment_attempt_events`.
+    /// `expected` is the status the change was based on: `None` inserts a new attempt;
+    /// otherwise the stored attempt must still have that status and be unused, or it fails
+    /// with `PaymentAttemptChanged` (a concurrent poll got there first). Local only: see
+    /// [`crate::payments`].
+    PutPaymentAttempt {
+        attempt: pos_domain::payment::PaymentAttempt,
+        expected: Option<pos_domain::payment::AttemptStatus>,
+        source: crate::records::AttemptEventSource,
+        detail: serde_json::Value,
+    },
+    /// Links an approved attempt to the tender of the sale in the same set (which must come
+    /// earlier in the set) and records the attempt's provider on the tender. Checked again
+    /// inside the transaction: the attempt must still be approved by `approved_by`, unused,
+    /// a sale payment for `cart_id` on this register, for exactly `amount`; otherwise it fails
+    /// with `PaymentAttemptUnusable`.
+    UsePaymentAttempt {
+        attempt_id: pos_domain::PaymentAttemptId,
+        tender_id: pos_domain::TenderId,
+        cart_id: pos_domain::CartId,
+        amount: pos_domain::Money,
+        approved_by: &'static str,
+    },
+    /// Fails with `PaymentUnresolved` if the cart has a card payment whose outcome is open
+    /// (pending, reconciliation required) or an approval no sale has used. Every sale checks
+    /// it, after its own attempts are used, so a card cannot be charged for a cart that is
+    /// then paid another way.
+    CheckCartPayments {
+        cart_id: pos_domain::CartId,
     },
 }
 
@@ -310,7 +370,13 @@ impl WriteOp {
             | WriteOp::RebuildStockBalances
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
+            | WriteOp::InsertTaxInvoice { .. }
+            | WriteOp::PutDevice(_)
+            | WriteOp::RemoveDevice(_)
             | WriteOp::CloseCart { .. }
+            | WriteOp::ParkCart { .. }
+            | WriteOp::ResumeCart { .. }
+            | WriteOp::DiscardParkedCart { .. }
             | WriteOp::InsertReceipt { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::SetDeviceIdentity(_)
@@ -320,7 +386,10 @@ impl WriteOp {
             | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. }
-            | WriteOp::ResolveConflict { .. } => SyncKind::LocalOnly,
+            | WriteOp::ResolveConflict { .. }
+            | WriteOp::PutPaymentAttempt { .. }
+            | WriteOp::UsePaymentAttempt { .. }
+            | WriteOp::CheckCartPayments { .. } => SyncKind::LocalOnly,
         }
     }
 }
@@ -533,6 +602,24 @@ pub struct WriteSet {
     ops: Vec<WriteOp>,
     outbox: Vec<OutboxDraft>,
     audit: Vec<AuditEntry>,
+    replay: Option<Replay>,
+}
+
+/// E19-T03: this write set re-creates, after a restore, an event the cloud already has from
+/// this register. The store gives the allocated numbers their original values and writes
+/// the original event (same id, sequence and payload, with the cloud's outcome) instead of
+/// the draft, so the till is as it was when it made the event.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Replay {
+    pub event_id: EventId,
+    pub local_sequence: u64,
+    pub event_type: String,
+    /// The payload as the cloud received it.
+    pub payload: serde_json::Value,
+    /// `applied`, `conflict` or `rejected`: the event's outbox status.
+    pub status: &'static str,
+    /// The numbers the event was given, per counter.
+    pub numbers: Vec<(Counter, u64)>,
 }
 
 impl WriteSet {
@@ -543,6 +630,7 @@ impl WriteSet {
             outbox: Vec::new(),
             audit: Vec::new(),
             resolving: BTreeSet::new(),
+            replay: None,
         }
     }
     pub fn context(&self) -> &WriteContext {
@@ -557,6 +645,10 @@ impl WriteSet {
     pub fn audit(&self) -> &[AuditEntry] {
         &self.audit
     }
+    /// Set when this re-creates an event after a restore (E19-T03).
+    pub fn replay(&self) -> Option<&Replay> {
+        self.replay.as_ref()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -567,6 +659,7 @@ pub struct WriteSetBuilder {
     audit: Vec<AuditEntry>,
     /// Aggregates whose new version follows the cloud's, not the local one (E18-T02).
     resolving: BTreeSet<AggregateRef>,
+    replay: Option<Replay>,
 }
 
 impl WriteSetBuilder {
@@ -734,6 +827,22 @@ impl WriteSetBuilder {
         });
         self
     }
+    pub fn insert_tax_invoice(
+        mut self,
+        invoice: crate::records::TaxInvoiceRecord,
+        number_slot: NumberSlot,
+    ) -> Self {
+        self.ops.push(WriteOp::InsertTaxInvoice { invoice, number_slot });
+        self
+    }
+    pub fn put_device(mut self, device: crate::records::DeviceRecord) -> Self {
+        self.ops.push(WriteOp::PutDevice(device));
+        self
+    }
+    pub fn remove_device(mut self, device: pos_domain::DeviceId) -> Self {
+        self.ops.push(WriteOp::RemoveDevice(device));
+        self
+    }
     pub fn put_print_job(mut self, job: crate::records::PrintJobRecord, detail: serde_json::Value) -> Self {
         self.ops.push(WriteOp::PutPrintJob { job, detail });
         self
@@ -749,6 +858,29 @@ impl WriteSetBuilder {
             number_slot,
             require_cash_session,
         });
+        self
+    }
+    pub fn park_cart(
+        mut self,
+        cart_id: pos_domain::CartId,
+        expected_revision: u64,
+        label: Option<String>,
+        parked_by: UserId,
+    ) -> Self {
+        self.ops.push(WriteOp::ParkCart {
+            cart_id,
+            expected_revision,
+            label,
+            parked_by,
+        });
+        self
+    }
+    pub fn resume_cart(mut self, cart_id: pos_domain::CartId) -> Self {
+        self.ops.push(WriteOp::ResumeCart { cart_id });
+        self
+    }
+    pub fn discard_parked_cart(mut self, cart_id: pos_domain::CartId, reason: String) -> Self {
+        self.ops.push(WriteOp::DiscardParkedCart { cart_id, reason });
         self
     }
     pub fn close_cart(
@@ -798,6 +930,40 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::EndSession { session_id, reason });
         self
     }
+    pub fn put_payment_attempt(
+        mut self,
+        attempt: pos_domain::payment::PaymentAttempt,
+        expected: Option<pos_domain::payment::AttemptStatus>,
+        source: crate::records::AttemptEventSource,
+        detail: serde_json::Value,
+    ) -> Self {
+        self.ops.push(WriteOp::PutPaymentAttempt {
+            attempt,
+            expected,
+            source,
+            detail,
+        });
+        self
+    }
+    pub fn use_payment_attempt(
+        mut self,
+        attempt: &pos_domain::payment::PaymentAttempt,
+        tender_id: pos_domain::TenderId,
+        approved_by: &'static str,
+    ) -> Self {
+        self.ops.push(WriteOp::UsePaymentAttempt {
+            attempt_id: attempt.id(),
+            tender_id,
+            cart_id: attempt.cart_id(),
+            amount: attempt.amount(),
+            approved_by,
+        });
+        self
+    }
+    pub fn check_cart_payments(mut self, cart_id: pos_domain::CartId) -> Self {
+        self.ops.push(WriteOp::CheckCartPayments { cart_id });
+        self
+    }
     pub fn outbox(mut self, draft: OutboxDraft) -> Self {
         self.outbox.push(draft);
         self
@@ -826,7 +992,22 @@ impl WriteSetBuilder {
     }
 
     /// Validates the ADR-008 invariants and returns the immutable set.
+    /// Re-creates an event the cloud already has (E19-T03); the set must carry exactly one
+    /// outbox draft, of the same event type.
+    pub fn replaying(mut self, replay: Replay) -> Self {
+        self.replay = Some(replay);
+        self
+    }
+
     pub fn build(self) -> Result<WriteSet, WriteSetError> {
+        if let Some(r) = &self.replay
+            && (self.outbox.len() != 1 || self.outbox[0].event_type != r.event_type)
+        {
+            return Err(WriteSetError::Payload(format!(
+                "a replay of {} needs exactly one outbox draft of that type",
+                r.event_type
+            )));
+        }
         // Only purely local edits (e.g. adding a cart line) may skip the audit row.
         let local_only =
             self.outbox.is_empty() && self.ops.iter().all(|op| matches!(op.sync(), SyncKind::LocalOnly));
@@ -917,6 +1098,7 @@ impl WriteSetBuilder {
             ops: self.ops,
             outbox: self.outbox,
             audit: self.audit,
+            replay: self.replay,
         })
     }
 
@@ -941,9 +1123,15 @@ impl WriteSetBuilder {
             | WriteOp::RebuildStockBalances
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
+            | WriteOp::InsertTaxInvoice { .. }
+            | WriteOp::PutDevice(_)
+            | WriteOp::RemoveDevice(_)
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }
+            | WriteOp::ParkCart { .. }
+            | WriteOp::ResumeCart { .. }
+            | WriteOp::DiscardParkedCart { .. }
             | WriteOp::PutLoginThrottle(_)
             | WriteOp::PutCart { .. }
             | WriteOp::RecordScanEvent { .. }
@@ -951,7 +1139,10 @@ impl WriteSetBuilder {
             | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. }
-            | WriteOp::ResolveConflict { .. } => return Ok(()),
+            | WriteOp::ResolveConflict { .. }
+            | WriteOp::PutPaymentAttempt { .. }
+            | WriteOp::UsePaymentAttempt { .. }
+            | WriteOp::CheckCartPayments { .. } => return Ok(()),
         };
         if found != self.context.business_id {
             return Err(WriteSetError::ForeignBusiness {
@@ -989,6 +1180,12 @@ pub enum WriteError {
     Busy,
     #[error("database integrity problem: {0}")]
     Corrupt(String),
+    /// SQLITE_FULL: no space left for the write; the transaction was rolled back.
+    #[error("the disk is full")]
+    DiskFull,
+    /// E19-T03: a restored, linked register is still bringing back its events from the cloud.
+    #[error("this till is bringing back its sales from the cloud after a restore")]
+    ReplayPending,
     #[error("database error: {0}")]
     Io(String),
     #[error("fault injected before statement {statement}")]
@@ -1014,6 +1211,15 @@ pub enum WriteError {
     CashSessionChanged,
     #[error("the register mode changed meanwhile")]
     ModeChanged,
+    /// The attempt's status changed since it was read (another poll recorded it first).
+    #[error("the card payment changed meanwhile")]
+    PaymentAttemptChanged,
+    #[error(
+        "that card payment cannot pay for this sale (not approved, already used, another cart or amount)"
+    )]
+    PaymentAttemptUnusable,
+    #[error("a card payment for this cart is not settled: finish or resolve it, use it, or reverse it")]
+    PaymentUnresolved,
 }
 
 impl HasErrorCode for WriteError {
@@ -1023,6 +1229,8 @@ impl HasErrorCode for WriteError {
             WriteError::UniqueViolation { .. } => ErrorCode::ValidationFailed,
             WriteError::Busy => ErrorCode::StoreBusy,
             WriteError::Corrupt(_) => ErrorCode::StoreCorrupt,
+            WriteError::DiskFull => ErrorCode::StoreDiskFull,
+            WriteError::ReplayPending => ErrorCode::SyncReplayPending,
             WriteError::Io(_) | WriteError::FaultInjected { .. } => ErrorCode::StoreIo,
             WriteError::CartRevisionMismatch { .. } => ErrorCode::CartRevisionMismatch,
             // Turned into `ScanOutcome::Duplicate` by the scan service; never shown.
@@ -1032,7 +1240,10 @@ impl HasErrorCode for WriteError {
                 ErrorCode::CashSessionRequired
             }
             WriteError::CashSessionAlreadyOpen => ErrorCode::CashSessionAlreadyOpen,
-            WriteError::CashSessionChanged | WriteError::ModeChanged => ErrorCode::ConflictVersion,
+            WriteError::CashSessionChanged | WriteError::ModeChanged | WriteError::PaymentAttemptChanged => {
+                ErrorCode::ConflictVersion
+            }
+            WriteError::PaymentAttemptUnusable | WriteError::PaymentUnresolved => ErrorCode::ValidationFailed,
         }
     }
 }

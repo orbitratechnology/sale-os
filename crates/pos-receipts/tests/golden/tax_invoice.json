@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "kind": "tax_invoice",
+  "originalReceipt": "R01-000042",
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Lanka Traders (Pvt) Ltd",
+    "addressLines": [
+      "12 Galle Road",
+      "Colombo 03"
+    ],
+    "phone": "011 234 5678",
+    "taxRegistrationNo": null,
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "26NOV_R01_00001",
+    "localTime": "2026-11-20 10:15",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Nimal"
+  },
+  "currencyExponent": 2,
+  "lines": [],
+  "totals": {
+    "subtotal": 2090000,
+    "lineDiscounts": 0,
+    "orderDiscount": 0,
+    "orderDiscountLabel": null,
+    "tax": [
+      {
+        "name": "VAT 18%",
+        "amount": 376200
+      }
+    ],
+    "pricesIncludeTax": false,
+    "rounding": 0,
+    "total": 2466200
+  },
+  "tenders": [],
+  "change": 0,
+  "footer": [],
+  "barcode": "26NOV_R01_00001",
+  "taxInvoice": {
+    "supplierTin": "104567890",
+    "purchaserTin": "114223344",
+    "purchaserName": "Ceylon Office Supplies (Pvt) Ltd",
+    "purchaserAddress": [
+      "45 Duplication Road",
+      "Colombo 04"
+    ],
+    "invoiceDate": "11/20/2026",
+    "supplyDate": "11/20/2026",
+    "saleReceipt": "R01-000042",
+    "lines": [
+      {
+        "description": "A4 copy paper, 80 gsm, ream of 500 sheets",
+        "quantity": "10",
+        "unitPrice": 185000,
+        "amount": 1850000
+      },
+      {
+        "description": "Ballpoint pen, blue (box of 50)",
+        "quantity": "2",
+        "unitPrice": 120000,
+        "amount": 240000
+      }
+    ],
+    "valueOfSupply": 2090000,
+    "vat": [
+      {
+        "name": "VAT 18%",
+        "amount": 376200
+      }
+    ],
+    "total": 2466200,
+    "payment": [
+      "Bank transfer"
+    ],
+    "omittedLines": 1
+  }
+}

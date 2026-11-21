@@ -36,6 +36,11 @@ export default tseslint.config(
     },
   },
   {
+    // Tools run by Node that also drive the WebView (scripts/ui-latency.mjs).
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
     files: ["src/features/**/*.{ts,tsx}", "src/lib/**/*.ts"],
     ignores: ["**/*.test.ts"],
     rules: noFloatMoney,

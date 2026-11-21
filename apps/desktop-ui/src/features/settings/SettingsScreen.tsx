@@ -1,16 +1,25 @@
+import { TabList, tabPanelProps } from "../../ui/Tabs";
+import type { LucideIcon } from "lucide-react";
+import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Package, Percent, Printer, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { BackupsPanel } from "./BackupsPanel";
 import { BusinessPanel } from "./BusinessPanel";
 import { CloudPanel } from "./CloudPanel";
+import { StaffPanel } from "./StaffPanel";
+import { DevicesPanel } from "./DevicesPanel";
 import { TaxesPanel } from "./TaxesPanel";
 
 /** The business and tax pages sit beside the registry groups; they are not registry settings. */
 const BUSINESS = "Business";
 const TAXES = "Taxes";
 const CLOUD = "Cloud";
+const BACKUPS = "Backups";
+const STAFF = "Staff";
+const DEVICES = "Devices";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
@@ -18,22 +27,34 @@ const CLOUD = "Cloud";
  * version it showed. Each change is saved on its own and audited.
  */
 export function SettingsScreen({
+  initialGroup,
   onBack,
   onChanged,
   onRelinked,
 }: {
+  /** The page to open on (e.g. "Staff" from Getting started); otherwise the first. */
+  initialGroup?: string | undefined;
   onBack: () => void;
   onChanged: () => void;
   /** The till joined another business: its data and staff were replaced. */
   onRelinked: () => void;
 }) {
   const [settings, setSettings] = useState<SettingDto[] | null>(null);
-  const [group, setGroup] = useState<string | null>(null);
+  const [group, setGroup] = useState<string | null>(initialGroup ?? null);
   const [error, setError] = useState<IpcError | null>(null);
+  /** A manager: only the Devices page (the rest is the owner's). */
+  const [limited, setLimited] = useState(false);
 
   const load = useCallback(() => {
     void commands.settingsGet().then((res) => {
-      if (res.status !== "ok") return setError(res.error);
+      if (res.status !== "ok") {
+        if (res.error.code === "PERMISSION_DENIED") {
+          setLimited(true);
+          setGroup(DEVICES);
+          return;
+        }
+        return setError(res.error);
+      }
       setSettings(res.data);
       setGroup((g) => g ?? res.data[0]?.group ?? null);
     });
@@ -50,12 +71,16 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, TAXES, CLOUD];
+  const groups = limited ? [DEVICES] : [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, STAFF, TAXES, DEVICES, CLOUD, BACKUPS];
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Settings</h1>
+        <h1 className="page-title">
+          <Settings />
+          Settings
+        </h1>
         <button type="button" className="secondary" onClick={onBack}>
+          <ArrowLeft />
           Back to till <kbd>Esc</kbd>
         </button>
       </header>
@@ -64,27 +89,42 @@ export function SettingsScreen({
           {describeError(error)}
         </p>
       )}
-      <div className="receipt-widths" role="tablist" aria-label="Settings pages">
-        {groups.map((g) => (
-          <button key={g} type="button" role="tab" aria-selected={g === group} className={g === group ? "" : "secondary"} onClick={() => setGroup(g)}>
-            {g}
-          </button>
-        ))}
-      </div>
+      <div className="settings-layout">
+      <TabList
+        label="Settings pages"
+        idBase="settings"
+        className="side-nav"
+        vertical
+        tabs={groups.map((g) => ({ value: g, label: g, icon: GROUP_ICONS[g] ?? Settings }))}
+        selected={group}
+        onSelect={setGroup}
+      />
       {group === BUSINESS ? (
-        <section className="card settings-list" aria-label={BUSINESS}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <BusinessPanel onChanged={onChanged} />
         </section>
+      ) : group === STAFF ? (
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
+          <StaffPanel />
+        </section>
       ) : group === TAXES ? (
-        <section className="card settings-list" aria-label={TAXES}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <TaxesPanel />
         </section>
+      ) : group === DEVICES ? (
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
+          <DevicesPanel />
+        </section>
       ) : group === CLOUD ? (
-        <section className="card settings-list" aria-label={CLOUD}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <CloudPanel onRelinked={onRelinked} />
         </section>
+      ) : group === BACKUPS ? (
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
+          <BackupsPanel />
+        </section>
       ) : (
-        <section className="card settings-list" aria-label={group ?? "Settings"}>
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
           {(settings ?? [])
             .filter((s) => s.group === group)
             .map((s) => (
@@ -100,9 +140,39 @@ export function SettingsScreen({
             ))}
         </section>
       )}
+      </div>
     </main>
   );
 }
+
+/** Plain words for choice values that are codes (units); others show as stored. */
+const CHOICE_LABEL: Record<string, string> = {
+  '"ea"': "Each (ea)",
+  '"kg"': "Kilogram (kg)",
+  '"g"': "Gram (g)",
+  '"l"': "Litre (l)",
+  '"ml"': "Millilitre (ml)",
+  '"m"': "Metre (m)",
+  '"cm"': "Centimetre (cm)",
+  '"box"': "Box",
+  '"pack"': "Pack",
+};
+
+/** An icon for each settings page; pages added later fall back to the gear. */
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  Inventory: Boxes,
+  Products: Package,
+  "Cash drawer": Banknote,
+  Security: ShieldCheck,
+  Receipts: ReceiptText,
+  Scanner: ScanBarcode,
+  Business: Building,
+  Staff: Users,
+  Taxes: Percent,
+  Cloud: Cloud,
+  Backups: Database,
+  Devices: Printer,
+};
 
 function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onSaved: (s: SettingDto) => void; onConflict: () => void }) {
   const current: unknown = JSON.parse(setting.valueJson);
@@ -160,7 +230,7 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
         <select id={id} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
           {k.options.map((o) => (
             <option key={o} value={o}>
-              {o.replace(/^"|"$/g, "")}
+              {CHOICE_LABEL[o] ?? o.replace(/^"|"$/g, "")}
             </option>
           ))}
         </select>

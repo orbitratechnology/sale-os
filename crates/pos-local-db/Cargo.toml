@@ -9,6 +9,10 @@ publish.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+crc32fast.workspace = true
+flate2.workspace = true
+getrandom.workspace = true
+libsqlite3-sys.workspace = true
 pos-application.workspace = true
 pos-domain.workspace = true
 pos-sync.workspace = true
@@ -29,6 +33,7 @@ path = "src/bin/crash-harness.rs"
 jsonschema.workspace = true
 pos-device-ports.workspace = true
 pos-device-virtual.workspace = true
+pos-device-hw.workspace = true
 pos-receipts.workspace = true
 pos-testkit.workspace = true
 proptest.workspace = true

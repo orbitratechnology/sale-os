@@ -92,7 +92,7 @@ impl crate::HasErrorCode for CashError {
 }
 
 /// The `cash_session.opened` v1 payload.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenedSession {
     pub id: CashSessionId,
@@ -104,7 +104,7 @@ pub struct OpenedSession {
 
 /// The `cash_session.closed` v1 payload. `expected` and `variance` are what the store
 /// recomputed inside the closing transaction.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClosedSession {
     pub id: CashSessionId,

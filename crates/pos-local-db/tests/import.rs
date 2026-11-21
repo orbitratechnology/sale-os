@@ -421,9 +421,14 @@ async fn a_crash_mid_commit_keeps_whole_chunks_and_resumes_without_duplicates() 
         .await
         .unwrap();
     assert_eq!(status, "committing");
+    // The progress bar shows where it stopped: the first chunk's rows of all of them.
+    let at = normal.progress(owner, p.job_id).await.unwrap();
+    assert_eq!((at.rows_done as usize, at.rows_total as usize), (CHUNK, n));
     // Committing again finishes the rest.
     let done = normal.commit(owner, p.job_id).await.unwrap();
     assert_eq!((done.products_created as usize, done.chunks), (n - CHUNK, 2));
+    let at = normal.progress(owner, p.job_id).await.unwrap();
+    assert_eq!((at.rows_done as usize, at.rows_total as usize), (n, n));
     assert_eq!(active_products(&shop).await, n as i64);
     assert_eq!(
         count(&shop, "SELECT count(DISTINCT name) FROM products").await,
@@ -538,4 +543,48 @@ async fn only_roles_that_import_may_and_cancel_changes_nothing() {
     assert_eq!(e.error_code(), ErrorCode::ValidationFailed);
     // Not a CSV at all.
     assert!(imp.start(&shop.owner, "empty.csv", b"").await.is_err());
+}
+
+#[tokio::test]
+async fn rows_without_a_unit_or_track_stock_take_the_new_product_defaults() {
+    let shop = common::shop().await;
+    for (key, value) in [
+        ("catalog.default_unit", "\"kg\""),
+        ("catalog.default_track_stock", "false"),
+    ] {
+        sqlx::query(
+            "INSERT OR REPLACE INTO business_settings (business_id, key, value_json, updated_at)
+             SELECT business_id, ?, ?, 0 FROM businesses",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(shop.store.db().writer())
+        .await
+        .unwrap();
+    }
+    let imp = service(&shop);
+    let owner = &shop.owner;
+    let csv = b"name,price,unit,track_stock\nApples,2.00,,\nMugs,5.00,ea,yes\n";
+    let p = imp.start(owner, "defaults.csv", csv).await.unwrap();
+    let s = imp
+        .validate(owner, p.job_id, p.mapping, OnDuplicate::Error)
+        .await
+        .unwrap();
+    assert_eq!(s.problems, vec![]);
+    imp.commit(owner, p.job_id).await.unwrap();
+    let rows: Vec<(String, String, bool)> = sqlx::query_as(
+        "SELECT p.name, p.unit_code, v.track_stock FROM products p
+         JOIN product_variants v ON v.product_id = p.product_id ORDER BY p.name",
+    )
+    .fetch_all(shop.store.db().readers())
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        [
+            ("Apples".to_string(), "kg".to_string(), false),
+            ("Mugs".to_string(), "ea".to_string(), true),
+        ],
+        "empty cells take the settings; what the file says wins"
+    );
 }

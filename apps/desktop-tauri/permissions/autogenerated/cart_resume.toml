@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-resume"
+description = "Enables the cart_resume command without any pre-configured scope."
+commands.allow = ["cart_resume"]
+
+[[permission]]
+identifier = "deny-cart-resume"
+description = "Denies the cart_resume command without any pre-configured scope."
+commands.deny = ["cart_resume"]

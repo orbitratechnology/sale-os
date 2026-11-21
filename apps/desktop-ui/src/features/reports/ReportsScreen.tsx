@@ -1,3 +1,10 @@
+import { TabList, tabPanelProps } from "../../ui/Tabs";
+import {
+  ArrowLeft,
+  ChartColumn,
+  Inbox,
+  Wallet,
+} from "../../ui/icons";
 import { useEffect, useState } from "react";
 import { commands, type IpcError, type Workspace } from "../../ipc";
 import type {
@@ -146,7 +153,10 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
   return (
     <main className="sales">
       <header className="returns-header">
-        <h1>Reports</h1>
+        <h1 className="page-title">
+          <ChartColumn />
+          Reports
+        </h1>
         <span>
           {onAudit && (
             <button type="button" className="secondary" onClick={onAudit}>
@@ -154,6 +164,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
             </button>
           )}{" "}
           <button type="button" className="secondary" onClick={onBack}>
+            <ArrowLeft />
             Back to till <kbd>Esc</kbd>
           </button>
         </span>
@@ -200,13 +211,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           ))}
         </div>
       ) : (
-      <div className="receipt-widths" role="tablist" aria-label="Report">
-        {TABS.map((t) => (
-          <button key={t.value} type="button" role="tab" aria-selected={tab === t.value} className={tab === t.value ? "" : "secondary"} onClick={() => setTab(t.value)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabList label="Report" idBase="report" className="receipt-widths" tabs={TABS} selected={tab} onSelect={setTab} />
       )}
       {(where === "cloud" || tab !== "stock") && (
         <form className="card sales-filters" aria-label="Dates" onSubmit={(e) => e.preventDefault()}>
@@ -274,7 +279,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           </button>
         ))}
       </section>
-      <section className="card" aria-label={TABS.find((t) => t.value === tab)?.label}>
+      <section className="card" {...tabPanelProps("report", tab)}>
         {tab === "sales" && sales && <SalesReport s={sales} money={money} />}
         {tab === "payments" && mix && <PaymentsReport m={mix} money={money} />}
         {tab === "top" && top && (
@@ -311,7 +316,14 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
                 ))}
               </tbody>
             </table>
-            {top.rows.length === 0 && <p className="small">No sales in this period.</p>}
+            {top.rows.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <ChartColumn />
+          </span>
+          <p>No sales in this period.</p>
+        </div>
+      )}
           </>
         )}
         {tab === "stock" && stock && (
@@ -319,7 +331,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
             <p className="drawer-needed" role="note">
               Stock on hand is calculated from recorded movements; it is not a physical count.
             </p>
-            <label>
+            <label className="check">
               <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> Low and negative only
             </label>
             <table className="sales-table" aria-label="Stock on hand">
@@ -355,7 +367,14 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
                 ))}
               </tbody>
             </table>
-            {stock.rows.length === 0 && <p className="small">Nothing to show.</p>}
+            {stock.rows.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <Inbox />
+          </span>
+          <p>Nothing to show.</p>
+        </div>
+      )}
           </>
         )}
       </section>
@@ -419,7 +438,14 @@ function SalesReport({ s, money }: { s: SalesSummaryDto; money: (m: string) => s
           ))}
         </tbody>
       </table>
-      {s.days.length === 0 && <p className="small">No sales in this period.</p>}
+      {s.days.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <ChartColumn />
+          </span>
+          <p>No sales in this period.</p>
+        </div>
+      )}
     </>
   );
 }
@@ -472,7 +498,14 @@ function PaymentsReport({ m, money }: { m: TenderMixDto; money: (x: string) => s
           ))}
         </tbody>
       </table>
-      {m.rows.length === 0 && <p className="small">No payments in this period.</p>}
+      {m.rows.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-icon">
+            <Wallet />
+          </span>
+          <p>No payments in this period.</p>
+        </div>
+      )}
       <p className="small">Cash is what was kept: handed over less change.</p>
     </>
   );

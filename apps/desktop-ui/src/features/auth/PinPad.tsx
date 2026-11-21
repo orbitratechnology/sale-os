@@ -1,4 +1,8 @@
-import { useEffect } from "react";
+import {
+  ArrowRight,
+  Delete,
+} from "../../ui/icons";
+import { useEffect, useRef } from "react";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "ok"] as const;
 export const MAX_PIN = 8;
@@ -20,10 +24,19 @@ export function PinPad({
   disabled: boolean;
   label: string;
 }) {
+  const pad = useRef<HTMLDivElement | null>(null);
+  // Shown means "type your PIN now": focus the pad so a screen reader announces it, unless a
+  // field already has focus (typing there must not be taken over).
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body || active.tagName === "DIALOG") pad.current?.focus();
+  }, []);
   useEffect(() => {
     if (disabled) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // Enter on another focused button (Cancel, "Not Olu?") does what that button says.
+      if (e.key === "Enter" && e.target instanceof Element && e.target.closest("button") && !pad.current?.contains(e.target)) return;
       if (/^\d$/.test(e.key)) {
         e.preventDefault();
         if (value.length < MAX_PIN) onChange(value + e.key);
@@ -40,7 +53,7 @@ export function PinPad({
   }, [value, onChange, onSubmit, disabled]);
 
   return (
-    <div className="pinpad" role="group" aria-label={label}>
+    <div className="pinpad" role="group" aria-label={label} tabIndex={-1} ref={pad}>
       <output className="pin-dots" aria-label={`${value.length} digits entered`}>
         {Array.from({ length: Math.max(4, value.length) }, (_, i) => (
           <span key={i} className={i < value.length ? "dot filled" : "dot"} />
@@ -60,7 +73,7 @@ export function PinPad({
               else if (value.length < MAX_PIN) onChange(value + k);
             }}
           >
-            {k === "clear" ? "⌫" : k === "ok" ? "OK" : k}
+            {k === "clear" ? <Delete /> : k === "ok" ? <ArrowRight /> : k}
           </button>
         ))}
       </div>

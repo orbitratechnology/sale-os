@@ -33,6 +33,11 @@ cargo xtask check-deps            # crate layering rules (docs/backlog/02 §3)
 cargo xtask gen-bindings          # regenerate TS IPC bindings after changing a command
 cargo xtask trace                 # every PRD P0 requirement is traced to a task
 
+# A dev database (close the app first; --yes deletes an existing one, backups are kept).
+cargo xtask seed --profile demo20 --yes   # Sri Lankan demo shop: 20 products; PINs are printed
+cargo xtask seed --profile shop5k --yes   # 5,000 variants; bench50k: 50,000 variants
+cargo xtask db-reset --yes                # an empty database: the app opens the setup wizard
+
 pnpm tauri build --debug          # Windows: NSIS + MSI installers in target/debug/bundle
 ```
 

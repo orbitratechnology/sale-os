@@ -499,3 +499,67 @@ pub async fn upsert_product(
     }
     Ok(())
 }
+
+/// One product as the cloud holds it: its latest `product.upserted` snapshot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredProduct {
+    pub product_id: Uuid,
+    pub version: i64,
+    pub snapshot: serde_json::Value,
+}
+
+/// `$2`: the query as typed (a whole barcode); `$3`: it as an escaped `ILIKE` pattern.
+const PRODUCT_FILTER: &str = "p.business_id = $1
+   AND ($2 = ''
+        OR p.name ILIKE $3 ESCAPE '\\'
+        OR EXISTS (SELECT 1 FROM product_variants v
+                    WHERE v.business_id = p.business_id AND v.product_id = p.product_id
+                      AND v.sku ILIKE $3 ESCAPE '\\')
+        OR EXISTS (SELECT 1 FROM product_barcodes b
+                    WHERE b.business_id = p.business_id AND b.product_id = p.product_id
+                      AND (b.value_normalized = $2 OR b.value_raw = $2)))";
+
+/// The business's products by name (archived ones too), `query` matching part of the name
+/// or a SKU, or a whole barcode; and how many match in all.
+pub async fn list_products(
+    tx: &mut TenantTx<'_>,
+    query: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<StoredProduct>, i64), sqlx::Error> {
+    let business = *tx.business_id().as_uuid();
+    let like = format!(
+        "%{}%",
+        query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
+    let total: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM products p WHERE {PRODUCT_FILTER}"))
+        .bind(business)
+        .bind(query)
+        .bind(&like)
+        .fetch_one(tx.conn())
+        .await?;
+    let rows: Vec<(Uuid, i64, serde_json::Value)> = sqlx::query_as(&format!(
+        "SELECT p.product_id, p.version, p.snapshot FROM products p WHERE {PRODUCT_FILTER}
+          ORDER BY lower(p.name), p.product_id LIMIT $4 OFFSET $5"
+    ))
+    .bind(business)
+    .bind(query)
+    .bind(&like)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(tx.conn())
+    .await?;
+    Ok((
+        rows.into_iter()
+            .map(|(product_id, version, snapshot)| StoredProduct {
+                product_id,
+                version,
+                snapshot,
+            })
+            .collect(),
+        total,
+    ))
+}

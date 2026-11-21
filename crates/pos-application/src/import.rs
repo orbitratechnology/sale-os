@@ -45,6 +45,8 @@ pub trait ImportQueries: Send + Sync {
     async fn import_job(&self, id: ImportJobId) -> Result<Option<ImportJobRecord>, QueryError>;
     async fn import_rows(&self, id: ImportJobId) -> Result<Vec<ImportRowRecord>, QueryError>;
     async fn catalog_index(&self) -> Result<CatalogIndex, QueryError>;
+    /// Rows committed so far, and the rows a commit will write (valid or committed).
+    async fn import_progress(&self, id: ImportJobId) -> Result<(u32, u32), QueryError>;
 }
 
 /// What to do with a product that already exists (same name, or a barcode or SKU that
@@ -94,6 +96,13 @@ pub struct ImportSummary {
     pub products_to_update: u32,
     /// The first problems (all are in the error report).
     pub problems: Vec<RowProblem>,
+}
+
+/// How far a commit has got, for its progress bar: rows written of rows to write.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImportProgress {
+    pub rows_done: u32,
+    pub rows_total: u32,
 }
 
 /// The outcome of a commit.
@@ -238,7 +247,10 @@ impl ImportService {
             .or(taxes.first())
             .map(|t| t.tax_category_id)
             .ok_or_else(|| invalid("there is no tax category"))?;
+        let defaults = self.catalog.new_product_defaults().await?;
         Ok(ImportContext {
+            default_unit: defaults.unit,
+            default_track_stock: defaults.track_stock,
             currency_exponent: summary.currency_exponent,
             tax_categories: taxes
                 .iter()
@@ -602,6 +614,22 @@ impl ImportService {
             .build()?;
         self.store.apply(set).await?;
         Ok(summary)
+    }
+
+    /// How far the commit has got. Each chunk of `CHUNK` products is one transaction, so this
+    /// moves a chunk at a time; it reads committed rows, so a commit resumed after a crash
+    /// starts where it stopped.
+    pub async fn progress(
+        &self,
+        ctx: &CommandContext,
+        job_id: ImportJobId,
+    ) -> Result<ImportProgress, AppError> {
+        ctx.authorize(Permission::CatalogImport)?;
+        let (rows_done, rows_total) = self.imports.import_progress(job_id).await?;
+        Ok(ImportProgress {
+            rows_done,
+            rows_total,
+        })
     }
 
     /// The rows that were not imported, as CSV: the original columns and an `error` column.

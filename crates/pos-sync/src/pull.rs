@@ -94,3 +94,33 @@ mod tests {
         }
     }
 }
+
+/// One of the calling register's own events, as the cloud received it (E19-T03).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplayedEvent {
+    pub event_id: Uuid,
+    pub local_sequence: u64,
+    pub event_type: String,
+    pub schema_version: u32,
+    /// RFC 3339.
+    pub occurred_at: String,
+    pub aggregate_type: String,
+    pub aggregate_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_version: Option<u64>,
+    pub payload: serde_json::Value,
+    /// What the cloud did with it: `applied`, `conflict` or `rejected`.
+    pub status: String,
+}
+
+/// `GET /v1/sync/replay?after=&limit=`: a restored register's own events after `after`, so it
+/// can re-create what it did after its backup.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplayPage {
+    pub events: Vec<ReplayedEvent>,
+    /// The register's acknowledged sequence.
+    pub ack_sequence: u64,
+    pub has_more: bool,
+}
