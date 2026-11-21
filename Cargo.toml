@@ -52,6 +52,7 @@ lopdf = { version = "0.42", default-features = false }
 pdf-extract = "0.12"
 rustybuzz = "0.20"
 unicode-width = "0.2"
+unicode-bidi = "0.3.18"
 serde_yaml_ng = "0.10"
 rust_decimal = { version = "1.43", default-features = false, features = ["std", "serde-str"] }
 serde = { version = "1", features = ["derive"] }

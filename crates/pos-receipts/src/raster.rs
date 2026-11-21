@@ -1,13 +1,20 @@
-//! Receipt lines as bitmaps, for scripts a receipt printer has no characters for (Sinhala,
-//! Tamil, Arabic, Devanagari, Chinese/Japanese, Korean: D-02, E20-T10).
+//! Receipt lines as bitmaps, for characters a receipt printer cannot print (D-02, E20-T10).
 //!
-//! A thermal printer's code pages hold Latin, Greek and Cyrillic at best; anything else
-//! used to be transliterated (`සීනි` → `siini`). A line that needs such a script is instead
-//! shaped with the embedded Noto fonts (the PDF's, [`crate::pdf`]) and drawn as a 1-bit
-//! image on the receipt's column grid, so it lines up with the printer's own text lines:
-//! one column is [`CELL_DOTS`] dots, the width of an ESC/POS Font A character, and the
-//! font size makes Noto Sans Mono exactly one cell wide. Other lines stay text: they print
-//! faster and in the printer's own font.
+//! A thermal printer's code pages hold Latin, Greek and Cyrillic at best, and a printer
+//! lists only some of them; anything else used to be transliterated (`සීනි` → `siini`,
+//! `كولا` → `kwl`). A line with a character none of the printer's code pages has
+//! ([`line_needs_raster`]) is instead shaped with the embedded Noto fonts (the PDF's,
+//! [`crate::pdf`]: Latin, Greek and Cyrillic, Sinhala, Tamil, Arabic, Devanagari,
+//! Chinese/Japanese, Korean) and drawn as a 1-bit image on the receipt's column grid, so it
+//! lines up with the printer's own text lines: one column is [`CELL_DOTS`] dots, the width
+//! of an ESC/POS Font A character, and the font size makes Noto Sans Mono exactly one cell
+//! wide. Lines the code pages can print stay text: they print faster and in the printer's
+//! own font.
+//!
+//! Arabic is joined and Devanagari forms conjuncts (rustybuzz shapes every run), and a line
+//! with right-to-left letters is put in display order field by field ([`crate::bidi`]), so
+//! an amount stays in its column. Wide (CJK) characters take two columns, as the text
+//! layout gives them.
 //!
 //! Glyph outlines are filled with `ab_glyph_rasterizer` and thresholded at
 //! [`INK_THRESHOLD`] coverage. Not yet checked on a real printer (D-07).
@@ -15,7 +22,8 @@
 // Pixel geometry is f32, as the shaper and the rasterizer use. No money passes through it.
 #![allow(clippy::disallowed_types)]
 
-use crate::pdf::{FontId, font, needs_script_font, runs};
+use crate::codepage::CodePage;
+use crate::pdf::{FontId, GridRun, drawable, font, grid_runs, runs};
 use ab_glyph_rasterizer::{Rasterizer, point};
 
 /// Dots per receipt column: an ESC/POS Font A character (12 × 24 dots at 203 dpi), so 32
@@ -66,9 +74,23 @@ impl Bitmap {
     }
 }
 
-/// Whether `text` has a character only a script font can draw (see the module notes).
-pub fn line_needs_raster(text: &str) -> bool {
-    text.chars().any(needs_script_font)
+/// Whether `text` has a character that none of `code_pages` has but an embedded font can
+/// draw, so the line prints better as an image. Printable ASCII is on every printer;
+/// whitespace and control characters never call for an image, nor does a character no
+/// font has (it is transliterated either way).
+///
+/// Arabic is an image even on a printer that lists an Arabic code page (CP1256, CP864): a
+/// code page prints each letter in one form, left to right in the order typed, so the
+/// letters would not join and the words would read backwards.
+pub fn line_needs_raster(text: &str, code_pages: &[CodePage]) -> bool {
+    text.chars().any(|c| {
+        !(' '..='~').contains(&c)
+            && !c.is_control()
+            && !c.is_whitespace()
+            && (crate::bidi::has_rtl(c.encode_utf8(&mut [0; 4]))
+                || !(crate::text::char_columns(c) == 1 && code_pages.iter().any(|p| p.encode(c).is_some())))
+            && drawable(c)
+    })
 }
 
 /// `text` (one receipt line, already laid out for `columns`) as a bitmap `columns` ×
@@ -78,14 +100,30 @@ pub fn render_line(text: &str, bold: bool, columns: usize) -> Bitmap {
     let base = if bold { FontId::MonoBold } else { FontId::Mono };
     // Each word starts at the column the text layout gave it, so a price after a name in
     // a script font still lands in its own columns (a script font draws spaces narrower or
-    // wider than a cell).
-    let words = words(text);
-    let shaped: Vec<(usize, Vec<crate::pdf::Run>)> =
-        words.iter().map(|(col, w)| (*col, runs(w, base))).collect();
+    // wider than a cell). A line with right-to-left letters is reordered field by field
+    // instead, each field in its own columns (crate::pdf::grid_runs, as in the PDF).
+    let placed: Vec<GridRun> = if crate::bidi::has_rtl(text) {
+        grid_runs(text, base, columns)
+    } else {
+        let mut out = Vec::new();
+        for (start, w) in words(text) {
+            let mut col = start;
+            for r in runs(&w, base) {
+                let n = r.columns;
+                out.push(GridRun {
+                    x: col as f32,
+                    room: n as f32,
+                    run: r,
+                });
+                col += n;
+            }
+        }
+        out
+    };
     // Line box: the largest ascent and descent of the fonts in the line.
     let (mut ascent, mut descent) = metrics(base);
-    for r in shaped.iter().flat_map(|(_, rs)| rs) {
-        let (a, d) = metrics(r.font);
+    for g in &placed {
+        let (a, d) = metrics(g.run.font);
         ascent = ascent.max(a);
         descent = descent.max(d);
     }
@@ -93,28 +131,24 @@ pub fn render_line(text: &str, bold: bool, columns: usize) -> Bitmap {
     let height = (baseline + (descent * SIZE).ceil()) as u32;
     let mut bitmap = Bitmap::new(columns as u32 * CELL_DOTS, height.max(1));
     let cell = CELL_DOTS as f32;
-    for (start, runs) in &shaped {
-        let mut col = *start;
-        for r in runs {
-            let x0 = col as f32 * cell;
-            let room = r.columns as f32 * cell;
-            let width = r.advance * SIZE;
-            // As in the PDF: a run wider than its columns is narrowed to fit.
-            let squeeze = if width > room && room > 0.0 {
-                room / width
-            } else {
-                1.0
-            };
-            let face = &font(r.font).shaper;
-            let scale = SIZE / face.units_per_em() as f32;
-            let mut pen = 0.0;
-            for g in &r.placed {
-                let ox = x0 + (pen + g.x_offset) * SIZE * squeeze;
-                let oy = baseline - g.y_offset * SIZE;
-                draw_glyph(&mut bitmap, face, g.id, ox, oy, scale, squeeze);
-                pen += g.x_advance;
-            }
-            col += r.columns;
+    for GridRun { x, room, run: r } in &placed {
+        let x0 = x * cell;
+        let room = room * cell;
+        let width = r.advance * SIZE;
+        // As in the PDF: a run wider than its room is narrowed to fit.
+        let squeeze = if width > room && room > 0.0 {
+            room / width
+        } else {
+            1.0
+        };
+        let face = &font(r.font).shaper;
+        let scale = SIZE / face.units_per_em() as f32;
+        let mut pen = 0.0;
+        for g in &r.placed {
+            let ox = x0 + (pen + g.x_offset) * SIZE * squeeze;
+            let oy = baseline - g.y_offset * SIZE;
+            draw_glyph(&mut bitmap, face, g.id, ox, oy, scale, squeeze);
+            pen += g.x_advance;
         }
     }
     bitmap
@@ -231,13 +265,88 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_lines_with_a_script_font_are_images() {
-        for t in ["Tea  2.50", "Café Crème", "Ωμέγα", "Хлеб", "R01-000001", "£ € ¥"] {
-            assert!(!line_needs_raster(t), "{t}");
+    fn only_lines_the_code_pages_cannot_print_are_images() {
+        let pages = [CodePage::Cp858, CodePage::Cp737, CodePage::Cp866, CodePage::Cp852];
+        for t in [
+            "Tea  2.50",
+            "Café Crème",
+            "Ωμέγα",
+            "Хлеб",
+            "Żubrówka",
+            "R01-000001",
+            "£ € ¥",
+            "Cola\u{0}\u{1b}",
+            // No font has these either (no Hebrew font is embedded yet): they are
+            // transliterated as before.
+            "Cola 😀",
+            "עברית",
+        ] {
+            assert!(!line_needs_raster(t, &pages), "{t}");
         }
-        for t in ["සීනි 1kg", "பால்", "كولا", "मसाला", "可口可乐", "콜라"]
+        for t in ["සීනි 1kg", "பால்", "كولا", "मसाला", "可口可乐", "콜라", "Tea — 2.50"]
         {
-            assert!(line_needs_raster(t), "{t}");
+            assert!(line_needs_raster(t, &pages), "{t}");
+        }
+        // An Arabic code page does not keep Arabic from being an image (see above).
+        assert!(line_needs_raster("كولا", &[CodePage::Cp1256]));
+        assert!(!line_needs_raster("Café", &[CodePage::Cp1256]));
+        // A printer with no code pages (ASCII only): accented Latin, Greek and Cyrillic are
+        // images too, instead of `Cafe`, `Omega`, `Khleb`.
+        for t in ["Café", "Ωμέγα", "Хлеб", "£5"] {
+            assert!(line_needs_raster(t, &[]), "{t}");
+        }
+        for t in ["Tea  2.50", "R01-000001", "Cola 😀"] {
+            assert!(!line_needs_raster(t, &[]), "{t}");
+        }
+    }
+
+    /// The dot columns with ink between `from` and `to`.
+    fn ink_columns(b: &Bitmap, from: u32, to: u32) -> Vec<u32> {
+        (from..to)
+            .filter(|x| (0..b.height).any(|y| b.get(*x, y)))
+            .collect()
+    }
+
+    /// An Arabic name with a Latin word reads right to left: the Latin word, last in the
+    /// text, is drawn first (at the left, exactly as on its own), the Arabic after it; the
+    /// amount stays in its columns at the right edge.
+    #[test]
+    fn an_arabic_line_reads_right_to_left_and_its_amount_stays_put() {
+        let pepsi = render_line("Pepsi", false, 48);
+        let mixed = render_line("كولا Pepsi", false, 48);
+        let cut = 5 * CELL_DOTS;
+        assert_eq!(ink_columns(&mixed, 0, cut), ink_columns(&pepsi, 0, cut));
+        assert!(
+            !ink_columns(&mixed, cut, 12 * CELL_DOTS).is_empty(),
+            "the Arabic word after the Latin one"
+        );
+        assert!(ink_columns(&mixed, 12 * CELL_DOTS, mixed.width).is_empty());
+        // In logical order the Arabic word would have come first, at column 0.
+        let arabic_first = render_line("كولا", false, 48);
+        assert_ne!(ink_columns(&mixed, 0, cut), ink_columns(&arabic_first, 0, cut));
+
+        let name = "كولا Pepsi";
+        let pad = " ".repeat(42 - crate::text::text_columns(name));
+        let line = render_line(&format!("{name}{pad}{:>6}", "250.00"), false, 48);
+        let amount = render_line(&format!("{}{:>6}", " ".repeat(42), "250.00"), false, 48);
+        let (a, b) = (42 * CELL_DOTS, 48 * CELL_DOTS);
+        assert_eq!(ink_columns(&line, a, b), ink_columns(&amount, a, b));
+        assert!(!ink_columns(&line, a, b).is_empty());
+        assert_eq!(ink_columns(&line, 0, cut), ink_columns(&pepsi, 0, cut));
+    }
+
+    /// Devanagari and Chinese fit the columns the layout gives them (two per CJK
+    /// character), so text after them stays aligned.
+    #[test]
+    fn devanagari_and_cjk_stay_in_their_columns() {
+        for (name, cols) in [("मसाला चाय", 9), ("可口可乐", 8), ("콜라 제로", 9)] {
+            assert_eq!(crate::text::text_columns(name), cols, "{name}");
+            let b = render_line(name, false, 32);
+            assert!(!ink_columns(&b, 0, cols as u32 * CELL_DOTS).is_empty(), "{name}");
+            assert!(
+                ink_columns(&b, cols as u32 * CELL_DOTS + 1, b.width).is_empty(),
+                "{name} runs past column {cols}"
+            );
         }
     }
 

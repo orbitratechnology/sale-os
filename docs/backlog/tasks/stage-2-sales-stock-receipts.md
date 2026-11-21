@@ -198,7 +198,7 @@ from a fixed set of hand-calculated sales.
 - **Acceptance:**
   - [ ] Exports receipt-width (58/80 mm continuous) and A4 invoice-style PDFs with the Noto Sans font embedded.
   - [ ] A golden test extracts the text with `pdf-extract`, matches the expected lines, and checks the page size.
-  - [ ] Non-Latin text (Arabic, Devanagari, CJK sample product names) renders without tofu, checked through a glyph-coverage check (Arabic shaping limitations are noted; full RTL is a D-02 follow-up).
+  - [ ] Non-Latin text (Arabic, Devanagari, CJK sample product names) renders without tofu, checked through a glyph-coverage check (Arabic shaping limitations are noted; full RTL is a D-02 follow-up; done 2026-11-21: lines are reordered with the Unicode Bidirectional Algorithm, see status.md).
   - [ ] The save goes through the `dialog:save` path chosen by the user, and Rust writes the file. Audited as `receipt.exported_pdf`.
   - [ ] **AT-08:** works with no printer installed.
 

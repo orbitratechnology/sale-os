@@ -49,8 +49,10 @@ pub fn encode_options(caps: &PrinterCapabilities, columns: usize) -> EncodeOptio
         qr: caps.qr,
         drawer_kick: None,
         columns: Some(columns),
-        // Every ESC/POS printer prints `GS v 0` images: Sinhala and Tamil names print as
-        // shaped images instead of transliterated Latin (crate::raster).
+        // Every ESC/POS printer prints `GS v 0` images: a line with characters the
+        // printer's code pages lack (Sinhala, Tamil, Arabic, Devanagari, CJK, Hangul, or
+        // accented Latin a page is missing for) prints as a shaped image instead of
+        // transliterated Latin (pos_receipts::raster).
         raster: caps.dialect == CommandDialect::EscPos,
     }
 }

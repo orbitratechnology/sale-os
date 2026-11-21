@@ -1,12 +1,13 @@
 # Embedded fonts (E13-T04, ADR-014)
 
 The PDF renderer embeds these fonts in the binary so a receipt never depends on the fonts
-of the computer that makes it. All are from the Noto project and licensed under the
+of the computer that makes it. The same fonts draw the lines a receipt printer's code pages
+cannot print, as images (`src/raster.rs`). All are from the Noto project and licensed under the
 SIL Open Font License 1.1 (`OFL.txt`, which must ship with the app).
 
 | File | Source | Used for |
 |---|---|---|
-| `NotoSansMono-Regular.ttf`, `NotoSansMono-Bold.ttf` | notofonts.github.io `fonts/NotoSansMono/unhinted/ttf/` | Receipt-width PDFs (the 32/48-column grid) |
+| `NotoSansMono-Regular.ttf`, `NotoSansMono-Bold.ttf` | notofonts.github.io `fonts/NotoSansMono/unhinted/ttf/` | Receipt-width PDFs (the 32/48-column grid) and printed image lines |
 | `NotoSans-Regular.ttf`, `NotoSans-Bold.ttf` | `fonts/NotoSans/unhinted/ttf/` | A4 PDFs |
 | `NotoSansSinhala-Regular.ttf` | `fonts/NotoSansSinhala/unhinted/ttf/` | Sinhala fallback (Sri Lanka, D-02) |
 | `NotoSansTamil-Regular.ttf` | `fonts/NotoSansTamil/unhinted/ttf/` | Tamil fallback (Sri Lanka, D-02) |

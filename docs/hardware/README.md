@@ -29,9 +29,13 @@ switch or utility), choose its ESC/POS profile instead. Star TSP100/TSP143 (futu
 only and are not supported for text receipts.
 
 **Languages.** The till picks one of the printer's code pages for each line: Western European, Central European,
-Cyrillic, Greek, Turkish, Baltic, Hebrew, Arabic (CP864), Vietnamese (CP1258) and Japanese half-width katakana. Any
-character the printer can't print is transliterated (`€`→`E`, `ß`→`s`, Chinese→pinyin), never turned into `?`. For
-full CJK, Arabic shaping or Devanagari, print the PDF receipt on a driver printer.
+Cyrillic, Greek, Turkish, Baltic, Hebrew, Arabic (CP864), Vietnamese (CP1258) and Japanese half-width katakana. On an
+ESC/POS printer, a line with a character none of the printer's code pages has (Sinhala, Tamil, Arabic, Devanagari,
+Chinese, Japanese, Korean, or an accented letter the printer has no page for) prints as an image drawn with the till's
+own fonts: letters joined, Arabic right to left, in the same columns as the text lines, so amounts stay aligned. Arabic
+always prints as an image, because a code page prints its letters unjoined and in typed order. Lines the code pages can
+print stay text. Star Line Mode and plain-text printers transliterate what they can't print (`€`→`E`, `ß`→`s`,
+Chinese→pinyin), never `?`; so does every printer for Hebrew, which has no bundled font yet.
 
 **What happens when it fails.**
 

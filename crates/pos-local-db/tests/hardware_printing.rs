@@ -259,3 +259,34 @@ async fn sinhala_and_tamil_names_print_as_images_on_an_epson() {
         );
     }
 }
+
+/// D-02: Arabic (with a Latin brand and digits), Devanagari and Chinese names reach the
+/// paper as shaped images on the 42-column grid, not transliterated; the amounts and the
+/// rest of the receipt stay text in the printer's code pages.
+#[tokio::test]
+async fn arabic_devanagari_and_chinese_names_print_as_images_on_an_epson() {
+    for name in ["عصير Rani 250 مل", "मसाला चाय", "可口可乐 330ml"] {
+        let Printed { bytes, paper, .. } = sell_and_print(name).await;
+        assert!(paper.contains("[IMAGE 504x"), "{name}: {paper}");
+        // Not transliterated, and the Arabic not sent as CP1256 text either (the TM-T88V
+        // has that page, but it would print the letters unjoined and left to right).
+        let transliterated = pos_receipts::fit_line(name, 42, &[]);
+        assert!(
+            !paper.contains(&transliterated[..5]),
+            "{name} as {transliterated}: {paper}"
+        );
+        assert!(
+            !paper.contains("Rani") && !paper.contains("330ml"),
+            "{name} as text: {paper}"
+        );
+        assert!(paper.contains("19.99"), "the amounts stay text: {paper}");
+        assert!(paper.contains("TOTAL"), "the rest stays text: {paper}");
+        assert!(paper.contains("BARCODE") && paper.contains("CUT"), "{paper}");
+        let ops = pos_receipts::printer::parse(&bytes, pos_receipts::Dialect::EscPos);
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, pos_receipts::printer::Op::Unknown(_))),
+            "{paper}"
+        );
+    }
+}

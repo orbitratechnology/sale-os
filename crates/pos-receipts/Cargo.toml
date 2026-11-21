@@ -18,6 +18,7 @@ png.workspace = true
 zune-jpeg.workspace = true
 rustybuzz.workspace = true
 unicode-width.workspace = true
+unicode-bidi.workspace = true
 
 [dev-dependencies]
 lopdf.workspace = true

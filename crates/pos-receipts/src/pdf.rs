@@ -9,10 +9,15 @@
 //! covers it, so Arabic letters join and Devanagari forms conjuncts; only the glyphs used
 //! are embedded (subset) with a ToUnicode map, so the text can be copied and searched.
 //!
-//! Limits: no bidirectional reordering inside a line (a run of Arabic is shaped and laid
-//! out right to left, but runs are placed in logical order), so a line mixing Arabic and
-//! Latin words may read out of order (full RTL is a D-02 follow-up). Characters outside
-//! the embedded sets are reported by [`missing_glyphs`].
+//! A line with Arabic or Hebrew is put in display order with the Unicode Bidirectional
+//! Algorithm before it is shaped ([`crate::bidi`]): each field of a receipt line (a name, a
+//! label, an amount) is reordered within its own columns, so amounts stay in their column.
+//!
+//! The receipt number is drawn as a Code 128 barcode ([`crate::code128`]: vector bars, the
+//! number in text below), as the printer prints it.
+//!
+//! Characters outside the embedded sets are reported by [`missing_glyphs`]. Hebrew has no
+//! embedded font yet.
 
 // Page geometry is in points (f32, as PDF and the shaper use). No money passes through it:
 // amounts are formatted from `Money` into text before layout.
@@ -21,7 +26,7 @@
 use crate::document::{CopyKind, DocumentKind, ReceiptDocument, ZSection, amount, tender_label};
 use crate::text::{self, COLUMNS_58MM, COLUMNS_80MM, Style, char_columns};
 use krilla::Document;
-use krilla::geom::{PathBuilder, Point, Size, Transform};
+use krilla::geom::{PathBuilder, Point, Rect, Size, Transform};
 use krilla::page::PageSettings;
 use krilla::paint::{Fill, Stroke};
 use krilla::text::{Font as PdfFont, GlyphId, KrillaGlyph};
@@ -143,6 +148,11 @@ fn font_for(base: FontId, c: char) -> Option<FontId> {
     FALLBACK.into_iter().find(|f| covers(*f, c))
 }
 
+/// Whether some embedded font draws `c`.
+pub(crate) fn drawable(c: char) -> bool {
+    font_for(FontId::Mono, c).is_some()
+}
+
 /// Characters of `text` that no embedded font can draw (they would print as empty boxes).
 /// Controls and whitespace are ignored.
 pub fn missing_glyphs(text: &str) -> Vec<char> {
@@ -177,22 +187,38 @@ pub(crate) struct Placed {
     pub(crate) y_offset: f32,
 }
 
-/// Whether `c` is drawn by a fallback script font (Sinhala, Tamil, Arabic, Devanagari,
-/// CJK, Hangul) that neither base font covers: a receipt printer's code pages have none of
-/// these, and transliteration would lose them, so such a line prints as an image.
-pub(crate) fn needs_script_font(c: char) -> bool {
-    !c.is_control()
-        && !c.is_whitespace()
-        && !covers(FontId::Mono, c)
-        && !covers(FontId::Sans, c)
-        && FALLBACK
-            .into_iter()
-            .any(|f| !matches!(f, FontId::Mono | FontId::Sans) && covers(f, c))
+/// Splits `text` into runs by font (a run keeps going while its font covers the next
+/// character, so spaces and digits stay inside an Arabic or CJK run) and shapes each, in
+/// logical order. Use [`visual_runs`] for text that may hold right-to-left letters.
+pub(crate) fn runs(text: &str, base: FontId) -> Vec<Run> {
+    runs_in(text, base, None)
 }
 
-/// Splits `text` into runs by font (a run keeps going while its font covers the next
-/// character, so spaces and digits stay inside an Arabic or CJK run) and shapes each.
-pub(crate) fn runs(text: &str, base: FontId) -> Vec<Run> {
+/// `text`'s runs in display order, left to right: the bidirectional runs of
+/// [`crate::bidi::visual_runs`], each split by font and shaped in its direction (a
+/// right-to-left run's font runs placed right to left). Text without right-to-left letters
+/// gives exactly [`runs`].
+pub(crate) fn visual_runs(text: &str, base: FontId) -> Vec<Run> {
+    if !crate::bidi::has_rtl(text) {
+        return runs(text, base);
+    }
+    let mut out = Vec::new();
+    for (part, rtl) in crate::bidi::visual_runs(text) {
+        let dir = if rtl {
+            Direction::RightToLeft
+        } else {
+            Direction::LeftToRight
+        };
+        let mut parts = runs_in(&part, base, Some(dir));
+        if rtl {
+            parts.reverse();
+        }
+        out.extend(parts);
+    }
+    out
+}
+
+fn runs_in(text: &str, base: FontId, dir: Option<Direction>) -> Vec<Run> {
     let mut parts: Vec<(FontId, String)> = Vec::new();
     for c in text.chars() {
         match parts.last_mut() {
@@ -209,7 +235,7 @@ pub(crate) fn runs(text: &str, base: FontId) -> Vec<Run> {
     parts
         .into_iter()
         .map(|(f, s)| {
-            let (glyphs, placed, advance) = shape(f, &s);
+            let (glyphs, placed, advance) = shape(f, &s, dir);
             let columns = s.chars().map(char_columns).sum();
             Run {
                 font: f,
@@ -226,12 +252,16 @@ pub(crate) fn runs(text: &str, base: FontId) -> Vec<Run> {
 /// Shapes `text` in one font (as krilla's own simple shaping does, with the cluster
 /// ranges it needs for the ToUnicode map). Returns the glyphs, the same glyphs as plain
 /// positions, and the advance in ems.
-fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, Vec<Placed>, f32) {
+/// `dir`: the direction from the bidirectional algorithm; `None` guesses it from the script.
+fn shape(id: FontId, text: &str, dir: Option<Direction>) -> (Vec<KrillaGlyph>, Vec<Placed>, f32) {
     let face = &font(id).shaper;
     let upem = face.units_per_em() as f32;
     let mut buffer = UnicodeBuffer::new();
     buffer.push_str(text);
     buffer.guess_segment_properties();
+    if let Some(d) = dir {
+        buffer.set_direction(d);
+    }
     let ltr = matches!(
         buffer.direction(),
         Direction::LeftToRight | Direction::TopToBottom
@@ -274,7 +304,7 @@ fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, Vec<Placed>, f32) {
 
 /// Width of `text` in points at `size`.
 fn width(text: &str, base: FontId, size: f32) -> f32 {
-    runs(text, base).iter().map(|r| r.advance * size).sum()
+    visual_runs(text, base).iter().map(|r| r.advance * size).sum()
 }
 
 // ---------- layout ----------
@@ -297,7 +327,7 @@ enum Op {
         size: f32,
         align: Align,
     },
-    /// A monospace line laid out on the receipt's column grid.
+    /// A monospace line laid out on the receipt's column grid, `columns` wide.
     Grid {
         x: f32,
         y: f32,
@@ -305,6 +335,16 @@ enum Op {
         bold: bool,
         cell: f32,
         size: f32,
+        columns: usize,
+    },
+    /// A Code 128 symbol: its first bar's left edge at `x`, top at `y`; each bar is
+    /// (first module, width in modules), a module `module` points wide.
+    Bars {
+        x: f32,
+        y: f32,
+        module: f32,
+        height: f32,
+        bars: Vec<(usize, usize)>,
     },
     /// The business logo: top-left corner at (`x`, `y`), `w` × `h` points.
     Image {
@@ -364,12 +404,99 @@ fn fit(logo: &crate::logo::Logo, max_w: f32, max_h: f32) -> (f32, f32) {
 
 /// Font size at which a Noto Sans Mono character is exactly `cell` points wide.
 fn mono_size(cell: f32) -> f32 {
-    let face = &font(FontId::Mono).shaper;
-    let adv = face
-        .glyph_index('0')
-        .and_then(|g| face.glyph_hor_advance(g))
-        .unwrap_or(600);
-    cell * face.units_per_em() as f32 / f32::from(adv)
+    cell / cell_em()
+}
+
+/// Widest bar module: 0.33 mm (13 mil), a common size for scanning from paper and screens.
+const MAX_MODULE: f32 = 0.33 * MM;
+/// Narrowest bar module drawn: 0.25 mm, the printer's own minimum (2 dots at 203 dpi).
+/// Data too long for the width at this module is printed as text only, as on paper.
+const MIN_MODULE: f32 = 0.25 * MM;
+
+/// The Code 128 symbol for `data` centred on `mid`, top at `y`, `height` tall, with its
+/// quiet zones inside `max_w`. `None` when `data` cannot be Code 128 or does not fit.
+fn barcode(data: &str, mid: f32, y: f32, max_w: f32, height: f32) -> Option<Op> {
+    let modules = crate::code128::modules(data)?.len();
+    let module = MAX_MODULE.min(max_w / (modules + 2 * crate::code128::QUIET_ZONE) as f32);
+    if module < MIN_MODULE {
+        return None;
+    }
+    Some(Op::Bars {
+        x: mid - modules as f32 * module / 2.0,
+        y,
+        module,
+        height,
+        bars: crate::code128::bars(data)?,
+    })
+}
+
+/// Where and how receipt lines go on the column grid.
+struct Grid {
+    x: f32,
+    cell: f32,
+    size: f32,
+    line_h: f32,
+    /// The baseline's depth in a line, as a share of `line_h`.
+    baseline: f32,
+    /// The top of the first line on the first page, and on later pages.
+    first_top: f32,
+    top: f32,
+    /// No line ends below this.
+    bottom: f32,
+    columns: usize,
+    bar_h: f32,
+}
+
+/// Lays `lines` out on the grid, page by page. The receipt number line ([`Style::Barcode`])
+/// gets its bars above the number, as the printer prints it. Returns the pages and the
+/// lowest point used on any page.
+fn grid(lines: &[text::TextLine], g: &Grid) -> (Vec<Vec<Op>>, f32) {
+    let gap = 1.5 * MM;
+    let width = g.columns as f32 * g.cell;
+    let mut pages: Vec<Vec<Op>> = vec![Vec::new()];
+    let mut top = g.first_top;
+    let mut deepest = top;
+    for l in lines {
+        let text = l.text.trim_end().to_owned();
+        let symbol = (l.style == Style::Barcode)
+            .then(|| barcode(text.trim(), g.x + width / 2.0, 0.0, width, g.bar_h))
+            .flatten();
+        let extra = if symbol.is_some() { gap + g.bar_h } else { 0.0 };
+        let page_used = pages.last().is_some_and(|p| !p.is_empty());
+        if top + extra + g.line_h > g.bottom && page_used {
+            pages.push(Vec::new());
+            top = g.top;
+        }
+        let ops = pages.last_mut().expect("there is always a page");
+        if let Some(Op::Bars {
+            x,
+            module,
+            height,
+            bars,
+            ..
+        }) = symbol
+        {
+            ops.push(Op::Bars {
+                x,
+                y: top + gap,
+                module,
+                height,
+                bars,
+            });
+        }
+        ops.push(Op::Grid {
+            x: g.x,
+            y: top + extra + g.line_h * g.baseline,
+            text,
+            bold: l.style == Style::Bold,
+            cell: g.cell,
+            size: g.size,
+            columns: g.columns,
+        });
+        top += extra + g.line_h;
+        deepest = deepest.max(top);
+    }
+    (pages, deepest)
 }
 
 /// Continuous paper: the same lines as the preview and the printer, 1.5 mm per column,
@@ -395,35 +522,27 @@ fn roll(doc: &ReceiptDocument, paper_mm: f32, columns: usize, logo: Option<&crat
         )
     });
     let offset = image.as_ref().map_or(0.0, |(_, dy)| *dy);
-    let per_page = (((MAX_PAGE_HEIGHT - 2.0 * margin_y - offset) / line_h) as usize).max(1);
-    let mut pages: Vec<Vec<Op>> = lines
-        .chunks(per_page)
-        .enumerate()
-        .map(|(page, chunk)| {
-            let top = margin_y + if page == 0 { offset } else { 0.0 };
-            chunk
-                .iter()
-                .enumerate()
-                .map(|(i, l)| Op::Grid {
-                    x: margin_x,
-                    y: top + (i as f32 + 1.0) * line_h - line_h * 0.25,
-                    text: l.text.trim_end().to_owned(),
-                    bold: l.style == Style::Bold,
-                    cell,
-                    size,
-                })
-                .collect()
-        })
-        .collect();
+    let (mut pages, deepest) = grid(
+        &lines,
+        &Grid {
+            x: margin_x,
+            cell,
+            size,
+            line_h,
+            baseline: 0.75,
+            first_top: margin_y + offset,
+            top: margin_y,
+            bottom: MAX_PAGE_HEIGHT - margin_y,
+            columns,
+            // 10 mm, as the printer's bars (80 dots).
+            bar_h: 10.0 * MM,
+        },
+    );
     if let (Some((op, _)), Some(first)) = (image, pages.first_mut()) {
         first.insert(0, op);
     }
-    let longest = lines.len().min(per_page);
     Layout {
-        page: (
-            paper_mm * MM,
-            2.0 * margin_y + offset + longest.max(1) as f32 * line_h,
-        ),
+        page: (paper_mm * MM, deepest.max(margin_y + offset + line_h) + margin_y),
         pages,
     }
 }
@@ -434,31 +553,27 @@ fn a4_grid(doc: &ReceiptDocument) -> Layout {
     let lines = text::render(doc, COLUMNS_80MM);
     let cell = 2.6 * MM;
     let size = mono_size(cell);
-    let line_h = size * 1.4;
-    let margin_x = (A4.0 - COLUMNS_80MM as f32 * cell) / 2.0;
     let top = 20.0 * MM;
-    let per_page = (((A4.1 - 2.0 * top) / line_h) as usize).max(1);
-    Layout {
-        page: A4,
-        pages: lines
-            .chunks(per_page)
-            .map(|chunk| {
-                chunk
-                    .iter()
-                    .enumerate()
-                    .map(|(i, l)| Op::Grid {
-                        x: margin_x,
-                        y: top + (i as f32 + 1.0) * line_h,
-                        text: l.text.trim_end().to_owned(),
-                        bold: l.style == Style::Bold,
-                        cell,
-                        size,
-                    })
-                    .collect()
-            })
-            .collect(),
-    }
+    let (pages, _) = grid(
+        &lines,
+        &Grid {
+            x: (A4.0 - COLUMNS_80MM as f32 * cell) / 2.0,
+            cell,
+            size,
+            line_h: size * 1.4,
+            baseline: 1.0,
+            first_top: top,
+            top,
+            bottom: A4.1 - top,
+            columns: COLUMNS_80MM,
+            bar_h: A4_BAR_H,
+        },
+    );
+    Layout { page: A4, pages }
 }
+
+/// Bar height of the receipt-number barcode on A4.
+const A4_BAR_H: f32 = 12.0 * MM;
 
 /// Builds A4 pages top to bottom, starting a new page when the next block does not fit.
 struct Pager {
@@ -497,6 +612,21 @@ impl Pager {
     fn rule(&mut self) {
         let (x1, x2, y) = (self.left, self.right, self.y);
         self.ops().push(Op::Rule { x1, x2, y });
+    }
+    /// The receipt number centred: its Code 128 bars, and the number below them (only the
+    /// number when it cannot be a barcode).
+    fn barcode(&mut self, data: &str) {
+        let mid = (self.left + self.right) / 2.0;
+        self.room(A4_BAR_H + 2.0 * LINE);
+        // The bars start where the cap height of a line at `y` would.
+        let top = self.y - 0.7 * BODY;
+        let max_w = (self.right - self.left).min(100.0 * MM);
+        if let Some(op) = barcode(data, mid, top, max_w, A4_BAR_H) {
+            self.ops().push(op);
+            self.y = top + A4_BAR_H + 1.5 * MM + BODY;
+        }
+        self.text(mid, data, FontId::Sans, BODY, Align::Center);
+        self.y += LINE;
     }
 }
 
@@ -754,16 +884,16 @@ fn a4_invoice(doc: &ReceiptDocument, logo: Option<&crate::logo::Logo>) -> Layout
         p.y += LINE + if *bold { 2.0 } else { 0.0 };
     }
 
-    // Footer.
-    let mut tail: Vec<String> = doc.footer.clone();
-    tail.push(doc.barcode.clone());
+    // Footer, then the receipt number as a barcode.
     p.y += LINE;
-    p.room(tail.len() as f32 * LINE);
+    p.room(doc.footer.len() as f32 * LINE + A4_BAR_H + 2.0 * LINE);
     let mid = (left + right) / 2.0;
-    for l in &tail {
+    for l in &doc.footer {
         p.text(mid, l, FontId::Sans, BODY, Align::Center);
         p.y += LINE;
     }
+    p.y += LINE / 2.0;
+    p.barcode(&doc.barcode);
     Layout {
         page: A4,
         pages: p.pages,
@@ -883,7 +1013,13 @@ fn a4_z(doc: &ReceiptDocument, z: &ZSection) -> Layout {
         ("Closed", &doc.meta.local_time, &doc.meta.cashier_name),
     ] {
         p.text(left, what, FontId::Sans, BODY, Align::Left);
-        p.text(when_x, &format!("{time} by {by}"), FontId::Sans, BODY, Align::Left);
+        p.text(
+            when_x,
+            &format!("{time} by {by}"),
+            FontId::Sans,
+            BODY,
+            Align::Left,
+        );
         p.y += LINE;
     }
     p.y += LINE;
@@ -985,8 +1121,7 @@ fn a4_z(doc: &ReceiptDocument, z: &ZSection) -> Layout {
         p.y += LINE;
     }
 
-    p.room(LINE);
-    p.text((left + right) / 2.0, &doc.barcode, FontId::Sans, BODY, Align::Center);
+    p.barcode(&doc.barcode);
     Layout {
         page: A4,
         pages: p.pages,
@@ -1033,7 +1168,7 @@ fn draw(
                     size,
                     align,
                 } => {
-                    let runs = runs(text, *font);
+                    let runs = visual_runs(text, *font);
                     let w: f32 = runs.iter().map(|r| r.advance * size).sum();
                     let mut cursor = match align {
                         Align::Left => *x,
@@ -1052,13 +1187,39 @@ fn draw(
                     bold,
                     cell,
                     size,
+                    columns,
                 } => {
                     let base = if *bold { FontId::MonoBold } else { FontId::Mono };
-                    let mut col = 0usize;
-                    for r in runs(text, base) {
-                        let room = r.columns as f32 * cell;
-                        put(&mut surface, &r, x + col as f32 * cell, *y, *size, Some(room));
-                        col += r.columns;
+                    for g in grid_runs(text, base, *columns) {
+                        put(
+                            &mut surface,
+                            &g.run,
+                            x + g.x * cell,
+                            *y,
+                            *size,
+                            Some(g.room * cell),
+                        );
+                    }
+                }
+                Op::Bars {
+                    x,
+                    y,
+                    module,
+                    height,
+                    bars,
+                } => {
+                    let mut b = PathBuilder::new();
+                    for (start, w) in bars {
+                        if let Some(r) =
+                            Rect::from_xywh(x + *start as f32 * module, *y, *w as f32 * module, *height)
+                        {
+                            b.push_rect(r);
+                        }
+                    }
+                    if let Some(path) = b.finish() {
+                        surface.set_stroke(None);
+                        surface.set_fill(Some(Fill::default()));
+                        surface.draw_path(&path);
                     }
                 }
                 Op::Image { x, y, w, h } => {
@@ -1088,6 +1249,68 @@ fn draw(
         page.finish();
     }
     document.finish().map_err(|e| PdfError::Write(format!("{e:?}")))
+}
+
+/// A run placed on the receipt grid: where it starts and how wide it may be, in columns
+/// (a run wider than its room is narrowed to fit).
+pub(crate) struct GridRun {
+    pub(crate) x: f32,
+    pub(crate) room: f32,
+    pub(crate) run: Run,
+}
+
+/// The width of a grid column in ems: Noto Sans Mono's advance.
+fn cell_em() -> f32 {
+    let face = &font(FontId::Mono).shaper;
+    let adv = face
+        .glyph_index('0')
+        .and_then(|g| face.glyph_hor_advance(g))
+        .unwrap_or(600);
+    f32::from(adv) / face.units_per_em() as f32
+}
+
+/// A grid line's runs in display order, each in the columns the layout gave its text.
+///
+/// A line with right-to-left text is reordered field by field ([`crate::bidi::fields`]),
+/// so each name, label and amount stays in its own columns. Inside such a field the runs
+/// sit at their natural widths, one after the other (a column has no meaning once words
+/// move), narrowed together only if they would run into the next field: Arabic letters are
+/// counted one column each, and a word of wide letters (`مشمش`) is wider than that, so it
+/// may use the free columns after its field, keeping one space before the next.
+pub(crate) fn grid_runs(text: &str, base: FontId, columns: usize) -> Vec<GridRun> {
+    let mut out = Vec::new();
+    if !crate::bidi::has_rtl(text) {
+        let mut col = 0;
+        for r in runs(text, base) {
+            let n = r.columns;
+            out.push(GridRun {
+                x: col as f32,
+                room: n as f32,
+                run: r,
+            });
+            col += n;
+        }
+        return out;
+    }
+    let cell = cell_em();
+    let fields = crate::bidi::fields(text, columns);
+    for (k, (start, field)) in fields.iter().enumerate() {
+        let room = match fields.get(k + 1) {
+            Some((next, _)) => next.saturating_sub(start + 1),
+            None => columns.saturating_sub(*start),
+        }
+        .max(text::text_columns(field)) as f32;
+        let runs = visual_runs(field, base);
+        let natural: f32 = runs.iter().map(|r| r.advance / cell).sum();
+        let squeeze = if natural > room { room / natural } else { 1.0 };
+        let mut x = *start as f32;
+        for r in runs {
+            let w = r.advance / cell * squeeze;
+            out.push(GridRun { x, room: w, run: r });
+            x += w;
+        }
+    }
+    out
 }
 
 /// Draws one run with its baseline at `y`. With `room`, a run wider than its columns (a
@@ -1154,5 +1377,90 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Devanagari, Chinese, Japanese and Korean fit the columns the layout gives them
+    /// (`char_columns`: 2 for each wide character) at full size, as Sinhala and Tamil do.
+    #[test]
+    fn devanagari_and_cjk_fit_their_columns_on_the_grid() {
+        let cell = cell_em();
+        for word in [
+            "मसाला",
+            "चाय",
+            "दूध",
+            "चीनी",
+            "बिस्कुट",
+            "क्षत्रिय",
+            "可口可乐",
+            "緑茶",
+            "コーラ",
+            "牛奶",
+            "콜라",
+            "제로",
+        ] {
+            for r in runs(word, FontId::Mono) {
+                assert!(
+                    r.advance <= r.columns as f32 * cell + 1e-3,
+                    "{word}: {:.2} em for {} columns",
+                    r.advance,
+                    r.columns
+                );
+            }
+        }
+    }
+
+    /// Arabic letters join (initial, medial and final forms differ from the letters drawn
+    /// alone) and Devanagari forms conjuncts (fewer glyphs than letters), in the PDF and
+    /// on printed images alike.
+    #[test]
+    fn arabic_joins_and_devanagari_forms_conjuncts() {
+        let ids = |t: &str| -> Vec<u16> {
+            runs(t, FontId::Mono)
+                .iter()
+                .flat_map(|r| r.placed.iter().map(|g| g.id))
+                .collect()
+        };
+        let word = "كولا";
+        let mut alone: Vec<u16> = word.chars().flat_map(|c| ids(&c.to_string())).collect();
+        alone.reverse(); // the word is shaped right to left
+        let joined = ids(word);
+        assert_ne!(joined, alone, "joined forms");
+        let conjunct = runs("क्ष", FontId::Mono);
+        assert_eq!(conjunct.len(), 1);
+        assert!(
+            conjunct[0].placed.len() < "क्ष".chars().count(),
+            "क + ् + ष is one glyph"
+        );
+    }
+
+    /// On the grid, a right-to-left field stays inside its columns and the free columns
+    /// after it, keeping a space before the next field: amounts are never overdrawn.
+    #[test]
+    fn arabic_fields_stay_clear_of_the_amount() {
+        let cell = cell_em();
+        for name in ["مشمش مجفف", "شمس", "عصير Rani 250 مل", "خصم الصيف"] {
+            let pad = 42 - text::text_columns(name);
+            let line = format!("{name}{}{:>6}", " ".repeat(pad), "250.00");
+            let placed = grid_runs(&line, FontId::Mono, 48);
+            let amount = placed
+                .iter()
+                .find(|g| g.run.text == "250.00")
+                .expect("the amount");
+            assert_eq!(amount.x, 42.0, "{name}");
+            for g in placed.iter().filter(|g| g.run.text != "250.00") {
+                let drawn = g.run.advance / cell;
+                assert!(
+                    g.x + drawn.min(g.room) <= 41.0 + 1e-3,
+                    "{name}: {:?} reaches the amount",
+                    g.run.text
+                );
+            }
+        }
+        // A name alone on its line may use the whole line.
+        let wide = grid_runs("مشمش", FontId::Mono, 32);
+        assert!(
+            wide.iter().all(|g| g.room >= g.run.advance / cell - 1e-3),
+            "not squeezed"
+        );
     }
 }

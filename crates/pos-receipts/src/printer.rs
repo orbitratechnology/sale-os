@@ -79,9 +79,11 @@ pub struct EncodeOptions {
     /// [`crate::text::render`] is the width they were rendered for (every receipt has a
     /// full-width rule). Transliteration never makes a line wider than this.
     pub columns: Option<usize>,
-    /// Print a line that needs a script no code page has (Sinhala, Tamil, Arabic,
-    /// Devanagari, CJK, Hangul) as an image instead of transliterating it
-    /// ([`crate::raster`]). ESC/POS only; other dialects keep transliterating.
+    /// Print a line with a character none of `code_pages` has (Sinhala, Tamil, Arabic,
+    /// Devanagari, CJK, Hangul, or Latin, Greek and Cyrillic letters the listed pages lack)
+    /// as an image in the embedded fonts instead of transliterating it ([`crate::raster`]).
+    /// Arabic is always an image (joined and right to left), even with an Arabic code page.
+    /// ESC/POS only; other dialects keep transliterating (or print an Arabic code page).
     pub raster: bool,
 }
 
@@ -138,9 +140,25 @@ pub fn encode(lines: &[TextLine], opts: &EncodeOptions) -> Vec<u8> {
             // The barcode prints the number below itself.
             continue;
         }
-        if opts.raster && opts.dialect == Dialect::EscPos && crate::raster::line_needs_raster(&l.text) {
-            // The image is the whole line and advances the paper itself.
-            w.raster(&crate::raster::render_line(&l.text, want, columns));
+        if opts.raster
+            && opts.dialect == Dialect::EscPos
+            && crate::raster::line_needs_raster(&l.text, &page_set)
+        {
+            // The image is the whole line and advances the paper itself. A character no
+            // font has is drawn as its transliteration, in the same columns.
+            let text: String = l
+                .text
+                .chars()
+                .filter(|c| !c.is_control())
+                .map(|c| {
+                    if c == ' ' || crate::pdf::drawable(c) {
+                        c.to_string()
+                    } else {
+                        transliterate(c).0
+                    }
+                })
+                .collect();
+            w.raster(&crate::raster::render_line(&text, want, columns));
             continue;
         }
         w.text(&fit(&l.text, columns, &page_set), pages, &mut current);
@@ -1048,6 +1066,56 @@ mod tests {
             let job = decode(&encode(&lines, &o), o.dialect, &o.code_pages);
             assert!(!job.contains("IMAGE"), "{:?}: {job}", o.dialect);
         }
+    }
+
+    /// Any line with a character the printer's code pages lack prints as an image in the
+    /// embedded fonts (Arabic, Devanagari, CJK, and accented Latin on an ASCII-only
+    /// printer); a line the pages can print stays text.
+    #[test]
+    fn lines_the_code_pages_cannot_print_are_images() {
+        let lines = [
+            line("عصير Rani 250 مل              2.50", Style::Normal),
+            line("मसाला चाय                     1.20", Style::Normal),
+            line("可口可乐 330ml                3.00", Style::Normal),
+            line("Café crème                    4.00", Style::Normal),
+            line("TOTAL                        10.70", Style::Bold),
+        ];
+        let images = |pages: &[(CodePage, u8)]| {
+            let o = EncodeOptions {
+                raster: true,
+                columns: Some(32),
+                ..opts(Dialect::EscPos, pages)
+            };
+            let job = decode(&encode(&lines, &o), Dialect::EscPos, &o.code_pages);
+            (job.matches("[IMAGE 384x").count(), job)
+        };
+        let (n, job) = images(&[(CodePage::Cp858, 19)]);
+        assert_eq!(n, 3, "{job}");
+        assert!(job.contains("\"Café crème"), "{job}");
+        assert!(job.contains("\"TOTAL"), "{job}");
+        // ASCII only: the accented line is an image too, not "Cafe creme".
+        let (n, job) = images(&[]);
+        assert_eq!(n, 4, "{job}");
+        assert!(!job.contains("Cafe"), "{job}");
+    }
+
+    /// In an image line, a character no embedded font has is drawn as its transliteration
+    /// in its own columns, not as an empty box.
+    #[test]
+    fn characters_no_font_has_are_transliterated_inside_an_image() {
+        let o = EncodeOptions {
+            raster: true,
+            columns: Some(32),
+            cut: CutMode::None,
+            feed_before_cut: 0,
+            ..EncodeOptions::default()
+        };
+        let with_emoji = encode(&[line("كولا \u{1F600}", Style::Normal)], &o);
+        let fallback = transliterate('\u{1F600}').0;
+        let expected = encode(&[line(&format!("كولا {fallback}"), Style::Normal)], &o);
+        assert_eq!(with_emoji, expected);
+        assert_eq!(fallback.chars().count(), char_columns('\u{1F600}'));
+        assert!(fallback.chars().all(|c| c.is_ascii_graphic()), "{fallback:?}");
     }
 
     #[test]
