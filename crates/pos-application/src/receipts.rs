@@ -13,6 +13,9 @@ use std::sync::Arc;
 
 pub struct ReceiptService {
     pub receipts: Arc<dyn ReceiptQueries>,
+    /// The till's printer: when it states its characters per line (a 42-column Epson, say),
+    /// the preview uses that width, so what the cashier sees is what prints (DEV-004).
+    pub printer: Option<Arc<dyn pos_device_ports::ReceiptOutputPort>>,
 }
 
 /// A receipt ready to show: the document and its lines for the chosen width.
@@ -72,16 +75,24 @@ impl ReceiptService {
         let actor = ctx.actor()?;
         let document: ReceiptDocument =
             serde_json::from_str(json).map_err(|e| AppError::Internal(format!("stored receipt: {e}")))?;
-        let width = match width_mm {
-            Some(w) => w,
-            None => {
-                self.receipts
+        let printer_columns = self
+            .printer
+            .as_ref()
+            .and_then(|p| p.capabilities().columns)
+            .map(|c| usize::from(c).clamp(24, 64));
+        let columns = match (width_mm, printer_columns) {
+            (Some(58), _) => COLUMNS_58MM,
+            (Some(_), _) => COLUMNS_80MM,
+            (None, Some(c)) => c,
+            (None, None) => {
+                let width = self
+                    .receipts
                     .receipt_info(ctx.register.register_id, actor.user_id)
                     .await?
-                    .paper_width_mm
+                    .paper_width_mm;
+                if width == 58 { COLUMNS_58MM } else { COLUMNS_80MM }
             }
         };
-        let columns = if width == 58 { COLUMNS_58MM } else { COLUMNS_80MM };
         Ok(RenderedReceipt {
             lines: render(&document, columns),
             document,

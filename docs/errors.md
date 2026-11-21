@@ -35,6 +35,7 @@ to the action below.
 | `CASH_SESSION_ALREADY_OPEN` |  | This register already has an open cash session. | Show the open session. |
 | `PRINT_ADAPTER_UNAVAILABLE` |  | No printer adapter is available. | Offer PDF export instead. |
 | `PRINT_UNKNOWN_OUTCOME` |  | The printer did not confirm the job. | Ask whether it printed; reprint only on request. |
+| `DEVICE_UNAVAILABLE` |  | A printer, drawer, scanner or terminal is not set up, not connected, or did not answer. The message says which and why. | Show the message and a link to Settings → Devices. |
 | `STORE_BUSY` | yes | The local database is briefly busy. Retryable. | Retry automatically up to 3 times, then show. |
 | `STORE_IO` |  | The local database could not be read or written. Nothing was saved. | Show the error; offer diagnostics. |
 | `STORE_DISK_FULL` |  | The disk holding the local database is full. Nothing was saved; what was open (the cart) is kept. | Show "Cannot save — disk full" and keep the cart; the owner frees space, then the cashier tries again. |

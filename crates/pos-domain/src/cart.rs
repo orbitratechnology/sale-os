@@ -214,22 +214,19 @@ impl Cart {
         Ok(CartChange::LineAdded(id))
     }
 
-    /// BAR-009: one scale label is one line (labels never merge): `qty` is the label's weight,
-    /// or what its price buys; a price label also fixes the line's gross.
-    pub fn add_label(
+    /// Adds a line of its own that later adds never merge into by quantity: a weight, count
+    /// or price read from a scale or GS1 label (E21-T02) belongs to that one label.
+    pub fn add_separate(
         &mut self,
         variant: SellableVariant,
         qty: Quantity,
-        label: CartLabel,
         via: AddVia,
         ids: &dyn IdGenerator,
     ) -> Result<CartChange, CartError> {
         self.ensure_open()?;
         qty.validate_for_unit(variant.unit.allows_fraction())?;
-        if let CartLabel::Price { price } = label
-            && price.is_negative()
-        {
-            return Err(CartError::NegativePrice);
+        if !qty.is_positive() {
+            return Err(CartError::Quantity(crate::quantity::QuantityError::NotPositive));
         }
         let id = CartLineId::generate(ids);
         self.lines.push(CartLine {
@@ -239,7 +236,7 @@ impl Cart {
             price_override: None,
             line_discount: None,
             added_via: via,
-            label: Some(label),
+            label: None,
         });
         self.touch();
         Ok(CartChange::LineAdded(id))

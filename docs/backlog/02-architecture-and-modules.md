@@ -22,6 +22,7 @@ dependency rules, and how a command flows through the system.
   /pos-sync                Event envelope, event payload types, schema versioning, sync protocol DTOs, conflict types
   /pos-device-ports        Barcode / receipt-output / payment / cash-drawer port traits and event types
   /pos-device-virtual      Virtual scanner, virtual printer, mock payment provider, network fault injector
+  /pos-device-hw           Real device adapters: TCP/serial/device-file/spooler transports, printer profiles, discovery, serial scanners (ADR-024)
   /pos-receipts            ReceiptDocument model, builders, PDF + ESC/POS + plain-text renderers
   /pos-observability       JSON logging with secret redaction and card-number masking (desktop + cloud)
   /pos-testkit             Builders, fixtures, golden-file helpers, fake clock/ids, in-memory transport
@@ -47,6 +48,7 @@ dependency rules, and how a command flows through the system.
 | `pos-receipts` | `ReceiptDocument`, builders from `SaleSnapshot`/`ReturnSnapshot`, renderers (PDF, ESC/POS, text) | Talk to printers (that is the adapters' job) |
 | `pos-device-ports` | Async port traits, `ScanEvent`, `PrintStatus`, `PaymentStatus`, capability profiles | Contain implementations |
 | `pos-device-virtual` | Simulators that implement the ports, with a scriptable scenario API | Ship to release builds unless `devtools` is enabled |
+| `pos-device-hw` | Transports (raw TCP, serial/COM, device files, OS spooler RAW), ESC/POS and Star printers with status and drawer kick, model profiles and identification, discovery, serial scanners (ADR-024) | Encode receipts (that is `pos-receipts`), know about sales, or use `unsafe` |
 | `pos-cloud-db` | Tenant-scoped repositories, inbox, change log, projections, RLS helpers | Accept a `business_id` from anything except the auth principal |
 | `apps/desktop-tauri` | Startup and migration orchestration, `AppServices` DI container, the IPC command adapters, sync worker, print worker, auto-lock timer, capability config | Contain business rules |
 | `apps/cloud-api` | HTTP routing, auth middleware, tenant session, event appliers (using `pos-domain` validation), reports, worker role | Bypass `pos-domain` validation for ingested events |
@@ -62,6 +64,7 @@ pos-device-ports  ← pos-domain
 pos-application   ← pos-domain, pos-sync, pos-receipts, pos-device-ports
 pos-local-db      ← pos-application, pos-domain, pos-sync
 pos-device-virtual← pos-device-ports, pos-domain, pos-receipts (decodes captures)
+pos-device-hw     ← pos-device-ports, pos-domain
 pos-cloud-db      ← pos-domain, pos-sync
 desktop-tauri     ← everything desktop-side
 cloud-api         ← pos-domain, pos-sync, pos-cloud-db   (never pos-local-db, never tauri)

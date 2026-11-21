@@ -33,6 +33,7 @@ path = "src/bin/crash-harness.rs"
 jsonschema.workspace = true
 pos-device-ports.workspace = true
 pos-device-virtual.workspace = true
+pos-device-hw.workspace = true
 pos-receipts.workspace = true
 pos-testkit.workspace = true
 proptest.workspace = true

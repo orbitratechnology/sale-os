@@ -1,6 +1,6 @@
 import { TabList, tabPanelProps } from "../../ui/Tabs";
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Package, Percent, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
+import { ArrowLeft, Banknote, Boxes, Building, Cloud, Database, Package, Percent, Printer, ReceiptText, ScanBarcode, Settings, ShieldCheck, Users } from "../../ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
@@ -10,6 +10,7 @@ import { BackupsPanel } from "./BackupsPanel";
 import { BusinessPanel } from "./BusinessPanel";
 import { CloudPanel } from "./CloudPanel";
 import { StaffPanel } from "./StaffPanel";
+import { DevicesPanel } from "./DevicesPanel";
 import { TaxesPanel } from "./TaxesPanel";
 
 /** The business and tax pages sit beside the registry groups; they are not registry settings. */
@@ -18,6 +19,7 @@ const TAXES = "Taxes";
 const CLOUD = "Cloud";
 const BACKUPS = "Backups";
 const STAFF = "Staff";
+const DEVICES = "Devices";
 
 /**
  * Settings (E04-T03, owner only). Every setting comes from Rust's registry with its type,
@@ -40,10 +42,19 @@ export function SettingsScreen({
   const [settings, setSettings] = useState<SettingDto[] | null>(null);
   const [group, setGroup] = useState<string | null>(initialGroup ?? null);
   const [error, setError] = useState<IpcError | null>(null);
+  /** A manager: only the Devices page (the rest is the owner's). */
+  const [limited, setLimited] = useState(false);
 
   const load = useCallback(() => {
     void commands.settingsGet().then((res) => {
-      if (res.status !== "ok") return setError(res.error);
+      if (res.status !== "ok") {
+        if (res.error.code === "PERMISSION_DENIED") {
+          setLimited(true);
+          setGroup(DEVICES);
+          return;
+        }
+        return setError(res.error);
+      }
       setSettings(res.data);
       setGroup((g) => g ?? res.data[0]?.group ?? null);
     });
@@ -60,7 +71,7 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, STAFF, TAXES, CLOUD, BACKUPS];
+  const groups = limited ? [DEVICES] : [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, STAFF, TAXES, DEVICES, CLOUD, BACKUPS];
   return (
     <main className="sales">
       <header className="returns-header">
@@ -99,6 +110,10 @@ export function SettingsScreen({
       ) : group === TAXES ? (
         <section className="card settings-list" {...tabPanelProps("settings", group)}>
           <TaxesPanel />
+        </section>
+      ) : group === DEVICES ? (
+        <section className="card settings-list" {...tabPanelProps("settings", group)}>
+          <DevicesPanel />
         </section>
       ) : group === CLOUD ? (
         <section className="card settings-list" {...tabPanelProps("settings", group)}>
@@ -156,6 +171,7 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
   Taxes: Percent,
   Cloud: Cloud,
   Backups: Database,
+  Devices: Printer,
 };
 
 function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onSaved: (s: SettingDto) => void; onConflict: () => void }) {

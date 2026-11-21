@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "copy": "original",
+  "sandbox": false,
+  "header": {
+    "businessName": "Café Zoë — Łódź",
+    "addressLines": [
+      "ul. Piotrkowska 1",
+      "90-001 Łódź"
+    ],
+    "phone": "0113 496 0000",
+    "taxRegistrationNo": "GB123456789",
+    "lines": []
+  },
+  "meta": {
+    "receiptNumber": "R01-000042",
+    "localTime": "2026-11-07 14:03",
+    "registerName": "Till 1",
+    "registerCode": "R01",
+    "cashierName": "Zoë"
+  },
+  "currencyExponent": 2,
+  "lines": [
+    {
+      "name": "Café crème 250 g — Größe L",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 450,
+      "gross": 450,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "Żubrówka 0,5 l",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 1899,
+      "gross": 1899,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "Ελληνικός καφές",
+      "variantLabel": "",
+      "quantity": "2",
+      "unitPrice": 320,
+      "gross": 640,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "Квас хлебный",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 210,
+      "gross": 210,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "抹茶ラテ",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 395,
+      "gross": 395,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "Jalapeño ½ kg £ € ¥",
+      "variantLabel": "",
+      "quantity": "1",
+      "unitPrice": 125,
+      "gross": 125,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    },
+    {
+      "name": "Ærøskøbing Øl",
+      "variantLabel": "33 cl",
+      "quantity": "3",
+      "unitPrice": 289,
+      "gross": 867,
+      "discountLabel": null,
+      "discount": 0,
+      "priceOverridden": false
+    }
+  ],
+  "totals": {
+    "subtotal": 4586,
+    "lineDiscounts": 0,
+    "orderDiscount": 0,
+    "orderDiscountLabel": null,
+    "tax": [
+      {
+        "name": "VAT 20%",
+        "amount": 766
+      }
+    ],
+    "pricesIncludeTax": true,
+    "rounding": 0,
+    "total": 4586
+  },
+  "tenders": [
+    {
+      "label": "Cash",
+      "amount": 4586,
+      "received": 10000,
+      "external": false,
+      "reference": null
+    }
+  ],
+  "change": 5414,
+  "footer": [
+    "Merci — à bientôt!",
+    "Dziękujemy · Спасибо · Ευχαριστώ",
+    "ありがとう 谢谢"
+  ],
+  "barcode": "R01-000042"
+}

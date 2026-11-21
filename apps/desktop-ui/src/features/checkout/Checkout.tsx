@@ -26,6 +26,7 @@ import {
   Undo2,
   Wallet,
   ArrowRightLeft,
+  LockOpen,
 } from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
@@ -35,6 +36,7 @@ import { formatMoney } from "../../lib/money";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
 import { GoLiveDialog } from "../setup/GoLiveDialog";
 import { useScanCapture } from "../scan/useScanCapture";
+import { useSerialScans } from "../scan/useSerialScans";
 import { describeError } from "../shell/errors";
 import { CartTable, type Editing } from "./CartTable";
 import { Dialog } from "./Dialog";
@@ -47,7 +49,7 @@ import { PaymentPanel } from "./PaymentPanel";
 import type { ExchangeCredit } from "../returns/exchange";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
-import { useCart } from "./useCart";
+import { scanHintText, useCart } from "./useCart";
 
 type Modal =
   | "goLive"
@@ -204,7 +206,19 @@ export function Checkout({
     },
     {},
     active && modal === null && c.approval === null,
+    (d) => {
+      if (d === "missing_suffix")
+        c.setNotice({
+          kind: "info",
+          text: "That looked like a scan, but the scanner did not end it with the key set in Settings → Scanner. Match the setting to the scanner, or set it to “none”.",
+        });
+      else if (d === "interrupted_scan")
+        c.setNotice({ kind: "info", text: "A scan was interrupted part-way and nothing was added. Scan the item again." });
+    },
   );
+
+  // Serial scanners deliver through Rust, exactly like wedge scans (E21-T04).
+  useSerialScans((scan) => void c.scan(scan.raw, scan.scanEventId, "scanner"), modal === null && c.approval === null);
 
   useEffect(() => {
     // Only while the till is showing: hidden, it does no work at all.
@@ -219,6 +233,27 @@ export function Checkout({
       document.removeEventListener("focusout", later);
     };
   }, [active]);
+
+  /** "No sale" (E20-T05): opens the drawer with a reason; a cashier needs a manager. */
+  const noSale = useCallback(
+    (reason: string) => {
+      const attempt = async (approvalTokenId: string | null): Promise<boolean> => {
+        const res = await commands.drawerOpen(reason, approvalTokenId);
+        if (res.status === "ok") {
+          c.setNotice({ kind: "info", text: "Cash drawer opened." });
+          return true;
+        }
+        if (res.error.code === "APPROVAL_REQUIRED" && res.error.details?.scope) {
+          c.setApproval({ scope: res.error.details.scope, retry: (token) => attempt(token) });
+          return false;
+        }
+        c.setNotice({ kind: "error", error: res.error });
+        return false;
+      };
+      return attempt(null);
+    },
+    [c],
+  );
 
   const lock = useCallback(async () => {
     await commands.authLogout();
@@ -428,6 +463,13 @@ export function Checkout({
           <button type="button" onClick={onDrawer}>
             <Banknote />
             Drawer <kbd>F10</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => setModal({ reason: "Why open the cash drawer without a sale?", then: (r) => void noSale(r.trim()) })}
+          >
+            <LockOpen />
+            No sale
           </button>
           {onStock && (
             <button type="button" onClick={onStock}>
@@ -835,6 +877,7 @@ function Notice({
                 No product with code <strong className="mono">{n.code}</strong>.
               </span>
             </p>
+            {n.hint && <p className="small">{scanHintText(n.hint)}</p>}
             <button
               type="button"
               className="secondary"

@@ -17,6 +17,8 @@ tauri-build.workspace = true
 [dependencies]
 async-trait.workspace = true
 pos-application.workspace = true
+pos-device-hw = { workspace = true, features = ["specta"] }
+pos-device-ports.workspace = true
 pos-device-virtual.workspace = true
 pos-domain = { workspace = true, features = ["specta"] }
 pos-local-db.workspace = true

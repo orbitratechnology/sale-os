@@ -785,13 +785,30 @@ pub enum AddViaDto {
 #[serde(tag = "outcome", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ScanOutcomeDto {
     /// A new line.
-    Added { cart: CartViewDto, line_id: CartLineId },
+    Added {
+        cart: CartViewDto,
+        line_id: CartLineId,
+        hint: Option<String>,
+    },
     /// An existing line's quantity went up (BAR-005).
-    Incremented { cart: CartViewDto, line_id: CartLineId },
+    Incremented {
+        cart: CartViewDto,
+        line_id: CartLineId,
+        hint: Option<String>,
+    },
     /// This delivery was already processed; the cart is unchanged.
     Duplicate { cart: CartViewDto },
-    /// Nothing matches. The cart is unchanged (BAR-006).
-    NotFound { code: String },
+    /// Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
+    /// problem: `keyboard_layout:<layout>` or `check_digit`.
+    NotFound { code: String, hint: Option<String> },
+}
+
+/// The scan hint as the UI receives it.
+pub fn scan_hint(h: &Option<pos_application::scan::ScanHint>) -> Option<String> {
+    h.as_ref().map(|h| match h {
+        pos_application::scan::ScanHint::KeyboardLayout(l) => format!("keyboard_layout:{l}"),
+        pos_application::scan::ScanHint::CheckDigitFailed => "check_digit".to_owned(),
+    })
 }
 
 // ---------- checkout ----------
@@ -834,6 +851,9 @@ pub struct CompletedSaleDto {
     pub negative_stock_items: u32,
     /// Print the receipt right away (`receipt.auto_print`).
     pub auto_print: bool,
+    /// The cash drawer after the sale: `opened`, `none` (not needed or no drawer) or
+    /// `failed: <why>` (the sale is complete either way).
+    pub drawer: String,
 }
 
 impl CompletedSaleDto {
@@ -850,6 +870,7 @@ impl CompletedSaleDto {
             sync_pending: c.outbox_sequence > 0,
             negative_stock_items: u32::try_from(c.negative_stock.len()).unwrap_or(u32::MAX),
             auto_print: c.auto_print,
+            drawer: "none".into(),
         }
     }
 }
@@ -872,6 +893,8 @@ pub struct ReceiptDto {
 pub struct ReceiptLineDto {
     pub text: String,
     pub bold: bool,
+    /// The receipt number, printed as a scannable barcode where the printer can.
+    pub barcode: bool,
 }
 
 impl ReceiptDto {
@@ -885,6 +908,7 @@ impl ReceiptDto {
                 .map(|l| ReceiptLineDto {
                     text: l.text.clone(),
                     bold: l.style == pos_receipts::text::Style::Bold,
+                    barcode: l.style == pos_receipts::text::Style::Barcode,
                 })
                 .collect(),
             sandbox: r.document.sandbox,

@@ -1367,12 +1367,43 @@ pub(crate) async fn run_ops(
                 .map_err(map_sqlx)?;
                 applied.receipt_numbers.insert(*number_slot, number);
             }
+            WriteOp::PutDevice(d) => {
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO devices (device_id, register_id, kind, role, name, config_json, enabled, version,
+                       created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     ON CONFLICT (device_id) DO UPDATE SET role = ?4, name = ?5, config_json = ?6, enabled = ?7,
+                       version = ?8, updated_at = ?10",
+                )
+                .bind(d.device_id.to_string())
+                .bind(d.register_id.to_string())
+                .bind(d.kind.as_str())
+                .bind(&d.role)
+                .bind(&d.name)
+                .bind(d.config.to_string())
+                .bind(d.enabled)
+                .bind(i64::try_from(d.version).unwrap_or(i64::MAX))
+                .bind(d.created_at.as_millis())
+                .bind(d.updated_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::RemoveDevice(id) => {
+                st.step()?;
+                sqlx::query("DELETE FROM devices WHERE device_id = ?")
+                    .bind(id.to_string())
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(map_sqlx)?;
+            }
             WriteOp::PutPrintJob { job, detail } => {
                 st.step()?;
                 sqlx::query(
                     "INSERT INTO print_jobs (job_id, receipt_id, adapter, target, copy_kind, status, attempt_count, last_error_code,
                        requested_by, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                     VALUES (?1, ?2, ?3, ?11, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT (job_id) DO UPDATE SET status = ?5, attempt_count = ?6, last_error_code = ?7, updated_at = ?10",
                 )
                 .bind(job.job_id.to_string())
@@ -1385,6 +1416,7 @@ pub(crate) async fn run_ops(
                 .bind(job.requested_by.to_string())
                 .bind(job.created_at.as_millis())
                 .bind(job.updated_at.as_millis())
+                .bind(&job.target)
                 .execute(&mut *tx)
                 .await
                 .map_err(map_sqlx)?;
@@ -1577,6 +1609,153 @@ pub(crate) async fn run_ops(
                     return Err(WriteError::Io(format!(
                         "conflict {conflict_id} is no longer open"
                     )));
+                }
+            }
+            WriteOp::PutPaymentAttempt {
+                attempt: a,
+                expected,
+                source,
+                detail,
+            } => {
+                let card = match a.approval() {
+                    Some(pos_domain::payment::Approval::Provider(c)) => Some(c),
+                    _ => None,
+                };
+                let reference = match a.approval() {
+                    Some(pos_domain::payment::Approval::Provider(c)) => Some(c.provider_ref()),
+                    Some(pos_domain::payment::Approval::Operator { reference }) => reference.as_deref(),
+                    None => None,
+                };
+                st.step()?;
+                match expected {
+                    None => {
+                        sqlx::query(
+                            "INSERT INTO payment_attempts (attempt_id, business_id, register_id, cart_id, kind, provider,
+                               amount_minor, currency_code, status, approval_source, provider_ref, auth_code, card_brand,
+                               masked_pan, status_reason, tender_id, created_by, created_at, updated_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        )
+                        .bind(a.id().to_string())
+                        .bind(ctx.business_id.to_string())
+                        .bind(ctx.register_id.to_string())
+                        .bind(a.cart_id().to_string())
+                        .bind(a.kind().as_str())
+                        .bind(a.provider())
+                        .bind(a.amount().minor())
+                        .bind(a.currency().as_str())
+                        .bind(a.status().as_str())
+                        .bind(a.approval().map(|x| x.source()))
+                        .bind(reference)
+                        .bind(card.and_then(|c| c.auth_code()))
+                        .bind(card.and_then(|c| c.card_brand()))
+                        .bind(card.and_then(|c| c.masked_pan()).map(|m| m.as_str()))
+                        .bind(a.status_reason())
+                        .bind(a.tender_id().map(|t| t.to_string()))
+                        .bind(a.created_by().to_string())
+                        .bind(a.created_at().as_millis())
+                        .bind(a.updated_at().as_millis())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                    }
+                    Some(from) => {
+                        let done = sqlx::query(
+                            "UPDATE payment_attempts SET status = ?1, approval_source = ?2, provider_ref = ?3,
+                               auth_code = ?4, card_brand = ?5, masked_pan = ?6, status_reason = ?7, updated_at = ?8
+                             WHERE attempt_id = ?9 AND status = ?10 AND tender_id IS NULL",
+                        )
+                        .bind(a.status().as_str())
+                        .bind(a.approval().map(|x| x.source()))
+                        .bind(reference)
+                        .bind(card.and_then(|c| c.auth_code()))
+                        .bind(card.and_then(|c| c.card_brand()))
+                        .bind(card.and_then(|c| c.masked_pan()).map(|m| m.as_str()))
+                        .bind(a.status_reason())
+                        .bind(a.updated_at().as_millis())
+                        .bind(a.id().to_string())
+                        .bind(from.as_str())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(map_sqlx)?;
+                        if done.rows_affected() != 1 {
+                            return Err(WriteError::PaymentAttemptChanged);
+                        }
+                    }
+                }
+                st.step()?;
+                sqlx::query(
+                    "INSERT INTO payment_attempt_events (attempt_id, seq, from_status, to_status, source, detail_json,
+                       actor_user_id, occurred_at)
+                     VALUES (?1, (SELECT coalesce(max(seq), 0) + 1 FROM payment_attempt_events WHERE attempt_id = ?1),
+                       ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .bind(a.id().to_string())
+                .bind(expected.map(|s| s.as_str()))
+                .bind(a.status().as_str())
+                .bind(source.as_str())
+                .bind(detail.to_string())
+                .bind(ctx.actor.map(|u| u.to_string()))
+                .bind(ctx.occurred_at.as_millis())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+            }
+            WriteOp::UsePaymentAttempt {
+                attempt_id,
+                tender_id,
+                cart_id,
+                amount,
+                approved_by,
+            } => {
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE payment_attempts SET tender_id = ?1, updated_at = ?2
+                     WHERE attempt_id = ?3 AND status = 'approved' AND tender_id IS NULL AND kind = 'sale'
+                       AND cart_id = ?4 AND amount_minor = ?5 AND approval_source = ?6 AND register_id = ?7",
+                )
+                .bind(tender_id.to_string())
+                .bind(ctx.occurred_at.as_millis())
+                .bind(attempt_id.to_string())
+                .bind(cart_id.to_string())
+                .bind(amount.minor())
+                .bind(*approved_by)
+                .bind(ctx.register_id.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::PaymentAttemptUnusable);
+                }
+                // The tender row was inserted by the sale earlier in this transaction; this
+                // completes it with the connector that took the payment.
+                st.step()?;
+                let done = sqlx::query(
+                    "UPDATE tenders SET provider_code = (SELECT provider FROM payment_attempts WHERE attempt_id = ?1)
+                     WHERE tender_id = ?2 AND tender_type = 'card_external' AND amount_minor = ?3 AND provider_code IS NULL",
+                )
+                .bind(attempt_id.to_string())
+                .bind(tender_id.to_string())
+                .bind(amount.minor())
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if done.rows_affected() != 1 {
+                    return Err(WriteError::PaymentAttemptUnusable);
+                }
+            }
+            WriteOp::CheckCartPayments { cart_id } => {
+                st.step()?;
+                let open: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM payment_attempts
+                     WHERE cart_id = ? AND (status IN ('pending','reconciliation_required')
+                                            OR (status = 'approved' AND tender_id IS NULL))",
+                )
+                .bind(cart_id.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+                if open > 0 {
+                    return Err(WriteError::PaymentUnresolved);
                 }
             }
             WriteOp::EndSession { session_id, reason } => {

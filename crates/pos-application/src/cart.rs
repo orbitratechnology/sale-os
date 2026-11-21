@@ -29,7 +29,7 @@ pub struct CartView {
 
 pub struct CartService {
     store: Arc<dyn LocalStore>,
-    carts: Arc<dyn CartQueries>,
+    pub(crate) carts: Arc<dyn CartQueries>,
     pub(crate) catalog: Arc<dyn CatalogQueries>,
     /// Stock on hand for the "only N in stock" hint; none means no hints.
     stock: Option<Arc<dyn crate::queries::StockQueries>>,
@@ -125,13 +125,6 @@ impl CartService {
             .sellable(variant, date)
             .await?
             .ok_or(CatalogError::NotFound)?)
-    }
-
-    /// `scanner.label_rules` (BAR-009).
-    pub(crate) async fn label_rules(
-        &self,
-    ) -> Result<Vec<pos_domain::catalog::variable_measure::LabelRule>, AppError> {
-        Ok(self.carts.label_rules().await?)
     }
 
     pub(crate) async fn exclusive(&self) -> tokio::sync::MutexGuard<'_, ()> {
@@ -779,7 +772,11 @@ pub(crate) struct Audited {
 }
 
 impl Audited {
-    fn new(action: audit::AuditAction, metadata: serde_json::Value, approver: Option<UserId>) -> Self {
+    pub(crate) fn new(
+        action: audit::AuditAction,
+        metadata: serde_json::Value,
+        approver: Option<UserId>,
+    ) -> Self {
         Self {
             action,
             metadata,

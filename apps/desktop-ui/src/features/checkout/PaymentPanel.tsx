@@ -3,7 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { Banknote, CircleCheck, CreditCard, Landmark, QrCode, Wallet } from "../../ui/icons";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type ApprovalScope, type CartView, type IpcError } from "../../ipc";
-import type { CompletedReturnDto, CompletedSaleDto, TenderKind } from "../../ipc/bindings";
+import type { CompletedReturnDto, CompletedSaleDto, PaymentAttemptDto, TenderKind } from "../../ipc/bindings";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
 import type { ExchangeCredit } from "../returns/exchange";
 import { scaleDecimal } from "../../lib/decimal";
@@ -12,11 +12,14 @@ import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 import { SaleSyncMark } from "../sync/SaleSyncMark";
+import { TerminalPayment } from "./TerminalPayment";
 
 interface Tender {
   kind: TenderKind;
   amountMinor: string;
   reference: string | null;
+  /** Approved on the integrated terminal (E22-T02): completed through `terminal`. */
+  attemptId?: string;
 }
 
 const METHODS: { kind: TenderKind; label: string; icon: LucideIcon }[] = [
@@ -49,7 +52,7 @@ export function PaymentPanel({
    * gets the difference back as change. The return and the sale are recorded together.
    */
   exchange?: ExchangeCredit | null;
-  /** Who asks when a manager must approve (a cashier's exchange, like a return). */
+  /** The signed-in user, for a manager's approval (a cashier's exchange, or settling a card payment). */
   requesterId: string;
   /** After the cashier closes the "completed" view. */
   onDone: () => void;
@@ -57,7 +60,10 @@ export function PaymentPanel({
 }) {
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [cash, setCash] = useState("");
-  const [method, setMethod] = useState<TenderKind | null>(null);
+  const [method, setMethod] = useState<TenderKind | "terminal" | null>(null);
+  /** Whether a card terminal is set up, and an attempt to resume (E22-T02). */
+  const [terminal, setTerminal] = useState(false);
+  const [resume, setResume] = useState<PaymentAttemptDto | null>(null);
   const [external, setExternal] = useState({ amount: "", reference: "" });
   const [error, setError] = useState<IpcError | string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,6 +88,26 @@ export function PaymentPanel({
     cashInput.current?.focus();
   }, [tenders.length]);
 
+  // A terminal is set up when its attempts can be listed. Approved, unused attempts come
+  // back as tenders; one still pending or uncertain reopens the terminal view.
+  useEffect(() => {
+    void commands.paymentAttempts(cart.cartId).then((res) => {
+      if (res.status !== "ok") return;
+      setTerminal(true);
+      const usable = res.data.filter((a) => a.usable);
+      if (usable.length > 0)
+        setTenders((ts) => [
+          ...ts.filter((t) => !t.attemptId),
+          ...usable.map((a) => ({ kind: "card_external" as const, amountMinor: a.amountMinor, reference: a.providerRef, attemptId: a.attemptId })),
+        ]);
+      const open = res.data.find((a) => a.status === "pending" || a.status === "reconciliation_required");
+      if (open) {
+        setResume(open);
+        setMethod("terminal");
+      }
+    });
+  }, [cart.cartId]);
+
   // Esc closes (or finishes after completion); the panel owns the keyboard while open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -101,9 +127,16 @@ export function PaymentPanel({
   async function complete(list: Tender[], approvalTokenId: string | null = null) {
     setBusy(true);
     setError(null);
+    const terminalTenders = list.filter((t) => t.attemptId).map((t) => ({ attemptId: t.attemptId ?? "", amountMinor: t.amountMinor }));
+    const others = list.filter((t) => !t.attemptId).map(({ kind, amountMinor, reference }) => ({ kind, amountMinor, reference }));
     if (exchange) {
+      // An exchange settles with tenders recorded at the till; the terminal flow is not offered for it.
+      if (terminalTenders.length > 0) {
+        setBusy(false);
+        return setError("An exchange cannot be settled on the card terminal yet: record the card payment as Card (separate terminal).");
+      }
       const x = exchange;
-      const res = await commands.exchangeComplete(x.saleId, x.lines, x.reason, x.note, [], approvalTokenId, cart.cartId, cart.revision, list);
+      const res = await commands.exchangeComplete(x.saleId, x.lines, x.reason, x.note, [], approvalTokenId, cart.cartId, cart.revision, others);
       setBusy(false);
       if (res.status === "ok") {
         setReturned(res.data.return);
@@ -112,7 +145,7 @@ export function PaymentPanel({
       if (res.error.code === "APPROVAL_REQUIRED" && res.error.details?.scope) return setApproval({ scope: res.error.details.scope, tenders: list });
       return setError(res.error);
     }
-    const res = await commands.checkoutComplete(cart.cartId, cart.revision, list);
+    const res = await commands.checkoutComplete(cart.cartId, cart.revision, others, terminalTenders.length > 0 ? terminalTenders : null);
     setBusy(false);
     if (res.status === "ok") setDone(res.data);
     else setError(res.error);
@@ -148,7 +181,7 @@ export function PaymentPanel({
 
   function addExternal(e: FormEvent) {
     e.preventDefault();
-    if (!method) return;
+    if (!method || method === "terminal") return;
     const amount = external.amount.trim() ? scaleDecimal(external.amount, exp) : remaining.toString();
     if (amount === null || amount === "0") return setError("Enter the amount charged.");
     if (BigInt(amount) > remaining) return setError("A card or transfer cannot be more than the amount due; the rest can be cash.");
@@ -181,6 +214,12 @@ export function PaymentPanel({
             <SaleSyncMark saleId={done.saleId} />
             {done.mode === "sandbox" ? " · SANDBOX" : ""}
           </p>
+          {done.drawer === "opened" && <p className="small">Cash drawer opened.</p>}
+          {done.drawer.startsWith("failed") && (
+            <p role="alert" className="small">
+              The cash drawer did not open ({done.drawer.slice(8)}). Open it with No sale or the key.
+            </p>
+          )}
           {done.negativeStockItems > 0 && (
             <p className="small">
               {done.negativeStockItems === 1
@@ -246,13 +285,19 @@ export function PaymentPanel({
               <li key={i}>
                 <span>
                   {label(t.kind)}
-                  {t.kind !== "cash" && <span className="tag">Externally confirmed by operator</span>}
+                  {t.attemptId ? (
+                    <span className="tag">Approved by terminal</span>
+                  ) : (
+                    t.kind !== "cash" && <span className="tag">Externally confirmed by operator</span>
+                  )}
                   {t.reference && <span className="small mono"> {t.reference}</span>}
                 </span>
                 <span className="num">{money(t.amountMinor)}</span>
-                <button type="button" className="secondary" aria-label={`Remove ${label(t.kind)} ${money(t.amountMinor)}`} disabled={busy} onClick={() => setTenders(tenders.filter((_, j) => j !== i))}>
-                  Remove
-                </button>
+                {!t.attemptId && (
+                  <button type="button" className="secondary" aria-label={`Remove ${label(t.kind)} ${money(t.amountMinor)}`} disabled={busy} onClick={() => setTenders(tenders.filter((_, j) => j !== i))}>
+                    Remove
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -278,6 +323,11 @@ export function PaymentPanel({
               </div>
             </form>
             <div className="methods" role="group" aria-label="Other payment methods">
+              {terminal && exchange === null && (
+                <button type="button" disabled={busy || remaining === 0n} onClick={() => setMethod("terminal")}>
+                  Card (terminal)
+                </button>
+              )}
               {METHODS.map((m) => (
                 <button key={m.kind} type="button" className="secondary" disabled={busy || remaining === 0n} onClick={() => setMethod(m.kind)}>
                   <m.icon />
@@ -286,6 +336,28 @@ export function PaymentPanel({
               ))}
             </div>
           </>
+        ) : method === "terminal" ? (
+          <TerminalPayment
+            cartId={cart.cartId}
+            remainingMinor={remaining}
+            exponent={exp}
+            currencyCode={cart.currencyCode}
+            requesterId={requesterId}
+            resume={resume}
+            onBack={() => {
+              setResume(null);
+              setMethod(null);
+            }}
+            onApproved={(a) => {
+              setResume(null);
+              setMethod(null);
+              setTenders((ts) =>
+                ts.some((t) => t.attemptId === a.attemptId)
+                  ? ts
+                  : [...ts, { kind: "card_external", amountMinor: a.amountMinor, reference: a.providerRef ?? null, attemptId: a.attemptId }],
+              );
+            }}
+          />
         ) : (
           <form onSubmit={addExternal} className="external-form" aria-label={label(method)}>
             <p className="small">Take the payment on the {method === "card_external" ? "card terminal" : "customer's device"} first, then record it here.</p>

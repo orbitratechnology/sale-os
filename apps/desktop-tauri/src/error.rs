@@ -115,6 +115,10 @@ impl IpcError {
             })),
             AppError::Catalog(c) => catalog_details(c).map(Box::new),
             AppError::Staff(s) => staff_details(s).map(Box::new),
+            AppError::DeviceConfig { field, .. } => Some(Box::new(ErrorDetails {
+                field: Some(field.clone()),
+                ..ErrorDetails::default()
+            })),
             AppError::Config(c) => Some(Box::new(ErrorDetails {
                 field: Some(c.field().into()),
                 value: match c {

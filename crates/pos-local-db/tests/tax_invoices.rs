@@ -111,6 +111,7 @@ fn service(s: &SqliteStore) -> TaxInvoiceService {
         receipts: Arc::new(s.clone()),
         sales: Arc::new(s.clone()),
         pricing: Arc::new(s.clone()),
+        printer: None,
     }
 }
 

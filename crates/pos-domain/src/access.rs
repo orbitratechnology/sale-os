@@ -75,6 +75,10 @@ pub enum Permission {
     DeviceLink,
     SyncManage,
     ConflictResolve,
+    /// Set up this till's printers, scanners and payment terminals; test print (ADR-024).
+    DeviceConfigure,
+    /// Open the cash drawer without a sale ("no sale", E20-T05). Cashiers need approval.
+    DrawerOpen,
     /// Simulators and dev panels; additionally restricted to debug builds by the shell.
     DevtoolsUse,
 }
@@ -112,6 +116,8 @@ const MANAGER_EXTRA: &[Permission] = &[
     ReportsView,
     ReportsExport,
     ConflictResolve,
+    DeviceConfigure,
+    DrawerOpen,
 ];
 
 const OWNER_EXTRA: &[Permission] = &[
@@ -140,7 +146,12 @@ pub fn approvable(role: Role, permission: Permission) -> bool {
         && role == Role::Cashier
         && matches!(
             permission,
-            DiscountAboveThreshold | PriceOverride | CartVoid | ReturnCreate | BarcodeCreateFromScan
+            DiscountAboveThreshold
+                | PriceOverride
+                | CartVoid
+                | ReturnCreate
+                | BarcodeCreateFromScan
+                | DrawerOpen
         )
 }
 
@@ -186,6 +197,7 @@ mod tests {
             CartVoid,
             ReturnCreate,
             BarcodeCreateFromScan,
+            DrawerOpen,
         ] {
             assert!(approvable(Role::Cashier, p), "{p:?}");
         }

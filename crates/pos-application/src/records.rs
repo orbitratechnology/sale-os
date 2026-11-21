@@ -314,6 +314,8 @@ pub struct PrintJobRecord {
     pub job_id: pos_domain::PrintJobId,
     pub receipt_id: pos_domain::ReceiptId,
     pub adapter: &'static str,
+    /// Which printer, in words ("192.168.1.50:9100", "COM3 @ 9600"); `None` for the virtual one.
+    pub target: Option<String>,
     /// `true`: printed with the REPRINT marker (RCP-007).
     pub reprint: bool,
     pub status: PrintStatus,
@@ -322,6 +324,27 @@ pub struct PrintJobRecord {
     pub requested_by: pos_domain::UserId,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+}
+
+/// Who caused a payment attempt's change (`payment_attempt_events.source`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AttemptEventSource {
+    /// A staff member: cancel from the till, resolve, start.
+    Operator,
+    /// The terminal or provider's answer.
+    Provider,
+    /// The till itself (e.g. the terminal could not be reached).
+    System,
+}
+
+impl AttemptEventSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            AttemptEventSource::Operator => "operator",
+            AttemptEventSource::Provider => "provider",
+            AttemptEventSource::System => "system",
+        }
+    }
 }
 
 // ---------- sales history (E12-T03) ----------
@@ -671,4 +694,55 @@ pub struct ImportRowRecord {
     pub parsed: Option<serde_json::Value>,
     pub status: ImportRowStatus,
     pub errors: Vec<pos_domain::catalog::import::RowError>,
+}
+
+// ---------- devices attached to this till (E20-T11, ADR-024) ----------
+
+/// What a device is for.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceKind {
+    ReceiptPrinter,
+    Scanner,
+    PaymentTerminal,
+    CustomerDisplay,
+}
+
+impl DeviceKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            DeviceKind::ReceiptPrinter => "receipt_printer",
+            DeviceKind::Scanner => "scanner",
+            DeviceKind::PaymentTerminal => "payment_terminal",
+            DeviceKind::CustomerDisplay => "customer_display",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [
+            DeviceKind::ReceiptPrinter,
+            DeviceKind::Scanner,
+            DeviceKind::PaymentTerminal,
+            DeviceKind::CustomerDisplay,
+        ]
+        .into_iter()
+        .find(|k| k.as_str() == s)
+    }
+}
+
+/// One device attached to this till. `config` is the adapter's own configuration (address,
+/// port, model profile…), validated by the device driver before it is stored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeviceRecord {
+    pub device_id: pos_domain::DeviceId,
+    pub register_id: pos_domain::RegisterId,
+    pub kind: DeviceKind,
+    /// Which one of its kind: "main" for the receipt printer, scanner and terminal.
+    pub role: String,
+    pub name: String,
+    pub config: serde_json::Value,
+    pub enabled: bool,
+    pub version: u64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }

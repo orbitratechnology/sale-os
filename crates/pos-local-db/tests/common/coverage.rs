@@ -79,10 +79,19 @@ pub const LOCAL_ONLY: &[(&str, &str)] = &[
         "D-02: kept on the till for now (backups and the full export carry them); syncing is a follow-up",
     ),
     ("print_jobs", "this printer"),
+    (
+        "devices",
+        "printers, scanners and terminals attached to this till (ADR-024)",
+    ),
     ("print_job_events", "this printer"),
     ("import_jobs", "import staging (the products travel)"),
     ("import_rows", "import staging"),
     ("sync_conflicts", "sync bookkeeping"),
+    (
+        "payment_attempts",
+        "cart working state; the money travels in the sale's tender (E10-T02)",
+    ),
+    ("payment_attempt_events", "history of payment_attempts"),
     ("inbound_changes", "sync bookkeeping"),
 ];
 

@@ -90,6 +90,12 @@ export interface FakeState {
   returns: Map<string, { number: string; totalMinor: bigint }>;
   /** Outcomes for the next print submissions: "printed", "paper_out" or "timeout". */
   printScript: string[];
+  /** This till's devices (E20-T11). */
+  devices: { deviceId: string; kind: string; role: string; name: string; configJson: string; enabled: boolean; version: number }[];
+  /** Drawer pulses sent (no sale and cash sales). */
+  drawerOpens: string[];
+  /** Card-terminal attempts (E22-T02, sandbox rules: .01 declines, .02 uncertain). */
+  attempts: Map<string, { cartId: string; amountMinor: string; status: string; polls: number; used: boolean; reason: string | null }>;
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
   printed: number;
   /** What the next "Save as" dialogs answer: a file name, or null for Cancel. */
@@ -234,6 +240,9 @@ function initialStateInner(preset: Preset): FakeState {
     exports: 0,
     settings: new Map(FAKE_SETTINGS.map((d) => [d.key, { valueJson: d.defaultJson, version: 1 }])),
     printScript: [],
+    devices: [],
+    drawerOpens: [],
+    attempts: new Map(),
     printJobs: new Map(),
     printed: 0,
     saveAs: [],
@@ -285,6 +294,15 @@ function lastOwner(s: FakeState, u: StaffUser) {
 function fail(code: IpcError["code"], details: IpcError["details"] = null): never {
   const e: IpcError = { code, message: code, retryable: false, correlationId: id(), details };
   throw e;
+}
+
+function attemptDto(attemptId: string, x: { cartId: string; amountMinor: string; status: string; used: boolean; reason: string | null }) {
+  const ok = x.status === "approved";
+  return {
+    attemptId, cartId: x.cartId, provider: "sandbox", amountMinor: x.amountMinor, status: x.status, reason: x.reason,
+    providerRef: ok ? `SBX-${attemptId.slice(-6)}` : null, authCode: ok ? "123456" : null, cardBrand: ok ? "VISA" : null, maskedPan: ok ? "****4242" : null,
+    usable: ok && !x.used,
+  };
 }
 
 const div = (a: bigint, b: bigint) => (a >= 0n ? (a + b / 2n) / b : (a - b / 2n) / b);
@@ -719,7 +737,16 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const total = BigInt(view(s).totalMinor);
       let remaining = total;
       let tendered = 0n;
-      const tenders = a.tenders as { kind: string; amountMinor: string; reference: string | null }[];
+      const terminal = (a.terminal ?? []) as { attemptId: string; amountMinor: string }[];
+      for (const t of terminal) {
+        const att = s.attempts.get(t.attemptId);
+        if (!att || att.status !== "approved" || att.used || att.cartId !== s.cartId || att.amountMinor !== t.amountMinor) fail("VALIDATION_FAILED");
+      }
+      if ([...s.attempts.values()].some((x) => x.cartId === s.cartId && (x.status === "pending" || x.status === "reconciliation_required"))) fail("VALIDATION_FAILED");
+      const tenders = [
+        ...(terminal.map((t) => ({ kind: "card_external", amountMinor: t.amountMinor, reference: `SBX-${t.attemptId.slice(-6)}` }))),
+        ...(a.tenders as { kind: string; amountMinor: string; reference: string | null }[]),
+      ];
       for (const [i, t] of tenders.entries()) {
         const amount = BigInt(t.amountMinor);
         if (amount <= 0n || remaining === 0n) fail("VALIDATION_FAILED");
@@ -751,13 +778,21 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         changeMinor: tendered - total,
         returns: [],
       });
+      for (const t of terminal) {
+        const att = s.attempts.get(t.attemptId);
+        if (att) att.used = true;
+      }
       s.lines = [];
       s.orderDiscountPpm = null;
       s.cartId = id();
       s.revision = 0;
+      const tookCash = tenders.some((t) => t.kind === "cash");
+      const hasDrawer = s.devices.some((d) => d.kind === "receipt_printer");
+      if (tookCash && hasDrawer) s.drawerOpens.push("cash_sale");
       return {
         saleId, receiptNumber, totalMinor: total.toString(), tenderedMinor: tendered.toString(),
         changeMinor: (tendered - total).toString(), roundingMinor: "0", currencyExponent: 2, mode: "sandbox", syncPending: true, negativeStockItems: 0, autoPrint: false,
+        drawer: tookCash && hasDrawer ? "opened" : "none",
       };
     }
     case "return_find": {
@@ -1578,10 +1613,10 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       if (s.seenScans.has(String(a.scanEventId))) return { outcome: "duplicate", cart: view(s) };
       s.seenScans.add(String(a.scanEventId));
       const p = s.products.find((x) => raw in x.barcodes || x.sku.toLowerCase() === raw.toLowerCase());
-      if (!p) return { outcome: "notFound", code: raw };
+      if (!p) return { outcome: "notFound", code: raw, hint: /[àéèçù]/.test(raw) ? "keyboard_layout:azerty_fr" : null };
       const before = s.lines.length;
       const lineId = add(s, p, BigInt(p.barcodes[raw] ?? 1) * 1000n);
-      return { outcome: s.lines.length > before ? "added" : "incremented", cart: view(s), lineId };
+      return { outcome: s.lines.length > before ? "added" : "incremented", cart: view(s), lineId, hint: null };
     }
     case "catalog_lookup_code": {
       needSession(s);
@@ -1727,6 +1762,116 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.cartId = id();
       s.revision = 0;
       return view(s);
+    }
+    // ---------- devices, drawer, card terminal (E20-T11, E22-T02) ----------
+    case "plugin:event|listen":
+      return 1;
+    case "plugin:event|unlisten":
+      return null;
+    case "printer_status": {
+      needSession(s);
+      const p = s.devices.find((d) => d.kind === "receipt_printer");
+      if (!p) return { configured: false, adapter: "virtual", target: null, state: "unknown", message: null, drawer: false, drawerOpen: null };
+      const c = JSON.parse(p.configJson) as { connection: { host?: string; port?: number } };
+      return { configured: true, adapter: "escpos_net", target: `${c.connection.host}:${c.connection.port}`, state: "ready", message: null, drawer: true, drawerOpen: false };
+    }
+    case "devices_list": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      return s.devices;
+    }
+    case "printer_profiles":
+      needSession(s);
+      return [
+        { id: "generic-escpos-80mm-48", vendor: "Generic", name: "ESC/POS 80 mm (48 columns)", dialect: "EscPos", columns: 48, columnsFontB: 64, paperWidthMm: 80, cutter: true, drawer: true, barcode: true, qr: true, statusQuery: true, textSupported: true, verified: true, notes: null },
+        { id: "TM-T88V", vendor: "Epson", name: "TM-T88V", dialect: "EscPos", columns: 42, columnsFontB: 56, paperWidthMm: 80, cutter: true, drawer: true, barcode: true, qr: true, statusQuery: true, textSupported: true, verified: true, notes: null },
+        { id: "TSP143IIIU", vendor: "Star Micronics", name: "TSP143III", dialect: "StarLine", columns: 48, columnsFontB: null, paperWidthMm: 80, cutter: true, drawer: true, barcode: false, qr: false, statusQuery: false, textSupported: false, verified: false, notes: "Image-only" },
+      ];
+    case "devices_discover":
+      needSession(s);
+      return {
+        serialPorts: [{ port: "COM5", kind: { kind: "usb", vid: 0x04b8, pid: 0x0e28, manufacturer: "EPSON", product: "TM-T20III", serialNumber: null }, vendor: "Epson", likely: "printer", likelySure: true, label: "COM5: Epson TM-T20III (likely printer)" }],
+        deviceFiles: [],
+        queues: ["EPSON TM-T20III Receipt"],
+        network: a.subnet ? [{ host: "192.168.1.50", port: 9100, identified: { maker: "EPSON", model: "TM-T88V", modelId: null }, profileId: "TM-T88V" }] : [],
+        networkProblem: null,
+      };
+    case "device_save": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const input = a.input as { deviceId: string | null; kind: string; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
+      const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string };
+      if (input.kind === "receipt_printer" && config.connection?.kind === "network" && !config.connection.host) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "connection.host", value: null, ownerProductId: null, remainingMinor: null });
+      const old = s.devices.find((d) => d.deviceId === input.deviceId);
+      if (old && old.version !== input.baseVersion) fail("CONFLICT_VERSION");
+      const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role: "main", name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
+      s.devices = [...s.devices.filter((d) => d.deviceId !== dev.deviceId && !(d.kind === dev.kind && !old)), dev];
+      return dev;
+    }
+    case "device_remove":
+      needSession(s);
+      s.devices = s.devices.filter((d) => d.deviceId !== a.deviceId);
+      return null;
+    case "printer_test":
+      needSession(s);
+      s.printed += 1;
+      return { outcome: "printed", message: "Printed. Check the ruler fits one line and the accents look right." };
+    case "drawer_open": {
+      const me = needSession(s);
+      if (!s.devices.some((d) => d.kind === "receipt_printer")) fail("DEVICE_UNAVAILABLE");
+      if (me.role === "cashier") {
+        const token = a.approvalTokenId ? s.tokens.get(String(a.approvalTokenId)) : undefined;
+        if (!token) fail("APPROVAL_REQUIRED", { remainingAttempts: null, retryAtMs: null, scope: { permission: "drawer_open", entityId: "register", maxPpm: null }, field: null, value: null, ownerProductId: null, remainingMinor: null });
+        s.tokens.delete(String(a.approvalTokenId));
+      }
+      s.drawerOpens.push(`no_sale:${String(a.reason)}`);
+      return null;
+    }
+    case "payment_attempts": {
+      needSession(s);
+      if (!s.devices.some((d) => d.kind === "payment_terminal")) fail("DEVICE_UNAVAILABLE");
+      return [...s.attempts.entries()].filter(([, x]) => x.cartId === a.cartId).map(([k, x]) => attemptDto(k, x));
+    }
+    case "payment_start": {
+      needSession(s);
+      if (!s.devices.some((d) => d.kind === "payment_terminal")) fail("DEVICE_UNAVAILABLE");
+      const attemptId = id();
+      const att = { cartId: String(a.cartId), amountMinor: String(a.amountMinor), status: "pending", polls: 0, used: false, reason: null as string | null };
+      s.attempts.set(attemptId, att);
+      return attemptDto(attemptId, att);
+    }
+    case "payment_poll": {
+      needSession(s);
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      if (att.status === "pending") {
+        att.polls += 1;
+        const cents = BigInt(att.amountMinor) % 100n;
+        if (cents === 1n) [att.status, att.reason] = ["declined", "Declined by the sandbox terminal (amount ends in .01)"];
+        else if (cents === 2n) [att.status, att.reason] = ["reconciliation_required", "the terminal timed out"];
+        else att.status = "approved";
+      }
+      return attemptDto(String(a.attemptId), att);
+    }
+    case "payment_cancel": {
+      needSession(s);
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      att.status = "cancelled";
+      return attemptDto(String(a.attemptId), att);
+    }
+    case "payment_resolve": {
+      const me = needSession(s);
+      if (me.role === "cashier" && !a.approvalTokenId) fail("APPROVAL_REQUIRED", { remainingAttempts: null, retryAtMs: null, scope: { permission: "cart_void", entityId: String(a.attemptId), maxPpm: null }, field: null, value: null, ownerProductId: null, remainingMinor: null });
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      const r = a.resolution as { outcome: string };
+      att.status = r.outcome === "approved" ? "approved" : r.outcome;
+      att.reason = String(a.reason);
+      return attemptDto(String(a.attemptId), att);
+    }
+    case "payment_reverse": {
+      needSession(s);
+      const att = s.attempts.get(String(a.attemptId)) ?? fail("VALIDATION_FAILED");
+      att.status = "reversed";
+      return attemptDto(String(a.attemptId), att);
     }
     default:
       throw new Error(`fake backend: unhandled command ${cmd}`);

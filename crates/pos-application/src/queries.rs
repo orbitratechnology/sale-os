@@ -97,6 +97,9 @@ pub trait CatalogQueries: Send + Sync {
     async fn sku_owner(&self, sku: &str) -> Result<Option<pos_domain::ProductId>, QueryError>;
     /// Barcode first, then SKU (`catalog_lookup_code`). Active products only.
     async fn lookup_code(&self, raw: &str) -> Result<Option<CatalogHit>, QueryError>;
+    /// The first of these canonical barcode values that an active product carries, with its
+    /// position in `values` (E21-T01: scan decoding candidates, most specific first).
+    async fn lookup_barcodes(&self, values: &[String]) -> Result<Option<(usize, CatalogHit)>, QueryError>;
     /// Name / SKU / barcode search with prefix matching, best matches first.
     async fn search(&self, query: &str, limit: u32) -> Result<Vec<CatalogHit>, QueryError>;
     /// Active tax categories, default first, then by name.
@@ -268,8 +271,8 @@ pub trait CartQueries: Send + Sync {
         date: pos_domain::BusinessDate,
     ) -> Result<Option<pos_domain::cart::SellableVariant>, QueryError>;
     async fn pricing_settings(&self) -> Result<PricingSettings, QueryError>;
-    /// `scanner.label_rules`, parsed (BAR-009). Empty when unset or unreadable.
-    async fn label_rules(&self) -> Result<Vec<pos_domain::catalog::variable_measure::LabelRule>, QueryError>;
+    /// `scanner.variable_measure_rules`: the shop's scale/price label rules, one per line.
+    async fn scan_rules(&self) -> Result<Vec<String>, QueryError>;
 }
 
 /// Stock reads for selling (E11-T04).

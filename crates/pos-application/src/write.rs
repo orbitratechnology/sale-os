@@ -191,6 +191,10 @@ pub enum WriteOp {
         invoice: crate::records::TaxInvoiceRecord,
         number_slot: NumberSlot,
     },
+    /// Creates or replaces a device attached to this till (local only, ADR-024).
+    PutDevice(crate::records::DeviceRecord),
+    /// Removes a device from this till.
+    RemoveDevice(pos_domain::DeviceId),
     /// Creates or updates a print job and appends its state change to `print_job_events`
     /// (E13-T06). Local only.
     PutPrintJob {
@@ -252,6 +256,36 @@ pub enum WriteOp {
     ResolveConflict {
         conflict_id: String,
         resolution: serde_json::Value,
+    },
+    /// Stores a payment attempt (E10-T02) and appends the change to `payment_attempt_events`.
+    /// `expected` is the status the change was based on: `None` inserts a new attempt;
+    /// otherwise the stored attempt must still have that status and be unused, or it fails
+    /// with `PaymentAttemptChanged` (a concurrent poll got there first). Local only: see
+    /// [`crate::payments`].
+    PutPaymentAttempt {
+        attempt: pos_domain::payment::PaymentAttempt,
+        expected: Option<pos_domain::payment::AttemptStatus>,
+        source: crate::records::AttemptEventSource,
+        detail: serde_json::Value,
+    },
+    /// Links an approved attempt to the tender of the sale in the same set (which must come
+    /// earlier in the set) and records the attempt's provider on the tender. Checked again
+    /// inside the transaction: the attempt must still be approved by `approved_by`, unused,
+    /// a sale payment for `cart_id` on this register, for exactly `amount`; otherwise it fails
+    /// with `PaymentAttemptUnusable`.
+    UsePaymentAttempt {
+        attempt_id: pos_domain::PaymentAttemptId,
+        tender_id: pos_domain::TenderId,
+        cart_id: pos_domain::CartId,
+        amount: pos_domain::Money,
+        approved_by: &'static str,
+    },
+    /// Fails with `PaymentUnresolved` if the cart has a card payment whose outcome is open
+    /// (pending, reconciliation required) or an approval no sale has used. Every sale checks
+    /// it, after its own attempts are used, so a card cannot be charged for a cart that is
+    /// then paid another way.
+    CheckCartPayments {
+        cart_id: pos_domain::CartId,
     },
 }
 
@@ -337,6 +371,8 @@ impl WriteOp {
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertTaxInvoice { .. }
+            | WriteOp::PutDevice(_)
+            | WriteOp::RemoveDevice(_)
             | WriteOp::CloseCart { .. }
             | WriteOp::ParkCart { .. }
             | WriteOp::ResumeCart { .. }
@@ -350,7 +386,10 @@ impl WriteOp {
             | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. }
-            | WriteOp::ResolveConflict { .. } => SyncKind::LocalOnly,
+            | WriteOp::ResolveConflict { .. }
+            | WriteOp::PutPaymentAttempt { .. }
+            | WriteOp::UsePaymentAttempt { .. }
+            | WriteOp::CheckCartPayments { .. } => SyncKind::LocalOnly,
         }
     }
 }
@@ -796,6 +835,14 @@ impl WriteSetBuilder {
         self.ops.push(WriteOp::InsertTaxInvoice { invoice, number_slot });
         self
     }
+    pub fn put_device(mut self, device: crate::records::DeviceRecord) -> Self {
+        self.ops.push(WriteOp::PutDevice(device));
+        self
+    }
+    pub fn remove_device(mut self, device: pos_domain::DeviceId) -> Self {
+        self.ops.push(WriteOp::RemoveDevice(device));
+        self
+    }
     pub fn put_print_job(mut self, job: crate::records::PrintJobRecord, detail: serde_json::Value) -> Self {
         self.ops.push(WriteOp::PutPrintJob { job, detail });
         self
@@ -881,6 +928,40 @@ impl WriteSetBuilder {
     }
     pub fn end_session(mut self, session_id: SessionId, reason: SessionEnd) -> Self {
         self.ops.push(WriteOp::EndSession { session_id, reason });
+        self
+    }
+    pub fn put_payment_attempt(
+        mut self,
+        attempt: pos_domain::payment::PaymentAttempt,
+        expected: Option<pos_domain::payment::AttemptStatus>,
+        source: crate::records::AttemptEventSource,
+        detail: serde_json::Value,
+    ) -> Self {
+        self.ops.push(WriteOp::PutPaymentAttempt {
+            attempt,
+            expected,
+            source,
+            detail,
+        });
+        self
+    }
+    pub fn use_payment_attempt(
+        mut self,
+        attempt: &pos_domain::payment::PaymentAttempt,
+        tender_id: pos_domain::TenderId,
+        approved_by: &'static str,
+    ) -> Self {
+        self.ops.push(WriteOp::UsePaymentAttempt {
+            attempt_id: attempt.id(),
+            tender_id,
+            cart_id: attempt.cart_id(),
+            amount: attempt.amount(),
+            approved_by,
+        });
+        self
+    }
+    pub fn check_cart_payments(mut self, cart_id: pos_domain::CartId) -> Self {
+        self.ops.push(WriteOp::CheckCartPayments { cart_id });
         self
     }
     pub fn outbox(mut self, draft: OutboxDraft) -> Self {
@@ -1043,6 +1124,8 @@ impl WriteSetBuilder {
             | WriteOp::SetRegisterMode { .. }
             | WriteOp::PutPrintJob { .. }
             | WriteOp::InsertTaxInvoice { .. }
+            | WriteOp::PutDevice(_)
+            | WriteOp::RemoveDevice(_)
             | WriteOp::InsertReceipt { .. }
             | WriteOp::AppendMovements { .. }
             | WriteOp::CloseCart { .. }
@@ -1056,7 +1139,10 @@ impl WriteSetBuilder {
             | WriteOp::PutImportRows { .. }
             | WriteOp::StartSession { .. }
             | WriteOp::EndSession { .. }
-            | WriteOp::ResolveConflict { .. } => return Ok(()),
+            | WriteOp::ResolveConflict { .. }
+            | WriteOp::PutPaymentAttempt { .. }
+            | WriteOp::UsePaymentAttempt { .. }
+            | WriteOp::CheckCartPayments { .. } => return Ok(()),
         };
         if found != self.context.business_id {
             return Err(WriteSetError::ForeignBusiness {
@@ -1125,6 +1211,15 @@ pub enum WriteError {
     CashSessionChanged,
     #[error("the register mode changed meanwhile")]
     ModeChanged,
+    /// The attempt's status changed since it was read (another poll recorded it first).
+    #[error("the card payment changed meanwhile")]
+    PaymentAttemptChanged,
+    #[error(
+        "that card payment cannot pay for this sale (not approved, already used, another cart or amount)"
+    )]
+    PaymentAttemptUnusable,
+    #[error("a card payment for this cart is not settled: finish or resolve it, use it, or reverse it")]
+    PaymentUnresolved,
 }
 
 impl HasErrorCode for WriteError {
@@ -1145,7 +1240,10 @@ impl HasErrorCode for WriteError {
                 ErrorCode::CashSessionRequired
             }
             WriteError::CashSessionAlreadyOpen => ErrorCode::CashSessionAlreadyOpen,
-            WriteError::CashSessionChanged | WriteError::ModeChanged => ErrorCode::ConflictVersion,
+            WriteError::CashSessionChanged | WriteError::ModeChanged | WriteError::PaymentAttemptChanged => {
+                ErrorCode::ConflictVersion
+            }
+            WriteError::PaymentAttemptUnusable | WriteError::PaymentUnresolved => ErrorCode::ValidationFailed,
         }
     }
 }

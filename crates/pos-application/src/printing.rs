@@ -17,12 +17,54 @@ use crate::context::{AppError, CommandContext};
 use crate::queries::{PrintQueries, ReceiptQueries};
 use crate::records::{PrintJobRecord, PrintStatus};
 use crate::{LocalStore, WriteSet};
+use pos_device_ports::{CommandDialect, CutSupport, PrinterCapabilities};
 use pos_device_ports::{PrintResult, ReceiptOutputPort};
 use pos_domain::{ErrorCode, Permission, PrintJobId, ReceiptId, ReturnId, SaleId};
-use pos_receipts::ReceiptDocument;
-use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, render, to_escpos};
+use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, TextLine, render};
+use pos_receipts::{CodePage, CutMode, Dialect, EncodeOptions, ReceiptDocument};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// The encoder options for a printer (ADR-024): its command language, code pages (only the
+/// ones the encoder has tables for), cutter, and native barcode/QR support.
+pub fn encode_options(caps: &PrinterCapabilities, columns: usize) -> EncodeOptions {
+    EncodeOptions {
+        dialect: match caps.dialect {
+            CommandDialect::EscPos => Dialect::EscPos,
+            CommandDialect::StarLine => Dialect::StarLine,
+            CommandDialect::PlainText => Dialect::PlainText,
+        },
+        code_pages: caps
+            .code_pages
+            .iter()
+            .filter_map(|(name, n)| CodePage::from_name(name).map(|p| (p, *n)))
+            .collect(),
+        cut: match caps.cut {
+            CutSupport::None => CutMode::None,
+            CutSupport::Partial => CutMode::Partial,
+            CutSupport::Full => CutMode::Full,
+        },
+        feed_before_cut: caps.feed_before_cut,
+        barcode: caps.barcode,
+        qr: caps.qr,
+        drawer_kick: None,
+        columns: Some(columns),
+    }
+}
+
+/// Characters per line: the printer's own when it says, else the paper-width setting.
+pub fn columns_for(caps: &PrinterCapabilities, paper_width_mm: u16) -> usize {
+    match caps.columns {
+        Some(c) => usize::from(c).clamp(24, 64),
+        None if paper_width_mm == 58 => COLUMNS_58MM,
+        None => COLUMNS_80MM,
+    }
+}
+
+/// Encodes rendered lines for a printer.
+pub fn encode_for(caps: &PrinterCapabilities, lines: &[TextLine], columns: usize) -> Vec<u8> {
+    pos_receipts::encode(lines, &encode_options(caps, columns))
+}
 
 /// How long a printer may take before the outcome is treated as unknown.
 pub const DEFAULT_PRINT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -195,6 +237,7 @@ impl PrintService {
             job_id: PrintJobId::generate(ctx.ids.as_ref()),
             receipt_id: receipt,
             adapter: self.printer.adapter(),
+            target: self.printer.target(),
             reprint,
             status: PrintStatus::Queued,
             attempt_count: 0,
@@ -233,12 +276,9 @@ impl PrintService {
             .receipts
             .receipt_info(ctx.register.register_id, actor.user_id)
             .await?;
-        let columns = if info.paper_width_mm == 58 {
-            COLUMNS_58MM
-        } else {
-            COLUMNS_80MM
-        };
-        let bytes = to_escpos(&render(&doc, columns));
+        let caps = self.printer.capabilities();
+        let columns = columns_for(&caps, u16::try_from(info.paper_width_mm).unwrap_or(80));
+        let bytes = encode_for(&caps, &render(&doc, columns), columns);
         let name = format!(
             "{}{}",
             doc.meta.receipt_number,
@@ -262,6 +302,11 @@ impl PrintService {
                 job.status = PrintStatus::Failed;
                 job.last_error_code = Some(f.code().into());
                 serde_json::json!({ "error": f.code() })
+            }
+            // Part of the job may be on paper: never resubmit automatically (RCP-007).
+            Ok(PrintResult::Uncertain(reason)) => {
+                job.status = PrintStatus::Unknown;
+                serde_json::json!({ "uncertain": reason })
             }
             // No answer: the paper may be out of the printer. Never resubmit automatically.
             Err(_) => {

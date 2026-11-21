@@ -36,6 +36,8 @@ pub struct TaxInvoiceService {
     pub sales: Arc<dyn SalesQueries>,
     /// For the business time zone.
     pub pricing: Arc<dyn CartQueries>,
+    /// The till's printer, so the preview has its width (as for receipts, DEV-004).
+    pub printer: Option<Arc<dyn pos_device_ports::ReceiptOutputPort>>,
 }
 
 /// Who the invoice is for, as on the purchaser's VAT registration certificate.
@@ -290,6 +292,7 @@ impl TaxInvoiceService {
         };
         let reader = ReceiptService {
             receipts: self.receipts.clone(),
+            printer: self.printer.clone(),
         };
         Ok(Some(reader.rendered(ctx, &json, width_mm).await?))
     }

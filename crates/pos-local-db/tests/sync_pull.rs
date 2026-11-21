@@ -139,7 +139,7 @@ fn every_master_snapshot_of_the_day_maps_back_to_its_local_write() {
             .unwrap_or_else(|err| panic!("{err}"));
         n += 1;
     }
-    assert_eq!(n, 26, "every master snapshot of the day (16 settings)");
+    assert_eq!(n, 27, "every master snapshot of the day (17 settings)");
     // Another business's snapshot is refused.
     let other = pos_domain::BusinessId::from_uuid(Uuid::now_v7());
     let staff = day.iter().find(|e| e.event_type == "staff.upserted").unwrap();

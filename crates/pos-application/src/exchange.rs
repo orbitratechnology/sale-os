@@ -104,7 +104,7 @@ pub async fn complete(
     let return_id = planned.id;
     let set = WriteSet::builder(ctx.write_context());
     let (set, staged) = checkout
-        .stage_sale(ctx, view, settlement, set, Some(return_id))
+        .stage_sale(ctx, view, settlement, set, Some(return_id), &[])
         .await?;
     let sale_id = staged.sale.id;
     let (set, ret) = returns

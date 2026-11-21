@@ -2143,6 +2143,40 @@
   .getting-started li button {
     flex-shrink: 0;
   }
+
+  /* ---- Settings → Devices (E20-T11) ---- */
+  .devices {
+    display: grid;
+    gap: var(--sp-4);
+  }
+  .device-section h2 {
+    font-size: var(--fs-lg);
+    margin: 0 0 var(--sp-2);
+  }
+  .device-section + .device-section {
+    border-block-start: 1px solid var(--c-border);
+    padding-block-start: var(--sp-4);
+  }
+  .device-form {
+    display: grid;
+    gap: var(--sp-2);
+    max-inline-size: 47.5rem;
+  }
+  .device-form .row,
+  .device-section .row {
+    display: flex;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    align-items: end;
+  }
+  .device-form label,
+  .device-section .row label {
+    display: grid;
+    gap: var(--sp-1);
+  }
+  .device-discovery {
+    margin-block-start: var(--sp-2);
+  }
 }
 
 /* ============================== utilities ============================== */

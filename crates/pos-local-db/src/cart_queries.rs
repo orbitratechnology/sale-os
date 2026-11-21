@@ -69,24 +69,6 @@ impl CartQueries for SqliteStore {
         Ok(out)
     }
 
-    async fn label_rules(&self) -> Result<Vec<pos_domain::catalog::variable_measure::LabelRule>, QueryError> {
-        let json: Option<String> = sqlx::query_scalar(
-            "SELECT value_json FROM business_settings WHERE key = 'scanner.label_rules' LIMIT 1",
-        )
-        .fetch_optional(self.db().readers())
-        .await
-        .map_err(q)?;
-        let lines: Vec<String> = json
-            .and_then(|j| serde_json::from_str(&j).ok())
-            .unwrap_or_default();
-        Ok(
-            pos_domain::catalog::variable_measure::rules_from_lines(&lines).unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "scanner.label_rules is not valid; scale labels are not read");
-                Vec::new()
-            }),
-        )
-    }
-
     async fn sellable(
         &self,
         variant: VariantId,
@@ -153,6 +135,17 @@ impl CartQueries for SqliteStore {
                 .ok_or_else(|| QueryError(format!("unknown product type {product_type:?}")))?,
             cost: cost.map(Money::from_minor),
         }))
+    }
+
+    async fn scan_rules(&self) -> Result<Vec<String>, QueryError> {
+        let v: Option<String> = sqlx::query_scalar(
+            "SELECT value_json FROM business_settings WHERE key = 'scanner.variable_measure_rules' LIMIT 1",
+        )
+        .fetch_optional(self.db().readers())
+        .await
+        .map_err(q)?;
+        Ok(v.and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+            .unwrap_or_default())
     }
 
     async fn pricing_settings(&self) -> Result<PricingSettings, QueryError> {

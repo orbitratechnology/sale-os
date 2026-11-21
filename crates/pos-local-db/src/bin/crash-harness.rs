@@ -913,10 +913,14 @@ async fn verify(dir: &Path, ack: &Path) -> Result<Verdict, String> {
 
 // ------------------------------------------------------------ migration ---
 
-/// Undoes migrations 0015 and 0014 on a database at head, so the real runner has a populated
-/// database to upgrade (0014 includes a data migration: the search index rows). Kept next to
+/// Undoes migrations 0022 down to 0014 on a database at head, so the real runner has a
+/// populated database to upgrade (0014 includes a data migration: the search index rows; 0020
+/// and 0022 rebuild tables that hold rows). Kept next to
 /// those files' contents; if a later edit breaks it, building the template fails loudly.
 const DOWN_TO_0013: &str = "
+DROP TABLE devices;
+DROP TABLE payment_attempt_events;
+DROP TABLE payment_attempts;
 DROP TABLE tax_invoices;
 ALTER TABLE cart_lines DROP COLUMN price_seen_minor;
 ALTER TABLE cart_lines DROP COLUMN label_price_minor;
@@ -932,7 +936,7 @@ ALTER TABLE sync_state DROP COLUMN link_progress;
 DROP TABLE search_index_rows;
 DROP INDEX ix_outbox_aggregate;
 ALTER TABLE sync_state DROP COLUMN bootstrap_page;
-DELETE FROM _sqlx_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20);
+DELETE FROM _sqlx_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22);
 ";
 
 /// Opens (and so upgrades) the database, says so, and waits to be killed.
@@ -964,9 +968,10 @@ const KEPT: &[&str] = &[
     "SELECT count(*) FROM outbox_events",
     "SELECT count(*) FROM audit_events",
     "SELECT count(*) FROM product_search",
-    // 0020 rebuilds `receipts` (print_jobs references it).
+    // 0020 rebuilds `receipts` (print_jobs references it); 0022 rebuilds `print_jobs`.
     "SELECT count(*) FROM receipts",
     "SELECT count(*) FROM print_jobs",
+    "SELECT count(*) FROM print_job_events",
     "SELECT coalesce(sum(on_hand_milli), 0) FROM stock_balances",
 ];
 

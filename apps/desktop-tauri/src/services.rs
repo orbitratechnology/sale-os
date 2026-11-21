@@ -122,9 +122,15 @@ pub(crate) struct Services {
     /// Sync conflicts (E18).
     pub conflicts: pos_application::conflict::ConflictService,
     pub backup_audit: pos_application::backups::BackupAudit,
-    /// Prints on the virtual printer (captures in `<app data>/virtual-printer/`) until the
-    /// hardware adapters arrive in Stage 5.
+    /// Prints on the configured receipt printer (Settings → Devices), or on the virtual
+    /// printer (captures in `<app data>/virtual-printer/`) when none is set up.
     pub prints: PrintService,
+    /// This till's printers, drawer, scanners and terminal (E20-T11, ADR-024).
+    pub devices: pos_application::devices::DeviceService,
+    /// Serial scanners, forwarded to the window as `scanner://scan` (E21-T04).
+    pub scanners: Arc<crate::device_commands::ScannerHub>,
+    /// The card terminal's payment flow, when one is set up (E22-T02).
+    pub payments: RwLock<Option<Arc<pos_application::payments::ProviderPaymentFlow>>>,
     pub queries: SqliteStore,
     /// Issued manager approvals waiting to be used (E05-T04).
     pub approvals: Arc<Approvals>,
@@ -234,8 +240,16 @@ impl AppServices {
             let a = Arc::new(s.clone());
             let approvals = Arc::new(Approvals::default());
             let carts = Arc::new(CartService::new(a.clone(), a.clone(), a.clone()).with_stock(a.clone()));
-            let printer = Arc::new(pos_device_virtual::printer::VirtualPrinter::new(
+            let virtual_printer = Arc::new(pos_device_virtual::printer::VirtualPrinter::new(
                 data_dir.join("virtual-printer"),
+            ));
+            // The virtual printer stands in until a real one is set up; it has no drawer.
+            let printer = Arc::new(pos_application::devices::SwitchablePrinter::new(
+                pos_application::devices::PrinterHandle {
+                    printer: virtual_printer,
+                    drawer: None,
+                    drawer_pin: pos_device_ports::DrawerPin::Pin2,
+                },
             ));
             Services {
                 setup: SetupService {
@@ -284,7 +298,10 @@ impl AppServices {
                     stock: a.clone(),
                     receipts: a.clone(),
                 },
-                receipts: ReceiptService { receipts: a.clone() },
+                receipts: ReceiptService {
+                    receipts: a.clone(),
+                    printer: Some(printer.clone()),
+                },
                 receipt_pdfs: ReceiptPdfService {
                     receipts: a.clone(),
                     store: a.clone(),
@@ -331,14 +348,23 @@ impl AppServices {
                     receipts: a.clone(),
                     sales: a.clone(),
                     pricing: a.clone(),
+                    printer: Some(printer.clone()),
                 },
                 prints: PrintService {
                     store: a.clone(),
                     prints: a.clone(),
-                    receipts: a,
-                    printer,
+                    receipts: a.clone(),
+                    printer: printer.clone(),
                     timeout: DEFAULT_PRINT_TIMEOUT,
                 },
+                devices: pos_application::devices::DeviceService {
+                    store: a.clone(),
+                    devices: a,
+                    driver: Arc::new(crate::device_commands::HwDriver),
+                    printer,
+                },
+                scanners: Arc::new(crate::device_commands::ScannerHub::default()),
+                payments: RwLock::new(None),
                 conflicts: pos_application::conflict::ConflictService {
                     store: Arc::new(s.clone()),
                     conflicts: Arc::new(s.clone()),
@@ -418,7 +444,7 @@ impl AppServices {
             b.start();
             b
         });
-        Self {
+        let services = Self {
             db,
             store,
             clock,
@@ -434,7 +460,89 @@ impl AppServices {
             db_keys,
             encryption,
             _log: log,
+        };
+        // Put the stored printer, scanners and terminal to work (never fatal).
+        services.devices_changed().await;
+        services
+    }
+
+    /// After start-up and after any device change: activates the receipt printer, restarts
+    /// serial scanners and rebuilds the card terminal's payment flow from storage.
+    pub(crate) async fn devices_changed(&self) {
+        let Ok(app) = self.app() else { return };
+        let Ok(Some(register)) = app.queries.register_context().await else {
+            return;
+        };
+        if let Err(e) = app.devices.activate(register.register_id).await {
+            tracing::warn!(problem = %e, "receipt printer not activated; using the virtual printer");
         }
+        let devices = match pos_application::devices::DeviceQueries::devices(
+            &app.queries,
+            register.register_id,
+        )
+        .await
+        {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(error = %e.0, "devices could not be read");
+                return;
+            }
+        };
+        app.scanners.restart(&devices).await;
+        let terminal = devices.iter().find(|d| {
+            d.kind == pos_application::records::DeviceKind::PaymentTerminal && d.enabled && d.role == "main"
+        });
+        let port: Option<Arc<dyn pos_device_ports::PaymentPort>> = match terminal
+            .and_then(|t| t.config.get("provider"))
+            .and_then(|p| p.as_str())
+        {
+            Some("sandbox") => Some(Arc::new(crate::device_commands::SandboxTerminal(
+                pos_device_virtual::payment::MockPaymentProvider::new(),
+            ))),
+            _ => None,
+        };
+        let a = Arc::new(app.queries.clone());
+        *app.payments.write().await = port.map(|port| {
+            Arc::new(pos_application::payments::ProviderPaymentFlow {
+                store: a.clone(),
+                payments: a.clone(),
+                carts: a.clone(),
+                setup: a.clone(),
+                port,
+                timeout: pos_application::payments::DEFAULT_PAYMENT_TIMEOUT,
+            })
+        });
+    }
+
+    /// Receivers for serial-scanner scans and health (forwarded to the window by the shell).
+    pub(crate) fn scanner_events(
+        &self,
+    ) -> Option<(
+        tokio::sync::broadcast::Receiver<crate::device_commands::SerialScanDto>,
+        tokio::sync::broadcast::Receiver<crate::device_commands::ScannerHealthDto>,
+    )> {
+        let app = self.app().ok()?;
+        Some((app.scanners.scans.subscribe(), app.scanners.health.subscribe()))
+    }
+
+    /// The card terminal's payment flow, when one is set up.
+    pub(crate) async fn payment_flow(&self) -> Option<Arc<pos_application::payments::ProviderPaymentFlow>> {
+        self.app().ok()?.payments.read().await.clone()
+    }
+
+    /// Whether this till is in sandbox (practice) mode.
+    pub(crate) async fn in_sandbox(&self) -> Result<bool, IpcError> {
+        use pos_application::queries::SetupQueries;
+        let identity = self
+            .app()?
+            .queries
+            .device_identity()
+            .await
+            .map_err(|e| IpcError::from_error(&pos_application::context::AppError::from(e)))?;
+        Ok(!matches!(
+            identity.map(|d| d.mode),
+            Some(pos_application::records::RegisterMode::Live)
+        ))
     }
 
     /// The use cases, or the database error when it could not be opened.

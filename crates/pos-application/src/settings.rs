@@ -82,6 +82,14 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "In live mode, a sale or a cash refund needs an open cash drawer session. Practice sales never do.",
     },
     SettingDef {
+        key: "drawer.open_on_cash_sale",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Cash drawer",
+        label: "Open the drawer after a cash sale",
+        help: "Sends the opening pulse through the receipt printer when cash is taken. Never for card-only sales.",
+    },
+    SettingDef {
         key: "discount.cashier_max_ppm",
         kind: SettingKind::Ppm,
         default: "100000",
@@ -152,23 +160,23 @@ pub const REGISTRY: &[SettingDef] = &[
         help: "Up to 5 lines, e.g. the returns policy.",
     },
     SettingDef {
+        key: "scanner.variable_measure_rules",
+        kind: SettingKind::Lines {
+            max_lines: 10,
+            max_chars: 64,
+        },
+        default: "[]",
+        group: "Scanner",
+        label: "Scale and price labels",
+        help: "One rule per line: prefixes, layout, price|weight|count, decimals. E.g. `21 PPIIIIIVVVVVC price 2` or `2 PIIIIIXVVVVC price 2` (US). P prefix, I item, V value, X price check, C check digit.",
+    },
+    SettingDef {
         key: "scanner.suffix",
         kind: SettingKind::Choice(&["\"Enter\"", "\"Tab\"", "\"none\""]),
         default: "\"Enter\"",
         group: "Scanner",
         label: "Key the scanner sends after a code",
         help: "Match the scanner's setting. \"none\" ends a code by the pause after it.",
-    },
-    SettingDef {
-        key: "scanner.label_rules",
-        kind: SettingKind::Lines {
-            max_lines: 10,
-            max_chars: 24,
-        },
-        default: "[]",
-        group: "Scanner",
-        label: "Scale labels (weight and price barcodes)",
-        help: "One layout per line: prefix, weight or price, item digits, and \"check\" if the scale prints a price check digit. E.g. \"25 weight 5\" reads 25 IIIII GGGGG C as item IIIII, GGGGG grams; \"21 price 5\" reads the price in pence or cents. Give the product the label's barcode with the weight or price as zeros.",
     },
     SettingDef {
         key: "scanner.max_key_gap_ms",
@@ -254,13 +262,13 @@ pub fn validate(key: &str, value: &Value) -> Result<&'static SettingDef, Setting
             }
         }
     }
-    if d.key == "scanner.label_rules" {
-        let lines: Vec<&str> = value
+    if d.key == "scanner.variable_measure_rules" {
+        let lines: Vec<String> = value
             .as_array()
-            .map(|a| a.iter().filter_map(Value::as_str).collect())
+            .map(|a| a.iter().filter_map(|l| l.as_str().map(str::to_owned)).collect())
             .unwrap_or_default();
-        if let Err(e) = pos_domain::catalog::variable_measure::rules_from_lines(&lines) {
-            return wrong(e.to_string());
+        if let Err(e) = pos_domain::catalog::variable_measure_rules(&lines) {
+            return wrong(format!("valid label rules ({e})"));
         }
     }
     Ok(d)

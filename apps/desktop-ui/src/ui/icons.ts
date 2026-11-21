@@ -38,6 +38,7 @@ export {
   LayoutGrid,
   ListX,
   Lock,
+  LockOpen,
   Package,
   PackagePlus,
   PackageSearch,

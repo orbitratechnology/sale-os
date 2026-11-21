@@ -271,6 +271,7 @@ impl CashService {
         let (_, json) = self.z_receipt(ctx, session).await?;
         ReceiptService {
             receipts: self.receipts.clone(),
+            printer: None,
         }
         .rendered(ctx, &json, width_mm)
         .await

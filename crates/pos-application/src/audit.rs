@@ -70,6 +70,10 @@ actions! {
     RECEIPT_REPRINTED = "receipt.reprinted",
     RECEIPT_EXPORTED_PDF = "receipt.exported_pdf",
     PRINT_UNKNOWN_RESOLVED = "print.unknown_resolved",
+    DEVICE_SAVED = "device.saved",
+    DEVICE_REMOVED = "device.removed",
+    DEVICE_TEST_PRINTED = "device.test_printed",
+    CASH_DRAWER_OPENED = "cash_drawer.opened",
     CASH_SESSION_OPENED = "cash_session.opened",
     CASH_SESSION_CLOSED = "cash_session.closed",
     REPORT_EXPORTED = "report.exported",
@@ -156,7 +160,6 @@ mod tests {
 /// The completeness test fails if an action is neither emitted nor listed here, or if one
 /// listed here has started being emitted (keep the list honest).
 pub const PLANNED: &[(&str, &str)] = &[
-    ("tender.status_changed", "E10-T04 payment provider integration"),
     ("sync.linked", "E16 cloud link (Stage 3)"),
     ("sync.device_revoked", "E16 device management (Stage 3)"),
     ("sync.conflict_resolved", "E17 conflicts (Stage 3)"),

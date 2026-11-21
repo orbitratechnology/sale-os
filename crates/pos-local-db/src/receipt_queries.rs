@@ -132,12 +132,13 @@ type JobRow = (
     String,
     i64,
     i64,
+    Option<String>,
 );
-const JOB_COLUMNS: &str = "job_id, receipt_id, adapter, copy_kind, status, attempt_count, last_error_code, requested_by, created_at, updated_at";
+const JOB_COLUMNS: &str = "job_id, receipt_id, adapter, copy_kind, status, attempt_count, last_error_code, requested_by, created_at, updated_at, target";
 
 fn job(row: JobRow) -> Result<pos_application::records::PrintJobRecord, QueryError> {
     use pos_application::records::{PrintJobRecord, PrintStatus};
-    let (id, receipt, adapter, copy, status, attempts, error, by, created, updated) = row;
+    let (id, receipt, adapter, copy, status, attempts, error, by, created, updated, target) = row;
     Ok(PrintJobRecord {
         job_id: id.parse().map_err(q)?,
         receipt_id: receipt.parse().map_err(q)?,
@@ -148,8 +149,11 @@ fn job(row: JobRow) -> Result<pos_application::records::PrintJobRecord, QueryErr
             "os_spooler" => "os_spooler",
             "escpos_usb" => "escpos_usb",
             "escpos_net" => "escpos_net",
+            "escpos_serial" => "escpos_serial",
+            "escpos_file" => "escpos_file",
             other => return Err(QueryError(format!("unknown print adapter {other:?}"))),
         },
+        target,
         reprint: copy == "reprint",
         status: PrintStatus::parse(&status)
             .ok_or_else(|| QueryError(format!("unknown print status {status:?}")))?,
@@ -196,5 +200,54 @@ impl pos_application::queries::PrintQueries for SqliteStore {
             .fetch_optional(self.db().readers())
             .await
             .map_err(q)
+    }
+}
+
+#[async_trait::async_trait]
+impl pos_application::devices::DeviceQueries for SqliteStore {
+    async fn devices(
+        &self,
+        register: pos_domain::RegisterId,
+    ) -> Result<Vec<pos_application::records::DeviceRecord>, QueryError> {
+        use pos_application::records::{DeviceKind, DeviceRecord};
+        type Row = (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            bool,
+            i64,
+            i64,
+            i64,
+        );
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT device_id, register_id, kind, role, name, config_json, enabled, version, created_at, updated_at
+             FROM devices WHERE register_id = ? ORDER BY kind, role",
+        )
+        .bind(register.to_string())
+        .fetch_all(self.db().readers())
+        .await
+        .map_err(q)?;
+        rows.into_iter()
+            .map(
+                |(id, reg, kind, role, name, config, enabled, version, created, updated)| {
+                    Ok(DeviceRecord {
+                        device_id: id.parse().map_err(q)?,
+                        register_id: reg.parse().map_err(q)?,
+                        kind: DeviceKind::parse(&kind)
+                            .ok_or_else(|| QueryError(format!("unknown device kind {kind:?}")))?,
+                        role,
+                        name,
+                        config: serde_json::from_str(&config).map_err(q)?,
+                        enabled,
+                        version: u64::try_from(version).map_err(q)?,
+                        created_at: pos_domain::Timestamp::from_millis(created),
+                        updated_at: pos_domain::Timestamp::from_millis(updated),
+                    })
+                },
+            )
+            .collect()
     }
 }

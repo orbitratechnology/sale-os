@@ -30,3 +30,4 @@ Template: [0000-template.md](0000-template.md)
 | ADR-021 | [WebView2 distribution: bundle the offline installer](0021-webview2-offline-installer.md) | Proposed |
 | ADR-022 | [Keyboard-wedge scan detection in the WebView](0022-keyboard-wedge-scan-detection.md) | Proposed |
 | ADR-023 | [Local database encryption (SQLCipher)](0023-local-database-encryption.md) | Accepted |
+| ADR-024 | [Device adapters for any printer, scanner, drawer and payment terminal](0024-device-adapters.md) | Proposed |

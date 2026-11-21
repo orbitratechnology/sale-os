@@ -24,6 +24,7 @@ pos-cloud-db = { path = "crates/pos-cloud-db" }
 pos-sync = { path = "crates/pos-sync" }
 pos-device-ports = { path = "crates/pos-device-ports" }
 pos-device-virtual = { path = "crates/pos-device-virtual" }
+pos-device-hw = { path = "crates/pos-device-hw" }
 pos-receipts = { path = "crates/pos-receipts" }
 pos-testkit = { path = "crates/pos-testkit" }
 pos-sync-http = { path = "crates/pos-sync-http" }
@@ -37,9 +38,12 @@ async-trait = "0.1"
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 chrono-tz = "0.10"
+deunicode = "1.6"
+printers = "2.3"
 proptest = "1"
 jsonschema = { version = "=0.58.6", default-features = false }
 krilla = { version = "0.8.2", default-features = false, features = ["simple-text", "raster-images"] }
+libc = "0.2"
 # The business logo (SET-001): decoded and resized before it is stored; krilla embeds the PNG.
 png = "0.18.1"
 zune-jpeg = "0.5.5"
@@ -57,6 +61,7 @@ getrandom = "0.3"
 libsqlite3-sys = { version = "0.30", features = ["bundled-sqlcipher-vendored-openssl"] }
 flate2 = "1.1"
 schemars = { version = "1.2", features = ["uuid1"] }
+serialport = { version = "4.10", default-features = false }
 sha2 = "0.10"
 specta = { version = "=2.0.0-rc.26", features = ["derive"] }
 specta-typescript = "=0.0.13"

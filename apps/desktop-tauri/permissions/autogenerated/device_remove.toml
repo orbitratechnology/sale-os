@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-device-remove"
+description = "Enables the device_remove command without any pre-configured scope."
+commands.allow = ["device_remove"]
+
+[[permission]]
+identifier = "deny-device-remove"
+description = "Denies the device_remove command without any pre-configured scope."
+commands.deny = ["device_remove"]

@@ -25,6 +25,7 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `cash.require_session_for_sale` | true / false | `true` | **Sales need an open drawer.** In live mode, a sale or a cash refund needs an open cash drawer session. Practice sales never do. |
+| `drawer.open_on_cash_sale` | true / false | `true` | **Open the drawer after a cash sale.** Sends the opening pulse through the receipt printer when cash is taken. Never for card-only sales. |
 
 ## Security
 
@@ -48,7 +49,7 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
+| `scanner.variable_measure_rules` | up to 10 lines × 64 chars | `[]` | **Scale and price labels.** One rule per line: prefixes, layout, price|weight|count, decimals. E.g. `21 PPIIIIIVVVVVC price 2` or `2 PIIIIIXVVVVC price 2` (US). P prefix, I item, V value, X price check, C check digit. |
 | `scanner.suffix` | one of "Enter", "Tab", "none" | `"Enter"` | **Key the scanner sends after a code.** Match the scanner's setting. "none" ends a code by the pause after it. |
-| `scanner.label_rules` | up to 10 lines × 24 chars | `[]` | **Scale labels (weight and price barcodes).** One layout per line: prefix, weight or price, item digits, and "check" if the scale prints a price check digit. E.g. "25 weight 5" reads 25 IIIII GGGGG C as item IIIII, GGGGG grams; "21 price 5" reads the price in pence or cents. Give the product the label's barcode with the weight or price as zeros. |
 | `scanner.max_key_gap_ms` | whole number 10–100 | `35` | **Fastest typing that counts as a scan (ms between keys).** Raise it for slow wireless scanners; people type far slower than any scanner. |
 | `scanner.error_sound` | true / false | `true` | **Beep when a code is not found or an action is refused.** A short low tone. The message is always shown on screen too. |

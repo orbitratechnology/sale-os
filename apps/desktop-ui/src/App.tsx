@@ -324,7 +324,8 @@ export function App() {
             onReports={canEdit ? () => setScreen({ kind: "reports" }) : null}
             onWentLive={state.session.role === "owner" ? refresh : null}
             onSettings={
-              state.session.role === "owner"
+              // Managers see only Settings → Devices (DeviceConfigure); owners see everything.
+              state.session.role !== "cashier"
                 ? (group?: string) => setScreen({ kind: "settings", group })
                 : null
             }
