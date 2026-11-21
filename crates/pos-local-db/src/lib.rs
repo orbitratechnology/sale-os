@@ -390,8 +390,26 @@ impl LocalDb {
         {
             tracing::warn!(error = %e, "checkpoint on close failed");
         }
-        self.readers.close().await;
-        self.writer.close().await;
+        for pool in [&self.readers, &self.writer] {
+            pool.close().await;
+            // sqlx's `close` can return with a connection still open: it waits for every
+            // permit, and the writer's last connection (the checkpoint's, still in its
+            // `after_release` ping) is pushed onto the idle queue just before its permit comes
+            // back, after `close` stopped popping that queue. That connection then stayed open
+            // until every clone of this handle was dropped, and on Windows its open `-wal`
+            // blocked the file swaps that follow a close (encryption, restore). Closing again
+            // pops it; `size` counts idle connections too.
+            for _ in 0..1000 {
+                if pool.size() == 0 {
+                    break;
+                }
+                pool.close().await;
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+            if pool.size() > 0 {
+                tracing::warn!(open = pool.size(), "a database connection did not close");
+            }
+        }
     }
 }
 
