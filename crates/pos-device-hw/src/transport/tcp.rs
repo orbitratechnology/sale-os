@@ -81,10 +81,15 @@ impl Transport for TcpTransport {
 
 /// The OS send buffer for a printer link. A fixed size matters on Windows: without one,
 /// dynamic send buffering lets the OS accept megabytes for a printer that reads nothing,
-/// and the job would look sent. Bounded, a finished write means the job is at most this far
+/// and the job would look sent. (Windows also accepts one oversized send whole, hence
+/// WRITE_CHUNK.) Bounded, a finished write means the job is at most this far
 /// from the printer, and one that is never read times out (uncertain) on every platform.
 /// Receipts are a few kilobytes; even a raster job streams fine through 64 KiB.
 const SEND_BUFFER: u32 = 64 * 1024;
+
+/// Largest single write: with SEND_BUFFER, what the OS can hold for a printer that reads
+/// nothing stays bounded even where one send may overshoot the buffer (Windows).
+const WRITE_CHUNK: usize = 16 * 1024;
 
 async fn connect_bounded(host: &str, port: u16) -> std::io::Result<TcpStream> {
     let mut last = None;
@@ -115,7 +120,11 @@ impl Link for TcpLink {
         let deadline = Instant::now() + timeout;
         let mut sent = 0;
         while sent < bytes.len() {
-            match tokio::time::timeout_at(deadline, self.stream.write(&bytes[sent..])).await {
+            // One bounded chunk per call: Winsock accepts a single non-blocking send of any
+            // size while its buffer is not yet full, so a whole job handed over at once would
+            // be "sent" to a printer that reads nothing (see SEND_BUFFER).
+            let end = (sent + WRITE_CHUNK).min(bytes.len());
+            match tokio::time::timeout_at(deadline, self.stream.write(&bytes[sent..end])).await {
                 Err(_) => return Err(TransportError::Timeout { sent }),
                 Ok(Ok(0)) => {
                     return Err(TransportError::Io {
