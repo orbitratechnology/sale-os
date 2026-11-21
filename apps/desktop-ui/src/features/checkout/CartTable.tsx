@@ -5,6 +5,7 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 import type { CartLine, CartView, Discount } from "../../ipc";
 import { formatMilli, ppmToPercent } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { useT } from "../../i18n";
 
 export type Editing = { lineId: string; field: "qty" | "discount" } | null;
 
@@ -29,6 +30,7 @@ export function CartTable({
   onCommit: (lineId: string, field: "qty" | "discount", value: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const money = (minor: string) => formatMoney(minor, { exponent: cart.currencyExponent });
   const selectedRow = useRef<HTMLTableRowElement | null>(null);
   // Braces matter: newer Chromium returns a Promise from scrollIntoView, and an effect must
@@ -43,26 +45,26 @@ export function CartTable({
         <span className="empty-icon">
           <ScanBarcode />
         </span>
-        <p>Scan an item, or press F2 to search.</p>
+        <p>{t("Scan an item, or press F2 to search.")}</p>
       </div>
     );
   }
   return (
-    <table className="cart-table" aria-label="Cart">
+    <table className="cart-table" aria-label={t("Cart")}>
       <thead>
         <tr>
-          <th scope="col">Item</th>
+          <th scope="col">{t("Item")}</th>
           <th scope="col" className="num">
-            Qty
+            {t("Qty")}
           </th>
           <th scope="col" className="num">
-            Price
+            {t("Price")}
           </th>
           <th scope="col" className="num">
-            Discount
+            {t("Discount")}
           </th>
           <th scope="col" className="num">
-            Total
+            {t("Total")}
           </th>
         </tr>
       </thead>
@@ -79,18 +81,18 @@ export function CartTable({
             <td>
               <span className="item-name">{l.name}</span>
               {l.label && <span className="item-label"> {l.label}</span>}
-              {cart.repricedLines.includes(l.lineId) && <span className="tag">price changed</span>}
+              {cart.repricedLines.includes(l.lineId) && <span className="tag">{t("price changed")}</span>}
               {l.onlyInStockMilli != null && (
                 <span className="stock-hint" data-testid="stock-hint">
                   {l.onlyInStockMilli.startsWith("-") || l.onlyInStockMilli === "0"
-                    ? "None in stock"
-                    : `Only ${formatMilli(l.onlyInStockMilli)} in stock`}
+                    ? t("None in stock")
+                    : t("Only {qty} in stock", { qty: formatMilli(l.onlyInStockMilli) })}
                 </span>
               )}
             </td>
             <td className="num">
               {editing?.lineId === l.lineId && editing.field === "qty" ? (
-                <InlineInput label={`Quantity for ${l.name}`} initial={formatMilli(l.quantityMilli)} onCommit={(v) => onCommit(l.lineId, "qty", v)} onCancel={onCancel} />
+                <InlineInput label={t("Quantity for {name}", { name: l.name })} initial={formatMilli(l.quantityMilli)} onCommit={(v) => onCommit(l.lineId, "qty", v)} onCancel={onCancel} />
               ) : (
                 <span data-testid="qty">
                   {formatMilli(l.quantityMilli)}
@@ -109,7 +111,7 @@ export function CartTable({
             </td>
             <td className="num">
               {editing?.lineId === l.lineId && editing.field === "discount" ? (
-                <InlineInput label={`Discount % for ${l.name}`} initial={discountPercent(l)} onCommit={(v) => onCommit(l.lineId, "discount", v)} onCancel={onCancel} />
+                <InlineInput label={t("Discount % for {name}", { name: l.name })} initial={discountPercent(l)} onCommit={(v) => onCommit(l.lineId, "discount", v)} onCancel={onCancel} />
               ) : (
                 <span>{l.discountMinor === "0" ? "" : `-${money(l.discountMinor)}`}{describeDiscount(l.lineDiscount)}</span>
               )}

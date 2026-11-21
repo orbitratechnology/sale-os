@@ -1,3 +1,20 @@
+/* Noto Sans Sinhala and Tamil (SIL Open Font License, assets/fonts/OFL.txt), the same files
+   the receipts and PDFs use. */
+@font-face {
+  font-family: "Noto Sans Sinhala";
+  src: url("./assets/fonts/NotoSansSinhala-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0D80-0DFF, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: "Noto Sans Tamil";
+  src: url("./assets/fonts/NotoSansTamil-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0B80-0BFF, U+200C-200D, U+25CC;
+}
+
 /*
  * Sale OS design system, after shadcn/ui: neutral greys, hairline borders, one dark primary,
  * quiet type and lucide icons. Colour is kept for meaning (money due, stock, danger, sandbox).
@@ -51,8 +68,11 @@
     --c-ring: color-mix(in oklab, var(--c-focus) 40%, transparent);
 
     /* Type: Inter, bundled with the app (no network), tabular figures for money. */
-    --font-sans: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-    --font-mono: "Cascadia Mono", ui-monospace, Consolas, "SF Mono", Menlo, monospace;
+    /* Sinhala and Tamil (D-02) come from the bundled Noto fonts, so every till renders them
+       the same whatever the computer has installed; Latin stays Inter. */
+    --font-sans: "Inter Variable", "Noto Sans Sinhala", "Noto Sans Tamil", "Segoe UI Variable Text", "Segoe UI", system-ui,
+      sans-serif;
+    --font-mono: "Cascadia Mono", ui-monospace, Consolas, "SF Mono", Menlo, "Noto Sans Sinhala", "Noto Sans Tamil", monospace;
     --fs-xs: 0.75rem;
     --fs-sm: 0.875rem;
     --fs-md: 0.9375rem;
@@ -1573,6 +1593,14 @@
     justify-content: flex-start;
     padding-inline: var(--sp-3);
     font-size: var(--fs-sm);
+    /* Sinhala and Tamil labels run longer than English: wrap rather than clip. */
+    white-space: normal;
+    text-align: start;
+    line-height: 1.25;
+  }
+  .actions-grid button kbd,
+  .actions-grid button .lucide {
+    flex-shrink: 0;
   }
   .actions-grid button .lucide {
     color: var(--c-text-muted);

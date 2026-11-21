@@ -1,4 +1,5 @@
 import type { IpcError } from "../../ipc";
+import { currentLanguage, translate } from "../../i18n";
 
 /**
  * What happened and what to do, per error code (07-contracts §2, PRD §5.1). `message` from
@@ -42,12 +43,16 @@ const COPY: Partial<Record<IpcError["code"], string>> = {
   STORE_SCHEMA_TOO_NEW: "This database was created by a newer version of Sale OS. Update the app to continue.",
 };
 
+/** What happened and what to do, in the till's language (English where no translation). */
 export function describeError(e: IpcError): string {
+  const t = (english: string, vars?: Record<string, string | number>) => translate(currentLanguage(), english, vars);
   if (e.code === "AUTH_PIN_INVALID") {
     const left = e.details?.remainingAttempts;
     return left === undefined || left === null
-      ? "Wrong PIN."
-      : `Wrong PIN. ${left} ${left === 1 ? "try" : "tries"} left before a temporary lock.`;
+      ? t("Wrong PIN.")
+      : left === 1
+        ? t("Wrong PIN. 1 try left before a temporary lock.")
+        : t("Wrong PIN. {n} tries left before a temporary lock.", { n: left });
   }
-  return COPY[e.code] ?? "Something went wrong. If it happens again, note the reference and contact support.";
+  return t(COPY[e.code] ?? "Something went wrong. If it happens again, note the reference and contact support.");
 }

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Modal } from "../../ui/Modal";
+import { useT } from "../../i18n";
 
 /**
  * A modal confirmation (E09-T03: destructive actions confirm). Focus starts on the input or
@@ -24,6 +25,7 @@ export function Dialog({
   onConfirm: (value: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [value, setValue] = useState(input?.initial ?? "");
   const titleId = useId();
   const first = useRef<HTMLInputElement | HTMLButtonElement | null>(null);
@@ -68,7 +70,7 @@ export function Dialog({
         )}
         <div className="actions">
           <button type="button" className="secondary" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="submit"

@@ -4,6 +4,8 @@ import { commands, type ApprovalScope, type IpcError, type SignInUser } from "..
 import { ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
 import { PinPad } from "./PinPad";
+import { translate, currentLanguage, useT, type T } from "../../i18n";
+import { roleName } from "./SignIn";
 
 const WHAT: Record<string, string> = {
   discount_above_threshold: "a discount above the cashier limit",
@@ -12,12 +14,12 @@ const WHAT: Record<string, string> = {
   return_create: "a return",
 };
 
-/** Words for what is being approved, e.g. "a 15% discount". */
-export function describeScope(scope: ApprovalScope): string {
+/** Words for what is being approved, e.g. "a 15% discount", in the till's language. */
+export function describeScope(scope: ApprovalScope, t: T = (e, v) => translate(currentLanguage(), e, v)): string {
   if (scope.permission === "discount_above_threshold" && scope.maxPpm !== null) {
-    return `a ${ppmToPercent(scope.maxPpm)}% discount`;
+    return t("a {pct}% discount", { pct: ppmToPercent(scope.maxPpm) });
   }
-  return WHAT[scope.permission] ?? "this action";
+  return t(WHAT[scope.permission] ?? "this action");
 }
 
 /**
@@ -41,6 +43,7 @@ export function ApprovalDialog({
   const [pin, setPin] = useState("");
   const [error, setError] = useState<IpcError | null>(null);
   const [busy, setBusy] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     void commands.authListUsers().then((res) => {
@@ -74,32 +77,30 @@ export function ApprovalDialog({
   }, [approver, busy, pin, scope, onApproved]);
 
   return (
-    <Modal label="Manager approval" className="approval">
-        <h2>Manager approval</h2>
-        <p>This needs approval: {describeScope(scope)}.</p>
-        {approvers.length === 0 && !error && <p className="small">No manager or owner is set up on this till.</p>}
+    <Modal label={t("Manager approval")} className="approval">
+        <h2>{t("Manager approval")}</h2>
+        <p>{t("This needs approval: {what}.", { what: describeScope(scope, t) })}</p>
+        {approvers.length === 0 && !error && <p className="small">{t("No manager or owner is set up on this till.")}</p>}
         {!approver ? (
           <ul className="user-grid">
             {approvers.map((u) => (
               <li key={u.userId}>
                 <button type="button" className="user-tile" onClick={() => setApprover(u)}>
                   <span className="user-name">{u.displayName}</span>
-                  <span className="role-badge">{u.role}</span>
+                  <span className="role-badge">{roleName(t, u.role)}</span>
                 </button>
               </li>
             ))}
           </ul>
         ) : (
           <>
-            <p>
-              <strong>{approver.displayName}</strong>, enter your PIN to approve.
-            </p>
-            <PinPad value={pin} onChange={setPin} onSubmit={() => void submit()} disabled={busy} label="Approver PIN" />
+            <p>{t("{name}, enter your PIN to approve.", { name: approver.displayName })}</p>
+            <PinPad value={pin} onChange={setPin} onSubmit={() => void submit()} disabled={busy} label={t("Approver PIN")} />
           </>
         )}
         <div aria-live="polite" className="pin-status">
           {busy ? (
-            <p className="small">Checking…</p>
+            <p className="small">{t("Checking…")}</p>
           ) : (
             error && (
               <p role="alert" className="field-error">
@@ -111,11 +112,11 @@ export function ApprovalDialog({
         <div className="actions">
           {approver && approvers.length > 1 && (
             <button type="button" className="secondary" onClick={() => setApprover(null)}>
-              Someone else
+              {t("Someone else")}
             </button>
           )}
           <button type="button" className="secondary" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
     </Modal>

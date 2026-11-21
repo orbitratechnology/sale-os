@@ -3,6 +3,7 @@ import {
   Delete,
 } from "../../ui/icons";
 import { useEffect, useRef } from "react";
+import { useT } from "../../i18n";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "ok"] as const;
 export const MAX_PIN = 8;
@@ -24,6 +25,7 @@ export function PinPad({
   disabled: boolean;
   label: string;
 }) {
+  const t = useT();
   const pad = useRef<HTMLDivElement | null>(null);
   // Shown means "type your PIN now": focus the pad so a screen reader announces it, unless a
   // field already has focus (typing there must not be taken over).
@@ -54,7 +56,7 @@ export function PinPad({
 
   return (
     <div className="pinpad" role="group" aria-label={label} tabIndex={-1} ref={pad}>
-      <output className="pin-dots" aria-label={`${value.length} digits entered`}>
+      <output className="pin-dots" aria-label={t("{n} digits entered", { n: value.length })}>
         {Array.from({ length: Math.max(4, value.length) }, (_, i) => (
           <span key={i} className={i < value.length ? "dot filled" : "dot"} />
         ))}
@@ -66,7 +68,7 @@ export function PinPad({
             type="button"
             className={k === "ok" ? "pin-key ok" : "pin-key"}
             disabled={disabled || (k === "ok" && value.length < 4)}
-            aria-label={k === "clear" ? "Delete last digit" : k === "ok" ? "Sign in" : k}
+            aria-label={k === "clear" ? t("Delete last digit") : k === "ok" ? t("Sign in") : k}
             onClick={() => {
               if (k === "clear") onChange(value.slice(0, -1));
               else if (k === "ok") onSubmit();

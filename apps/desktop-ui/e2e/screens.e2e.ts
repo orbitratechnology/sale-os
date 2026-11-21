@@ -10,6 +10,8 @@ import { chromium, type Browser, type Page } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { si } from "../src/i18n/si";
+import { ta } from "../src/i18n/ta";
 
 let server: ViteDevServer;
 let browser: Browser;
@@ -139,6 +141,40 @@ describe("first run (E04-T02)", () => {
     await page.getByRole("note").getByRole("button", { name: "Getting started" }).click();
     await start.getByRole("button", { name: "Business details" }).click();
     await page.getByRole("tab", { name: "Business", selected: true }).waitFor();
+  });
+});
+
+/** The Sinhala and Tamil of an English key (the English when not translated). */
+const S = (en: string) => si[en] ?? en;
+const T = (en: string) => ta[en] ?? en;
+const starts = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+
+describe("the till's language (D-02)", () => {
+  it("is picked on the sign-in screen, kept on this till, and the cashier works in it", async () => {
+    const page = await open("signIn");
+    await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
+    await page.getByRole("radio", { name: "සිංහල" }).check();
+    await page.getByRole("heading", { name: S("Who is signing in?") }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe("si");
+    // Kept on this till: a reload opens in Sinhala.
+    await page.reload();
+    await page.getByRole("heading", { name: S("Who is signing in?") }).waitFor();
+    await page.getByRole("button", { name: /Cal/ }).click();
+    for (const d of "3333") await page.getByRole("button", { name: d, exact: true }).click();
+    await page.getByRole("button", { name: S("Sign in") }).click();
+    // The till: labels, role badge and sync words in Sinhala; amounts keep their digits.
+    await page.getByRole("region", { name: S("Cart lines") }).waitFor();
+    const status = page.getByLabel(S("Status"));
+    expect(await status.textContent()).toContain(S("cashier"));
+    await page.getByRole("button", { name: starts(S("Pay")) }).waitFor();
+    expect(await page.getByRole("button", { name: starts(S("Pay")) }).isDisabled()).toBe(true);
+    // Tamil works the same way; English is one click back.
+    await page.getByRole("button", { name: starts(S("Lock")) }).click();
+    await page.getByRole("radio", { name: "தமிழ்" }).check();
+    await page.getByRole("heading", { name: T("Who is signing in?") }).waitFor();
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe("ta");
+    await page.getByRole("radio", { name: "English" }).check();
+    await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
   });
 });
 

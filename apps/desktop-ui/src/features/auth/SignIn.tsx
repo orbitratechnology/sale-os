@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { commands, type IpcError, type Session, type SignInUser, type Workspace } from "../../ipc";
 import { describeError } from "../shell/errors";
 import { PinPad } from "./PinPad";
+import { LANGUAGES, useLanguage, useT, type T } from "../../i18n";
 
 /**
  * Sign-in (E05-T02/T06): pick your name, enter your PIN. Wrong PINs show the tries left;
@@ -23,7 +24,31 @@ export function SignIn({
   return <PickAndPin workspace={workspace} onSignedIn={onSignedIn} />;
 }
 
+/** Staff roles in the till's language. */
+export function roleName(t: T, role: string): string {
+  return role === "owner" ? t("owner") : role === "manager" ? t("manager") : role === "cashier" ? t("cashier") : role;
+}
+
+/** The till's language, each name in its own script (a cashier who cannot read the current
+ * language can still find theirs). */
+export function LanguagePicker() {
+  const [lang, setLang] = useLanguage();
+  const t = useT();
+  return (
+    <fieldset className="segmented language-picker">
+      <legend className="visually-hidden">{t("Language")}</legend>
+      {LANGUAGES.map((l) => (
+        <label key={l.code} lang={l.code}>
+          <input type="radio" name="language" value={l.code} checked={lang === l.code} onChange={() => setLang(l.code)} />
+          {l.name}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedIn: (s: Session) => void }) {
+  const t = useT();
   const [users, setUsers] = useState<SignInUser[] | null>(null);
   const firstTile = useRef<HTMLButtonElement | null>(null);
   const [user, setUser] = useState<SignInUser | null>(null);
@@ -85,8 +110,8 @@ function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedI
         {workspace.mode === "sandbox" && <span className="sandbox-tag">SANDBOX</span>}
       </p>
       {!user ? (
-        <section aria-label="Who is signing in?" className="who">
-          <h2>Who is signing in?</h2>
+        <section aria-label={t("Who is signing in?")} className="who">
+          <h2>{t("Who is signing in?")}</h2>
           <ul className="user-grid">
             {users?.map((u, i) => (
               <li key={u.userId}>
@@ -95,24 +120,24 @@ function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedI
                     {u.displayName.trim().charAt(0).toUpperCase()}
                   </span>
                   <span className="user-name">{u.displayName}</span>
-                  <span className="role-badge">{u.role}</span>
+                  <span className="role-badge">{roleName(t, u.role)}</span>
                 </button>
               </li>
             ))}
           </ul>
         </section>
       ) : (
-        <section aria-label={`PIN for ${user.displayName}`} className="pin-panel">
+        <section aria-label={t("PIN for {name}", { name: user.displayName })} className="pin-panel">
           <h2>
-            {user.displayName} <span className="role-badge">{user.role}</span>
+            {user.displayName} <span className="role-badge">{roleName(t, user.role)}</span>
           </h2>
-          <PinPad value={pin} onChange={setPin} onSubmit={() => void submit()} disabled={busy || locked} label="PIN" />
+          <PinPad value={pin} onChange={setPin} onSubmit={() => void submit()} disabled={busy || locked} label={t("PIN")} />
           <div aria-live="polite" className="pin-status">
             {busy ? (
-              <p className="small">Checking…</p>
+              <p className="small">{t("Checking…")}</p>
             ) : locked ? (
               <p role="alert" className="field-error">
-                Too many wrong PINs. Try again in {secondsLeft} s.
+                {t("Too many wrong PINs. Try again in {s} s.", { s: secondsLeft })}
               </p>
             ) : (
               error && (
@@ -133,11 +158,12 @@ function PickAndPin({ workspace, onSignedIn }: { workspace: Workspace; onSignedI
                 setLockedUntil(null);
               }}
             >
-              Not {user.displayName}?
+              {t("Not {name}?", { name: user.displayName })}
             </button>
           )}
         </section>
       )}
+      <LanguagePicker />
     </main>
   );
 }
@@ -147,11 +173,12 @@ function ChangePin({ session, onChanged }: { session: Session; onChanged: (s: Se
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+  const t = useT();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!/^\d{4,8}$/.test(next)) return setProblem("The new PIN must be 4 to 8 digits.");
-    if (next !== again) return setProblem("The two new PINs do not match.");
+    if (!/^\d{4,8}$/.test(next)) return setProblem(t("The new PIN must be 4 to 8 digits."));
+    if (next !== again) return setProblem(t("The two new PINs do not match."));
     const res = await commands.authChangePin(current, next);
     if (res.status === "ok") onChanged(res.data);
     else setProblem(describeError(res.error));
@@ -160,18 +187,18 @@ function ChangePin({ session, onChanged }: { session: Session; onChanged: (s: Se
   return (
     <main className="signin">
       <form className="card setup-form" onSubmit={(e) => void submit(e)}>
-        <h2>Choose a new PIN, {session.displayName}</h2>
-        <p className="small">Your PIN was reset. Choose a new one only you know.</p>
+        <h2>{t("Choose a new PIN, {name}", { name: session.displayName })}</h2>
+        <p className="small">{t("Your PIN was reset. Choose a new one only you know.")}</p>
         <label>
-          Temporary PIN
+          {t("Temporary PIN")}
           <input type="password" inputMode="numeric" autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} />
         </label>
         <label>
-          New PIN
+          {t("New PIN")}
           <input type="password" inputMode="numeric" value={next} onChange={(e) => setNext(e.target.value)} />
         </label>
         <label>
-          New PIN again
+          {t("New PIN again")}
           <input type="password" inputMode="numeric" value={again} onChange={(e) => setAgain(e.target.value)} />
         </label>
         {problem && (
@@ -180,7 +207,7 @@ function ChangePin({ session, onChanged }: { session: Session; onChanged: (s: Se
           </p>
         )}
         <div className="actions">
-          <button type="submit">Save PIN</button>
+          <button type="submit">{t("Save PIN")}</button>
         </div>
       </form>
     </main>
