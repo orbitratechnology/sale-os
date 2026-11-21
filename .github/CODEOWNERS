@@ -1,0 +1,9 @@
+# Rounding and pricing (ADR-004, E08-T03). A change to how money is rounded must update the
+# pricing goldens in the same pull request, and the owner reviews it (finance sign-off for the
+# pilot country, D-02). The review is required only once branch protection asks for code owners.
+/docs/adr/0004-rounding-policy-the-single-documented-policy-prd-9-3.md @orbitratechnology
+/crates/pos-domain/src/pricing.rs @orbitratechnology
+/crates/pos-domain/src/rounding.rs @orbitratechnology
+/crates/pos-domain/src/settlement.rs @orbitratechnology
+/crates/pos-domain/src/returns.rs @orbitratechnology
+/tests/fixtures/pricing/ @orbitratechnology

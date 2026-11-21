@@ -259,6 +259,25 @@ E20-T08…T12, E21 and E22. None of the work below has touched real hardware yet
 | E22-T03 Provider connectors | Not started | — | Gated on agreements and credentials (PRD §17) |
 | E20-T01 Compatibility registry | **Started** | `docs/hardware/registry.yaml`, validated by `pos-device-hw/tests/registry.rs` (known values, real profile ids, firmware required for real-hardware entries); `docs/hardware/README.md` set-up and troubleshooting guide | Only emulator entries until D-07 devices are tested. The JSON copy for "verified" badges in the app is still to do |
 
+### Plan tasks missing from this file (found 2026-11-21)
+
+A check of every task in `docs/backlog/tasks/` against this file found seven that were never
+tracked here and are not built. Six others were missing by number but delivered under other
+rows: E05-T02 (with E05-T01), E06-T04 (catalogue benchmarks, in E19-T01's `pos-bench`),
+E13-T05 (full ESC/POS encoder, E20-T10), E13-T07 (receipt settings, E04-T03), E20-T03/T04/T05
+(OS printer, raw ESC/POS over USB/Ethernet and the drawer kick, E20-T08/T11) and E20-T07
+(payment connector, E22).
+
+| Task | Status | Evidence | Open |
+|---|---|---|---|
+| E08-T03 Pricing golden suite | **Done (2026-11-21)** | 58 scenarios in `tests/fixtures/pricing/*.json` over every ADR-004 rule: line gross and label prices, line and order discounts (largest remainder, ties to the first line), inclusive and exclusive tax per line and per rate, several rates on a line, cash rounding only for all-cash tenders, partial returns, half-to-even variants, 0- and 3-decimal currencies, LKR VAT 18%, an amount above 2^53, and three refusals. Expected values come from an independent exact-fraction reference (`generate.py`), not from the Rust code. `pos-domain/tests/pricing_goldens.rs` checks every amount and the formatted strings; `apps/desktop-ui/src/lib/pricingGoldens.test.ts` checks the UI prints the same strings. CI regenerates the files and fails on any difference; `.github/CODEOWNERS` covers the goldens and the rounding code. All 58 matched the Rust code on the first run, and a one-cent change to a golden fails the runner | The D-02 accountant's review of the scenario list; making code-owner review required is a branch-protection setting |
+| E00-T04 Dev tooling: seed and reset | Not started | `pos-bench` builds catalogues for benchmarks, not for development | `cargo xtask db-reset`, `cargo xtask seed --profile demo20/shop5k/bench50k` through the services, deterministic |
+| E07-T03 Virtual scanner (dev panel and test API) | Not started | The browser suites inject key bursts directly | The in-app dev panel of PRD §12.3 |
+| E09-T07 Performance instrumentation | Not started | The UI latency tool (`ui-latency`) measures from outside | `performance.mark` scan → row, a debug overlay, a 200-scan check on the Windows runner |
+| E16-T07 Deployment, environments, database backups | Blocked | — | Needs D-06 (hosting, region, budget) |
+| E16-T08 Cloud observability | Not started | JSON logs with redaction only | Request IDs, metrics, error reporting; depends on E16-T07 for where they go |
+| E16-T09 Cloud backup and restore verification | Blocked | — | Needs E16-T07 |
+
 ### Next up
 
 Stage 4 is done in code apart from what needs people or keys: E19-T06 (code-signing

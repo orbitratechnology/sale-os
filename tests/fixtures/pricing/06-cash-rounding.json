@@ -1,0 +1,589 @@
+{
+  "rule": "ADR-004: optional cash rounding to an increment, only when every tender is cash, recorded apart from the lines.",
+  "generatedBy": "tests/fixtures/pricing/generate.py (do not edit by hand)",
+  "scenarios": [
+    {
+      "id": "cash-round-down",
+      "description": "1.02 to 0.05: due 1.00, change 1.00 from 2.00",
+      "taxMode": "exclusive",
+      "cashIncrement": "5",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "102",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "200"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "102",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "102"
+          }
+        ],
+        "subtotal": "102",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "102",
+        "settlement": {
+          "rounding": "-2",
+          "totalDue": "100",
+          "change": "100"
+        },
+        "display": {
+          "subtotal": "1.02",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "1.02",
+          "lineTotals": [
+            "1.02"
+          ],
+          "rounding": "-0.02",
+          "totalDue": "1.00",
+          "change": "1.00"
+        }
+      }
+    },
+    {
+      "id": "cash-round-up",
+      "description": "1.03 to 0.05: due 1.05",
+      "taxMode": "exclusive",
+      "cashIncrement": "5",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "103",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "105"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "103",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "103"
+          }
+        ],
+        "subtotal": "103",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "103",
+        "settlement": {
+          "rounding": "2",
+          "totalDue": "105",
+          "change": "0"
+        },
+        "display": {
+          "subtotal": "1.03",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "1.03",
+          "lineTotals": [
+            "1.03"
+          ],
+          "rounding": "0.02",
+          "totalDue": "1.05",
+          "change": "0.00"
+        }
+      }
+    },
+    {
+      "id": "cash-round-midpoint",
+      "description": "1.05 to 0.10: midpoint goes up to 1.10",
+      "taxMode": "exclusive",
+      "cashIncrement": "10",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "105",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "110"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "105",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "105"
+          }
+        ],
+        "subtotal": "105",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "105",
+        "settlement": {
+          "rounding": "5",
+          "totalDue": "110",
+          "change": "0"
+        },
+        "display": {
+          "subtotal": "1.05",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "1.05",
+          "lineTotals": [
+            "1.05"
+          ],
+          "rounding": "0.05",
+          "totalDue": "1.10",
+          "change": "0.00"
+        }
+      }
+    },
+    {
+      "id": "cash-round-midpoint-half-even",
+      "description": "1.05 to 0.10 under half-to-even: 1.00",
+      "taxMode": "exclusive",
+      "rounding": "half_even",
+      "cashIncrement": "10",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "105",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "100"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "105",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "105"
+          }
+        ],
+        "subtotal": "105",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "105",
+        "settlement": {
+          "rounding": "-5",
+          "totalDue": "100",
+          "change": "0"
+        },
+        "display": {
+          "subtotal": "1.05",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "1.05",
+          "lineTotals": [
+            "1.05"
+          ],
+          "rounding": "-0.05",
+          "totalDue": "1.00",
+          "change": "0.00"
+        }
+      }
+    },
+    {
+      "id": "cash-round-not-with-card",
+      "description": "card plus cash: no rounding",
+      "taxMode": "exclusive",
+      "cashIncrement": "5",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "1002",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "card_external",
+          "amount": "500"
+        },
+        {
+          "kind": "cash",
+          "amount": "600"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "1002",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "1002"
+          }
+        ],
+        "subtotal": "1002",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "1002",
+        "settlement": {
+          "rounding": "0",
+          "totalDue": "1002",
+          "change": "98"
+        },
+        "display": {
+          "subtotal": "10.02",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "10.02",
+          "lineTotals": [
+            "10.02"
+          ],
+          "rounding": "0.00",
+          "totalDue": "10.02",
+          "change": "0.98"
+        }
+      }
+    },
+    {
+      "id": "cash-round-off",
+      "description": "no increment set: no rounding",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "1002",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "2000"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "1002",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "1002"
+          }
+        ],
+        "subtotal": "1002",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "1002",
+        "settlement": {
+          "rounding": "0",
+          "totalDue": "1002",
+          "change": "998"
+        },
+        "display": {
+          "subtotal": "10.02",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "10.02",
+          "lineTotals": [
+            "10.02"
+          ],
+          "rounding": "0.00",
+          "totalDue": "10.02",
+          "change": "9.98"
+        }
+      }
+    },
+    {
+      "id": "cash-round-lkr-fifty-cents",
+      "description": "LKR 123.75 to 0.50: 124.00",
+      "currency": {
+        "code": "LKR",
+        "exponent": 2
+      },
+      "taxMode": "inclusive",
+      "rates": {
+        "vat18": {
+          "name": "VAT 18%",
+          "ppm": 180000
+        }
+      },
+      "cashIncrement": "50",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "12375",
+          "quantity": "1",
+          "taxes": [
+            "vat18"
+          ]
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "15000"
+        }
+      ],
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "12375",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "vat18",
+                "taxable": "10487",
+                "tax": "1888"
+              }
+            ],
+            "tax": "1888",
+            "total": "12375"
+          }
+        ],
+        "subtotal": "12375",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "1888",
+        "taxBreakdown": [
+          {
+            "rate": "vat18",
+            "taxable": "10487",
+            "tax": "1888"
+          }
+        ],
+        "total": "12375",
+        "settlement": {
+          "rounding": "25",
+          "totalDue": "12400",
+          "change": "2600"
+        },
+        "display": {
+          "subtotal": "123.75",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "18.88",
+          "total": "123.75",
+          "lineTotals": [
+            "123.75"
+          ],
+          "rounding": "0.25",
+          "totalDue": "124.00",
+          "change": "26.00"
+        }
+      }
+    },
+    {
+      "id": "cash-round-lines-unchanged",
+      "description": "the rounding is not folded into the lines or the tax",
+      "taxMode": "inclusive",
+      "rates": {
+        "vat20": {
+          "name": "VAT 20%",
+          "ppm": 200000
+        }
+      },
+      "cashIncrement": "5",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "199",
+          "quantity": "1",
+          "taxes": [
+            "vat20"
+          ]
+        },
+        {
+          "id": "b",
+          "unitPrice": "99",
+          "quantity": "2",
+          "taxes": [
+            "vat20"
+          ]
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "500"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "199",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "vat20",
+                "taxable": "166",
+                "tax": "33"
+              }
+            ],
+            "tax": "33",
+            "total": "199"
+          },
+          {
+            "id": "b",
+            "gross": "198",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "vat20",
+                "taxable": "165",
+                "tax": "33"
+              }
+            ],
+            "tax": "33",
+            "total": "198"
+          }
+        ],
+        "subtotal": "397",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "66",
+        "taxBreakdown": [
+          {
+            "rate": "vat20",
+            "taxable": "331",
+            "tax": "66"
+          }
+        ],
+        "total": "397",
+        "settlement": {
+          "rounding": "-2",
+          "totalDue": "395",
+          "change": "105"
+        },
+        "display": {
+          "subtotal": "3.97",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.66",
+          "total": "3.97",
+          "lineTotals": [
+            "1.99",
+            "1.98"
+          ],
+          "rounding": "-0.02",
+          "totalDue": "3.95",
+          "change": "1.05"
+        }
+      }
+    },
+    {
+      "id": "cash-insufficient",
+      "description": "refused: 0.95 for 1.00 due",
+      "taxMode": "exclusive",
+      "cashIncrement": "5",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "99",
+          "quantity": "1"
+        }
+      ],
+      "tenders": [
+        {
+          "kind": "cash",
+          "amount": "95"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expectError": "TENDER_INSUFFICIENT"
+    }
+  ]
+}

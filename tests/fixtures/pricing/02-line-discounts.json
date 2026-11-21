@@ -1,0 +1,391 @@
+{
+  "rule": "ADR-004: a line discount applies to the rounded gross; a percentage is rounded once.",
+  "generatedBy": "tests/fixtures/pricing/generate.py (do not edit by hand)",
+  "scenarios": [
+    {
+      "id": "line-percent-rounds",
+      "description": "10% of 9.99 = 0.999 -> 1.00",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "999",
+          "quantity": "1",
+          "discount": {
+            "percentPpm": 100000
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "999",
+            "lineDiscount": "100",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "899"
+          }
+        ],
+        "subtotal": "999",
+        "lineDiscountTotal": "100",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "899",
+        "display": {
+          "subtotal": "9.99",
+          "lineDiscountTotal": "1.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "8.99",
+          "lineTotals": [
+            "8.99"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-percent-below-half",
+      "description": "12.5% of 0.01 = 0.00125 -> 0",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "1",
+          "quantity": "1",
+          "discount": {
+            "percentPpm": 125000
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "1",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "1"
+          }
+        ],
+        "subtotal": "1",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "1",
+        "display": {
+          "subtotal": "0.01",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "0.01",
+          "lineTotals": [
+            "0.01"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-percent-midpoint",
+      "description": "15% of 0.30 = 0.045 -> 0.05",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "30",
+          "quantity": "1",
+          "discount": {
+            "percentPpm": 150000
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "30",
+            "lineDiscount": "5",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "25"
+          }
+        ],
+        "subtotal": "30",
+        "lineDiscountTotal": "5",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "25",
+        "display": {
+          "subtotal": "0.30",
+          "lineDiscountTotal": "0.05",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "0.25",
+          "lineTotals": [
+            "0.25"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-percent-on-rounded-gross",
+      "description": "the percentage is of the rounded gross 4.16, not 4.15917",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "1249",
+          "quantity": "0.333",
+          "discount": {
+            "percentPpm": 250000
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "416",
+            "lineDiscount": "104",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "312"
+          }
+        ],
+        "subtotal": "416",
+        "lineDiscountTotal": "104",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "312",
+        "display": {
+          "subtotal": "4.16",
+          "lineDiscountTotal": "1.04",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "3.12",
+          "lineTotals": [
+            "3.12"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-fixed",
+      "description": "0.50 off 9.99",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "999",
+          "quantity": "1",
+          "discount": {
+            "fixed": "50"
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "999",
+            "lineDiscount": "50",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "949"
+          }
+        ],
+        "subtotal": "999",
+        "lineDiscountTotal": "50",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "949",
+        "display": {
+          "subtotal": "9.99",
+          "lineDiscountTotal": "0.50",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "9.49",
+          "lineTotals": [
+            "9.49"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-hundred-percent",
+      "description": "a free line: no tax either",
+      "taxMode": "inclusive",
+      "rates": {
+        "vat20": {
+          "name": "VAT 20%",
+          "ppm": 200000
+        }
+      },
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "999",
+          "quantity": "1",
+          "discount": {
+            "percentPpm": 1000000
+          },
+          "taxes": [
+            "vat20"
+          ]
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "999",
+            "lineDiscount": "999",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "vat20",
+                "taxable": "0",
+                "tax": "0"
+              }
+            ],
+            "tax": "0",
+            "total": "0"
+          }
+        ],
+        "subtotal": "999",
+        "lineDiscountTotal": "999",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [
+          {
+            "rate": "vat20",
+            "taxable": "0",
+            "tax": "0"
+          }
+        ],
+        "total": "0",
+        "display": {
+          "subtotal": "9.99",
+          "lineDiscountTotal": "9.99",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "0.00",
+          "lineTotals": [
+            "0.00"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-fixed-equals-gross",
+      "description": "a fixed discount may take the line to zero",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "250",
+          "quantity": "2",
+          "discount": {
+            "fixed": "500"
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "500",
+            "lineDiscount": "500",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "0"
+          }
+        ],
+        "subtotal": "500",
+        "lineDiscountTotal": "500",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "0",
+        "display": {
+          "subtotal": "5.00",
+          "lineDiscountTotal": "5.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "0.00",
+          "lineTotals": [
+            "0.00"
+          ]
+        }
+      }
+    },
+    {
+      "id": "line-fixed-exceeds-gross",
+      "description": "refused: 5.01 off a 5.00 line",
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "250",
+          "quantity": "2",
+          "discount": {
+            "fixed": "501"
+          }
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "kind": "cart",
+      "expectError": "PRICING_DISCOUNT_EXCEEDS"
+    }
+  ]
+}

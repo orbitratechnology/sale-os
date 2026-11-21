@@ -49,6 +49,11 @@ jobs:
           cargo xtask schema-compat
       - name: requirement traceability
         run: cargo xtask trace
+      - name: pricing goldens match the ADR-004 reference (E08-T03)
+        if: runner.os == 'Linux'
+        run: |
+          python3 tests/fixtures/pricing/generate.py
+          git diff --exit-code -- tests/fixtures/pricing
 
   cloud-postgres:
     name: Cloud API and sync end to end against PostgreSQL

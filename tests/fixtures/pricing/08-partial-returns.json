@@ -1,0 +1,174 @@
+{
+  "rule": "ADR-004: partial returns refund round(line total x returned after / qty) minus what was already refunded, so a line's refunds add up to exactly its total. Tax follows the same rule.",
+  "generatedBy": "tests/fixtures/pricing/generate.py (do not edit by hand)",
+  "scenarios": [
+    {
+      "id": "return-thirds",
+      "description": "10.00 (tax 1.67) of 3, returned one by one: 3.33, 3.34, 3.33",
+      "kind": "return",
+      "sold": {
+        "quantity": "3",
+        "total": "1000",
+        "tax": "167"
+      },
+      "returns": [
+        {
+          "quantity": "1"
+        },
+        {
+          "quantity": "1"
+        },
+        {
+          "quantity": "1"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "expect": {
+        "returns": [
+          {
+            "quantity": "1",
+            "refund": "333",
+            "tax": "56"
+          },
+          {
+            "quantity": "1",
+            "refund": "334",
+            "tax": "55"
+          },
+          {
+            "quantity": "1",
+            "refund": "333",
+            "tax": "56"
+          }
+        ],
+        "display": {
+          "refunds": [
+            "3.33",
+            "3.34",
+            "3.33"
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-whole-at-once",
+      "description": "all 3 at once refunds exactly the line",
+      "kind": "return",
+      "sold": {
+        "quantity": "3",
+        "total": "1000",
+        "tax": "167"
+      },
+      "returns": [
+        {
+          "quantity": "3"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "expect": {
+        "returns": [
+          {
+            "quantity": "3",
+            "refund": "1000",
+            "tax": "167"
+          }
+        ],
+        "display": {
+          "refunds": [
+            "10.00"
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-weighed",
+      "description": "0.750 kg for 9.37, returned 0.250 then 0.500",
+      "kind": "return",
+      "sold": {
+        "quantity": "0.750",
+        "total": "937",
+        "tax": "156"
+      },
+      "returns": [
+        {
+          "quantity": "0.250"
+        },
+        {
+          "quantity": "0.500"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "expect": {
+        "returns": [
+          {
+            "quantity": "0.250",
+            "refund": "312",
+            "tax": "52"
+          },
+          {
+            "quantity": "0.500",
+            "refund": "625",
+            "tax": "104"
+          }
+        ],
+        "display": {
+          "refunds": [
+            "3.12",
+            "6.25"
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-discounted-line",
+      "description": "a line that paid 8.01 after discounts, 7 sold, returned 2 then 5",
+      "kind": "return",
+      "sold": {
+        "quantity": "7",
+        "total": "801",
+        "tax": "0"
+      },
+      "returns": [
+        {
+          "quantity": "2"
+        },
+        {
+          "quantity": "5"
+        }
+      ],
+      "currency": {
+        "code": "USD",
+        "exponent": 2
+      },
+      "expect": {
+        "returns": [
+          {
+            "quantity": "2",
+            "refund": "229",
+            "tax": "0"
+          },
+          {
+            "quantity": "5",
+            "refund": "572",
+            "tax": "0"
+          }
+        ],
+        "display": {
+          "refunds": [
+            "2.29",
+            "5.72"
+          ]
+        }
+      }
+    }
+  ]
+}

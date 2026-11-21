@@ -1,0 +1,210 @@
+{
+  "rule": "Minor units follow the currency exponent; the same rules apply with 0 and 3 decimals.",
+  "generatedBy": "tests/fixtures/pricing/generate.py (do not edit by hand)",
+  "scenarios": [
+    {
+      "id": "jpy-no-decimals",
+      "description": "JPY: 10% inclusive on 1,980",
+      "currency": {
+        "code": "JPY",
+        "exponent": 0
+      },
+      "taxMode": "inclusive",
+      "rates": {
+        "c10": {
+          "name": "Consumption 10%",
+          "ppm": 100000
+        }
+      },
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "1980",
+          "quantity": "1",
+          "taxes": [
+            "c10"
+          ]
+        },
+        {
+          "id": "b",
+          "unitPrice": "108",
+          "quantity": "3",
+          "taxes": [
+            "c10"
+          ]
+        }
+      ],
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "1980",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "c10",
+                "taxable": "1800",
+                "tax": "180"
+              }
+            ],
+            "tax": "180",
+            "total": "1980"
+          },
+          {
+            "id": "b",
+            "gross": "324",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "c10",
+                "taxable": "295",
+                "tax": "29"
+              }
+            ],
+            "tax": "29",
+            "total": "324"
+          }
+        ],
+        "subtotal": "2304",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "209",
+        "taxBreakdown": [
+          {
+            "rate": "c10",
+            "taxable": "2095",
+            "tax": "209"
+          }
+        ],
+        "total": "2304",
+        "display": {
+          "subtotal": "2,304",
+          "lineDiscountTotal": "0",
+          "orderDiscountTotal": "0",
+          "taxTotal": "209",
+          "total": "2,304",
+          "lineTotals": [
+            "1,980",
+            "324"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kwd-three-decimals",
+      "description": "KWD: 5% exclusive on 1.250 x 3",
+      "currency": {
+        "code": "KWD",
+        "exponent": 3
+      },
+      "taxMode": "exclusive",
+      "rates": {
+        "v5": {
+          "name": "VAT 5%",
+          "ppm": 50000
+        }
+      },
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "1250",
+          "quantity": "3",
+          "taxes": [
+            "v5"
+          ]
+        }
+      ],
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "3750",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [
+              {
+                "rate": "v5",
+                "taxable": "3750",
+                "tax": "188"
+              }
+            ],
+            "tax": "188",
+            "total": "3938"
+          }
+        ],
+        "subtotal": "3750",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "188",
+        "taxBreakdown": [
+          {
+            "rate": "v5",
+            "taxable": "3750",
+            "tax": "188"
+          }
+        ],
+        "total": "3938",
+        "display": {
+          "subtotal": "3.750",
+          "lineDiscountTotal": "0.000",
+          "orderDiscountTotal": "0.000",
+          "taxTotal": "0.188",
+          "total": "3.938",
+          "lineTotals": [
+            "3.938"
+          ]
+        }
+      }
+    },
+    {
+      "id": "large-amount-grouping",
+      "description": "LKR 1,234,567.89 with thousands separators",
+      "currency": {
+        "code": "LKR",
+        "exponent": 2
+      },
+      "taxMode": "exclusive",
+      "lines": [
+        {
+          "id": "a",
+          "unitPrice": "123456789",
+          "quantity": "1"
+        }
+      ],
+      "kind": "cart",
+      "expect": {
+        "lines": [
+          {
+            "id": "a",
+            "gross": "123456789",
+            "lineDiscount": "0",
+            "orderDiscount": "0",
+            "taxLines": [],
+            "tax": "0",
+            "total": "123456789"
+          }
+        ],
+        "subtotal": "123456789",
+        "lineDiscountTotal": "0",
+        "orderDiscountTotal": "0",
+        "taxTotal": "0",
+        "taxBreakdown": [],
+        "total": "123456789",
+        "display": {
+          "subtotal": "1,234,567.89",
+          "lineDiscountTotal": "0.00",
+          "orderDiscountTotal": "0.00",
+          "taxTotal": "0.00",
+          "total": "1,234,567.89",
+          "lineTotals": [
+            "1,234,567.89"
+          ]
+        }
+      }
+    }
+  ]
+}
