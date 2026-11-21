@@ -8,6 +8,7 @@
 import type { BarcodeQualifier, ProductDto_Serialize, ProductInputDto_Deserialize, ProductType, Unit } from "../../ipc/bindings";
 import { formatMilli, scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { currentLanguage, translate, type T } from "../../i18n";
 
 export interface Axis {
   name: string;
@@ -151,25 +152,29 @@ export function fromProduct(p: ProductDto_Serialize, exponent: number): ProductD
   };
 }
 
-/** Builds the IPC input, or the first problem a person must fix. */
-export function toInput(d: ProductDraft, exponent: number): ProductInputDto_Deserialize | FieldProblem {
-  if (!d.name.trim()) return { field: "name", message: "Enter the product name." };
-  if (d.variants.length === 0) return { field: "variants", message: "Add at least one variant." };
+/** Builds the IPC input, or the first problem a person must fix (its message in `t`'s language). */
+export function toInput(
+  d: ProductDraft,
+  exponent: number,
+  t: T = (e, v) => translate(currentLanguage(), e, v),
+): ProductInputDto_Deserialize | FieldProblem {
+  if (!d.name.trim()) return { field: "name", message: t("Enter the product name.") };
+  if (d.variants.length === 0) return { field: "variants", message: t("Add at least one variant.") };
   const tracked = d.productType === "stock";
   const variants = [];
   for (const [i, v] of d.variants.entries()) {
     const price = scaleDecimal(v.price, exponent);
-    if (price === null) return { field: "price", variant: i, message: "Enter a price like 1.20." };
+    if (price === null) return { field: "price", variant: i, message: t("Enter a price like 1.20.") };
     const cost = v.cost.trim() ? scaleDecimal(v.cost, exponent) : null;
-    if (v.cost.trim() && cost === null) return { field: "cost", variant: i, message: "Enter a cost like 0.80, or leave it empty." };
+    if (v.cost.trim() && cost === null) return { field: "cost", variant: i, message: t("Enter a cost like 0.80, or leave it empty.") };
     const scanQty = scaleDecimal(v.scanQty || "1", 3);
-    if (scanQty === null || scanQty === "0") return { field: "scanQty", variant: i, message: "Enter how many one scan adds, e.g. 1." };
+    if (scanQty === null || scanQty === "0") return { field: "scanQty", variant: i, message: t("Enter how many one scan adds, e.g. 1.") };
     const lowStock = v.lowStock.trim() ? scaleDecimal(v.lowStock, 3) : null;
-    if (v.lowStock.trim() && lowStock === null) return { field: "lowStockThreshold", variant: i, message: "Enter a number, e.g. 5." };
+    if (v.lowStock.trim() && lowStock === null) return { field: "lowStockThreshold", variant: i, message: t("Enter a number, e.g. 5.") };
     const barcodes = [];
     for (const b of v.barcodes) {
       const pack = b.qualifier === "pack" ? scaleDecimal(b.packQty, 3) : "1000";
-      if (pack === null || pack === "0") return { field: "barcode", variant: i, message: `Enter how many units barcode ${b.raw} adds.` };
+      if (pack === null || pack === "0") return { field: "barcode", variant: i, message: t("Enter how many units barcode {code} adds.", { code: b.raw }) };
       barcodes.push({ raw: b.raw, symbology: null, qualifier: b.qualifier, packQtyMilli: pack });
     }
     variants.push({

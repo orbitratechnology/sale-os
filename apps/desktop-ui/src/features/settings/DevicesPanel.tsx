@@ -4,15 +4,25 @@ import { CreditCard, Printer, ScanBarcode } from "../../ui/icons";
 import { commands, type IpcError } from "../../ipc";
 import type { DeviceDto, DiscoveryDto, PrinterProfileDto, PrinterStatusDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 type Connection = "network" | "serial" | "deviceFile" | "spooler";
 
-const CONNECTIONS: { value: Connection; label: string; help: string }[] = [
-  { value: "network", label: "Network (Ethernet / Wi-Fi)", help: "Raw TCP, usually port 9100. Works with Epson, Star, Bixolon and most network printers." },
-  { value: "spooler", label: "Installed printer (USB, Bluetooth, any driver)", help: "Sends receipts raw through the system printer queue. Use this for USB printers with a Windows driver, including “Generic / Text Only”." },
-  { value: "serial", label: "Serial / COM port (RS-232, USB-COM, Bluetooth)", help: "For older serial printers and USB or Bluetooth printers that appear as a COM port." },
-  { value: "deviceFile", label: "Device file (Linux USB /dev/usb/lp0, parallel LPT)", help: "Writes straight to the device: /dev/usb/lp0 on Linux, LPT1 for parallel printers." },
-];
+const CONNECTIONS: Connection[] = ["network", "spooler", "serial", "deviceFile"];
+/** Each connection's name in the list, translated at render. */
+const CONNECTION_LABEL_COPY: Record<Connection, string> = {
+  network: "Network (Ethernet / Wi-Fi)",
+  spooler: "Installed printer (USB, Bluetooth, any driver)",
+  serial: "Serial / COM port (RS-232, USB-COM, Bluetooth)",
+  deviceFile: "Device file (Linux USB /dev/usb/lp0, parallel LPT)",
+};
+/** The line under the list for the chosen connection, translated at render. */
+const CONNECTION_HELP_COPY: Record<Connection, string> = {
+  network: "Raw TCP, usually port 9100. Works with Epson, Star, Bixolon and most network printers.",
+  spooler: "Sends receipts raw through the system printer queue. Use this for USB printers with a Windows driver, including “Generic / Text Only”.",
+  serial: "For older serial printers and USB or Bluetooth printers that appear as a COM port.",
+  deviceFile: "Writes straight to the device: /dev/usb/lp0 on Linux, LPT1 for parallel printers.",
+};
 const BAUDS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
 
 interface PrinterDraft {
@@ -157,6 +167,7 @@ function PrinterSection({
   result: string | null;
   setResult: (m: string | null) => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState<PrinterDraft>(() => (device ? fromDevice(device) : EMPTY));
   const [editing, setEditing] = useState(device === null);
   const [busy, setBusy] = useState(false);
@@ -185,7 +196,7 @@ function PrinterSection({
     setBusy(false);
     if (res.status === "ok") {
       setEditing(false);
-      setResult("Saved. The next receipt prints here.");
+      setResult(t("Saved. The next receipt prints here."));
       onChanged();
     } else setFieldError({ field: res.error.details?.field ?? null, text: describeError(res.error) });
   }
@@ -224,61 +235,61 @@ function PrinterSection({
     ) : null;
 
   return (
-    <section aria-label="Receipt printer" className="device-section">
-      <SectionTitle icon={Printer}>Receipt printer</SectionTitle>
+    <section aria-label={t("Receipt printer")} className="device-section">
+      <SectionTitle icon={Printer}>{t("Receipt printer")}</SectionTitle>
       {status && (
         <p data-testid="device-printer-status" className="small">
           {status.configured ? (
             <>
               {status.adapter} · {status.target} ·{" "}
               <strong>
-                {status.state === "ready" ? "Ready" : status.state === "unknown" ? "Connected one way (no status)" : (status.message ?? status.state)}
+                {status.state === "ready" ? t("Ready") : status.state === "unknown" ? t("Connected one way (no status)") : (status.message ?? status.state)}
               </strong>
-              {status.drawer && " · cash drawer on the kick port"}
+              {status.drawer && ` · ${t("cash drawer on the kick port")}`}
             </>
           ) : (
-            "No printer: receipts can be previewed and saved as PDF."
+            t("No printer: receipts can be previewed and saved as PDF.")
           )}
         </p>
       )}
       {device && !editing && (
         <div className="actions">
           <button type="button" onClick={() => void test()} disabled={busy}>
-            Test print
+            {t("Test print")}
           </button>
           <button type="button" className="secondary" onClick={() => setEditing(true)}>
-            Change
+            {t("verb::Change")}
           </button>
           <button type="button" className="secondary" onClick={() => void remove()} disabled={busy}>
-            Remove
+            {t("Remove")}
           </button>
         </div>
       )}
       {editing && (
-        <form onSubmit={(e) => void save(e)} className="device-form" aria-label="Printer settings">
+        <form onSubmit={(e) => void save(e)} className="device-form" aria-label={t("Printer settings")}>
           <label>
-            Name
+            {t("Name")}
             <input value={draft.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} />
           </label>
           <label>
-            Connection
+            {t("Connection")}
             <select value={draft.connection} onChange={(e) => set({ connection: e.target.value as Connection })}>
               {CONNECTIONS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
+                <option key={c} value={c}>
+                  {t(CONNECTION_LABEL_COPY[c])}
                 </option>
               ))}
             </select>
           </label>
-          <p className="small">{CONNECTIONS.find((c) => c.value === draft.connection)?.help}</p>
+          <p className="small">{t(CONNECTION_HELP_COPY[draft.connection])}</p>
           {draft.connection === "network" && (
             <div className="row">
               <label>
-                IP address or name {errorFor("host")}
+                {t("IP address or name")} {errorFor("host")}
                 <input value={draft.host} placeholder="192.168.1.50" onChange={(e) => set({ host: e.target.value })} />
               </label>
               <label>
-                Port {errorFor("port")}
+                {t("Port")} {errorFor("port")}
                 <input inputMode="numeric" value={draft.port} onChange={(e) => set({ port: e.target.value })} />
               </label>
             </div>
@@ -286,11 +297,11 @@ function PrinterSection({
           {draft.connection === "serial" && (
             <div className="row">
               <label>
-                Port {errorFor("port")}
-                <input list="serial-ports" value={draft.serialPort} placeholder="COM3 or /dev/ttyUSB0" onChange={(e) => set({ serialPort: e.target.value })} />
+                {t("Port")} {errorFor("port")}
+                <input list="serial-ports" value={draft.serialPort} placeholder={t("COM3 or /dev/ttyUSB0")} onChange={(e) => set({ serialPort: e.target.value })} />
               </label>
               <label>
-                Speed (baud) {errorFor("baud")}
+                {t("Speed (baud)")} {errorFor("baud")}
                 <select value={draft.baud} onChange={(e) => set({ baud: e.target.value })}>
                   {BAUDS.map((b) => (
                     <option key={b}>{b}</option>
@@ -298,29 +309,29 @@ function PrinterSection({
                 </select>
               </label>
               <label>
-                Flow control
+                {t("Flow control")}
                 <select value={draft.flow} onChange={(e) => set({ flow: e.target.value as PrinterDraft["flow"] })}>
-                  <option value="none">None</option>
-                  <option value="rtsCts">Hardware (RTS/CTS)</option>
-                  <option value="xonXoff">Software (XON/XOFF)</option>
+                  <option value="none">{t("None")}</option>
+                  <option value="rtsCts">{t("Hardware (RTS/CTS)")}</option>
+                  <option value="xonXoff">{t("Software (XON/XOFF)")}</option>
                 </select>
               </label>
             </div>
           )}
           {draft.connection === "deviceFile" && (
             <label>
-              Device {errorFor("path")}
+              {t("Device")} {errorFor("path")}
               <input list="device-files" value={draft.path} onChange={(e) => set({ path: e.target.value })} />
             </label>
           )}
           {draft.connection === "spooler" && (
             <label>
-              Printer {errorFor("queue")}
+              {t("Printer")} {errorFor("queue")}
               <input list="queues" value={draft.queue} placeholder="EPSON TM-T20III Receipt" onChange={(e) => set({ queue: e.target.value })} />
             </label>
           )}
           <label>
-            Model {errorFor("profileId")}
+            {t("Model")} {errorFor("profileId")}
             <select value={draft.profileId} onChange={(e) => set({ profileId: e.target.value })}>
               {vendors.map((v) => (
                 <optgroup key={v} label={v}>
@@ -328,8 +339,9 @@ function PrinterSection({
                     .filter((p) => p.vendor === v)
                     .map((p) => (
                       <option key={p.id} value={p.id} disabled={!p.textSupported}>
-                        {p.name} · {p.columns} columns{p.verified ? "" : " · not yet verified"}
-                        {p.textSupported ? "" : " · image-only, not supported"}
+                        {p.name} · {t("{n} columns", { n: p.columns })}
+                        {p.verified ? "" : ` · ${t("not yet verified")}`}
+                        {p.textSupported ? "" : ` · ${t("image-only, not supported")}`}
                       </option>
                     ))}
                 </optgroup>
@@ -338,40 +350,41 @@ function PrinterSection({
           </label>
           {profile && (
             <p className="small">
-              {profile.dialect === "StarLine" ? "Star Line Mode. " : profile.dialect === "PlainText" ? "Plain text only. " : "ESC/POS. "}
-              {profile.columns} characters per line{profile.columnsFontB ? ` (${profile.columnsFontB} in the small font)` : ""}
-              {profile.cutter ? ", cutter" : ", no cutter"}
-              {profile.drawer ? ", cash drawer port" : ""}
-              {profile.barcode ? ", barcodes" : ""}. {profile.notes}
+              {profile.dialect === "StarLine" ? "Star Line Mode. " : profile.dialect === "PlainText" ? `${t("Plain text only.")} ` : "ESC/POS. "}
+              {t("{n} characters per line", { n: profile.columns })}
+              {profile.columnsFontB ? ` (${t("{n} in the small font", { n: profile.columnsFontB })})` : ""}
+              {profile.cutter ? `, ${t("cutter")}` : `, ${t("no cutter")}`}
+              {profile.drawer ? `, ${t("cash drawer port")}` : ""}
+              {profile.barcode ? `, ${t("barcodes")}` : ""}. {profile.notes}
             </p>
           )}
           <div className="row">
             <label>
-              Characters per line (optional) {errorFor("columnsOverride")}
+              {t("Characters per line (optional)")} {errorFor("columnsOverride")}
               <input inputMode="numeric" value={draft.columns} placeholder={profile ? String(profile.columns) : ""} onChange={(e) => set({ columns: e.target.value })} />
             </label>
             <label>
-              Cut
+              {t("Cut")}
               <select value={draft.cut} onChange={(e) => set({ cut: e.target.value as PrinterDraft["cut"] })}>
-                <option value="">As the model</option>
-                <option value="partial">Partial</option>
-                <option value="full">Full</option>
-                <option value="none">No cutter (tear off)</option>
+                <option value="">{t("As the model")}</option>
+                <option value="partial">{t("Partial")}</option>
+                <option value="full">{t("Full")}</option>
+                <option value="none">{t("No cutter (tear off)")}</option>
               </select>
             </label>
             <label>
-              Cash drawer
+              {t("Cash drawer")}
               <select value={draft.drawerPin} onChange={(e) => set({ drawerPin: e.target.value as PrinterDraft["drawerPin"] })}>
-                <option value="pin2">Pin 2 (most drawers)</option>
-                <option value="pin5">Pin 5</option>
+                <option value="pin2">{t("Pin 2 (most drawers)")}</option>
+                <option value="pin5">{t("Pin 5")}</option>
               </select>
             </label>
             <label>
-              Receipt number barcode
+              {t("Receipt number barcode")}
               <select value={draft.barcode} onChange={(e) => set({ barcode: e.target.value as PrinterDraft["barcode"] })}>
-                <option value="">As the model</option>
-                <option value="yes">Print it</option>
-                <option value="no">Text only</option>
+                <option value="">{t("As the model")}</option>
+                <option value="yes">{t("Print it")}</option>
+                <option value="no">{t("Text only")}</option>
               </select>
             </label>
           </div>
@@ -383,11 +396,11 @@ function PrinterSection({
           <div className="actions">
             {device && (
               <button type="button" className="secondary" onClick={() => setEditing(false)}>
-                Cancel
+                {t("Cancel")}
               </button>
             )}
             <button type="submit" disabled={busy}>
-              {busy ? "Checking…" : "Save printer"}
+              {busy ? t("Checking…") : t("Save printer")}
             </button>
           </div>
         </form>
@@ -399,18 +412,18 @@ function PrinterSection({
       )}
       {editing && (
         <details className="device-discovery">
-          <summary>Find printers and ports</summary>
+          <summary>{t("Find printers and ports")}</summary>
           <div className="row">
             <label>
-              Also search the network (e.g. 192.168.1.0/24, optional)
+              {t("Also search the network (e.g. 192.168.1.0/24, optional)")}
               <input value={subnet} onChange={(e) => setSubnet(e.target.value)} placeholder="192.168.1.0/24" />
             </label>
             <button type="button" className="secondary" disabled={busy} onClick={() => void discover()}>
-              {busy ? "Searching…" : "Search"}
+              {busy ? t("Searching…") : t("Search")}
             </button>
           </div>
           {found && (
-            <ul aria-label="Found devices" className="small">
+            <ul aria-label={t("Found devices")} className="small">
               {found.network.map((n) => (
                 <li key={`${n.host}:${n.port}`}>
                   {n.host}:{n.port} {n.identified ? `· ${n.identified.maker ?? ""} ${n.identified.model ?? ""}` : ""}{" "}
@@ -419,7 +432,7 @@ function PrinterSection({
                     className="link"
                     onClick={() => set({ connection: "network", host: n.host, port: String(n.port), ...(n.profileId ? { profileId: n.profileId } : {}) })}
                   >
-                    Use
+                    {t("Use")}
                   </button>
                 </li>
               ))}
@@ -427,28 +440,28 @@ function PrinterSection({
                 <li key={p.port}>
                   {p.label}{" "}
                   <button type="button" className="link" onClick={() => set({ connection: "serial", serialPort: p.port })}>
-                    Use
+                    {t("Use")}
                   </button>
                 </li>
               ))}
               {found.queues.map((q) => (
                 <li key={q}>
-                  Printer queue: {q}{" "}
+                  {t("Printer queue: {queue}", { queue: q })}{" "}
                   <button type="button" className="link" onClick={() => set({ connection: "spooler", queue: q })}>
-                    Use
+                    {t("Use")}
                   </button>
                 </li>
               ))}
               {found.deviceFiles.map((f) => (
                 <li key={f}>
-                  Device: {f}{" "}
+                  {t("Device: {path}", { path: f })}{" "}
                   <button type="button" className="link" onClick={() => set({ connection: "deviceFile", path: f })}>
-                    Use
+                    {t("Use")}
                   </button>
                 </li>
               ))}
               {found.networkProblem && <li role="alert">{found.networkProblem}</li>}
-              {found.network.length + found.serialPorts.length + found.queues.length + found.deviceFiles.length === 0 && <li>Nothing found.</li>}
+              {found.network.length + found.serialPorts.length + found.queues.length + found.deviceFiles.length === 0 && <li>{t("Nothing found.")}</li>}
             </ul>
           )}
           <datalist id="serial-ports">
@@ -467,6 +480,7 @@ function PrinterSection({
 }
 
 function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onChanged: () => void }) {
+  const t = useT();
   const stored = device ? (JSON.parse(device.configJson) as { serial?: { port?: string; baud?: number } }) : null;
   const [port, setPort] = useState(stored?.serial?.port ?? "");
   const [baud, setBaud] = useState(String(stored?.serial?.baud ?? 9600));
@@ -483,24 +497,25 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
       enabled: true,
       baseVersion: device?.version ?? null,
     });
-    setMessage(res.status === "ok" ? "Saved. Scans from this port go to the till." : describeError(res.error));
+    setMessage(res.status === "ok" ? t("Saved. Scans from this port go to the till.") : describeError(res.error));
     if (res.status === "ok") onChanged();
   }
 
   return (
-    <section aria-label="Serial scanner" className="device-section">
-      <SectionTitle icon={ScanBarcode}>Serial barcode scanner (optional)</SectionTitle>
+    <section aria-label={t("Serial scanner")} className="device-section">
+      <SectionTitle icon={ScanBarcode}>{t("Serial barcode scanner (optional)")}</SectionTitle>
       <p className="small">
-        Most USB scanners need nothing here: they type the code like a keyboard. Use this only for a scanner on a COM port
-        (RS-232, USB-COM or Bluetooth SPP). The till reconnects by itself after the scanner is unplugged.
+        {t(
+          "Most USB scanners need nothing here: they type the code like a keyboard. Use this only for a scanner on a COM port (RS-232, USB-COM or Bluetooth SPP). The till reconnects by itself after the scanner is unplugged.",
+        )}
       </p>
-      <form onSubmit={(e) => void save(e)} className="row" aria-label="Scanner settings">
+      <form onSubmit={(e) => void save(e)} className="row" aria-label={t("Scanner settings")}>
         <label>
-          Port
-          <input value={port} placeholder="COM4 or /dev/ttyACM0" onChange={(e) => setPort(e.target.value)} />
+          {t("Port")}
+          <input value={port} placeholder={t("COM4 or /dev/ttyACM0")} onChange={(e) => setPort(e.target.value)} />
         </label>
         <label>
-          Speed (baud)
+          {t("Speed (baud)")}
           <select value={baud} onChange={(e) => setBaud(e.target.value)}>
             {BAUDS.map((b) => (
               <option key={b}>{b}</option>
@@ -508,7 +523,7 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
           </select>
         </label>
         <button type="submit" disabled={!port.trim()}>
-          Save scanner
+          {t("Save scanner")}
         </button>
         {device && (
           <button
@@ -516,7 +531,7 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
             className="secondary"
             onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}
           >
-            Remove
+            {t("Remove")}
           </button>
         )}
       </form>
@@ -530,6 +545,7 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
 }
 
 function TerminalSection({ device, onChanged }: { device: DeviceDto | null; onChanged: () => void }) {
+  const t = useT();
   const [message, setMessage] = useState<string | null>(null);
   async function save() {
     const res = await commands.deviceSave({
@@ -541,27 +557,27 @@ function TerminalSection({ device, onChanged }: { device: DeviceDto | null; onCh
       enabled: true,
       baseVersion: device?.version ?? null,
     });
-    setMessage(res.status === "ok" ? "Saved. “Card (terminal)” appears at payment." : describeError(res.error));
+    setMessage(res.status === "ok" ? t("Saved. “Card (terminal)” appears at payment.") : describeError(res.error));
     if (res.status === "ok") onChanged();
   }
   return (
-    <section aria-label="Card terminal" className="device-section">
-      <SectionTitle icon={CreditCard}>Card terminal</SectionTitle>
+    <section aria-label={t("Card terminal")} className="device-section">
+      <SectionTitle icon={CreditCard}>{t("Card terminal")}</SectionTitle>
       <p className="small">
-        A card machine that is not connected to the till needs nothing here: take the payment on it, then choose “Card (separate
-        terminal)” at the till. A connected terminal is set up through its provider. To practise, use the sandbox terminal: amounts
-        ending in .01 are declined, .02 time out, and .03 take a few seconds.
+        {t(
+          "A card machine that is not connected to the till needs nothing here: take the payment on it, then choose “Card (separate terminal)” at the till. A connected terminal is set up through its provider. To practise, use the sandbox terminal: amounts ending in .01 are declined, .02 time out, and .03 take a few seconds.",
+        )}
       </p>
       {device ? (
         <div className="button-row">
           <span>{device.name}</span>
           <button type="button" className="secondary" onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}>
-            Remove
+            {t("Remove")}
           </button>
         </div>
       ) : (
         <button type="button" className="secondary" onClick={() => void save()}>
-          Use the sandbox terminal (practice mode only)
+          {t("Use the sandbox terminal (practice mode only)")}
         </button>
       )}
       {message && (

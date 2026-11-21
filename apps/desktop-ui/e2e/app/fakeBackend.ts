@@ -321,6 +321,7 @@ const FAKE_SETTINGS = [
   { key: "receipt.paper_width_mm", group: "Receipts", label: "Paper width (mm)", help: "58 or 80.", kind: { type: "choice", options: ["58", "80"] }, defaultJson: "80" },
   { key: "receipt.footer_lines", group: "Receipts", label: "Lines at the bottom of receipts", help: "Up to 5 lines.", kind: { type: "lines", maxLines: 5, maxChars: 48 }, defaultJson: "[]" },
   { key: "scanner.suffix", group: "Scanner", label: "Key the scanner sends after a code", help: "Match the scanner.", kind: { type: "choice", options: ['"Enter"', '"Tab"', '"none"'] }, defaultJson: '"Enter"' },
+  { key: "tax.registered", group: "Taxes", label: "Registered for VAT", help: "Off: sales carry no tax.", kind: { type: "bool" }, defaultJson: "true" },
 ] as const;
 
 function parkedList(s: FakeState) {

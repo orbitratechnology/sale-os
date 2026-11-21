@@ -250,6 +250,8 @@ impl SetupService {
                 register.location_id,
             ))
             .audit(AuditEntry::new(ids, audit::STAFF_CREATED, "staff_user", owner_id));
+        // No rates entered: the business is not registered for VAT (D-02).
+        let registered = !rates.is_empty();
         for r in rates {
             b = b
                 .outbox(OutboxDraft::tax_rate_upserted(ids, &r)?)
@@ -258,7 +260,10 @@ impl SetupService {
         b = b
             .outbox(OutboxDraft::tax_category_upserted(ids, &category)?)
             .put_tax_category(category, None);
-        for (key, value) in crate::settings::defaults() {
+        for (key, mut value) in crate::settings::defaults() {
+            if key == "tax.registered" {
+                value = serde_json::Value::Bool(registered);
+            }
             let s = SettingRecord {
                 business_id: register.business_id,
                 key: key.into(),

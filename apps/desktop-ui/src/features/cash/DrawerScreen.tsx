@@ -9,6 +9,7 @@ import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { TENDER_LABEL } from "../sales/labels";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 /**
  * The cash drawer (E15-T02): open with a float, see the session, close with a count.
@@ -16,6 +17,7 @@ import { describeError } from "../shell/errors";
  * this screen shows none. Closing is final, so it asks first.
  */
 export function DrawerScreen({ workspace, session, onBack }: { workspace: Workspace; session: Session; onBack: () => void }) {
+  const t = useT();
   const [state, setState] = useState<CashState | null>(null);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -59,7 +61,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
 
   const parsed = () => {
     const minor = scaleDecimal(amount || "0", exp);
-    if (minor === null) setError("Enter an amount, e.g. 100.00.");
+    if (minor === null) setError(t("Enter an amount, e.g. 100.00."));
     return minor;
   };
 
@@ -94,39 +96,46 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
     <header className="returns-header">
       <h1 className="page-title">
           <Banknote />
-          Cash drawer
+          {t("Cash drawer")}
         </h1>
       <button type="button" className="secondary" onClick={onBack}>
         <ArrowLeft />
-        Back to till <kbd>Esc</kbd>
+        {t("Back to till")} <kbd>Esc</kbd>
       </button>
     </header>
   );
 
   if (closed) {
     const v = closed.varianceMinor;
+    const [closedBefore, closedAfter = ""] = t("Session {number} is closed.").split("{number}");
     return (
       <main className="sales">
         {header}
-        <section className="card return-done" aria-label="Drawer closed">
+        <section className="card return-done" aria-label={t("Drawer closed")}>
           <p>
-            Session <strong className="mono">{closed.session.number}</strong> is closed.
+            {closedBefore}
+            <strong className="mono">{closed.session.number}</strong>
+            {closedAfter}
           </p>
-          <p className="small">Counted</p>
+          <p className="small">{t("Counted")}</p>
           <output className="change-amount" data-testid="counted">
             {money(closed.countedMinor)}
           </output>
           {closed.expectedMinor !== null && v !== null ? (
-            <dl className="totals" aria-label="Count against expected">
-              <dt>Expected</dt>
+            <dl className="totals" aria-label={t("Count against expected")}>
+              <dt>{t("Expected")}</dt>
               <dd data-testid="expected">{money(closed.expectedMinor)}</dd>
-              <dt>Variance</dt>
+              <dt>{t("Variance")}</dt>
               <dd data-testid="variance">
-                {v === "0" ? "None" : v.startsWith("-") ? `${money(v.slice(1))} short` : `${money(v)} over`}
+                {v === "0"
+                  ? t("None")
+                  : v.startsWith("-")
+                    ? t("{amount} short", { amount: money(v.slice(1)) })
+                    : t("{amount} over", { amount: money(v) })}
               </dd>
             </dl>
           ) : (
-            <p className="small">A manager will check the count against the expected amount.</p>
+            <p className="small">{t("A manager will check the count against the expected amount.")}</p>
           )}
           {manager && (
             <>
@@ -137,7 +146,7 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
           <div className="actions">
             <button type="button" onClick={onBack} autoFocus>
               <ArrowLeft />
-              Back to till <kbd>Enter</kbd>
+              {t("Back to till")} <kbd>Enter</kbd>
             </button>
           </div>
         </section>
@@ -147,22 +156,29 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
 
   if (!state) return <main className="sales" aria-busy="true" />;
   const s = state.session;
+  const [sessionBefore, sessionAfter = ""] = s
+    ? t("Session {number} · opened {time} by {name} · float {amount}", {
+        time: s.openedLocal,
+        name: s.openedByName,
+        amount: money(s.openingFloatMinor),
+      }).split("{number}")
+    : [];
 
   return (
     <main className="sales">
       {header}
       {!s ? (
-        <form className="card return-find" aria-label="Open the drawer" onSubmit={(e) => void open(e)}>
+        <form className="card return-find" aria-label={t("Open the drawer")} onSubmit={(e) => void open(e)}>
           <p>
-            The drawer is closed.
-            {state.required ? " Sales need an open drawer on this till." : ""}
+            {t("The drawer is closed.")}
+            {state.required ? ` ${t("Sales need an open drawer on this till.")}` : ""}
           </p>
           <label>
-            Opening float ({workspace.currencyCode})
-            <input ref={input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 100.00" autoComplete="off" />
+            {t("Opening float ({currency})", { currency: workspace.currencyCode })}
+            <input ref={input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={t("e.g. 100.00")} autoComplete="off" />
           </label>
           <button type="submit" disabled={busy}>
-            Open drawer
+            {t("Open drawer")}
           </button>
           {errorText && (
             <p role="alert" className="field-error">
@@ -174,24 +190,25 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
       ) : (
         <form
           className="card return-form"
-          aria-label="Close the drawer"
+          aria-label={t("Close the drawer")}
           onSubmit={(e) => {
             e.preventDefault();
             if (parsed() !== null) setConfirming(true);
           }}
         >
           <p>
-            Session <strong className="mono">{s.number}</strong> · opened {s.openedLocal} by {s.openedByName} · float{" "}
-            {money(s.openingFloatMinor)}
+            {sessionBefore}
+            <strong className="mono">{s.number}</strong>
+            {sessionAfter}
           </p>
           {state.totals && state.expectedMinor !== null && <Running totals={state.totals} expected={state.expectedMinor} money={money} />}
           {parked > 0 && <ParkedWarning count={parked} />}
           <label>
-            Counted cash ({workspace.currencyCode})
-            <input ref={input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Count the drawer" autoComplete="off" />
+            {t("Counted cash ({currency})", { currency: workspace.currencyCode })}
+            <input ref={input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={t("Count the drawer")} autoComplete="off" />
           </label>
           <label>
-            Note (optional)
+            {t("Note (optional)")}
             <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
           </label>
           {errorText && (
@@ -201,25 +218,27 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
           )}
           <div className="actions">
             <button type="submit" className="pay" disabled={busy || !amount.trim()}>
-              Close drawer
+              {t("Close drawer")}
             </button>
           </div>
         </form>
       )}
 
       {confirming && (
-        <Modal label="Close the drawer?">
-            <h2>Close the drawer?</h2>
+        <Modal label={t("Close the drawer?")}>
+            <h2>{t("Close the drawer?")}</h2>
             <p>
-              Counted {money(scaleDecimal(amount || "0", exp) ?? "0")}. Closing is final: the session cannot be reopened.
+              {t("Counted {amount}. Closing is final: the session cannot be reopened.", {
+                amount: money(scaleDecimal(amount || "0", exp) ?? "0"),
+              })}
             </p>
             {parked > 0 && <ParkedWarning count={parked} />}
             <div className="actions">
               <button type="button" className="secondary" onClick={() => setConfirming(false)}>
-                Cancel
+                {t("Cancel")}
               </button>
               <button type="button" className="pay" onClick={() => void close()} data-autofocus>
-                Close drawer
+                {t("Close drawer")}
               </button>
             </div>
         </Modal>
@@ -230,29 +249,32 @@ export function DrawerScreen({ workspace, session, onBack }: { workspace: Worksp
 
 /** Parked carts are not sales: they stay parked, and sell into whichever drawer session is open then. */
 function ParkedWarning({ count }: { count: number }) {
+  const t = useT();
   return (
     <p className="callout-warning" data-testid="parked-warning">
       <TriangleExclamationPoint />
       <span>
-        {count === 1 ? "1 cart is" : `${count} carts are`} parked on this till and not in this count. {count === 1 ? "It stays" : "They stay"}{" "}
-        parked: resume and finish {count === 1 ? "it" : "them"}, or void {count === 1 ? "it" : "them"}, from the till.
+        {count === 1
+          ? t("1 cart is parked on this till and not in this count. It stays parked: resume and finish it, or void it, from the till.")
+          : t("{n} carts are parked on this till and not in this count. They stay parked: resume and finish them, or void them, from the till.", { n: count })}
       </span>
     </p>
   );
 }
 
 function Running({ totals, expected, money }: { totals: SessionTotalsDto; expected: string; money: (m: string) => string }) {
+  const t = useT();
   return (
-    <dl className="totals" aria-label="So far">
-      <dt>Sales ({totals.salesCount})</dt>
+    <dl className="totals" aria-label={t("So far")}>
+      <dt>{t("Sales ({n})", { n: totals.salesCount })}</dt>
       <dd>{money(totals.salesTotalMinor)}</dd>
-      {totals.tenders.map((t) => (
-        <Row key={t.kind} label={`  ${TENDER_LABEL[t.kind]} (${t.count})`} value={money(t.amountMinor)} />
+      {totals.tenders.map((x) => (
+        <Row key={x.kind} label={`  ${t(TENDER_LABEL[x.kind])} (${x.count})`} value={money(x.amountMinor)} />
       ))}
-      <dt>Returns ({totals.returnsCount})</dt>
+      <dt>{t("Returns ({n})", { n: totals.returnsCount })}</dt>
       <dd>{totals.refundsTotalMinor === "0" ? money("0") : `-${money(totals.refundsTotalMinor)}`}</dd>
       <dt>
-        <strong>Expected in the drawer</strong>
+        <strong>{t("Expected in the drawer")}</strong>
       </dt>
       <dd data-testid="running-expected">
         <strong>{money(expected)}</strong>
@@ -272,11 +294,12 @@ function Row({ label, value }: { label: string; value: string }) {
 
 /** The last Z summary on this till, for managers and owners. */
 function LastZ() {
+  const t = useT();
   const [show, setShow] = useState(false);
   return (
     <div>
       <button type="button" className="secondary" onClick={() => setShow((s) => !s)}>
-        {show ? "Hide last Z summary" : "Last Z summary"}
+        {show ? t("Hide last Z summary") : t("Last Z summary")}
       </button>
       {show && (
         <>

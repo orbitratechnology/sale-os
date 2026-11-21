@@ -74,7 +74,17 @@ describe("draft → IPC input", () => {
     expect(toInput(d, 2)).toMatchObject({ field: "price", variant: 0 });
     at(d.variants, 0).price = "1";
     at(d.variants, 0).barcodes = [{ raw: "CASE", qualifier: "pack", packQty: "0" }];
-    expect(toInput(d, 2)).toMatchObject({ field: "barcode", variant: 0 });
+    expect(toInput(d, 2)).toMatchObject({ field: "barcode", variant: 0, message: "Enter how many units barcode CASE adds." });
+  });
+
+  it("words the problem in the language given", () => {
+    const shout = (e: string, v?: Record<string, string | number>) => `!${e}!${v ? JSON.stringify(v) : ""}`;
+    expect(toInput(blankDraft("t"), 2, shout)).toEqual({ field: "name", message: "!Enter the product name.!" });
+    const d = blankDraft("t");
+    d.name = "X";
+    at(d.variants, 0).price = "1";
+    at(d.variants, 0).barcodes = [{ raw: "CASE", qualifier: "pack", packQty: "0" }];
+    expect(toInput(d, 2, shout)).toMatchObject({ message: '!Enter how many units barcode {code} adds.!{"code":"CASE"}' });
   });
 
   it("round-trips a stored product", () => {

@@ -5,18 +5,19 @@ import {
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { CategoryDto } from "../../ipc/bindings";
+import { useT, type T } from "../../i18n";
 import { describeError } from "../shell/errors";
 import { flatTree } from "./categories";
 
 const MAX_DEPTH = 3;
 
-function message(e: IpcError): string {
+function message(e: IpcError, t: T): string {
   if (e.code === "VALIDATION_FAILED" && e.details?.field === "parent") {
-    return "That would put categories more than 3 levels deep, or a category inside itself.";
+    return t("That would put categories more than 3 levels deep, or a category inside itself.");
   }
-  if (e.code === "VALIDATION_FAILED" && e.details?.field === "name") return "Enter a name.";
-  if (e.code === "CONFLICT_VERSION") return "It was changed meanwhile; the current tree is shown.";
-  return e.code === "VALIDATION_FAILED" ? "Move or archive its subcategories first." : describeError(e);
+  if (e.code === "VALIDATION_FAILED" && e.details?.field === "name") return t("Enter a name.");
+  if (e.code === "CONFLICT_VERSION") return t("It was changed meanwhile; the current tree is shown.");
+  return e.code === "VALIDATION_FAILED" ? t("Move or archive its subcategories first.") : describeError(e);
 }
 
 /**
@@ -24,6 +25,7 @@ function message(e: IpcError): string {
  * another category, or archive one without subcategories. Rust enforces depth and cycles.
  */
 export function CategoriesScreen({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const [all, setAll] = useState<CategoryDto[]>([]);
   const [name, setName] = useState("");
   const [parent, setParent] = useState<string>("");
@@ -55,7 +57,7 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
     if (res.status === "ok") {
       setError(null);
       setEditing(null);
-    } else setError(message(res.error));
+    } else setError(message(res.error, t));
     load();
     return res.status === "ok";
   };
@@ -70,34 +72,34 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
       <header className="returns-header">
         <h1 className="page-title">
           <FolderTree />
-          Categories
+          {t("Categories")}
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to products <kbd>Esc</kbd>
+          {t("Back to products")} <kbd>Esc</kbd>
         </button>
       </header>
-      <form className="card sales-filters" aria-label="Add a category" onSubmit={(e) => void add(e)}>
+      <form className="card sales-filters" aria-label={t("Add a category")} onSubmit={(e) => void add(e)}>
         <label>
-          New category
+          {t("New category")}
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
         </label>
         <label>
-          Inside
+          {t("Inside")}
           <select value={parent} onChange={(e) => setParent(e.target.value)}>
-            <option value="">(top level)</option>
+            <option value="">{t("(top level)")}</option>
             {tree
-              .filter((t) => t.depth < MAX_DEPTH)
-              .map((t) => (
-                <option key={t.category.categoryId} value={t.category.categoryId}>
-                  {"— ".repeat(t.depth - 1)}
-                  {t.category.name}
+              .filter((n) => n.depth < MAX_DEPTH)
+              .map((n) => (
+                <option key={n.category.categoryId} value={n.category.categoryId}>
+                  {"— ".repeat(n.depth - 1)}
+                  {n.category.name}
                 </option>
               ))}
           </select>
         </label>
         <button type="submit" disabled={!name.trim()}>
-          Add
+          {t("Add")}
         </button>
       </form>
       {error && (
@@ -105,13 +107,13 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
           {error}
         </p>
       )}
-      <section className="card" aria-label="Category tree">
+      <section className="card" aria-label={t("Category tree")}>
         {tree.length === 0 && (
         <div className="empty-state">
           <span className="empty-icon">
             <FolderTree />
           </span>
-          <p>No categories yet.</p>
+          <p>{t("No categories yet.")}</p>
         </div>
       )}
         <ul className="plain-list">
@@ -125,19 +127,19 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
                     void commands.categorySave(c.categoryId, editing.name, editing.parent || null, c.version).then(done);
                   }}
                 >
-                  <input aria-label={`Name of ${c.name}`} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
-                  <select aria-label={`Move ${c.name} into`} value={editing.parent} onChange={(e) => setEditing({ ...editing, parent: e.target.value })}>
-                    <option value="">(top level)</option>
+                  <input aria-label={t("Name of {name}", { name: c.name })} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+                  <select aria-label={t("Move {name} into", { name: c.name })} value={editing.parent} onChange={(e) => setEditing({ ...editing, parent: e.target.value })}>
+                    <option value="">{t("(top level)")}</option>
                     {tree
-                      .filter((t) => t.category.categoryId !== c.categoryId)
-                      .map((t) => (
-                        <option key={t.category.categoryId} value={t.category.categoryId}>
-                          {"— ".repeat(t.depth - 1)}
-                          {t.category.name}
+                      .filter((n) => n.category.categoryId !== c.categoryId)
+                      .map((n) => (
+                        <option key={n.category.categoryId} value={n.category.categoryId}>
+                          {"— ".repeat(n.depth - 1)}
+                          {n.category.name}
                         </option>
                       ))}
                   </select>
-                  <button type="submit">Save</button>
+                  <button type="submit">{t("Save")}</button>
                 </form>
               ) : (
                 <span>
@@ -153,15 +155,15 @@ export function CategoriesScreen({ onBack }: { onBack: () => void }) {
                       })
                     }
                   >
-                    Edit
+                    {t("Edit")}
                   </button>{" "}
                   <button
                     type="button"
                     className="link"
-                    aria-label={`Archive ${c.name}`}
+                    aria-label={t("Archive {name}", { name: c.name })}
                     onClick={() => void commands.categoryArchive(c.categoryId, c.version).then(done)}
                   >
-                    Archive
+                    {t("Archive")}
                   </button>
                 </span>
               )}

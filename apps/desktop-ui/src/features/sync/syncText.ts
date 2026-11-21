@@ -45,17 +45,17 @@ export function saleSyncText(state: string | null | undefined, t: T = (e, v) => 
 }
 
 /** Why the cloud refused an event, in plain words (the code is shown beside it). */
-export function refusalText(code: string | null | undefined): string {
+export function refusalText(code: string | null | undefined, t: T = (e, v) => translate(currentLanguage(), e, v)): string {
   switch (code) {
     case "SNAPSHOT_MISMATCH":
-      return "The cloud checked the totals of this record and they did not add up, so it was not counted there. It is kept here unchanged.";
+      return t("The cloud checked the totals of this record and they did not add up, so it was not counted there. It is kept here unchanged.");
     case "EVENT_INVALID":
-      return "The cloud could not accept this record as it is. It is kept here; send the support file to support.";
+      return t("The cloud could not accept this record as it is. It is kept here; send the support file to support.");
     case "EVENT_VERSION_UNSUPPORTED":
-      return "The cloud does not understand this kind of record yet, so it holds up what came after it. It is sent again automatically once the cloud is updated.";
+      return t("The cloud does not understand this kind of record yet, so it holds up what came after it. It is sent again automatically once the cloud is updated.");
     case "EVENT_ID_REUSED":
-      return "This record has the same identity as a different one already in the cloud. Contact support.";
+      return t("This record has the same identity as a different one already in the cloud. Contact support.");
     default:
-      return "The cloud refused this record. It is kept here; send the support file to support.";
+      return t("The cloud refused this record. It is kept here; send the support file to support.");
   }
 }

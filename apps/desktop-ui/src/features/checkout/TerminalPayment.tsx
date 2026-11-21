@@ -6,6 +6,7 @@ import { scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { ApprovalDialog } from "../auth/ApprovalDialog";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 /** How often to ask the terminal while the customer pays, and for how long at most. */
 const POLL_MS = 1000;
@@ -37,6 +38,7 @@ export function TerminalPayment({
   onApproved: (a: PaymentAttemptDto) => void;
   onBack: () => void;
 }) {
+  const t = useT();
   const [amount, setAmount] = useState("");
   const [attempt, setAttempt] = useState<PaymentAttemptDto | null>(resume);
   const [error, setError] = useState<IpcError | string | null>(null);
@@ -50,14 +52,14 @@ export function TerminalPayment({
   useEffect(() => {
     if (!attempt || attempt.status !== "pending") return;
     if (polls.current >= POLL_LIMIT) return;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       polls.current += 1;
       void commands.paymentPoll(attempt.attemptId).then((res) => {
         if (res.status === "ok") setAttempt(res.data);
         else setError(res.error);
       });
     }, POLL_MS);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [attempt]);
 
   useEffect(() => {
@@ -67,8 +69,8 @@ export function TerminalPayment({
   async function start(e: FormEvent) {
     e.preventDefault();
     const minor = amount.trim() ? scaleDecimal(amount, exponent) : remainingMinor.toString();
-    if (minor === null || minor === "0") return setError("Enter the amount to charge.");
-    if (BigInt(minor) > remainingMinor) return setError("A card payment cannot be more than the amount due.");
+    if (minor === null || minor === "0") return setError(t("Enter the amount to charge."));
+    if (BigInt(minor) > remainingMinor) return setError(t("A card payment cannot be more than the amount due."));
     setBusy(true);
     setError(null);
     polls.current = 0;
@@ -101,61 +103,65 @@ export function TerminalPayment({
       setSettle(null);
       setAttempt(res.data);
     } else if (res.error.code === "APPROVAL_REQUIRED" && res.error.details?.scope) {
-      setApproval({ scope: res.error.details.scope, retry: (t) => void resolve(t) });
+      setApproval({ scope: res.error.details.scope, retry: (token) => void resolve(token) });
     } else setError(res.error);
   }
 
   const status = attempt?.status;
+  // The amount sent is shown in bold: the sentence is translated whole and split where it goes.
+  const [sentBefore, sentAfter = ""] = t("{amount} sent to the terminal. Waiting for the customer…").split("{amount}");
   return (
-    <div className="external-form" aria-label="Card on terminal">
+    <div className="external-form" aria-label={t("Card on terminal")}>
       {!attempt || status === "declined" || status === "cancelled" ? (
         <form onSubmit={start}>
           {attempt && (
             <p role="alert" className="field-error">
-              {status === "declined" ? `Declined: ${attempt.reason ?? "by the card issuer"}` : "Cancelled. Nothing was charged."}
+              {status === "declined" ? t("Declined: {reason}", { reason: attempt.reason ?? t("by the card issuer") }) : t("Cancelled. Nothing was charged.")}
             </p>
           )}
           <label>
-            Amount to charge ({currencyCode}) · empty = the rest, {money(remainingMinor)}
+            {t("Amount to charge ({currency}) · empty = the rest, {amount}", { currency: currencyCode, amount: money(remainingMinor) })}
             <input autoFocus inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={busy} />
           </label>
           <div className="actions">
             <button type="button" className="secondary" onClick={onBack} disabled={busy}>
-              Back
+              {t("Back")}
             </button>
             <button type="submit" disabled={busy}>
-              {busy ? "Sending…" : "Send to terminal"}
+              {busy ? t("Sending…") : t("Send to terminal")}
             </button>
           </div>
         </form>
       ) : status === "pending" ? (
         <div role="status" aria-live="polite">
           <p>
-            <strong>{money(attempt.amountMinor)}</strong> sent to the terminal. Waiting for the customer…
+            {sentBefore}
+            <strong>{money(attempt.amountMinor)}</strong>
+            {sentAfter}
           </p>
-          {polls.current >= POLL_LIMIT && <p className="small">No answer yet. Check the terminal; the outcome will be settled, never guessed.</p>}
+          {polls.current >= POLL_LIMIT && <p className="small">{t("No answer yet. Check the terminal; the outcome will be settled, never guessed.")}</p>}
           <div className="actions">
             <button type="button" className="secondary" onClick={() => void cancel()} disabled={busy}>
-              Cancel on terminal
+              {t("Cancel on terminal")}
             </button>
           </div>
         </div>
       ) : status === "reconciliation_required" ? (
         <div role="alert">
           <p>
-            <strong>Outcome unknown.</strong> {attempt.reason ?? "The terminal did not confirm."} The card may have been charged:
-            look at the terminal or its slip.
+            <strong>{t("Outcome unknown.")}</strong> {attempt.reason ?? t("The terminal did not confirm.")}{" "}
+            {t("The card may have been charged: look at the terminal or its slip.")}
           </p>
           {!settle ? (
             <div className="actions">
               <button type="button" className="secondary" onClick={() => void commands.paymentPoll(attempt.attemptId).then((r) => r.status === "ok" && setAttempt(r.data))}>
-                Ask the terminal again
+                {t("Ask the terminal again")}
               </button>
               <button type="button" onClick={() => setSettle({ outcome: "approved", reference: "", reason: "" })}>
-                It was approved
+                {t("It was approved")}
               </button>
               <button type="button" className="secondary" onClick={() => setSettle({ outcome: "declined", reference: "", reason: "" })}>
-                It was not charged
+                {t("It was not charged")}
               </button>
             </div>
           ) : (
@@ -167,27 +173,33 @@ export function TerminalPayment({
             >
               {settle.outcome === "approved" && (
                 <label>
-                  Reference from the slip (optional, never the card number)
+                  {t("Reference from the slip (optional, never the card number)")}
                   <input value={settle.reference} maxLength={64} autoComplete="off" onChange={(e) => setSettle({ ...settle, reference: e.target.value })} />
                 </label>
               )}
               <label>
-                Reason (kept in the audit log)
+                {t("Reason (kept in the audit log)")}
                 <input required value={settle.reason} maxLength={200} onChange={(e) => setSettle({ ...settle, reason: e.target.value })} />
               </label>
               <div className="actions">
                 <button type="button" className="secondary" onClick={() => setSettle(null)}>
-                  Back
+                  {t("Back")}
                 </button>
                 <button type="submit" disabled={busy || !settle.reason.trim()}>
-                  {settle.outcome === "approved" ? "Record as approved" : "Record as not charged"}
+                  {settle.outcome === "approved" ? t("Record as approved") : t("Record as not charged")}
                 </button>
               </div>
             </form>
           )}
         </div>
       ) : (
-        <p role="status">{status === "approved" ? "Approved." : `The payment is ${status?.replace("_", " ")}.`}</p>
+        <p role="status">
+          {status === "approved"
+            ? t("Approved.")
+            : status === "reversed"
+              ? t("The payment is reversed.")
+              : t("The payment is {status}.", { status: String(status?.replace("_", " ")) })}
+        </p>
       )}
       {error && (
         <p role="alert" className="field-error">

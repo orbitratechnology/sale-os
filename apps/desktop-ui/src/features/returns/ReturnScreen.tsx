@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRightLeft, Undo2 } from "../../ui/icons";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { commands, type ApprovalScope, type IpcError, type Session, type Workspace } from "../../ipc";
 import type {
   CompletedReturnDto,
@@ -17,21 +17,35 @@ import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
 import type { ExchangeCredit } from "./exchange";
+import { useT } from "../../i18n";
 
-const REASONS: { value: ReturnReason; label: string }[] = [
-  { value: "changed_mind", label: "Changed mind" },
-  { value: "defective", label: "Faulty" },
-  { value: "wrong_item", label: "Wrong item" },
-  { value: "damaged_in_transit", label: "Damaged" },
-  { value: "other", label: "Other" },
-];
+/** The reasons offered, in this order (English: shown through `t(…)`). */
+const REASON_COPY: Record<ReturnReason, string> = {
+  changed_mind: "Changed mind",
+  defective: "Faulty",
+  wrong_item: "Wrong item",
+  damaged_in_transit: "Damaged",
+  other: "Other",
+};
 
-const REFUND_METHODS: { kind: TenderKind; label: string }[] = [
-  { kind: "cash", label: "Cash" },
-  { kind: "card_external", label: "Card (separate terminal)" },
-  { kind: "bank_transfer_external", label: "Bank transfer" },
-  { kind: "other_external", label: "Other" },
-];
+/** The ways to refund, in this order (English: shown through `t(…)`). */
+const REFUND_COPY: Partial<Record<TenderKind, string>> = {
+  cash: "Cash",
+  card_external: "Card (separate terminal)",
+  bank_transfer_external: "Bank transfer",
+  other_external: "Other",
+};
+
+/**
+ * A translated sentence with elements in it: each `{name}` in `text` becomes `parts[name]`,
+ * wherever the language puts it.
+ */
+function withParts(text: string, parts: Record<string, ReactNode>): ReactNode[] {
+  return text.split(/(\{\w+\})/).map((piece, i) => {
+    const name = /^\{(\w+)\}$/.exec(piece)?.[1];
+    return name !== undefined && name in parts ? <Fragment key={i}>{parts[name]}</Fragment> : piece;
+  });
+}
 
 /** Per sale line: what the cashier typed and where the goods go. */
 interface Pick {
@@ -63,6 +77,7 @@ export function ReturnScreen({
    */
   onExchange?: (credit: ExchangeCredit) => void;
 }) {
+  const t = useT();
   const [number, setNumber] = useState(initialReceipt ?? "");
   const [sale, setSale] = useState<ReturnableSaleDto | null>(null);
   const [picks, setPicks] = useState<Record<string, Pick>>({});
@@ -117,7 +132,7 @@ export function ReturnScreen({
     const res = await commands.returnFind(receiptNumber);
     setBusy(false);
     if (res.status !== "ok") {
-      return setError(res.error.code === "VALIDATION_FAILED" ? "No sale with that receipt number on this till." : res.error);
+      return setError(res.error.code === "VALIDATION_FAILED" ? t("No sale with that receipt number on this till.") : res.error);
     }
     setSale(res.data);
     setPicks(
@@ -125,7 +140,7 @@ export function ReturnScreen({
         res.data.lines.map((l) => [l.saleLineId, { qty: "", disposition: l.trackStock ? "restock" : "no_stock_change" } as Pick]),
       ),
     );
-  }, []);
+  }, [t]);
 
   function find(e: FormEvent) {
     e.preventDefault();
@@ -219,28 +234,30 @@ export function ReturnScreen({
   if (done) {
     return (
       <main className="returns">
-        <section className="card return-done" aria-label="Return completed">
-          <p className="small">Refund</p>
+        <section className="card return-done" aria-label={t("Return completed")}>
+          <p className="small">{t("Refund")}</p>
           <output className="change-amount" data-testid="refund">
             {money(done.totalMinor)}
           </output>
           <p>
-            Return <strong className="mono">{done.returnNumber}</strong> for receipt{" "}
-            <span className="mono">{done.originalReceiptNumber}</span>
-            {done.approved ? " · approved by a manager" : ""}
+            {withParts(t("Return {number} for receipt {receipt}"), {
+              number: <strong className="mono">{done.returnNumber}</strong>,
+              receipt: <span className="mono">{done.originalReceiptNumber}</span>,
+            })}
+            {done.approved ? ` · ${t("approved by a manager")}` : ""}
           </p>
           <PrintControls source={{ kind: "return", id: done.returnId }} autoPrint={false} />
           {showReceipt && <ReceiptPreview source={{ kind: "return", id: done.returnId }} />}
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
-              {showReceipt ? "Hide receipt" : "Show receipt"}
+              {showReceipt ? t("Hide receipt") : t("Show receipt")}
             </button>
             <button type="button" className="secondary" onClick={reset}>
-              Another return
+              {t("Another return")}
             </button>
             <button type="button" onClick={onBack} autoFocus>
               <ArrowLeft />
-              Back to till <kbd>Enter</kbd>
+              {t("Back to till")} <kbd>Enter</kbd>
             </button>
           </div>
         </section>
@@ -253,29 +270,29 @@ export function ReturnScreen({
       <header className="returns-header">
         <h1 className="page-title">
           <Undo2 />
-          Returns
+          {t("Returns")}
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to till <kbd>Esc</kbd>
+          {t("Back to till")} <kbd>Esc</kbd>
         </button>
       </header>
 
       {!sale ? (
         <form className="card return-find" onSubmit={find}>
           <label>
-            Receipt number
+            {t("Receipt number")}
             <input
               ref={findInput}
               value={number}
               onChange={(e) => setNumber(e.target.value)}
-              placeholder="Scan the receipt or type e.g. R01-000123"
+              placeholder={t("Scan the receipt or type e.g. {receipt}", { receipt: "R01-000123" })}
               autoComplete="off"
               spellCheck={false}
             />
           </label>
           <button type="submit" disabled={busy || !number.trim()}>
-            Find sale
+            {t("Find sale")}
           </button>
           {errorText && (
             <p role="alert" className="field-error">
@@ -292,18 +309,18 @@ export function ReturnScreen({
           }}
         >
           <p>
-            Sale <strong className="mono">{sale.receiptNumber}</strong>
-            {sale.mode === "sandbox" ? " · SANDBOX" : ""}
+            {t("Sale")} <strong className="mono">{sale.receiptNumber}</strong>
+            {sale.mode === "sandbox" ? ` · ${t("SANDBOX")}` : ""}
           </p>
           <table className="return-lines">
             <thead>
               <tr>
-                <th scope="col">Item</th>
-                <th scope="col" className="num">Sold</th>
-                <th scope="col" className="num">Returned</th>
-                <th scope="col" className="num">Paid</th>
-                <th scope="col">Return now</th>
-                <th scope="col">Goods</th>
+                <th scope="col">{t("Item")}</th>
+                <th scope="col" className="num">{t("Sold")}</th>
+                <th scope="col" className="num">{t("Returned")}</th>
+                <th scope="col" className="num">{t("Paid")}</th>
+                <th scope="col">{t("Return now")}</th>
+                <th scope="col">{t("Goods")}</th>
               </tr>
             </thead>
             <tbody>
@@ -322,11 +339,11 @@ export function ReturnScreen({
                     <td>
                       <input
                         className="qty-input"
-                        aria-label={`Quantity to return: ${label}`}
+                        aria-label={t("Quantity to return: {name}", { name: label })}
                         inputMode="decimal"
                         autoFocus={first} // the next step after finding the sale
                         disabled={none}
-                        placeholder={none ? "all returned" : `up to ${formatMilli(l.availableMilli)}`}
+                        placeholder={none ? t("all returned") : t("up to {qty}", { qty: formatMilli(l.availableMilli) })}
                         value={p?.qty ?? ""}
                         onChange={(e) => setPick(l.saleLineId, { qty: e.target.value })}
                       />
@@ -334,17 +351,17 @@ export function ReturnScreen({
                     <td>
                       {l.trackStock ? (
                         <select
-                          aria-label={`Where it goes: ${label}`}
+                          aria-label={t("Where it goes: {name}", { name: label })}
                           disabled={none}
                           value={p?.disposition ?? "restock"}
                           onChange={(e) => setPick(l.saleLineId, { disposition: e.target.value as Disposition })}
                         >
-                          <option value="restock">Back to stock</option>
-                          <option value="damaged">Damaged</option>
-                          <option value="no_stock_change">Not kept</option>
+                          <option value="restock">{t("Back to stock")}</option>
+                          <option value="damaged">{t("Damaged")}</option>
+                          <option value="no_stock_change">{t("Not kept")}</option>
                         </select>
                       ) : (
-                        <span className="small">No stock</span>
+                        <span className="small">{t("No stock")}</span>
                       )}
                     </td>
                   </tr>
@@ -352,40 +369,40 @@ export function ReturnScreen({
               })}
             </tbody>
           </table>
-          {lines === null && <p className="field-error">Quantities must be numbers, e.g. 1 or 0.5.</p>}
+          {lines === null && <p className="field-error">{t("Quantities must be numbers, e.g. 1 or 0.5.")}</p>}
 
           <div className="return-options">
             <label>
-              Reason
+              {t("Reason")}
               <select value={reason} onChange={(e) => setReason(e.target.value as ReturnReason)}>
-                {REASONS.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
+                {(Object.keys(REASON_COPY) as ReturnReason[]).map((r) => (
+                  <option key={r} value={r}>
+                    {t(REASON_COPY[r])}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              Note (optional)
+              {t("Note (optional)")}
               <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
             </label>
             <label>
-              Refund by
+              {t("Refund by")}
               <select value={method} onChange={(e) => setMethod(e.target.value as TenderKind)}>
-                {REFUND_METHODS.map((m) => (
-                  <option key={m.kind} value={m.kind}>
-                    {m.label}
+                {(Object.entries(REFUND_COPY) as [TenderKind, string][]).map(([kind, label]) => (
+                  <option key={kind} value={kind}>
+                    {t(label)}
                   </option>
                 ))}
               </select>
             </label>
             {method !== "cash" && (
               <label>
-                Reference (optional)
+                {t("Reference (optional)")}
                 <input
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  placeholder="Terminal approval code — never the card number"
+                  placeholder={t("Terminal approval code — never the card number")}
                   autoComplete="off"
                 />
               </label>
@@ -393,19 +410,21 @@ export function ReturnScreen({
           </div>
 
           {plan && (
-            <dl className="totals" aria-label="Refund">
-              <dt>Tax refunded (included)</dt>
+            <dl className="totals" aria-label={t("Refund")}>
+              <dt>{t("Tax refunded (included)")}</dt>
               <dd>{money(plan.taxMinor)}</dd>
             </dl>
           )}
           <div className="total-due" aria-live="polite">
-            <span className="total-label">Refund {workspace.currencyCode}</span>
+            <span className="total-label">{t("Refund {currency}", { currency: workspace.currencyCode })}</span>
             <output className="total-amount" data-testid="refund-total">
               {plan ? money(plan.totalMinor) : money("0")}
             </output>
           </div>
           {method !== "cash" && plan && (
-            <p className="small">Refund {money(plan.totalMinor)} on the separate terminal first, then confirm here.</p>
+            <p className="small">
+              {t("Refund {amount} on the separate terminal first, then confirm here.", { amount: money(plan.totalMinor) })}
+            </p>
           )}
           {errorText && (
             <p role="alert" className="field-error">
@@ -414,16 +433,16 @@ export function ReturnScreen({
           )}
           <div className="actions">
             <button type="button" className="secondary" onClick={reset}>
-              Different sale
+              {t("Different sale")}
             </button>
             {onExchange && (
               <button type="button" className="secondary" disabled={!plan || busy} onClick={exchange}>
                 <ArrowRightLeft />
-                Exchange for other items
+                {t("Exchange for other items")}
               </button>
             )}
             <button type="submit" className="pay" disabled={!plan || busy}>
-              {plan ? `Refund ${money(plan.totalMinor)}` : "Refund"}
+              {plan ? t("Refund {amount}", { amount: money(plan.totalMinor) }) : t("Refund")}
             </button>
           </div>
         </form>

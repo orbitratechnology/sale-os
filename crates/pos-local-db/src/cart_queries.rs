@@ -103,7 +103,10 @@ impl CartQueries for SqliteStore {
         let rates: Vec<(String, String, i64, Option<String>, Option<String>)> = sqlx::query_as(
             "SELECT r.tax_rate_id, r.name, r.rate_ppm, r.effective_from, r.effective_to
              FROM tax_category_rates c JOIN tax_rates r USING (tax_rate_id)
-             WHERE c.tax_category_id = ? AND r.status = 'active' ORDER BY r.rate_ppm DESC",
+             WHERE c.tax_category_id = ? AND r.status = 'active'
+               AND NOT EXISTS (SELECT 1 FROM business_settings
+                               WHERE key = 'tax.registered' AND trim(value_json) = 'false')
+             ORDER BY r.rate_ppm DESC",
         )
         .bind(&tax_category)
         .fetch_all(r)

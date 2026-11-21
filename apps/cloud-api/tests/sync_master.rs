@@ -266,8 +266,8 @@ async fn the_end_of_day_master_data_lands_on_the_rows_the_link_created() {
     );
     assert_eq!(
         q("SELECT count(*) FROM business_settings WHERE business_id = $1").await,
-        17,
-        "every registered setting (17 since the device branch's drawer.open_on_cash_sale)"
+        18,
+        "every registered setting (18 since tax.registered, D-02)"
     );
     assert_eq!(
         q("SELECT count(*) FROM staff_users WHERE business_id = $1").await,

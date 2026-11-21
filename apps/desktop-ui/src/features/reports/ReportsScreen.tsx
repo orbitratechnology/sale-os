@@ -25,14 +25,17 @@ import { formatMoney } from "../../lib/money";
 import { TENDER_LABEL } from "../sales/labels";
 import { describeError } from "../shell/errors";
 import { CloudReport, GROUPS } from "./CloudReport";
+import { useT, type T } from "../../i18n";
 
 type Tab = "sales" | "payments" | "top" | "stock";
-const TABS: { value: Tab; label: string }[] = [
-  { value: "sales", label: "Daily sales" },
-  { value: "payments", label: "Payments" },
-  { value: "top", label: "Top products" },
-  { value: "stock", label: "Stock" },
-];
+/** The report tabs, in order; English, translated at render with `t`. */
+const TAB_COPY: Record<Tab, string> = {
+  sales: "Daily sales",
+  payments: "Payments",
+  top: "Top products",
+  stock: "Stock",
+};
+const TABS = Object.keys(TAB_COPY) as Tab[];
 
 /** YYYY-MM-DD for a local date (this computer's calendar; the business day in practice). */
 function iso(d: Date): string {
@@ -40,7 +43,7 @@ function iso(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-function presets(): { label: string; from: string; to: string }[] {
+function presets(t: T): { label: string; from: string; to: string }[] {
   const today = new Date();
   const back = (days: number) => {
     const d = new Date(today);
@@ -48,10 +51,10 @@ function presets(): { label: string; from: string; to: string }[] {
     return iso(d);
   };
   return [
-    { label: "Today", from: iso(today), to: iso(today) },
-    { label: "Yesterday", from: back(1), to: back(1) },
-    { label: "Last 7 days", from: back(6), to: iso(today) },
-    { label: "This month", from: `${iso(today).slice(0, 8)}01`, to: iso(today) },
+    { label: t("Today"), from: iso(today), to: iso(today) },
+    { label: t("Yesterday"), from: back(1), to: back(1) },
+    { label: t("Last 7 days"), from: back(6), to: iso(today) },
+    { label: t("This month"), from: `${iso(today).slice(0, 8)}01`, to: iso(today) },
   ];
 }
 
@@ -62,8 +65,9 @@ function presets(): { label: string; from: string; to: string }[] {
  * they are, or stale from the last fetch while the cloud is out of reach.
  */
 export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Workspace; onBack: () => void; onAudit: (() => void) | null }) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>("sales");
-  const [range, setRange] = useState(() => presets()[0] ?? { from: iso(new Date()), to: iso(new Date()) });
+  const [range, setRange] = useState(() => presets(t)[0] ?? { from: iso(new Date()), to: iso(new Date()) });
   const [topBy, setTopBy] = useState<"quantity" | "value">("value");
   const [lowOnly, setLowOnly] = useState(false);
   const [sales, setSales] = useState<SalesSummaryDto | null>(null);
@@ -149,6 +153,10 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
   }
   const tabDataset: Record<Tab, ExportDatasetDto> = { sales: "sales_summary", payments: "tender_mix", top: "top_products", stock: "stock" };
 
+  const [savedBefore, savedAfter = ""] = saved
+    ? (saved.rows === 1 ? t("Saved 1 row to {path}") : t("Saved {n} rows to {path}", { n: saved.rows })).split("{path}")
+    : [];
+
   const scope = (tab === "sales" ? sales?.scope : tab === "payments" ? mix?.scope : tab === "top" ? top?.scope : stock?.scope) ?? null;
 
   return (
@@ -156,27 +164,27 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
       <header className="returns-header">
         <h1 className="page-title">
           <ChartColumn />
-          Reports
+          {t("Reports")}
         </h1>
         <span className="header-actions">
           {onAudit && (
             <button type="button" className="secondary" onClick={onAudit}>
               <ClipboardList />
-              Audit log
+              {t("Audit log")}
             </button>
           )}
           <button type="button" className="secondary" onClick={onBack}>
             <ArrowLeft />
-            Back to till <kbd>Esc</kbd>
+            {t("Back to till")} <kbd>Esc</kbd>
           </button>
         </span>
       </header>
       {linked && (
-        <div className="receipt-widths" role="group" aria-label="Scope">
+        <div className="receipt-widths" role="group" aria-label={t("Scope")}>
           {(
             [
-              ["device", "This register"],
-              ["cloud", "All registers (cloud)"],
+              ["device", t("This register")],
+              ["cloud", t("All registers (cloud)")],
             ] as const
           ).map(([v, label]) => (
             <button
@@ -196,7 +204,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
         </div>
       )}
       {where === "cloud" ? (
-        <div className="receipt-widths" role="group" aria-label="Group by">
+        <div className="receipt-widths" role="group" aria-label={t("Group by")}>
           {GROUPS.map((g) => (
             <button
               key={g.value}
@@ -208,17 +216,24 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
                 setGroupBy(g.value);
               }}
             >
-              {g.label}
+              {t(g.label)}
             </button>
           ))}
         </div>
       ) : (
-      <TabList label="Report" idBase="report" className="receipt-widths" tabs={TABS} selected={tab} onSelect={setTab} />
+      <TabList
+        label={t("Report")}
+        idBase="report"
+        className="receipt-widths"
+        tabs={TABS.map((value) => ({ value, label: t(TAB_COPY[value]) }))}
+        selected={tab}
+        onSelect={setTab}
+      />
       )}
       {(where === "cloud" || tab !== "stock") && (
-        <form className="card sales-filters" aria-label="Dates" onSubmit={(e) => e.preventDefault()}>
-          <div className="receipt-widths" role="group" aria-label="Period">
-            {presets().map((p) => (
+        <form className="card sales-filters" aria-label={t("Dates")} onSubmit={(e) => e.preventDefault()}>
+          <div className="receipt-widths" role="group" aria-label={t("Period")}>
+            {presets(t).map((p) => (
               <button
                 key={p.label}
                 type="button"
@@ -230,11 +245,11 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
             ))}
           </div>
           <label>
-            From
+            {t("From")}
             <input type="date" value={range.from} onChange={(e) => e.target.value && setRange((r) => ({ ...r, from: e.target.value }))} />
           </label>
           <label>
-            To
+            {t("To")}
             <input type="date" value={range.to} onChange={(e) => e.target.value && setRange((r) => ({ ...r, to: e.target.value }))} />
           </label>
         </form>
@@ -243,14 +258,16 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
       <div className="report-bar">
         <ScopeBadge scope={scope} />
         <button type="button" className="secondary" disabled={exporting} onClick={() => void exportCsv(tabDataset[tab])}>
-          Export this report (CSV)
+          {t("Export this report (CSV)")}
         </button>
       </div>
       )}
       <div aria-live="polite">
         {saved && (
           <p role="status" className="small" data-testid="export-saved">
-            Saved {saved.rows} {saved.rows === 1 ? "row" : "rows"} to <span className="mono">{saved.path}</span>
+            {savedBefore}
+            <span className="mono">{saved.path}</span>
+            {savedAfter}
           </p>
         )}
       </div>
@@ -261,19 +278,19 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
       )}
 
       {where === "cloud" ? (
-        <section className="card" aria-label="All registers">
-          {cloud ? <CloudReport r={cloud} /> : !error && <p aria-busy="true">Asking the cloud…</p>}
+        <section className="card" aria-label={t("All registers")}>
+          {cloud ? <CloudReport r={cloud} /> : !error && <p aria-busy="true">{t("Asking the cloud…")}</p>}
         </section>
       ) : (
       <>
-      <section className="card report-exports" aria-label="Data exports">
-        <span className="small">Export the records for these dates (CSV):</span>
+      <section className="card report-exports" aria-label={t("Data exports")}>
+        <span className="small">{t("Export the records for these dates (CSV):")}</span>
         {(
           [
-            ["transactions", "Sale lines"],
-            ["tenders", "Payments"],
-            ["returns", "Returns"],
-            ["products", "Products"],
+            ["transactions", t("Sale lines")],
+            ["tenders", t("Payments")],
+            ["returns", t("Returns")],
+            ["products", t("Products")],
           ] as const
         ).map(([d, label]) => (
           <button key={d} type="button" className="secondary" disabled={exporting} onClick={() => void exportCsv(d)}>
@@ -287,23 +304,23 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
         {tab === "top" && top && (
           <>
             <label>
-              Rank by{" "}
+              {t("Rank by")}{" "}
               <select value={topBy} onChange={(e) => setTopBy(e.target.value as "quantity" | "value")}>
-                <option value="value">Value</option>
-                <option value="quantity">Quantity</option>
+                <option value="value">{t("Value")}</option>
+                <option value="quantity">{t("Quantity")}</option>
               </select>
             </label>
-            <p className="small">Returns made in the period are taken off.</p>
-            <table className="sales-table" aria-label="Top products">
+            <p className="small">{t("Returns made in the period are taken off.")}</p>
+            <table className="sales-table" aria-label={t("Top products")}>
               <thead>
                 <tr>
                   <th scope="col">#</th>
-                  <th scope="col">Item</th>
+                  <th scope="col">{t("Item")}</th>
                   <th scope="col" className="num">
-                    Quantity
+                    {t("Quantity")}
                   </th>
                   <th scope="col" className="num">
-                    Value
+                    {t("Value")}
                   </th>
                 </tr>
               </thead>
@@ -323,7 +340,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           <span className="empty-icon">
             <ChartColumn />
           </span>
-          <p>No sales in this period.</p>
+          <p>{t("No sales in this period.")}</p>
         </div>
       )}
           </>
@@ -331,25 +348,25 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
         {tab === "stock" && stock && (
           <>
             <p className="drawer-needed" role="note">
-              Stock on hand is calculated from recorded movements; it is not a physical count.
+              {t("Stock on hand is calculated from recorded movements; it is not a physical count.")}
             </p>
             <label className="check">
-              <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> Low and negative only
+              <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> {t("Low and negative only")}
             </label>
-            <table className="sales-table" aria-label="Stock on hand">
+            <table className="sales-table" aria-label={t("Stock on hand")}>
               <thead>
                 <tr>
-                  <th scope="col">Item</th>
+                  <th scope="col">{t("Item")}</th>
                   <th scope="col" className="num">
-                    On hand
+                    {t("On hand")}
                   </th>
                   <th scope="col" className="num">
-                    Damaged
+                    {t("Damaged")}
                   </th>
                   <th scope="col" className="num">
-                    Low at
+                    {t("Low at")}
                   </th>
-                  <th scope="col">Status</th>
+                  <th scope="col">{t("Status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -363,7 +380,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
                     <td className="num">{r.damagedMilli === "0" ? "" : formatMilli(r.damagedMilli)}</td>
                     <td className="num">{r.lowStockThresholdMilli ? formatMilli(r.lowStockThresholdMilli) : ""}</td>
                     <td>
-                      <span className={`stock-status ${r.status}`}>{r.status === "ok" ? "OK" : r.status === "low" ? "Low" : "Negative"}</span>
+                      <span className={`stock-status ${r.status}`}>{r.status === "ok" ? t("OK") : r.status === "low" ? t("Low") : t("Negative")}</span>
                     </td>
                   </tr>
                 ))}
@@ -374,7 +391,7 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           <span className="empty-icon">
             <Inbox />
           </span>
-          <p>Nothing to show.</p>
+          <p>{t("Nothing to show.")}</p>
         </div>
       )}
           </>
@@ -387,50 +404,54 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
 }
 
 function ScopeBadge({ scope }: { scope: ReportScopeDto | null }) {
+  const t = useT();
   if (!scope) return null;
   const at = new Date(parseInt(scope.asOfMs, 10)); // a timestamp, not money
   const time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
   return (
     <p className="scope-badge" data-testid="scope-badge">
-      {scope.scope === "device" ? "This device only" : scope.scope} · as of {time}
+      {scope.scope === "device"
+        ? t("This device only · as of {time}", { time })
+        : t("{scope} · as of {time}", { scope: scope.scope, time })}
     </p>
   );
 }
 
 function SalesReport({ s, money }: { s: SalesSummaryDto; money: (m: string) => string }) {
-  const t = s.total;
+  const t = useT();
+  const tot = s.total;
   return (
     <>
-      <dl className="totals report-totals" aria-label="Totals for the period">
-        <Row label={`Gross sales${s.pricesIncludeTax ? " (incl. tax)" : " (excl. tax)"}`} value={money(t.grossMinor)} testId="gross" />
-        <Row label="Line discounts" value={neg(t.lineDiscountsMinor, money)} />
-        <Row label="Order discounts" value={neg(t.orderDiscountsMinor, money)} />
-        <Row label="Discounts" value={neg(t.discountsMinor, money)} testId="discounts" />
-        <Row label="Tax" value={money(t.taxMinor)} testId="tax" />
-        {t.roundingMinor !== "0" && <Row label="Cash rounding" value={money(t.roundingMinor)} />}
-        <Row label={`Sales (${t.salesCount})`} value={money(t.salesTotalMinor)} testId="sales-total" />
-        <Row label={`Refunds (${t.returnsCount} returns)`} value={neg(t.refundsMinor, money)} testId="refunds" />
-        <Row label="Net sales (incl. tax)" value={money(t.netInclTaxMinor)} testId="net-incl" strong />
-        <Row label="Net sales (excl. tax)" value={money(t.netExclTaxMinor)} testId="net-excl" strong />
+      <dl className="totals report-totals" aria-label={t("Totals for the period")}>
+        <Row label={s.pricesIncludeTax ? t("Gross sales (incl. tax)") : t("Gross sales (excl. tax)")} value={money(tot.grossMinor)} testId="gross" />
+        <Row label={t("Line discounts")} value={neg(tot.lineDiscountsMinor, money)} />
+        <Row label={t("Order discounts")} value={neg(tot.orderDiscountsMinor, money)} />
+        <Row label={t("Discounts")} value={neg(tot.discountsMinor, money)} testId="discounts" />
+        <Row label={t("Tax")} value={money(tot.taxMinor)} testId="tax" />
+        {tot.roundingMinor !== "0" && <Row label={t("Cash rounding")} value={money(tot.roundingMinor)} />}
+        <Row label={t("Sales ({n})", { n: tot.salesCount })} value={money(tot.salesTotalMinor)} testId="sales-total" />
+        <Row label={t("Refunds ({n} returns)", { n: tot.returnsCount })} value={neg(tot.refundsMinor, money)} testId="refunds" />
+        <Row label={t("Net sales (incl. tax)")} value={money(tot.netInclTaxMinor)} testId="net-incl" strong />
+        <Row label={t("Net sales (excl. tax)")} value={money(tot.netExclTaxMinor)} testId="net-excl" strong />
       </dl>
-      <table className="sales-table" aria-label="By day">
+      <table className="sales-table" aria-label={t("By day")}>
         <thead>
           <tr>
-            <th scope="col">Day</th>
+            <th scope="col">{t("Day")}</th>
             <th scope="col" className="num">
-              Sales
+              {t("Sales")}
             </th>
             <th scope="col" className="num">
-              Discounts
+              {t("Discounts")}
             </th>
             <th scope="col" className="num">
-              Tax
+              {t("Tax")}
             </th>
             <th scope="col" className="num">
-              Refunds
+              {t("Refunds")}
             </th>
             <th scope="col" className="num">
-              Net (incl. tax)
+              {t("Net (incl. tax)")}
             </th>
           </tr>
         </thead>
@@ -445,7 +466,7 @@ function SalesReport({ s, money }: { s: SalesSummaryDto; money: (m: string) => s
           <span className="empty-icon">
             <ChartColumn />
           </span>
-          <p>No sales in this period.</p>
+          <p>{t("No sales in this period.")}</p>
         </div>
       )}
     </>
@@ -468,29 +489,30 @@ function DayRow({ date, f, money }: { date: string; f: SalesFiguresDto; money: (
 }
 
 function PaymentsReport({ m, money }: { m: TenderMixDto; money: (x: string) => string }) {
+  const t = useT();
   return (
     <>
-      <table className="sales-table" aria-label="Payment mix">
+      <table className="sales-table" aria-label={t("Payment mix")}>
         <thead>
           <tr>
-            <th scope="col">Payment</th>
-            <th scope="col">Confirmed by</th>
+            <th scope="col">{t("Payment")}</th>
+            <th scope="col">{t("Confirmed by")}</th>
             <th scope="col" className="num">
-              Taken
+              {t("Taken")}
             </th>
             <th scope="col" className="num">
-              Refunded
+              {t("Refunded")}
             </th>
             <th scope="col" className="num">
-              Net
+              {t("Net")}
             </th>
           </tr>
         </thead>
         <tbody>
           {m.rows.map((r) => (
             <tr key={`${r.kind}-${r.confirmationSource}`} data-testid="mix-row">
-              <th scope="row">{TENDER_LABEL[r.kind]}</th>
-              <td>{r.confirmationSource === "provider" ? "Payment provider" : "Recorded by staff"}</td>
+              <th scope="row">{t(TENDER_LABEL[r.kind])}</th>
+              <td>{r.confirmationSource === "provider" ? t("Payment provider") : t("Recorded by staff")}</td>
               <td className="num">
                 {money(r.takenMinor)} ({r.count})
               </td>
@@ -505,10 +527,10 @@ function PaymentsReport({ m, money }: { m: TenderMixDto; money: (x: string) => s
           <span className="empty-icon">
             <Wallet />
           </span>
-          <p>No payments in this period.</p>
+          <p>{t("No payments in this period.")}</p>
         </div>
       )}
-      <p className="small">Cash is what was kept: handed over less change.</p>
+      <p className="small">{t("Cash is what was kept: handed over less change.")}</p>
     </>
   );
 }

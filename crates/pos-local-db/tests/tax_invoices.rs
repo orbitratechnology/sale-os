@@ -248,3 +248,61 @@ async fn refused_without_vat_tins_or_an_address_and_nothing_is_written() {
         .await
         .unwrap();
 }
+
+/// Sets `tax.registered` as the settings screen would leave it.
+async fn set_registered(shop: &common::Shop, on: bool) {
+    sqlx::query("UPDATE business_settings SET value_json = ? WHERE key = 'tax.registered'")
+        .bind(if on { "true" } else { "false" })
+        .execute(shop.store.db().writer())
+        .await
+        .unwrap();
+}
+
+async fn tax_total(shop: &common::Shop, sale: SaleId) -> i64 {
+    sqlx::query_scalar("SELECT tax_total_minor FROM sales WHERE sale_id = ?")
+        .bind(sale.to_string())
+        .fetch_one(shop.store.db().readers())
+        .await
+        .unwrap()
+}
+
+async fn receipt(shop: &common::Shop, sale: SaleId) -> pos_receipts::ReceiptDocument {
+    use pos_application::queries::ReceiptQueries;
+    let (_, json) = shop.store.sale_receipt(sale).await.unwrap().unwrap();
+    serde_json::from_str(&json).unwrap()
+}
+
+/// D-02: a shop under the VAT threshold sells with no VAT, whatever its rates, and its
+/// receipts carry no tax lines and no tax number; it issues no tax invoices. Turning it back
+/// on charges VAT again with the rates kept.
+#[tokio::test]
+async fn a_business_not_registered_for_vat_charges_none_and_issues_no_invoices() {
+    let shop = shop().await;
+    let registered: String =
+        sqlx::query_scalar("SELECT value_json FROM business_settings WHERE key = 'tax.registered'")
+            .fetch_one(shop.store.db().readers())
+            .await
+            .unwrap();
+    assert_eq!(registered, "true", "set up with a rate: registered");
+    let with_vat = sell(&shop, &["TEA"]).await;
+    assert!(tax_total(&shop, with_vat).await > 0);
+
+    set_registered(&shop, false).await;
+    let without = sell(&shop, &["TEA"]).await;
+    assert_eq!(tax_total(&shop, without).await, 0);
+    let doc = receipt(&shop, without).await;
+    assert!(doc.totals.tax.is_empty(), "no tax lines: {:?}", doc.totals.tax);
+    assert_eq!(doc.header.tax_registration_no, None);
+    assert_eq!(doc.totals.total, Money::from_minor(250), "the shelf price is what is paid");
+    let e = service(&shop.store)
+        .issue(&shop.owner, with_vat, buyer())
+        .await
+        .unwrap_err();
+    assert!(e.to_string().contains("not registered for VAT"), "{e}");
+
+    set_registered(&shop, true).await;
+    let again = sell(&shop, &["TEA"]).await;
+    assert!(tax_total(&shop, again).await > 0);
+    assert_eq!(receipt(&shop, again).await.header.tax_registration_no.as_deref(), Some("104567890"));
+    service(&shop.store).issue(&shop.owner, again, buyer()).await.unwrap();
+}

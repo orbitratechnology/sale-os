@@ -5,8 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { BackupCheckDto, BackupDto, BackupStatusDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
-const KIND: Record<string, string> = {
+/** Why each backup was made, translated at render. */
+const KIND_COPY: Record<string, string> = {
   hourly: "Hourly",
   daily: "Daily",
   shutdown: "When the app closed",
@@ -31,6 +33,7 @@ function size(kb: number): string {
  * the data as CSV in a ZIP (E19-T04).
  */
 export function BackupsPanel() {
+  const t = useT();
   const [status, setStatus] = useState<BackupStatusDto | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -63,7 +66,11 @@ export function BackupsPanel() {
   async function backUpNow() {
     const made = await run(() => commands.backupNow());
     if (made) {
-      setDone(`Backed up: ${made.sales} ${made.sales === 1 ? "sale" : "sales"}, ${size(made.sizeKb)}.`);
+      setDone(
+        made.sales === 1
+          ? t("Backed up: {n} sale, {size}.", { n: made.sales, size: size(made.sizeKb) })
+          : t("Backed up: {n} sales, {size}.", { n: made.sales, size: size(made.sizeKb) }),
+      );
       load();
     }
   }
@@ -88,7 +95,7 @@ export function BackupsPanel() {
 
   async function exportAll() {
     const res = await run(() => commands.dataExportFull());
-    if (res) setDone(`Exported ${res.rows} rows from ${res.tables} tables to ${res.path}.`);
+    if (res) setDone(t("Exported {rows} rows from {tables} tables to {path}.", { rows: res.rows, tables: res.tables, path: res.path }));
   }
 
   async function folder(clear: boolean) {
@@ -102,18 +109,30 @@ export function BackupsPanel() {
     setError(null);
     const res = await commands.backupRestore(restoring.id, confirmed);
     setBusy(false);
-    if (res.status === "ok") setDone("Restored. Sale OS is restarting…");
+    if (res.status === "ok") setDone(t("Restored. Sale OS is restarting…"));
     else setError(res.error);
     setRestoring(null);
     setConfirmed(false);
   }
 
-  if (!status) return error ? <p role="alert">{describeError(error)}</p> : <p aria-busy="true">Loading…</p>;
+  if (!status) return error ? <p role="alert">{describeError(error)}</p> : <p aria-busy="true">{t("Loading…")}</p>;
+  // Sentences with an element inside are translated whole and split where the element goes.
+  const [encryptedBefore, encryptedAfter = ""] = t(
+    "This till's data and its backups are encrypted. They open only on this computer, or with the {key}.",
+  ).split("{key}");
+  const [copiesBefore, copiesAfter = ""] = t("Copies also go to {folder}.").split("{folder}");
+  const restoreSales = restoring?.sales ?? 0;
+  const [restoreBefore, restoreAfter = ""] = (
+    restoreSales === 1
+      ? t("Restore the backup made {when} ({n} sale)? The till goes back to that moment and Sale OS restarts. What it holds now is kept as a backup, so this can be undone.", { n: restoreSales })
+      : t("Restore the backup made {when} ({n} sales)? The till goes back to that moment and Sale OS restarts. What it holds now is kept as a backup, so this can be undone.", { n: restoreSales })
+  ).split("{when}");
   return (
     <div className="panel-sections">
       <p>
-        Sale OS backs up this till by itself: once a day, every hour something changed, and when it closes. Copies go to a
-        second folder too if you choose one, such as a USB stick.
+        {t(
+          "Sale OS backs up this till by itself: once a day, every hour something changed, and when it closes. Copies go to a second folder too if you choose one, such as a USB stick.",
+        )}
       </p>
       {done && <p role="status">{done}</p>}
       {error && (
@@ -124,21 +143,23 @@ export function BackupsPanel() {
       <p className="button-row">
         <button type="button" disabled={busy} onClick={() => void backUpNow()}>
           <RefreshCw />
-          Back up now
+          {t("Back up now")}
         </button>
       </p>
-      <section aria-label="Encryption">
-        <SectionTitle icon={KeyRound}>Encryption</SectionTitle>
+      <section aria-label={t("Encryption")}>
+        <SectionTitle icon={KeyRound}>{t("Encryption")}</SectionTitle>
         {status.encrypted ? (
           <>
             <p>
-              This till's data and its backups are encrypted. They open only on this computer, or with the{" "}
-              <strong>recovery key</strong>.
+              {encryptedBefore}
+              <strong>{t("recovery key")}</strong>
+              {encryptedAfter}
             </p>
             {!status.recoveryKeyConfirmed && (
               <p role="alert">
-                Write the recovery key down and keep it somewhere safe, away from this computer. Without it, the backups
-                cannot be opened if this computer fails.
+                {t(
+                  "Write the recovery key down and keep it somewhere safe, away from this computer. Without it, the backups cannot be opened if this computer fails.",
+                )}
               </p>
             )}
             {recovery ? (
@@ -146,75 +167,83 @@ export function BackupsPanel() {
                 <p className="mono" data-testid="recovery-key">
                   {recovery}
                 </p>
-                <p className="small">Anyone with this key and a backup can read the shop's data. Do not photograph it or email it.</p>
+                <p className="small">{t("Anyone with this key and a backup can read the shop's data. Do not photograph it or email it.")}</p>
                 <p className="button-row">
                   <button type="button" disabled={busy} onClick={() => void confirmRecoveryKey()}>
-                    I have written it down
+                    {t("I have written it down")}
                   </button>
                   <button type="button" className="secondary" onClick={() => setRecovery(null)}>
-                    Hide
+                    {t("Hide")}
                   </button>
                 </p>
               </div>
             ) : (
               <button type="button" className="secondary" disabled={busy} onClick={() => void showRecoveryKey()}>
-                Show recovery key
+                {t("Show recovery key")}
               </button>
             )}
           </>
         ) : (
           <p role="alert">
-            This till's data is not encrypted{status.encryptionProblem ? `: ${status.encryptionProblem}` : "."} Use
-            BitLocker on this computer and on backup sticks.
+            {status.encryptionProblem
+              ? t("This till's data is not encrypted: {why}", { why: status.encryptionProblem })
+              : t("This till's data is not encrypted.")}{" "}
+            {t("Use BitLocker on this computer and on backup sticks.")}
           </p>
         )}
       </section>
-      <section aria-label="Second folder">
-        <SectionTitle icon={HardDrive}>Second folder</SectionTitle>
+      <section aria-label={t("Second folder")}>
+        <SectionTitle icon={HardDrive}>{t("Second folder")}</SectionTitle>
         {status.secondFolder ? (
           <>
             <p>
-              Copies also go to <span className="mono">{status.secondFolder}</span>.
+              {copiesBefore}
+              <span className="mono">{status.secondFolder}</span>
+              {copiesAfter}
             </p>
             <p className="button-row">
               <button type="button" className="secondary" disabled={busy} onClick={() => void folder(false)}>
-                Change…
+                {t("Change…")}
               </button>
               <button type="button" className="secondary" disabled={busy} onClick={() => void folder(true)}>
-                Stop copying
+                {t("Stop copying")}
               </button>
             </p>
           </>
         ) : (
           <>
-            <p>No second folder: if this computer's disk fails, the backups go with it. A USB stick or a network folder keeps a safe copy.</p>
+            <p>
+              {t(
+                "No second folder: if this computer's disk fails, the backups go with it. A USB stick or a network folder keeps a safe copy.",
+              )}
+            </p>
             <p className="button-row">
               <button type="button" className="secondary" disabled={busy} onClick={() => void folder(false)}>
-                Choose a folder…
+                {t("Choose a folder…")}
               </button>
             </p>
           </>
         )}
         {status.secondFolderProblem && (
-          <p role="alert">The last copy to the second folder failed: {status.secondFolderProblem}</p>
+          <p role="alert">{t("The last copy to the second folder failed: {why}", { why: status.secondFolderProblem })}</p>
         )}
       </section>
-      <section aria-label="Saved backups">
-      <SectionTitle icon={History}>Saved backups</SectionTitle>
-      <table className="sales-table" aria-label="Backups">
+      <section aria-label={t("Saved backups")}>
+      <SectionTitle icon={History}>{t("Saved backups")}</SectionTitle>
+      <table className="sales-table" aria-label={t("Backups")}>
         <thead>
           <tr>
-            <th scope="col">Made</th>
-            <th scope="col">Why</th>
+            <th scope="col">{t("Made")}</th>
+            <th scope="col">{t("Why")}</th>
             <th scope="col" className="num">
-              Sales
+              {t("Sales")}
             </th>
             <th scope="col" className="num">
-              Size
+              {t("Size")}
             </th>
-            <th scope="col">Check</th>
+            <th scope="col">{t("Check")}</th>
             <th scope="col" className="row-actions">
-              <span className="visually-hidden">Restore</span>
+              <span className="visually-hidden">{t("Restore")}</span>
             </th>
           </tr>
         </thead>
@@ -225,21 +254,21 @@ export function BackupsPanel() {
               <tr key={b.id} data-testid="backup-row">
                 <th scope="row">
                   {when(b.createdAt)}
-                  {b.secondFolderOnly && <span className="small"> · second folder only</span>}
+                  {b.secondFolderOnly && <span className="small"> · {t("second folder only")}</span>}
                 </th>
-                <td>{KIND[b.kind] ?? b.kind}</td>
+                <td>{t(KIND_COPY[b.kind] ?? b.kind)}</td>
                 <td className="num">{b.sales}</td>
                 <td className="num">{size(b.sizeKb)}</td>
                 <td>
                   {c ? (
                     c.restorable ? (
-                      "Whole"
+                      t("Whole")
                     ) : (
-                      <span role="alert">{c.tooNew ? "From a newer version" : "Damaged"}</span>
+                      <span role="alert">{c.tooNew ? t("From a newer version") : t("Damaged")}</span>
                     )
                   ) : (
                     <button type="button" className="secondary" disabled={busy} onClick={() => void check(b)}>
-                      Check
+                      {t("Check")}
                     </button>
                   )}
                 </td>
@@ -253,7 +282,7 @@ export function BackupsPanel() {
                       setRestoring(b);
                     }}
                   >
-                    Restore…
+                    {t("Restore…")}
                   </button>
                 </td>
               </tr>
@@ -266,53 +295,58 @@ export function BackupsPanel() {
           <span className="empty-icon">
             <Database />
           </span>
-          <p>No backups yet. The first is made a minute after start-up.</p>
+          <p>{t("No backups yet. The first is made a minute after start-up.")}</p>
         </div>
       )}
       </section>
-      <section aria-label="Export all data">
-        <SectionTitle icon={Download}>Export all data</SectionTitle>
+      <section aria-label={t("Export all data")}>
+        <SectionTitle icon={Download}>{t("Export all data")}</SectionTitle>
         <p>
-          Everything this till holds — sales, returns, stock, products, staff, settings and the audit log — as spreadsheet
-          files (CSV) in one ZIP, for your records or another system. PINs are not included.
+          {t(
+            "Everything this till holds — sales, returns, stock, products, staff, settings and the audit log — as spreadsheet files (CSV) in one ZIP, for your records or another system. PINs are not included.",
+          )}
         </p>
         <p className="button-row">
           <button type="button" className="secondary" disabled={busy} onClick={() => void exportAll()}>
             <Download />
-            Export all data…
+            {t("Export all data…")}
           </button>
         </p>
       </section>
       {status.linked && (
         <p className="small">
-          This till is linked to the cloud: after a restore, its sales since the backup come back from the cloud. Restore
-          only while it is online.
+          {t(
+            "This till is linked to the cloud: after a restore, its sales since the backup come back from the cloud. Restore only while it is online.",
+          )}
         </p>
       )}
       {restoring && (
         <Dialog
-          title="Restore a backup"
+          title={t("Restore a backup")}
           alert
           safeFocus
-          confirmLabel="Restore and restart"
+          confirmLabel={t("Restore and restart")}
           confirmDisabled={busy || (!confirmed && !status.linked)}
           onConfirm={() => void restore()}
           onCancel={() => setRestoring(null)}
         >
           <p>
-            Restore the backup made <strong>{when(restoring.createdAt)}</strong> ({restoring.sales}{" "}
-            {restoring.sales === 1 ? "sale" : "sales"})? The till goes back to that moment and Sale OS restarts. What it holds
-            now is kept as a backup, so this can be undone.
+            {restoreBefore}
+            <strong>{when(restoring.createdAt)}</strong>
+            {restoreAfter}
           </p>
           {status.linked ? (
             <p>
-              Sales, returns and stock changes made on this till since then come back from the cloud after the restart.
-              Until they have, sales cannot be completed.
+              {t(
+                "Sales, returns and stock changes made on this till since then come back from the cloud after the restart. Until they have, sales cannot be completed.",
+              )}
             </p>
           ) : (
             <label className="check">
-              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> I understand
-              that sales, returns and stock changes made on this till after {when(restoring.createdAt)} will be lost.
+              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />{" "}
+              {t("I understand that sales, returns and stock changes made on this till after {when} will be lost.", {
+                when: when(restoring.createdAt),
+              })}
             </label>
           )}
         </Dialog>

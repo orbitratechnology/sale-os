@@ -53,3 +53,9 @@ outbox event, and is refused with `CONFLICT_VERSION` if someone changed it meanw
 | `scanner.suffix` | one of "Enter", "Tab", "none" | `"Enter"` | **Key the scanner sends after a code.** Match the scanner's setting. "none" ends a code by the pause after it. |
 | `scanner.max_key_gap_ms` | whole number 10–100 | `35` | **Fastest typing that counts as a scan (ms between keys).** Raise it for slow wireless scanners; people type far slower than any scanner. |
 | `scanner.error_sound` | true / false | `true` | **Beep when a code is not found or an action is refused.** A short low tone. The message is always shown on screen too. |
+
+## Taxes
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `tax.registered` | true / false | `true` | **Registered for VAT.** Off: sales carry no tax and receipts show no tax and no tax number, whatever the rates below; no tax invoices. The rates are kept for when you register. Setup turns it off when no rates are entered. |

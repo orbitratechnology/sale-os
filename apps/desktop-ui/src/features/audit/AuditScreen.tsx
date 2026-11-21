@@ -6,27 +6,32 @@ import { commands, type IpcError, type SignInUser, type Workspace } from "../../
 import type { AuditFilterDto, AuditRowDto } from "../../ipc/bindings";
 import { RecordView, recordOf, type RecordRef } from "../records/RecordView";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
-const GROUPS: { value: string; label: string }[] = [
-  { value: "", label: "Everything" },
-  { value: "auth.", label: "Sign-in and approvals" },
-  { value: "staff.", label: "Staff" },
-  { value: "sale.", label: "Sales" },
-  { value: "tender.", label: "External payments" },
-  { value: "cart.", label: "Discounts, price changes, voids" },
-  { value: "return.", label: "Returns" },
-  { value: "refund.", label: "Refunds" },
-  { value: "inventory.", label: "Stock" },
-  { value: "cash_session.", label: "Cash drawer" },
-  { value: "receipt.", label: "Reprints" },
-  { value: "print.", label: "Printing" },
-  { value: "catalog.", label: "Products" },
-  { value: "report.", label: "Exports" },
-  { value: "mode.", label: "Practice / live" },
-];
+/** The "What" filter: an action prefix and its name, in this order (English: shown through `t(…)`). */
+const GROUP_COPY: Record<string, string> = {
+  "": "Everything",
+  "auth.": "Sign-in and approvals",
+  "staff.": "Staff",
+  "sale.": "Sales",
+  "tender.": "External payments",
+  "cart.": "Discounts, price changes, voids",
+  "return.": "Returns",
+  "refund.": "Refunds",
+  "inventory.": "Stock",
+  "cash_session.": "Cash drawer",
+  "receipt.": "Reprints",
+  "print.": "Printing",
+  "catalog.": "Products",
+  "report.": "Exports",
+  "mode.": "Practice / live",
+};
 
-/** Plain words for the catalogued actions (07-contracts §5); unknown ones show as stored. */
-const ACTION: Record<string, string> = {
+/**
+ * Plain words for the catalogued actions (07-contracts §5), shown through `t(…)`; unknown
+ * ones show as stored.
+ */
+const ACTION_COPY: Record<string, string> = {
   "auth.login": "Signed in",
   "auth.login_failed": "Wrong PIN",
   "auth.locked_out": "Locked out after wrong PINs",
@@ -93,6 +98,7 @@ export function AuditScreen({
   onOpenProduct: (productId: string) => void;
   onReturn: (receipt: string) => void;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState<AuditFilterDto>({ action: null, userId: null, from: null, to: null });
   const [rows, setRows] = useState<AuditRowDto[]>([]);
   const [next, setNext] = useState<string | null>(null);
@@ -139,7 +145,7 @@ export function AuditScreen({
       setFocusEntry(record.from);
       setRecord(null);
     };
-    return <RecordView record={record.ref} workspace={workspace} backLabel="Back to the audit log" onBack={back} onReturn={onReturn} />;
+    return <RecordView record={record.ref} workspace={workspace} backLabel={t("Back to the audit log")} onBack={back} onReturn={onReturn} />;
   }
 
   const more = () => {
@@ -157,27 +163,27 @@ export function AuditScreen({
       <header className="returns-header">
         <h1 className="page-title">
           <ShieldCheck />
-          Audit log
+          {t("Audit log")}
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
-          Back <kbd>Esc</kbd>
+          {t("Back")} <kbd>Esc</kbd>
         </button>
       </header>
-      <form className="card sales-filters" role="search" aria-label="Filter the audit log" onSubmit={(e) => e.preventDefault()}>
+      <form className="card sales-filters" role="search" aria-label={t("Filter the audit log")} onSubmit={(e) => e.preventDefault()}>
         <label>
-          What
+          {t("What")}
           <select value={filter.action ?? ""} onChange={(e) => set({ action: e.target.value || null })}>
-            {GROUPS.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
+            {Object.entries(GROUP_COPY).map(([value, label]) => (
+              <option key={value} value={value}>
+                {t(label)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Who
+          {t("Who")}
           <select value={filter.userId ?? ""} onChange={(e) => set({ userId: e.target.value || null })}>
-            <option value="">Anyone</option>
+            <option value="">{t("Anyone")}</option>
             {users.map((u) => (
               <option key={u.userId} value={u.userId}>
                 {u.displayName}
@@ -186,11 +192,11 @@ export function AuditScreen({
           </select>
         </label>
         <label>
-          From
+          {t("From")}
           <input type="date" value={filter.from ?? ""} onChange={(e) => set({ from: e.target.value || null })} />
         </label>
         <label>
-          To
+          {t("To")}
           <input type="date" value={filter.to ?? ""} onChange={(e) => set({ to: e.target.value || null })} />
         </label>
       </form>
@@ -199,15 +205,15 @@ export function AuditScreen({
           {describeError(error)}
         </p>
       )}
-      <section className="card" aria-label="Audit entries">
+      <section className="card" aria-label={t("Audit entries")}>
         <table className="sales-table">
           <thead>
             <tr>
-              <th scope="col">When</th>
-              <th scope="col">What</th>
-              <th scope="col">Who</th>
-              <th scope="col">On</th>
-              <th scope="col">Details</th>
+              <th scope="col">{t("When")}</th>
+              <th scope="col">{t("What")}</th>
+              <th scope="col">{t("Who")}</th>
+              <th scope="col">{t("On")}</th>
+              <th scope="col">{t("Details")}</th>
             </tr>
           </thead>
           <tbody>
@@ -216,10 +222,10 @@ export function AuditScreen({
               return (
                 <tr key={r.auditId} data-testid="audit-row">
                   <td>{r.localTime}</td>
-                  <td>{ACTION[r.action] ?? r.action}</td>
+                  <td>{t(ACTION_COPY[r.action] ?? r.action)}</td>
                   <td>
-                    {r.actorName ?? "System"}
-                    {r.approverName && <span className="small"> · approved by {r.approverName}</span>}
+                    {r.actorName ?? t("System")}
+                    {r.approverName && <span className="small"> · {t("approved by {name}", { name: r.approverName })}</span>}
                   </td>
                   <td>
                     {ref ? (
@@ -228,7 +234,7 @@ export function AuditScreen({
                       </button>
                     ) : r.entityType === "product" ? (
                       <button type="button" className="link" onClick={() => onOpenProduct(r.entityId)}>
-                        {r.entityLabel ?? "product"}
+                        {r.entityLabel ?? t("product")}
                       </button>
                     ) : (
                       <span className="mono">{r.entityLabel ?? r.entityType}</span>
@@ -245,13 +251,13 @@ export function AuditScreen({
           <span className="empty-icon">
             <ShieldCheck />
           </span>
-          <p>Nothing recorded for these filters.</p>
+          <p>{t("Nothing recorded for these filters.")}</p>
         </div>
       )}
         {next && (
           <div className="actions">
             <button type="button" className="secondary" onClick={more}>
-              Show more
+              {t("Show more")}
             </button>
           </div>
         )}

@@ -193,6 +193,13 @@ pub const REGISTRY: &[SettingDef] = &[
         group: "Scanner",
         label: "Beep when a code is not found or an action is refused",
         help: "A short low tone. The message is always shown on screen too.",
+    },    SettingDef {
+        key: "tax.registered",
+        kind: SettingKind::Bool,
+        default: "true",
+        group: "Taxes",
+        label: "Registered for VAT",
+        help: "Off: sales carry no tax and receipts show no tax and no tax number, whatever the rates below; no tax invoices. The rates are kept for when you register. Setup turns it off when no rates are entered.",
     },
 ];
 

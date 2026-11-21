@@ -39,9 +39,15 @@ function readStored(): Language {
   }
 }
 
-/** `english` in `lang`, with `{name}` placeholders filled from `vars`. */
+/**
+ * `english` in `lang`, with `{name}` placeholders filled from `vars`.
+ *
+ * A key may start with a context, `"verb::Change"`, when the same English word needs two
+ * translations (the customer's change, a stock change, the verb). The context is never shown:
+ * without a translation the text after `::` is.
+ */
 export function translate(lang: Language, english: string, vars?: Record<string, string | number>): string {
-  const text = CATALOGS[lang][english] ?? english;
+  const text = CATALOGS[lang][english] ?? (english.includes("::") ? english.slice(english.indexOf("::") + 2) : english);
   if (!vars) return text;
   return text.replace(/\{(\w+)\}/g, (whole, name: string) => (name in vars ? String(vars[name]) : whole));
 }

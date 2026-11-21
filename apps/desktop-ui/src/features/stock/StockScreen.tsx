@@ -10,24 +10,29 @@ import { formatMilli, scaleDecimal } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { useScanCapture } from "../scan/useScanCapture";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 import { RecordView, type RecordRef } from "../records/RecordView";
 import { INITIAL_OVERVIEW, StockOverview, type OverviewState } from "./StockOverview";
 
-const KINDS: { value: DocumentType; label: string; post: string }[] = [
-  { value: "receipt", label: "Receive goods", post: "Post goods received" },
-  { value: "opening", label: "Opening stock", post: "Post opening stock" },
-  { value: "adjustment", label: "Adjust stock", post: "Post adjustment" },
-  { value: "write_off", label: "Write off damaged", post: "Post write-off" },
-];
+/** The radio choices, in order; English, translated at render with `t`. */
+const KIND_COPY: Record<DocumentType, { label: string; post: string }> = {
+  receipt: { label: "Receive goods", post: "Post goods received" },
+  opening: { label: "Opening stock", post: "Post opening stock" },
+  adjustment: { label: "Adjust stock", post: "Post adjustment" },
+  write_off: { label: "Write off damaged", post: "Post write-off" },
+};
+const KINDS = Object.keys(KIND_COPY) as DocumentType[];
 
-const REASONS: { value: AdjustReason; label: string; hint: string }[] = [
-  { value: "damage", label: "Damaged", hint: "Moves the quantity from sellable to damaged stock." },
-  { value: "loss", label: "Lost", hint: "Removes the quantity from sellable stock." },
-  { value: "theft", label: "Theft", hint: "Removes the quantity from sellable stock." },
-  { value: "expired", label: "Expired", hint: "Removes the quantity from sellable stock." },
-  { value: "count_correction", label: "Count correction", hint: "Use − to remove (counted fewer) or + to add." },
-  { value: "other", label: "Other (note required)", hint: "Use − to remove or + to add; say why in the note." },
-];
+/** The adjustment reasons, in order; English, translated at render with `t`. */
+const REASON_COPY: Record<AdjustReason, { label: string; hint: string }> = {
+  damage: { label: "Damaged", hint: "Moves the quantity from sellable to damaged stock." },
+  loss: { label: "Lost", hint: "Removes the quantity from sellable stock." },
+  theft: { label: "Theft", hint: "Removes the quantity from sellable stock." },
+  expired: { label: "Expired", hint: "Removes the quantity from sellable stock." },
+  count_correction: { label: "Count correction", hint: "Use − to remove (counted fewer) or + to add." },
+  other: { label: "Other (note required)", hint: "Use − to remove or + to add; say why in the note." },
+};
+const REASONS = Object.keys(REASON_COPY) as AdjustReason[];
 
 interface Line {
   variantId: string;
@@ -64,11 +69,12 @@ export function StockScreen({
   onReturn: (receiptNumber: string) => void;
 }) {
   // Managers and owners land on posting (receiving is the common job); cashiers only see stock.
+  const t = useT();
   const [view, setView] = useState<"post" | "onHand">(canPost ? "post" : "onHand");
   const [overview, setOverview] = useState<OverviewState>(INITIAL_OVERVIEW);
   const [record, setRecord] = useState<RecordRef | null>(null);
   if (record) {
-    return <RecordView record={record} workspace={workspace} backLabel="Back to stock" onBack={() => setRecord(null)} onReturn={onReturn} />;
+    return <RecordView record={record} workspace={workspace} backLabel={t("Back to stock")} onBack={() => setRecord(null)} onReturn={onReturn} />;
   }
   const overviewPanel = <StockOverview state={overview} onState={setOverview} onRecord={setRecord} />;
   if (view === "onHand" || !canPost) {
@@ -99,6 +105,7 @@ function StockHeader({
   onView: (v: "post" | "onHand") => void;
   onBack: () => void;
 }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
@@ -113,21 +120,21 @@ function StockHeader({
       <header className="returns-header">
         <h1 className="page-title">
           <Boxes />
-          Stock
+          {t("Stock")}
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to till <kbd>Esc</kbd>
+          {t("Back to till")} <kbd>Esc</kbd>
         </button>
       </header>
       {canPost && (
         <TabList
-          label="Stock"
+          label={t("Stock")}
           idBase="stock"
           className="receipt-widths"
           tabs={[
-            { value: "post", label: "Receive and adjust" },
-            { value: "onHand", label: "On hand" },
+            { value: "post", label: t("Receive and adjust") },
+            { value: "onHand", label: t("On hand") },
           ]}
           selected={view}
           onSelect={onView}
@@ -146,6 +153,7 @@ function PostDocument({
   onBack: () => void;
   onView: (v: "post" | "onHand") => void;
 }) {
+  const t = useT();
   const [kind, setKind] = useState<DocumentType>("receipt");
   const [reason, setReason] = useState<AdjustReason>("damage");
   const [lines, setLines] = useState<Line[]>([]);
@@ -159,7 +167,7 @@ function PostDocument({
   const codeInput = useRef<HTMLInputElement | null>(null);
   const costs = kind === "receipt" || kind === "opening";
   const signed = kind === "adjustment" && (reason === "count_correction" || reason === "other");
-  const postLabel = KINDS.find((k) => k.value === kind)?.post ?? "Post";
+  const postLabel = t(KIND_COPY[kind].post);
 
   // Ready for the first scan, unless the user arrived here by arrowing along the view tabs:
   // then focus stays on the tab, so the arrow keys keep working.
@@ -173,8 +181,8 @@ function PostDocument({
     const res = await commands.catalogLookupCode(text);
     if (res.status !== "ok") return setError(res.error);
     const hit = res.data;
-    if (!hit) return setError(`No item has the code ${text}.`);
-    if (!hit.trackStock) return setError(`${hit.name} does not track stock.`);
+    if (!hit) return setError(t("No item has the code {code}.", { code: text }));
+    if (!hit.trackStock) return setError(t("{name} does not track stock.", { name: hit.name }));
     setError(null);
     setPosted(null);
     const by = BigInt(hit.scanQtyMilli);
@@ -191,7 +199,7 @@ function PostDocument({
         return current === null ? l : { ...l, qty: formatMilli((BigInt(current) + by).toString()) };
       });
     });
-  }, []);
+  }, [t]);
 
   useScanCapture((scan) => {
     if (scan.inScanField) setCode("");
@@ -209,9 +217,9 @@ function PostDocument({
     const out = [];
     for (const l of lines) {
       const milli = signedMilli(l.qty, signed);
-      if (milli === null || milli === "0") return setError(`Check the quantity for ${l.name}.`);
+      if (milli === null || milli === "0") return setError(t("Check the quantity for {name}.", { name: l.name }));
       const cost = costs && l.cost.trim() ? scaleDecimal(l.cost, workspace.currencyExponent) : null;
-      if (costs && l.cost.trim() && cost === null) return setError(`Check the unit cost for ${l.name}.`);
+      if (costs && l.cost.trim() && cost === null) return setError(t("Check the unit cost for {name}.", { name: l.name }));
       out.push({ variantId: l.variantId, quantityMilli: milli, unitCostMinor: cost });
     }
     setBusy(true);
@@ -235,24 +243,25 @@ function PostDocument({
   }
 
   const errorText = error === null ? null : typeof error === "string" ? error : describeError(error);
+  const [postedBefore, postedAfter = ""] = t("Posted {number}. Stock is updated.").split("{number}");
 
   return (
     <main className="sales">
       <StockHeader canPost view="post" onView={onView} onBack={onBack} />
       <div className="stack" {...tabPanelProps("stock", "post")}>
-      <section className="card return-form" aria-label="Stock document">
+      <section className="card return-form" aria-label={t("Stock document")}>
         {/* Native radios: one Tab stop, arrow keys move between them, announced as a group. */}
         <fieldset className="segmented">
-          <legend className="visually-hidden">What are you doing?</legend>
+          <legend className="visually-hidden">{t("What are you doing?")}</legend>
           {KINDS.map((k) => (
-            <label key={k.value}>
+            <label key={k}>
               <input
                 type="radio"
                 name="stock-kind"
-                value={k.value}
-                checked={kind === k.value}
+                value={k}
+                checked={kind === k}
                 onChange={() => {
-                  setKind(k.value);
+                  setKind(k);
                   setPosted(null);
                   setError(null);
                 }}
@@ -262,48 +271,48 @@ function PostDocument({
                   if (e.detail > 0) codeInput.current?.focus();
                 }}
               />
-              {k.label}
+              {t(KIND_COPY[k].label)}
             </label>
           ))}
         </fieldset>
         {kind === "adjustment" && (
           <label>
-            Reason
+            {t("Reason")}
             <select value={reason} onChange={(e) => setReason(e.target.value as AdjustReason)}>
               {REASONS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
+                <option key={r} value={r}>
+                  {t(REASON_COPY[r].label)}
                 </option>
               ))}
             </select>
-            <span className="small">{REASONS.find((r) => r.value === reason)?.hint}</span>
+            <span className="small">{t(REASON_COPY[reason].hint)}</span>
           </label>
         )}
-        {kind === "write_off" && <p className="small">Takes the quantity out of damaged stock (it cannot be sold).</p>}
+        {kind === "write_off" && <p className="small">{t("Takes the quantity out of damaged stock (it cannot be sold).")}</p>}
 
         <form onSubmit={enterCode} className="stock-code">
           <label>
-            Scan or type a code
+            {t("Scan or type a code")}
             <input
               ref={codeInput}
               data-scan-field
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="Barcode or SKU, then Enter"
+              placeholder={t("Barcode or SKU, then Enter")}
               autoComplete="off"
               spellCheck={false}
             />
           </label>
         </form>
 
-        <table className="sales-table" aria-label="Lines">
+        <table className="sales-table" aria-label={t("Lines")}>
           <thead>
             <tr>
-              <th scope="col">Item</th>
-              <th scope="col">Quantity</th>
-              {costs && <th scope="col">Unit cost (optional)</th>}
+              <th scope="col">{t("Item")}</th>
+              <th scope="col">{t("Quantity")}</th>
+              {costs && <th scope="col">{t("Unit cost (optional)")}</th>}
               <th scope="col">
-                <span className="visually-hidden">Remove</span>
+                <span className="visually-hidden">{t("Remove")}</span>
               </th>
             </tr>
           </thead>
@@ -314,7 +323,7 @@ function PostDocument({
                 <td>
                   <input
                     className="qty-input"
-                    aria-label={`Quantity: ${l.name}`}
+                    aria-label={t("Quantity: {name}", { name: l.name })}
                     inputMode="decimal"
                     value={l.qty}
                     onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))}
@@ -324,7 +333,7 @@ function PostDocument({
                   <td>
                     <input
                       className="qty-input"
-                      aria-label={`Unit cost: ${l.name}`}
+                      aria-label={t("Unit cost: {name}", { name: l.name })}
                       inputMode="decimal"
                       value={l.cost}
                       placeholder={formatMoney("0", { exponent: workspace.currencyExponent })}
@@ -333,31 +342,31 @@ function PostDocument({
                   </td>
                 )}
                 <td>
-                  <button type="button" className="secondary" aria-label={`Remove ${l.name}`} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
-                    Remove
+                  <button type="button" className="secondary" aria-label={t("Remove {name}", { name: l.name })} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
+                    {t("Remove")}
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {lines.length === 0 && <p className="small">Scan an item to add it.</p>}
+        {lines.length === 0 && <p className="small">{t("Scan an item to add it.")}</p>}
 
         <div className="return-options">
           {costs && (
             <>
               <label>
-                Supplier (optional)
+                {t("Supplier (optional)")}
                 <input value={supplier} onChange={(e) => setSupplier(e.target.value)} maxLength={200} />
               </label>
               <label>
-                Reference (optional)
-                <input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={200} placeholder="Delivery note or invoice" />
+                {t("Reference (optional)")}
+                <input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={200} placeholder={t("Delivery note or invoice")} />
               </label>
             </>
           )}
           <label>
-            Note{kind === "adjustment" && reason === "other" ? "" : " (optional)"}
+            {kind === "adjustment" && reason === "other" ? t("Note") : t("Note (optional)")}
             <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
           </label>
         </div>
@@ -370,7 +379,9 @@ function PostDocument({
           )}
           {posted && (
             <p role="status" data-testid="posted">
-              Posted <strong className="mono">{posted.documentNo}</strong>. Stock is updated.
+              {postedBefore}
+              <strong className="mono">{posted.documentNo}</strong>
+              {postedAfter}
             </p>
           )}
         </div>
