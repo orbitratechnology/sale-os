@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-add-weighed"
+description = "Enables the cart_add_weighed command without any pre-configured scope."
+commands.allow = ["cart_add_weighed"]
+
+[[permission]]
+identifier = "deny-cart-add-weighed"
+description = "Denies the cart_add_weighed command without any pre-configured scope."
+commands.deny = ["cart_add_weighed"]

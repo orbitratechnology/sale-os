@@ -1,7 +1,8 @@
 /**
  * E20-T11 / E22-T02 / E21 in Chromium against the scripted backend: setting up a printer
  * (network, found by discovery), the status bar, "No sale", the drawer after a cash sale,
- * a USB HID-POS scanner (picked from the detected ones, its status), the customer display (set up, tested, total due at payment), and card payments on the sandbox terminal: approve, decline and an unknown outcome
+ * a USB HID-POS scanner (picked from the detected ones, its status), a scale (set up, tested, items sold by weight
+ * weighed at the till, refusals and the typed fallback, the Weigh key), the customer display (set up, tested, total due at payment), and card payments on the sandbox terminal: approve, decline and an unknown outcome
  * settled by the operator. Rust's behaviour behind each command is tested in Rust.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -94,6 +95,92 @@ describe("Settings → Devices (E20-T11)", () => {
     expect(await page.getByLabel("Connection").inputValue()).toBe("spooler");
     expect(await page.getByLabel("Printer", { exact: true }).inputValue()).toBe("EPSON TM-T20III Receipt");
     expect(await page.locator("option[value=TSP143IIIU]").evaluate((o) => (o as HTMLOptionElement).disabled)).toBe(true);
+    await page.close();
+  }, 60_000);
+});
+
+describe("scale (E20-T06)", () => {
+  it("sets up a serial scale, tests it, and the till weighs items sold by weight", async () => {
+    const page = await till();
+    await page.evaluate(() => {
+      window.__fake.products.push({ variantId: crypto.randomUUID(), productId: crypto.randomUUID(), name: "Bananas", sku: "BANANA", barcodes: {}, priceMinor: 299n, unit: "kg" });
+    });
+    // No scale yet: a scanned item sold by weight is added as one unit, as before.
+    await scan(page, "BANANA");
+    await expect.poll(() => page.evaluate(() => window.__fake.lines.map((l) => l.qtyMilli.toString()))).toEqual(["1000"]);
+    await page.evaluate(() => {
+      window.__fake.lines = [];
+      window.__fake.revision += 1;
+    });
+
+    await devicesPage(page);
+    const section = page.getByRole("region", { name: "Scale" });
+    expect(await section.getByRole("button", { name: "Save scale" }).isDisabled()).toBe(true);
+    await section.getByLabel("Port").fill("/dev/ttyUSB2");
+    await section.getByLabel("Data format").selectOption("7E1");
+    await section.getByLabel("Protocol").selectOption("toledo8217");
+    await section.getByRole("button", { name: "Save scale" }).click();
+    await page.getByText("Saved. Items sold by weight are weighed on this scale.").waitFor();
+    const input = (await calls(page, "device_save")).at(-1)?.input as { kind: string; configJson: string };
+    expect(input.kind).toBe("scale");
+    expect(JSON.parse(input.configJson)).toEqual({
+      serial: { port: "/dev/ttyUSB2", baud: 9600, dataBits: "seven", parity: "even" },
+      protocol: "toledo8217",
+      unit: "kg",
+    });
+    const saved = page.getByRole("region", { name: "Scale" });
+    await saved.getByRole("button", { name: "Test scale" }).click();
+    await page.getByText("The scale reads 1.234 kg (stable).").waitFor();
+    await saved.getByTestId("device-scale-status").filter({ hasText: "/dev/ttyUSB2 @ 9600, Toledo 8217 (kg) · Ready" }).waitFor();
+    // A reading still moving says so.
+    await page.evaluate(() => (window.__fake.scaleReadings = [{ outcome: "moving", grams: "1230" }, { outcome: "stable", grams: "1234" }]));
+    await saved.getByRole("button", { name: "Test scale" }).click();
+    await page.getByText("The scale reads 1.230 kg and is still moving.").waitFor();
+
+    // At the till: a scan of bananas is weighed under that scan.
+    await page.getByRole("button", { name: /Back to till/ }).click();
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await expect.poll(async () => (await calls(page, "scale_status")).length).toBeGreaterThan(1);
+    await scan(page, "BANANA");
+    await expect.poll(() => page.evaluate(() => window.__fake.lines.map((l) => l.qtyMilli.toString()))).toEqual(["1234"]);
+    const weighed = (await calls(page, "cart_add_weighed")).at(-1);
+    const scanned = (await calls(page, "scan_submit")).at(-1);
+    expect(weighed?.via).toBe("scanner");
+    expect(weighed?.scanEventId).toBe(scanned?.scanEventId);
+    await page.getByRole("region", { name: "Cart lines" }).getByText("1.234").waitFor();
+
+    // Still moving: refused with a clear message; the weight is typed instead.
+    await page.evaluate(() => (window.__fake.scaleReadings = [{ outcome: "moving", grams: "800" }]));
+    await page.keyboard.press("F2");
+    await page.keyboard.type("Banan");
+    await page.getByRole("listbox", { name: "Search results" }).waitFor();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "Weigh Bananas" });
+    await dialog.getByText("The weight did not settle. Hold the item still on the scale and weigh again.").waitFor();
+    expect(await page.evaluate(() => window.__fake.lines.length)).toBe(1);
+    // Nothing on it, then weighed again.
+    await page.evaluate(() => (window.__fake.scaleReadings = [{ outcome: "stable", grams: "0" }]));
+    await dialog.getByRole("button", { name: "Weigh again" }).click();
+    await dialog.getByText("Nothing is on the scale. Put the item on it and weigh again.").waitFor();
+    await dialog.getByRole("button", { name: "Type the weight" }).click();
+    await dialog.getByLabel("Weight in kg").fill("0.5");
+    await dialog.getByRole("button", { name: "Add" }).click();
+    await dialog.waitFor({ state: "detached" });
+    const typed = (await calls(page, "cart_add_weighed")).at(-1);
+    expect(typed).toEqual({ variantId: weighed?.variantId, via: "search", scanEventId: null, typedQtyMilli: "500" });
+    // A line of its own, selected.
+    await expect.poll(() => page.evaluate(() => window.__fake.lines.map((l) => l.qtyMilli.toString()))).toEqual(["1234", "500"]);
+
+    // The Weigh key on the selected line: weighed again.
+    await page.evaluate(() => (window.__fake.scaleReadings = [{ outcome: "stable", grams: "750" }]));
+    await page.keyboard.press("Shift+F3");
+    await expect
+      .poll(() => page.evaluate(() => window.__fake.lines.map((l) => l.qtyMilli.toString())))
+      .toEqual(["1234", "750"]);
+    expect((await calls(page, "cart_weigh_line")).length).toBe(1);
+    // Items sold by the piece are scanned as before.
+    await scan(page, COLA);
+    await expect.poll(() => page.evaluate(() => window.__fake.lines.length)).toBe(3);
     await page.close();
   }, 60_000);
 });

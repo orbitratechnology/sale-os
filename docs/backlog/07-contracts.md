@@ -52,7 +52,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | ReportsView, ReportsExport | ✓ | ✓ | – | |
 | AuditView, SettingsEdit, StaffManage, DeviceLink, SyncManage | ✓ | – | – | |
 | ConflictResolve | ✓ | ✓ | – | |
-| DeviceConfigure | ✓ | ✓ | – | This till's printers, scanners and terminals; test print (ADR-024) |
+| DeviceConfigure | ✓ | ✓ | – | This till's printers, scanners (serial, USB HID-POS), customer display, scale and terminals; test print, display and scale (ADR-024) |
 | DrawerOpen | ✓ | ✓ | approval | "No sale": opens the cash drawer with a reason, audited as `cash_drawer.opened` (E20-T05) |
 | DevtoolsUse | debug builds only | | | |
 
@@ -91,9 +91,10 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `import_products_commit` | CatalogImport | `{ jobId } → { productsCreated, productsUpdated, rowsCommitted }`; 500 products per transaction, each with one `catalog.import_committed` audit row; run again to resume | E06-T07 |
 | `import_products_error_report` | CatalogImport | `{ jobId } → { path, fileName } \| null`: the rows not imported with an `error` column, saved through the system dialog | E06-T07 |
 | `import_products_cancel` | CatalogImport | `{ jobId } → ()` before committing | E06-T07 |
-| `scan_submit` | SaleComplete | `{ scanEventId, raw, source, symbologyHint? } → ScanOutcome` (`Added{line} \| Incremented{line} \| NotFound{code} \| Duplicate \| Invalid{reason}`) | E07-T02 |
+| `scan_submit` | SaleComplete | `{ scanEventId, raw, source, symbologyHint? } → ScanOutcome` (`Added{line} \| Incremented{line} \| NotFound{code} \| Duplicate \| Invalid{reason} \| Weigh{variant}`; `Weigh`: an item sold by weight while a scale is set up, recorded but not added) | E07-T02, E20-T06 |
 | `cart_current` | session | `→ CartView` (cart and `PricedCart`) | E09-T01 |
 | `cart_add_variant` | SaleComplete | `{ variantId, qty?, via } → CartView` | E09-T01 |
+| `cart_add_weighed` / `cart_weigh_line` | SaleComplete | `{ variantId, via, scanEventId?, typedQtyMilli? }` / `{ lineId }` → `Weighed{cart, lineId, weightGrams} \| Refused{reason, message}`: a stable weight above zero from the scale (or a typed one) as a line of its own / the line's new quantity; `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`, `underload`, `failed` | E20-T06 |
 | `cart_set_quantity` / `cart_remove_line` | SaleComplete | `→ CartView` | E09-T01 |
 | `cart_set_line_discount` / `cart_set_order_discount` | CartLineDiscount / CartOrderDiscount (+ approval) | `{ …, discount (with `reason` above the limit), approvalTokenId? } → CartView` | E08-T02 |
 | `cart_override_price` | PriceOverride (+ approval) | `{ lineId, unitPriceMinor, reason, approvalTokenId? } → CartView` | E08-T02 |
@@ -347,7 +348,7 @@ sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded, tax_invoice.issued,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
-device.saved, device.removed, device.test_printed, device.test_displayed, cash_drawer.opened,
+device.saved, device.removed, device.test_printed, device.test_displayed, device.test_weighed, cash_drawer.opened,
 cash_session.opened, cash_session.closed,
 report.exported, data.exported, backup.created, backup.restored, backup.event_restored, security.recovery_key_viewed,
 sync.linked, sync.device_revoked, sync.conflict_resolved, sync.event_rejected

@@ -1,5 +1,5 @@
-//! Devices attached to this till (E20-T05, E20-T11, ADR-024): the receipt printer and its
-//! cash drawer, serial scanners, the customer display and payment terminals.
+//! Devices attached to this till (E20-T05, E20-T11, E20-T06, ADR-024): the receipt printer
+//! and its cash drawer, scanners, the customer display, the scale and payment terminals.
 //!
 //! Configuration is **per till and local** (`devices`, never synced): an IP address or a
 //! COM port belongs to one machine. What a configuration *means* (which transport, which
@@ -17,10 +17,11 @@ use crate::context::{AppError, CommandContext};
 use crate::customer_display::CustomerDisplay;
 use crate::queries::QueryError;
 use crate::records::{DeviceKind, DeviceRecord};
+use crate::scale::Scale;
 use crate::{LocalStore, WriteSet};
 use pos_device_ports::{
     CashDrawerPort, CustomerDisplayPort, DeviceError, DeviceHealth, DrawerPin, PrintResult,
-    PrinterCapabilities, PrinterStatus, ReceiptOutputPort,
+    PrinterCapabilities, PrinterStatus, ReceiptOutputPort, ScalePort, ScaleReading,
 };
 use pos_domain::{DeviceId, ErrorCode, Permission, RegisterId};
 use serde_json::Value;
@@ -79,6 +80,10 @@ pub trait DeviceDriver: Send + Sync {
         Err(DeviceError::Unsupported(
             "customer displays are not supported".into(),
         ))
+    }
+    /// Builds a scale from a validated configuration, without reading it yet.
+    async fn open_scale(&self, _config: &Value) -> Result<Arc<dyn ScalePort>, DeviceError> {
+        Err(DeviceError::Unsupported("scales are not supported".into()))
     }
 }
 
@@ -194,6 +199,38 @@ pub struct DeviceService {
     pub printer: Arc<SwitchablePrinter>,
     /// The customer display (role `main`), if one is set up.
     pub display: Arc<CustomerDisplay>,
+    /// The scale (role `main`), if one is set up; shared with the cart service.
+    pub scale: Arc<Scale>,
+}
+
+/// How the scale is doing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScaleView {
+    pub configured: bool,
+    /// Which scale, e.g. `COM3 @ 9600, Toledo 8217 (kg)`.
+    pub target: Option<String>,
+    pub health: DeviceHealth,
+}
+
+/// What "Test scale" read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScaleTest {
+    Read(ScaleReading),
+    Failed(String),
+}
+
+fn is_main_scale(d: &DeviceRecord) -> bool {
+    d.kind == DeviceKind::Scale && d.role == "main"
+}
+
+fn reading_text(r: &ScaleReading) -> String {
+    match r {
+        ScaleReading::Stable(w) => format!("stable {}", w.grams_text()),
+        ScaleReading::Moving(Some(w)) => format!("moving {}", w.grams_text()),
+        ScaleReading::Moving(None) => "moving".into(),
+        ScaleReading::Overload => "overload".into(),
+        ScaleReading::Underload => "underload".into(),
+    }
 }
 
 /// How the customer display is doing.
@@ -227,6 +264,7 @@ fn clean_name(name: &str, kind: DeviceKind) -> Result<String, AppError> {
             DeviceKind::Scanner => "Scanner",
             DeviceKind::PaymentTerminal => "Payment terminal",
             DeviceKind::CustomerDisplay => "Customer display",
+            DeviceKind::Scale => "Scale",
         }
         .to_owned()
     } else {
@@ -349,6 +387,16 @@ impl DeviceService {
         } else {
             None
         };
+        let scale = if is_main_scale(&record) && record.enabled {
+            Some(
+                self.driver
+                    .open_scale(&record.config)
+                    .await
+                    .map_err(|e| device_error(&e))?,
+            )
+        } else {
+            None
+        };
         let entry = AuditEntry::new(ctx.ids.as_ref(), audit::DEVICE_SAVED, "device", record.device_id)
             .with_metadata(serde_json::json!({
                 "kind": record.kind.as_str(),
@@ -371,6 +419,10 @@ impl DeviceService {
         if is_main_display(&record) {
             let config = display.is_some().then(|| record.config.clone());
             self.display.set_built_from(display, config);
+        }
+        if is_main_scale(&record) {
+            let config = scale.is_some().then(|| record.config.clone());
+            self.scale.set_built_from(scale, config);
         }
         Ok(record)
     }
@@ -395,6 +447,9 @@ impl DeviceService {
         }
         if is_main_display(old) {
             self.display.set(None);
+        }
+        if is_main_scale(old) {
+            self.scale.set(None);
         }
         Ok(())
     }
@@ -449,6 +504,70 @@ impl DeviceService {
                 Err(format!("customer display {:?}: {e}", stored.name))
             }
         }
+    }
+
+    /// At start-up and after device changes: puts the stored scale to work, or none. A scale
+    /// that cannot be built is reported, never fatal.
+    pub async fn activate_scale(&self, register: RegisterId) -> Result<(), String> {
+        let devices = self.devices.devices(register).await.map_err(|e| e.0)?;
+        let Some(stored) = devices.iter().find(|d| is_main_scale(d) && d.enabled) else {
+            self.scale.set(None);
+            return Ok(());
+        };
+        if self.scale.port().is_some() && self.scale.built_from().as_ref() == Some(&stored.config) {
+            return Ok(());
+        }
+        match self.driver.open_scale(&stored.config).await {
+            Ok(port) => {
+                self.scale.set_built_from(Some(port), Some(stored.config.clone()));
+                Ok(())
+            }
+            Err(e) => {
+                self.scale.set(None);
+                Err(format!("scale {:?}: {e}", stored.name))
+            }
+        }
+    }
+
+    /// Any signed-in user may see how the scale is doing.
+    pub fn scale_view(&self, ctx: &CommandContext) -> Result<ScaleView, AppError> {
+        ctx.actor()?;
+        let port = self.scale.port();
+        Ok(ScaleView {
+            configured: port.is_some(),
+            target: port.as_ref().map(|p| p.describe()),
+            health: port.map_or(DeviceHealth::Unknown, |p| p.health().borrow().clone()),
+        })
+    }
+
+    /// "Test scale": one reading, whatever it is (audited). A scale that cannot be read is
+    /// an answer here, not an error.
+    pub async fn test_scale(&self, ctx: &CommandContext) -> Result<ScaleTest, AppError> {
+        ctx.authorize(Permission::DeviceConfigure)?;
+        let port = self
+            .scale
+            .port()
+            .ok_or_else(|| AppError::Device("no scale is set up on this till".into()))?;
+        let result = match port.read().await {
+            Ok(r) => ScaleTest::Read(r),
+            Err(e) => ScaleTest::Failed(e.to_string()),
+        };
+        let entry = AuditEntry::new(
+            ctx.ids.as_ref(),
+            audit::DEVICE_TEST_WEIGHED,
+            "register",
+            ctx.register.register_id,
+        )
+        .with_metadata(serde_json::json!({
+            "target": port.describe(),
+            "outcome": match &result {
+                ScaleTest::Read(r) => reading_text(r),
+                ScaleTest::Failed(e) => format!("failed: {e}"),
+            },
+        }));
+        let set = WriteSet::builder(ctx.write_context()).audit(entry).build()?;
+        self.store.apply(set).await?;
+        Ok(result)
     }
 
     /// Any signed-in user may see how the customer display is doing (status bar).

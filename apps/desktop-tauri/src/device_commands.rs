@@ -1,14 +1,15 @@
-//! Devices attached to this till (E20-T11, E21-T04, E22-T02, ADR-024): the hardware driver
-//! behind `DeviceService`, serial scanners forwarded to the UI, the customer display, the
-//! sandbox payment terminal, and the IPC commands of Settings → Devices.
+//! Devices attached to this till (E20-T11, E21-T04, E20-T06, E22-T02, ADR-024): the hardware
+//! driver behind `DeviceService`, serial and HID-POS scanners forwarded to the UI, the
+//! customer display, the scale, the sandbox payment terminal, and the IPC commands of
+//! Settings → Devices.
 
 use crate::app_commands::err;
 use crate::{AppServices, IpcError};
 use pos_application::devices::{DeviceConfigProblem, DeviceDriver, DeviceInput, PrinterHandle, PrinterView};
 use pos_application::records::{DeviceKind, DeviceRecord};
 use pos_device_hw::{
-    DisplayConfig, HidBackend, HidPosScanner, HwCustomerDisplay, PrinterConfig, ScannerSettings,
-    SerialScanner,
+    DisplayConfig, HidBackend, HidPosScanner, HwCustomerDisplay, HwScale, PrinterConfig, ScaleConfig,
+    ScannerSettings, SerialScanner,
 };
 use pos_device_ports::{BarcodeInputPort, DeviceError, DeviceHealth, PaperLevel, PrintResult, PushedStatus};
 use pos_domain::{DeviceId, ErrorCode};
@@ -83,7 +84,18 @@ impl DeviceDriver for HwDriver {
                 c.validate().map_err(first_problem)?;
                 Ok(serde_json::to_value(c).unwrap_or_default())
             }
+            DeviceKind::Scale => {
+                let c: ScaleConfig = parse(config)?;
+                c.validate().map_err(first_problem)?;
+                Ok(serde_json::to_value(c).unwrap_or_default())
+            }
         }
+    }
+
+    async fn open_scale(&self, config: &Value) -> Result<Arc<dyn pos_device_ports::ScalePort>, DeviceError> {
+        let c: ScaleConfig = serde_json::from_value(config.clone())
+            .map_err(|e| DeviceError::Unsupported(format!("stored scale settings: {e}")))?;
+        Ok(Arc::new(HwScale::from_config(&c)?))
     }
 
     async fn open_display(
@@ -852,6 +864,84 @@ pub async fn display_test(services: State<'_, AppServices>) -> Result<DisplayTes
         Err(why) => DisplayTestDto {
             outcome: "failed".into(),
             message: why,
+        },
+    })
+}
+
+// ---------- scale ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaleStatusDto {
+    /// False: no scale is set up; items sold by weight take a typed quantity.
+    pub configured: bool,
+    /// Which scale, e.g. `COM3 @ 9600, Toledo 8217 (kg)`.
+    pub target: Option<String>,
+    /// `ready`, `offline` or `unknown` (not read yet).
+    pub state: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaleTestDto {
+    /// `stable`, `moving`, `overload`, `underload` or `failed`.
+    pub outcome: String,
+    /// The weight in grams, exact decimal text, when the scale gave one.
+    pub weight_grams: Option<String>,
+    /// Why it failed (`failed`).
+    pub message: Option<String>,
+}
+
+/// How the scale is doing (any signed-in user: the till weighs only when one is set up).
+#[tauri::command]
+#[specta::specta]
+pub async fn scale_status(services: State<'_, AppServices>) -> Result<ScaleStatusDto, IpcError> {
+    let ctx = services.context().await?;
+    let v = services.app()?.devices.scale_view(&ctx).map_err(err)?;
+    let (state, message) = match v.health {
+        DeviceHealth::Ready => ("ready", None),
+        DeviceHealth::Warning(m) | DeviceHealth::Offline(m) => ("offline", Some(m)),
+        DeviceHealth::Unknown => ("unknown", None),
+    };
+    Ok(ScaleStatusDto {
+        configured: v.configured,
+        target: v.target,
+        state: state.into(),
+        message,
+    })
+}
+
+/// Reads the scale once (Settings → Devices → Test scale; audited).
+#[tauri::command]
+#[specta::specta]
+pub async fn scale_test(services: State<'_, AppServices>) -> Result<ScaleTestDto, IpcError> {
+    use pos_application::devices::ScaleTest;
+    use pos_device_ports::ScaleReading;
+    let ctx = services.context().await?;
+    let result = tokio::time::timeout(Duration::from_secs(10), services.app()?.devices.test_scale(&ctx))
+        .await
+        .map_err(|_| {
+            IpcError::coded(
+                ErrorCode::DeviceUnavailable,
+                "the scale did not answer in 10 seconds",
+            )
+        })?
+        .map_err(err)?;
+    let dto = |outcome: &str, w: Option<pos_device_ports::Weight>| ScaleTestDto {
+        outcome: outcome.into(),
+        weight_grams: w.map(|w| w.grams_text()),
+        message: None,
+    };
+    Ok(match result {
+        ScaleTest::Read(ScaleReading::Stable(w)) => dto("stable", Some(w)),
+        ScaleTest::Read(ScaleReading::Moving(w)) => dto("moving", w),
+        ScaleTest::Read(ScaleReading::Overload) => dto("overload", None),
+        ScaleTest::Read(ScaleReading::Underload) => dto("underload", None),
+        ScaleTest::Failed(why) => ScaleTestDto {
+            outcome: "failed".into(),
+            weight_grams: None,
+            message: Some(why),
         },
     })
 }

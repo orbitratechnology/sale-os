@@ -4,7 +4,8 @@
 use crate::app_commands::err;
 use crate::dto::{
     AddViaDto, CartViewDto, CatalogHitDto, DiscountDto, ProductDto, ProductFilterDto, ProductInputDto,
-    ProductPageDto, ScanOutcomeDto, ScanSourceDto, TaxCategoryDto, money_in, qty_in,
+    ProductPageDto, ScanOutcomeDto, ScanSourceDto, TaxCategoryDto, WeighOutcomeDto, WeighViaDto, money_in,
+    qty_in,
 };
 use crate::dto::{CompletedSaleDto, TenderInputDto};
 use crate::{AppServices, IpcError};
@@ -320,7 +321,89 @@ pub async fn scan_submit(
             code,
             hint: crate::dto::scan_hint(&hint),
         },
+        ScanOutcome::Weigh { variant, name, unit } => ScanOutcomeDto::Weigh {
+            variant_id: variant,
+            name,
+            unit,
+        },
     })
+}
+
+fn weighed_dto(
+    services: &AppServices,
+    weighed: pos_application::scale::Weighed,
+) -> Result<WeighOutcomeDto, IpcError> {
+    use pos_application::scale::Weighed;
+    Ok(match weighed {
+        Weighed::Done { view, line, weight } => {
+            display_cart(services, &view, Some(line));
+            WeighOutcomeDto::Weighed {
+                cart: Box::new(CartViewDto::from_view(&view)?),
+                line_id: line,
+                weight_grams: weight.grams_text(),
+            }
+        }
+        Weighed::Refused(r) => WeighOutcomeDto::Refused {
+            reason: r.code().into(),
+            message: r.message(),
+        },
+    })
+}
+
+/// An item sold by weight, weighed on the scale (E20-T06): a stable weight becomes a new
+/// line's quantity; a moving, zero, negative or out-of-range weight is refused and nothing
+/// is added. `scanEventId` is the scan that answered `weigh` (via `scanner`).
+/// `typedQtyMilli`: the fallback, a weight typed instead (thousandths of the item's unit);
+/// it makes a line of its own too.
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_add_weighed(
+    services: State<'_, AppServices>,
+    variant_id: VariantId,
+    via: WeighViaDto,
+    scan_event_id: Option<ScanEventId>,
+    typed_qty_milli: Option<String>,
+) -> Result<WeighOutcomeDto, IpcError> {
+    let ctx = services.context().await?;
+    let via = match (via, scan_event_id) {
+        (WeighViaDto::Search, _) => AddVia::Search,
+        (WeighViaDto::QuickSelect, _) => AddVia::QuickSelect,
+        (WeighViaDto::Manual, _) => AddVia::ManualCode,
+        (WeighViaDto::Scanner, Some(event_id)) => AddVia::Scan { event_id },
+        (WeighViaDto::Scanner, None) => {
+            return Err(IpcError::coded(
+                pos_domain::ErrorCode::ValidationFailed,
+                "a scanned item needs its scanEventId",
+            ));
+        }
+    };
+    let carts = &services.app()?.carts;
+    let weighed = match typed_qty_milli.as_deref() {
+        None => carts.add_weighed(&ctx, variant_id, via).await,
+        Some(q) => {
+            let qty = qty_in("typedQtyMilli", q)?;
+            carts.add_typed_weight(&ctx, variant_id, qty, via).await
+        }
+    }
+    .map_err(err)?;
+    weighed_dto(&services, weighed)
+}
+
+/// Weighs again for a line of an item sold by weight and sets its quantity (the Weigh key).
+#[tauri::command]
+#[specta::specta]
+pub async fn cart_weigh_line(
+    services: State<'_, AppServices>,
+    line_id: CartLineId,
+) -> Result<WeighOutcomeDto, IpcError> {
+    let ctx = services.context().await?;
+    let weighed = services
+        .app()?
+        .carts
+        .weigh_line(&ctx, line_id)
+        .await
+        .map_err(err)?;
+    weighed_dto(&services, weighed)
 }
 
 /// The open cart, priced (also after a restart: POS-011).

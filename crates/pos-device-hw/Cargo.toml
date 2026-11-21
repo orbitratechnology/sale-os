@@ -1,6 +1,6 @@
 [package]
 name = "pos-device-hw"
-description = "Real hardware adapters: ESC/POS and Star receipt printers, cash drawers, serial barcode scanners and customer displays over network, serial/COM/Bluetooth SPP, device files and the OS spooler."
+description = "Real hardware adapters: ESC/POS and Star receipt printers, cash drawers, serial and USB HID-POS barcode scanners, customer displays and scales over network, serial/COM/Bluetooth SPP, device files and the OS spooler."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

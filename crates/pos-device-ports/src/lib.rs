@@ -1,5 +1,5 @@
 //! Device port traits (docs/backlog/06-rust-interfaces.md §10, ADR-024): barcode input,
-//! receipt output, cash drawer, payment, customer display. Implementations live in `pos-device-virtual`
+//! receipt output, cash drawer, payment, customer display, scale. Implementations live in `pos-device-virtual`
 //! (simulators) and `pos-device-hw` (real transports: network, serial/COM, USB, OS spooler).
 //!
 //! The ports describe *what* a device does, never *how* it is connected: the application
@@ -10,6 +10,7 @@ pub mod display;
 pub mod drawer;
 pub mod payment;
 pub mod printer;
+pub mod scale;
 pub mod scanner;
 
 pub use display::{CustomerDisplayPort, DisplayFrame, DisplayLine};
@@ -21,6 +22,7 @@ pub use printer::{
     CommandDialect, CutSupport, PaperLevel, PrintFailure, PrintResult, PrinterCapabilities, PrinterStatus,
     PushedStatus, ReceiptOutputPort,
 };
+pub use scale::{ScalePort, ScaleReading, Weight, WeightUnit};
 pub use scanner::{BarcodeInputPort, ScanEvent, ScanSource};
 
 /// Why a device operation did not happen. Carries a short, operator-readable reason.

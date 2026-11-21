@@ -114,6 +114,31 @@ and "WELCOME" with the shop's name when the till is idle. It shows plain Latin l
 (`Café` → `Cafe`) and Sinhala, Tamil and other scripts are written by sound (`කිරි` → `kiri`). Long names are shortened.
 A display that is unplugged or broken never stops a sale; Settings → Devices shows what is wrong.
 
+## Scales
+
+Settings → Devices → Scale. For counter scales on a COM port (RS-232, or USB-serial that appears as a COM port). Enter
+the port, the speed, the data format and the protocol your scale is set to (its manual or set-up menu says which):
+
+| Protocol | Use it for |
+|---|---|
+| Toledo 8217 | Scales set to "8217", "Toledo" or "NCR" mode (many CAS, Dibal, Mettler Toledo and scanner-scale combos). The till sends `W` and the scale answers with the weight when it is steady, or says it is moving or out of range. Also choose whether the scale weighs in kg or g. |
+| Continuous output | Indicator heads that keep sending lines like `ST,GS,+  1.234kg` (A&D and many unbranded ones). `ST` steady, `US` moving, `OL` out of range. |
+
+Typical settings are 9600 baud with 8N1 or 7E1. Use **Test scale** with something on the pan: it must show the weight
+and say "stable" once the item is still. Wrong characters or no answer mean the speed, data format or protocol is wrong.
+Set the scale to kilograms or grams: pounds and ounces are refused.
+
+**At the till.** Products sold by `kg` or `g` are weighed when they are scanned, picked in search or tapped on the quick
+grid: the till shows "Weighing…" and waits up to 3 seconds for a steady weight. Only a steady weight above zero is used;
+moving, nothing on the pan, below zero and overloaded are refused with a message, and **Weigh again** or **Type the
+weight** are offered. Each weighing is a line of its own. **Shift+F3** (Weigh) weighs the selected line again;
+**F3** still types a quantity. The price is the price per kg (or g) times the exact weight, rounded like every other
+line. Without a scale, items sold by weight are added as one unit and the weight is typed with F3. Price-embedded
+scale labels (weight or price in the barcode) work as before, with or without a scale.
+
+Emulated only so far: both protocols are written from their published descriptions and tested against emulated scales;
+no real scale has been tried yet (D-07).
+
 ## Card terminals
 
 - **Standalone terminal (any brand):** take the payment on the terminal, then record it as *Card (separate terminal)*

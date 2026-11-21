@@ -8,6 +8,7 @@ Every checkout action works from the keyboard. The screen is never left to do an
 | `F2` | Search products | Type; `↑`/`↓` choose; `Enter` adds; `Esc` closes |
 | `Shift+F2` | Quick items | The quick-select grid: products ticked “Show on the quick-select grid”, by name, with category tabs, 24 per page (Previous / Next). A tap adds one and the grid stays open; a product with variants asks which. Tiles are at least 44 px. `Esc` or Done closes |
 | `F3` | Change the selected line's quantity | Typed inline; `Enter` saves, `Esc` cancels. Zero is refused: use `Del` |
+| `Shift+F3` | Weigh the selected line again | With a scale set up (E20-T06), for items sold by kg or g: the line takes the scale's stable weight. Items sold by weight are also weighed when they are scanned or picked; a refusal (moving, nothing on the scale, below zero, overloaded) says why and offers "Weigh again" or "Type the weight" |
 | `F4` | Discount on the selected line (%) | Empty removes it |
 | `Del` | Remove the selected line | |
 | `↑` / `↓` | Select the previous or next line | |

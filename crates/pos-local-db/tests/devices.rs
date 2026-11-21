@@ -1,7 +1,7 @@
 //! E20-T05 / E20-T11: devices attached to a till. Saving a printer swaps it in for the next
 //! print, bad configurations are refused by field and never stored, the drawer opens only
 //! for cash and on an audited, approved "no sale". The customer display is saved, audited
-//! and tested the same way, and follows a sale.
+//! and tested the same way, and follows a sale. So is the scale (E20-T06).
 
 mod common;
 
@@ -12,8 +12,10 @@ use pos_application::devices::{
     SwitchablePrinter,
 };
 use pos_application::records::DeviceKind;
+use pos_application::scale::Scale;
 use pos_device_ports::{
     CustomerDisplayPort, DeviceError, DeviceHealth, DisplayFrame, DisplayLine, DrawerPin, PrintResult,
+    ScalePort, ScaleReading, Weight,
 };
 use pos_device_virtual::printer::VirtualPrinter;
 use pos_domain::{ErrorCode, HasErrorCode, Role};
@@ -27,6 +29,31 @@ struct FakeDriver {
     dir: std::path::PathBuf,
     printers: Mutex<HashMap<String, Arc<VirtualPrinter>>>,
     displays: Mutex<HashMap<String, Arc<RecordingDisplay>>>,
+    scales: Mutex<HashMap<String, Arc<FixedScale>>>,
+}
+
+/// A scale that always reads what it was last given (`unplugged`: an error).
+struct FixedScale {
+    reading: Mutex<Result<ScaleReading, DeviceError>>,
+    health: tokio::sync::watch::Sender<DeviceHealth>,
+}
+
+#[async_trait::async_trait]
+impl ScalePort for FixedScale {
+    fn describe(&self) -> String {
+        "COM4 @ 9600, Toledo 8217 (kg)".into()
+    }
+    async fn read(&self) -> Result<ScaleReading, DeviceError> {
+        let r = self.reading.lock().unwrap().clone();
+        self.health.send_replace(match &r {
+            Ok(_) => DeviceHealth::Ready,
+            Err(e) => DeviceHealth::Offline(e.to_string()),
+        });
+        r
+    }
+    fn health(&self) -> tokio::sync::watch::Receiver<DeviceHealth> {
+        self.health.subscribe()
+    }
 }
 
 /// A customer display that records every frame it is asked to show.
@@ -66,6 +93,20 @@ impl CustomerDisplayPort for RecordingDisplay {
 }
 
 impl FakeDriver {
+    fn scale(&self, name: &str) -> Arc<FixedScale> {
+        self.scales
+            .lock()
+            .unwrap()
+            .entry(name.to_owned())
+            .or_insert_with(|| {
+                Arc::new(FixedScale {
+                    reading: Mutex::new(Ok(ScaleReading::Stable(Weight::from_milligrams(1_234_000)))),
+                    health: tokio::sync::watch::channel(DeviceHealth::Unknown).0,
+                })
+            })
+            .clone()
+    }
+
     fn display(&self, name: &str) -> Arc<RecordingDisplay> {
         self.displays
             .lock()
@@ -94,6 +135,15 @@ impl FakeDriver {
 #[async_trait::async_trait]
 impl DeviceDriver for FakeDriver {
     fn validate(&self, kind: DeviceKind, config: &Value) -> Result<Value, DeviceConfigProblem> {
+        if kind == DeviceKind::Scale {
+            return match config.get("scale").and_then(Value::as_str) {
+                Some(n) if !n.trim().is_empty() => Ok(json!({ "scale": n.trim() })),
+                _ => Err(DeviceConfigProblem {
+                    field: "serial.port".into(),
+                    message: "choose a port".into(),
+                }),
+            };
+        }
         if kind == DeviceKind::CustomerDisplay {
             return match config.get("display").and_then(Value::as_str) {
                 Some(n) if !n.trim().is_empty() => Ok(json!({ "display": n.trim() })),
@@ -131,6 +181,13 @@ impl DeviceDriver for FakeDriver {
         })
     }
 
+    async fn open_scale(&self, config: &Value) -> Result<Arc<dyn ScalePort>, DeviceError> {
+        match config["scale"].as_str().unwrap_or_default() {
+            "gone" => Err(DeviceError::Disconnected("COM4 is not present".into())),
+            name => Ok(self.scale(name)),
+        }
+    }
+
     async fn open_display(&self, config: &Value) -> Result<Arc<dyn CustomerDisplayPort>, DeviceError> {
         match config["display"].as_str().unwrap_or_default() {
             "gone" => Err(DeviceError::Disconnected("COM8 is not present".into())),
@@ -155,6 +212,7 @@ async fn till() -> Till {
         dir: dir.path().to_owned(),
         printers: Mutex::new(HashMap::new()),
         displays: Mutex::new(HashMap::new()),
+        scales: Mutex::new(HashMap::new()),
     });
     let s = shop.store.clone();
     let service = DeviceService {
@@ -167,6 +225,7 @@ async fn till() -> Till {
             drawer_pin: DrawerPin::Pin2,
         })),
         display: Arc::new(CustomerDisplay::new(std::time::Duration::from_millis(50))),
+        scale: Arc::new(Scale::default()),
     };
     Till {
         shop,
@@ -365,6 +424,7 @@ async fn start_up_activates_the_stored_printer_and_survives_a_broken_one() {
             drawer_pin: DrawerPin::Pin2,
         })),
         display: Arc::new(CustomerDisplay::default()),
+        scale: Arc::new(Scale::default()),
     };
     restarted.activate(owner.register.register_id).await.unwrap();
     assert!(restarted.printer.is_configured());
@@ -628,6 +688,7 @@ async fn start_up_activates_the_stored_display_and_survives_a_missing_one() {
             drawer_pin: DrawerPin::Pin2,
         })),
         display: Arc::new(fresh),
+        scale: Arc::new(Scale::default()),
     };
     restarted
         .activate_display(owner.register.register_id)
@@ -646,4 +707,122 @@ async fn start_up_activates_the_stored_display_and_survives_a_missing_one() {
         .unwrap_err();
     assert!(err.contains("COM8"), "{err}");
     assert!(restarted.display.port().is_none());
+}
+
+fn scale_input(name: &str) -> DeviceInput {
+    DeviceInput {
+        device_id: None,
+        kind: DeviceKind::Scale,
+        role: "main".into(),
+        name: "Counter scale".into(),
+        config: json!({ "scale": name }),
+        enabled: true,
+        base_version: None,
+    }
+}
+
+#[tokio::test]
+async fn a_scale_is_saved_audited_tested_and_activated_after_a_restart() {
+    use pos_application::devices::ScaleTest;
+    let t = till().await;
+    let owner = &t.shop.owner;
+    assert!(!t.service.scale_view(owner).unwrap().configured);
+    assert!(t.service.test_scale(owner).await.is_err(), "no scale yet");
+    let refused = t
+        .service
+        .save(&t.shop.as_role(Role::Cashier), scale_input("counter"))
+        .await
+        .unwrap_err();
+    assert_eq!(refused.error_code(), ErrorCode::PermissionDenied);
+    let bad = t.service.save(owner, scale_input(" ")).await.unwrap_err();
+    assert!(matches!(bad, AppError::DeviceConfig { ref field, .. } if field == "serial.port"));
+
+    let saved = t.service.save(owner, scale_input("counter")).await.unwrap();
+    assert_eq!(saved.kind, DeviceKind::Scale);
+    assert_eq!(saved.name, "Counter scale");
+    assert!(
+        audit(&t, "device.saved")
+            .await
+            .last()
+            .unwrap()
+            .2
+            .contains("\"scale\"")
+    );
+    // Put to work at once: the cart service weighs with it from now on.
+    assert!(t.service.scale.is_configured());
+    let view = t.service.scale_view(&t.shop.as_role(Role::Cashier)).unwrap();
+    assert_eq!(view.target.as_deref(), Some("COM4 @ 9600, Toledo 8217 (kg)"));
+    assert_eq!(view.health, DeviceHealth::Unknown);
+
+    // Test scale: the reading, audited; a cashier may not.
+    assert_eq!(
+        t.service.test_scale(owner).await.unwrap(),
+        ScaleTest::Read(ScaleReading::Stable(Weight::from_milligrams(1_234_000)))
+    );
+    assert_eq!(t.service.scale_view(owner).unwrap().health, DeviceHealth::Ready);
+    assert_eq!(
+        t.service
+            .test_scale(&t.shop.as_role(Role::Cashier))
+            .await
+            .unwrap_err()
+            .error_code(),
+        ErrorCode::PermissionDenied
+    );
+    // Unplugged: an answer, not an error, and the status says so.
+    *t.driver.scale("counter").reading.lock().unwrap() =
+        Err(DeviceError::Disconnected("COM4 not found".into()));
+    let ScaleTest::Failed(why) = t.service.test_scale(owner).await.unwrap() else {
+        panic!("not failed");
+    };
+    assert!(why.contains("COM4 not found"));
+    assert!(matches!(
+        t.service.scale_view(owner).unwrap().health,
+        DeviceHealth::Offline(_)
+    ));
+    let tests = audit(&t, "device.test_weighed").await;
+    assert_eq!(tests.len(), 2);
+    assert!(tests[0].2.contains("stable 1234"), "{}", tests[0].2);
+    assert!(tests[1].2.contains("failed"), "{}", tests[1].2);
+
+    // After a restart the stored scale is used again; a vanished one is reported, not fatal.
+    let s = t.shop.store.clone();
+    let restarted = DeviceService {
+        store: Arc::new(s.clone()),
+        devices: Arc::new(s.clone()),
+        driver: t.driver.clone(),
+        printer: Arc::new(SwitchablePrinter::new(PrinterHandle {
+            printer: t.fallback.clone(),
+            drawer: None,
+            drawer_pin: DrawerPin::Pin2,
+        })),
+        display: Arc::new(CustomerDisplay::default()),
+        scale: Arc::new(Scale::default()),
+    };
+    restarted
+        .activate_scale(owner.register.register_id)
+        .await
+        .unwrap();
+    assert!(restarted.scale.is_configured());
+    let gone = DeviceInput {
+        device_id: Some(saved.device_id),
+        base_version: Some(saved.version),
+        ..scale_input("counter")
+    };
+    let saved = t.service.save(owner, gone).await.unwrap();
+    sqlx::query("UPDATE devices SET config_json = '{\"scale\":\"gone\"}' WHERE device_id = ?")
+        .bind(saved.device_id.to_string())
+        .execute(t.shop.store.db().writer())
+        .await
+        .unwrap();
+    let err = restarted
+        .activate_scale(owner.register.register_id)
+        .await
+        .unwrap_err();
+    assert!(err.contains("COM4 is not present"), "{err}");
+    assert!(!restarted.scale.is_configured());
+
+    // Removed: no scale, audited.
+    t.service.remove(owner, saved.device_id).await.unwrap();
+    assert!(!t.service.scale.is_configured());
+    assert_eq!(audit(&t, "device.removed").await.len(), 1);
 }

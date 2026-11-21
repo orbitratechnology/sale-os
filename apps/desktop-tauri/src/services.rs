@@ -241,7 +241,13 @@ impl AppServices {
         let app = store.as_ref().map(|s| {
             let a = Arc::new(s.clone());
             let approvals = Arc::new(Approvals::default());
-            let carts = Arc::new(CartService::new(a.clone(), a.clone(), a.clone()).with_stock(a.clone()));
+            // The scale (E20-T06): read by the cart service for weighed items, set up by devices.
+            let scale = Arc::new(pos_application::scale::Scale::default());
+            let carts = Arc::new(
+                CartService::new(a.clone(), a.clone(), a.clone())
+                    .with_stock(a.clone())
+                    .with_scale(scale.clone()),
+            );
             let virtual_printer = Arc::new(pos_device_virtual::printer::VirtualPrinter::new(
                 data_dir.join("virtual-printer"),
             ));
@@ -366,6 +372,7 @@ impl AppServices {
                     driver: Arc::new(crate::device_commands::HwDriver),
                     printer,
                     display: Arc::new(pos_application::customer_display::CustomerDisplay::default()),
+                    scale,
                 },
                 scanners: Arc::new(crate::device_commands::ScannerHub::default()),
                 printer_feed: Arc::new(crate::device_commands::PrinterStatusFeed::default()),
@@ -485,6 +492,9 @@ impl AppServices {
         self.refresh_shop_name().await;
         if let Err(e) = app.devices.activate_display(register.register_id).await {
             tracing::warn!(problem = %e, "customer display not activated");
+        }
+        if let Err(e) = app.devices.activate_scale(register.register_id).await {
+            tracing::warn!(problem = %e, "scale not activated");
         }
         let devices = match pos_application::devices::DeviceQueries::devices(
             &app.queries,

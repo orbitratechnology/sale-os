@@ -33,6 +33,8 @@ pub struct CartService {
     pub(crate) catalog: Arc<dyn CatalogQueries>,
     /// Stock on hand for the "only N in stock" hint; none means no hints.
     stock: Option<Arc<dyn crate::queries::StockQueries>>,
+    /// The till's scale (E20-T06): items sold by weight are weighed while one is set up.
+    pub(crate) scale: Option<Arc<crate::scale::Scale>>,
     /// Serializes load → change → save. Tauri runs commands concurrently, and two fast scans
     /// must both count. The store's revision check is the backstop if this is bypassed.
     lock: Mutex<()>,
@@ -81,6 +83,7 @@ impl CartService {
             carts,
             catalog,
             stock: None,
+            scale: None,
             lock: Mutex::new(()),
             recovery: std::sync::Mutex::new(Recovery::Unchecked),
         }

@@ -250,6 +250,17 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(SaleComplete),
             json!({"variantId": UNKNOWN_ID, "qtyMilli": null, "via": "search"}),
         ),
+        // Weighing (E20-T06): unknown item / line, so allowed calls fail harmlessly.
+        (
+            "cart_add_weighed",
+            Perm(SaleComplete),
+            json!({"variantId": UNKNOWN_ID, "via": "search", "scanEventId": null, "typedQtyMilli": null}),
+        ),
+        (
+            "cart_weigh_line",
+            Perm(SaleComplete),
+            json!({"lineId": UNKNOWN_ID}),
+        ),
         (
             "cart_set_quantity",
             Perm(SaleComplete),
@@ -520,6 +531,9 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         // Scanners: listing USB HID-POS scanners is set-up; their status is for everyone.
         ("hid_scanners_list", Perm(DeviceConfigure), json!({})),
         ("scanner_status", Session, json!({})),
+        // Scale: none set up, so the test gets DEVICE_UNAVAILABLE.
+        ("scale_status", Session, json!({})),
+        ("scale_test", Perm(DeviceConfigure), json!({})),
         ("display_status", Session, json!({})),
         ("display_test", Perm(DeviceConfigure), json!({})),
         ("display_show_total", Perm(SaleComplete), json!({})),
@@ -2884,4 +2898,204 @@ fn a_hid_pos_scanner_is_saved_and_its_scans_go_through_the_scan_pipeline() {
     assert_eq!(again["outcome"], "duplicate", "{again}");
     assert_eq!(again["cart"]["lines"].as_array().unwrap().len(), 1);
     assert_eq!(again["cart"]["lines"][0]["quantityMilli"], "1000");
+}
+
+/// A Toledo-8217 scale on the other end of a virtual null-modem cable: answers every `W`
+/// with the frame it currently holds.
+#[cfg(unix)]
+struct PtyScale {
+    path: String,
+    reply: Arc<std::sync::Mutex<Vec<u8>>>,
+    _slave: serialport::TTYPort,
+}
+
+#[cfg(unix)]
+impl PtyScale {
+    fn start(reply: &[u8]) -> Self {
+        use std::io::{Read, Write};
+        let (mut master, slave) = serialport::TTYPort::pair().expect("pty pair");
+        let path = serialport::SerialPort::name(&slave).expect("slave name");
+        serialport::SerialPort::set_timeout(&mut master, std::time::Duration::from_millis(20)).unwrap();
+        let reply = Arc::new(std::sync::Mutex::new(reply.to_vec()));
+        let frame = reply.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 64];
+            loop {
+                match master.read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        for _ in buf[..n].iter().filter(|&&b| b == b'W') {
+                            let f = frame.lock().unwrap().clone();
+                            if master.write_all(&f).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(_) => return,
+                }
+            }
+        });
+        Self {
+            path,
+            reply,
+            _slave: slave,
+        }
+    }
+
+    fn set(&self, frame: &[u8]) {
+        *self.reply.lock().unwrap() = frame.to_vec();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_scale_on_a_serial_port_weighs_items_sold_by_weight_over_ipc() {
+    // Settings → Devices saves a Toledo-8217 scale on a serial port and tests it (audited);
+    // a scanned item sold by kilogram answers `weigh`, the till weighs it under that scan and
+    // the line gets the exact weight and price; an unstable weight is refused and adds
+    // nothing; the Weigh key re-weighs the line; typing the quantity still works.
+    let pty = PtyScale::start(b"\x0201.234\r");
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Kamal Stores", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let status = invoke(&w, "scale_status", json!({})).unwrap();
+    assert_eq!(status["configured"], false);
+    let none = invoke(&w, "scale_test", json!({})).unwrap_err();
+    assert_eq!(none["code"], "DEVICE_UNAVAILABLE", "{none}");
+
+    let save = |config: Value| {
+        invoke(
+            &w,
+            "device_save",
+            json!({"input": {"deviceId": null, "kind": "scale", "role": null, "name": "Counter scale",
+                "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+        )
+    };
+    let bad =
+        save(json!({"serial": {"port": pty.path, "baud": 1234}, "protocol": "toledo8217"})).unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    assert_eq!(bad["details"]["field"], "serial.baud");
+    save(json!({"serial": {"port": pty.path, "baud": 9600}, "protocol": "toledo8217", "unit": "kg"}))
+        .unwrap();
+    let tested = invoke(&w, "scale_test", json!({})).unwrap();
+    assert_eq!(
+        tested,
+        json!({"outcome": "stable", "weightGrams": "1234", "message": null})
+    );
+    let status = invoke(&w, "scale_status", json!({})).unwrap();
+    assert_eq!(status["state"], "ready", "{status}");
+    assert_eq!(status["target"], format!("{} @ 9600, Toledo 8217 (kg)", pty.path));
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "device.test_weighed", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1, "{audited}");
+
+    // Bananas at 450.00 a kilogram.
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Bananas");
+    product["product"]["unit"] = json!("kg");
+    product["product"]["variants"][0]["sku"] = json!("BANANA");
+    product["product"]["variants"][0]["priceMinor"] = json!("45000");
+    product["product"]["variants"][0]["trackStock"] = json!(false);
+    invoke(&w, "product_create", product).unwrap();
+
+    let scan_id = "0190a5b0-0000-7000-8000-0000000000b1";
+    let scanned = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": scan_id, "raw": "BANANA", "source": "scanner"}),
+    )
+    .unwrap();
+    assert_eq!(scanned["outcome"], "weigh", "{scanned}");
+    assert_eq!(scanned["name"], "Bananas");
+    assert_eq!(scanned["unit"], "kg");
+    let variant = scanned["variantId"].clone();
+    let weighed = invoke(
+        &w,
+        "cart_add_weighed",
+        json!({"variantId": variant, "via": "scanner", "scanEventId": scan_id, "typedQtyMilli": null}),
+    )
+    .unwrap();
+    assert_eq!(weighed["outcome"], "weighed", "{weighed}");
+    assert_eq!(weighed["weightGrams"], "1234");
+    let line = &weighed["cart"]["lines"][0];
+    // 1.234 kg × 450.00 = 555.30 exactly.
+    assert_eq!(line["quantityMilli"], "1234");
+    assert_eq!(weighed["cart"]["totalMinor"], "55530", "{weighed}");
+    let line_id = weighed["lineId"].clone();
+
+    // Still moving: refused after the settle time, nothing added.
+    pty.set(b"\x02?A\r");
+    let refused = invoke(
+        &w,
+        "cart_add_weighed",
+        json!({"variantId": variant, "via": "search", "scanEventId": null, "typedQtyMilli": null}),
+    )
+    .unwrap();
+    assert_eq!(refused["outcome"], "refused");
+    assert_eq!(refused["reason"], "unstable");
+    assert_eq!(refused["cart"], Value::Null);
+    // Typed instead: a line of its own (0.25 kg × 450.00 = 112.50), the weighed one unchanged.
+    let typed = invoke(
+        &w,
+        "cart_add_weighed",
+        json!({"variantId": variant, "via": "search", "scanEventId": null, "typedQtyMilli": "250"}),
+    )
+    .unwrap();
+    assert_eq!(typed["outcome"], "weighed", "{typed}");
+    assert_eq!(typed["weightGrams"], "250");
+    assert_eq!(typed["cart"]["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(typed["cart"]["lines"][0]["quantityMilli"], "1234");
+    assert_eq!(typed["cart"]["lines"][1]["quantityMilli"], "250");
+    invoke(&w, "cart_remove_line", json!({"lineId": typed["lineId"]})).unwrap();
+    // Over capacity and nothing on the pan: refused at once.
+    pty.set(b"\x02?`\r");
+    assert_eq!(
+        invoke(&w, "cart_weigh_line", json!({"lineId": line_id})).unwrap()["reason"],
+        "overload"
+    );
+    pty.set(b"\x02?B\r");
+    assert_eq!(
+        invoke(&w, "cart_weigh_line", json!({"lineId": line_id})).unwrap()["reason"],
+        "zero"
+    );
+    // The Weigh key: the line takes the new weight. 0.333 kg × 450.00 = 149.85.
+    pty.set(b"\x0200.333\r");
+    let reweighed = invoke(&w, "cart_weigh_line", json!({"lineId": line_id})).unwrap();
+    assert_eq!(reweighed["outcome"], "weighed", "{reweighed}");
+    assert_eq!(reweighed["cart"]["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(reweighed["cart"]["lines"][0]["quantityMilli"], "333");
+    assert_eq!(reweighed["cart"]["totalMinor"], "14985");
+    // Typed instead (the fallback).
+    let typed = invoke(
+        &w,
+        "cart_set_quantity",
+        json!({"lineId": line_id, "qtyMilli": "500"}),
+    )
+    .unwrap();
+    assert_eq!(typed["totalMinor"], "22500");
+    // The scanner's scan id counted once: a repeat delivery is a duplicate.
+    let again = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": scan_id, "raw": "BANANA", "source": "scanner"}),
+    )
+    .unwrap();
+    assert_eq!(again["outcome"], "duplicate");
 }

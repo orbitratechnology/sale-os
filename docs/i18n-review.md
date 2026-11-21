@@ -39,11 +39,15 @@ speaker who works in Sri Lankan retail must review both before shops see them.
 | change (money back) | ඉතිරි මුදල | மீதிப் பணம் |
 | discount | වට්ටම | தள்ளுபடி |
 | customer display (pole display) | පාරිභෝගික සංදර්ශකය (කණු සංදර්ශකය) | வாடிக்கையாளர் காட்சித் திரை (கம்பக் காட்சித் திரை) |
+| scale / weigh / weight | තරාදිය / කිරන්න / බර | தராசு / நிறுக்கவும் / நிறை |
 
 ## Sentences the drafts were least sure of
 
 Owner screens (2026-11-21):
 
+- Scales and USB scanners (2026-11-21): "HID-POS", "Toledo 8217", `ST,GS` and "8N1/7E1" stay in
+  English (they are what the device's manual says). "Zero the scale" was drafted as "set it to
+  zero" (බිංදුවට සකසන්න / பூச்சியமாக்கவும்); shops may say "tare".
 - Customer display: "pole display" was rendered literally (කණු / கம்பம்); a reviewer may know
   the word shops use. "Command set" (විධාන කට්ටලය / கட்டளைத் தொகுப்பு) is technical either way.
 

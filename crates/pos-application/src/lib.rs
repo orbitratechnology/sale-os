@@ -31,6 +31,7 @@ pub mod replay;
 pub mod reports;
 pub mod returns;
 pub mod sales;
+pub mod scale;
 pub mod scan;
 pub mod settings;
 pub mod setup;

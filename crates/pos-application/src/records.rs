@@ -712,6 +712,7 @@ pub enum DeviceKind {
     Scanner,
     PaymentTerminal,
     CustomerDisplay,
+    Scale,
 }
 
 impl DeviceKind {
@@ -721,6 +722,7 @@ impl DeviceKind {
             DeviceKind::Scanner => "scanner",
             DeviceKind::PaymentTerminal => "payment_terminal",
             DeviceKind::CustomerDisplay => "customer_display",
+            DeviceKind::Scale => "scale",
         }
     }
 
@@ -730,6 +732,7 @@ impl DeviceKind {
             DeviceKind::Scanner,
             DeviceKind::PaymentTerminal,
             DeviceKind::CustomerDisplay,
+            DeviceKind::Scale,
         ]
         .into_iter()
         .find(|k| k.as_str() == s)

@@ -18,6 +18,8 @@
 //!    GS1 label with a weight, count or price sets the line instead (E21-T02,
 //!    `pos_domain::catalog::label`). A label price is the shop's own, so it needs no manager
 //!    approval, but it is audited as a price override with `source: barcode_label`.
+//!    An item sold by weight (`kg`, `g`) without a label, while a scale is set up, is
+//!    weighed instead ([`ScanOutcome::Weigh`], E20-T06).
 //! 4. An unknown code changes nothing ([`ScanOutcome::NotFound`], BAR-006). When the decoder
 //!    noticed a likely set-up problem (scanner on the wrong keyboard layout, a failed check
 //!    digit), the outcome carries a [`ScanHint`] for the cashier.
@@ -64,6 +66,13 @@ pub enum ScanOutcome {
     Duplicate { view: CartView },
     /// No barcode or SKU matches. The cart is unchanged; the UI offers search or create.
     NotFound { code: String, hint: Option<ScanHint> },
+    /// An item sold by weight while a scale is set up (E20-T06): the cart is unchanged and
+    /// the delivery is recorded; the UI weighs it (`add_weighed`) or takes a typed weight.
+    Weigh {
+        variant: pos_domain::VariantId,
+        name: String,
+        unit: pos_domain::catalog::Unit,
+    },
 }
 
 /// Longest scan accepted: 2D codes (GS1 DataMatrix, Digital Link URLs) are long.
@@ -213,6 +222,27 @@ impl CartService {
                 )
             }
         };
+        if label.is_none() && crate::scale::sold_by_weight(sellable.unit) && self.weighs() {
+            // Weighed, not counted: the scale gives the quantity. The delivery is recorded
+            // now, so a repeated one asks for one weighing only.
+            let set = WriteSet::builder(ctx.write_context())
+                .record_scan(scan_event_id)
+                .build()?;
+            return match self.store().apply(set).await {
+                Ok(_) => Ok(ScanOutcome::Weigh {
+                    variant: hit.variant_id,
+                    name: sellable.name.clone(),
+                    unit: sellable.unit,
+                }),
+                Err(WriteError::ScanAlreadySeen) => {
+                    drop(guard);
+                    Ok(ScanOutcome::Duplicate {
+                        view: self.current(ctx).await?,
+                    })
+                }
+                Err(e) => Err(e.into()),
+            };
+        }
         let Loaded { mut cart, base, .. } = self.load(ctx).await?;
         let (change, audited) = match label {
             None => (

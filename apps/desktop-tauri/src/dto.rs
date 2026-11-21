@@ -801,6 +801,41 @@ pub enum ScanOutcomeDto {
     /// Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
     /// problem: `keyboard_layout:<layout>` or `check_digit`.
     NotFound { code: String, hint: Option<String> },
+    /// An item sold by weight while a scale is set up (E20-T06): the cart is unchanged; weigh
+    /// it with `cart_add_weighed` (same `scanEventId`), or type its weight.
+    Weigh {
+        variant_id: VariantId,
+        name: String,
+        unit: pos_domain::catalog::Unit,
+    },
+}
+
+/// How a weighed item was chosen (`cart_add_weighed`).
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum WeighViaDto {
+    Search,
+    QuickSelect,
+    /// A scan that answered `weigh`: pass its `scanEventId`.
+    Scanner,
+    /// A typed code that answered `weigh`.
+    Manual,
+}
+
+/// What a weighing did (`cart_add_weighed`, `cart_weigh_line`).
+#[derive(Debug, Serialize, Type)]
+#[serde(tag = "outcome", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum WeighOutcomeDto {
+    /// The line now holds the weight.
+    Weighed {
+        cart: Box<CartViewDto>,
+        line_id: CartLineId,
+        /// The stable weight in grams, exact decimal text (`1234.5`).
+        weight_grams: String,
+    },
+    /// Nothing changed. `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`,
+    /// `underload` or `failed` (then `message` says why).
+    Refused { reason: String, message: String },
 }
 
 /// The scan hint as the UI receives it.

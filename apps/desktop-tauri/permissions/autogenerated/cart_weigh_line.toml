@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cart-weigh-line"
+description = "Enables the cart_weigh_line command without any pre-configured scope."
+commands.allow = ["cart_weigh_line"]
+
+[[permission]]
+identifier = "deny-cart-weigh-line"
+description = "Denies the cart_weigh_line command without any pre-configured scope."
+commands.deny = ["cart_weigh_line"]

@@ -93,6 +93,20 @@ entries:
     tester: engineering (automated)
     evidence: crates/pos-device-hw/tests/hidpos.rs, apps/desktop-tauri/src/device_commands.rs (hub test), apps/desktop-tauri/tests/permissions.rs, apps/desktop-ui/e2e/devices.e2e.ts
     notes: The default report layout (ID 2, length byte, AIM id, 56 data bytes, continued flag in byte 63) follows Honeywell/Zebra documentation; unverified on a real scanner. Real hidapi enumeration ran here with no device attached.
+  - vendor: Generic
+    model: Serial scale, Toledo 8217 and continuous ASCII (PTY null-modem emulator)
+    kind: scale
+    connection: serial
+    profile_id: null
+    os: Linux (CI container)
+    adapter: pos-device-hw HwScale
+    firmware: n/a
+    capabilities: [toledo_8217_request, continuous_ascii, stable_weight, motion, overload, underload, zero, negative, bad_frame, reconnect]
+    result: emulator-pass
+    tested_on: 2026-11-21
+    tester: engineering (automated)
+    evidence: crates/pos-device-hw/tests/scale.rs, crates/pos-local-db/tests/weighing.rs, apps/desktop-tauri/tests/permissions.rs, apps/desktop-ui/e2e/devices.e2e.ts
+    notes: Status-byte layout of 8217 (bit 0 motion, 1 zero, 4 under, 5 over, 6 always set) from published descriptions; unverified on a real scale.
   - vendor: Sale OS
     model: Sandbox card terminal (mock provider)
     kind: payment_terminal

@@ -27,6 +27,7 @@ import {
   Wallet,
   ArrowRightLeft,
   LockOpen,
+  Weight,
 } from "../../ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { commands, type Session, type Workspace } from "../../ipc";
@@ -49,7 +50,8 @@ import { PaymentPanel } from "./PaymentPanel";
 import type { ExchangeCredit } from "../returns/exchange";
 import { SearchPanel, type SearchHandle } from "./SearchPanel";
 import { StatusBar } from "./StatusBar";
-import { scanHintText, useCart } from "./useCart";
+import { scanHintText, useCart, type WeighRequest } from "./useCart";
+import { WeighDialog } from "./WeighDialog";
 import { useT, type T } from "../../i18n";
 
 type Modal =
@@ -65,13 +67,18 @@ type Modal =
   | "start"
   | "quick"
   | { reason: string; then: (reason: string) => void }
+  | { weigh: WeighRequest }
   | null;
+
+/** Items sold by weight (E20-T06): weighed on the scale when one is set up. */
+const byWeight = (unit: string) => unit === "kg" || unit === "g";
 
 /** The key map (E09-T05). Shown in the action bar; documented in docs/keyboard.md. */
 export const KEYS = {
   search: "F2",
   quick: "Shift+F2",
   quantity: "F3",
+  weigh: "Shift+F3",
   discount: "F4",
   remove: "Delete",
   park: "F5",
@@ -151,7 +158,14 @@ export function Checkout({
   /** `approvalTokenId`: a manager approved a cashier creating this one product (E07-T04). */
   onCreateProduct: (barcode: string, approvalTokenId?: string) => void;
 }) {
-  const c = useCart(onSignedOut);
+  const [modal, setModal] = useState<Modal>(gettingStarted && onWentLive ? "start" : null);
+  const c = useCart(onSignedOut, (weigh) => setModal({ weigh }));
+  // E20-T06: with a scale set up, items sold by weight are weighed.
+  const [scaleOn, setScaleOn] = useState(false);
+  const checkScale = useCallback(() => {
+    void commands.scaleStatus().then((res) => res.status === "ok" && setScaleOn(res.data.configured));
+  }, []);
+  useEffect(checkScale, [checkScale]);
   const [drawer, setDrawer] = useState<CashState | null>(null);
   useEffect(() => {
     let live = true;
@@ -162,7 +176,6 @@ export function Checkout({
   }, []);
   const drawerNeeded = drawer !== null && drawer.required && drawer.session === null;
   const [editing, setEditing] = useState<Editing>(null);
-  const [modal, setModal] = useState<Modal>(gettingStarted && onWentLive ? "start" : null);
   const [code, setCode] = useState("");
   const [scannerReady, setScannerReady] = useState(true);
   const search = useRef<SearchHandle | null>(null);
@@ -290,6 +303,19 @@ export function Checkout({
     else send(null);
   };
 
+  /** The Weigh key (Shift+F3): weighs the selected line of an item sold by weight again. */
+  const weighSelected = useCallback(() => {
+    const line = c.line(c.selected);
+    if (!line) return;
+    if (!scaleOn) {
+      c.setNotice({ kind: "info", text: t("No scale is set up on this till. Type the weight with Quantity (F3).") });
+    } else if (!byWeight(line.unit) || line.scaleLabel) {
+      c.setNotice({ kind: "info", text: t("Only items sold by weight (kg or g) can be weighed.") });
+    } else {
+      setModal({ weigh: { variantId: line.variantId, name: line.name, unit: line.unit, via: "search", scanEventId: null, lineId: line.lineId } });
+    }
+  }, [c, scaleOn, t]);
+
   // Global keys. Ignored while a dialog is open (the dialog owns Esc and Enter).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -304,6 +330,10 @@ export function Checkout({
           return;
         case "F3":
           e.preventDefault();
+          if (e.shiftKey) {
+            weighSelected();
+            return;
+          }
           if (sel && c.line(sel)?.scaleLabel) {
             c.setNotice({ kind: "info", text: t("This item's weight or price comes from its scale label. Remove the line and scan the label again.") });
           } else if (sel) setEditing({ lineId: sel, field: "qty" });
@@ -372,7 +402,7 @@ export function Checkout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock, t]);
+  }, [active, c, modal, lock, onProducts, onReturns, onSales, onDrawer, onStock, t, weighSelected]);
 
   // Leaving the till closes what was open on it (adjusted while rendering, the React way to
   // reset state when a prop changes).
@@ -398,8 +428,9 @@ export function Checkout({
     returned.current = false;
     void refresh();
     countParked();
+    checkScale();
     void commands.cashSessionCurrent().then((res) => res.status === "ok" && setDrawer(res.data));
-  }, [active, refresh, countParked]);
+  }, [active, refresh, countParked, checkScale]);
   // Dialogs only ever show on the active till: a modal in the hidden till would block the
   // screen that is open.
   const shown = active ? modal : null;
@@ -525,7 +556,15 @@ export function Checkout({
             autoComplete="off"
           />
         </form>
-        <SearchPanel ref={search} exponent={exponent} onPick={(hit) => void c.addVariant(hit.variantId)} />
+        <SearchPanel
+          ref={search}
+          exponent={exponent}
+          onPick={(hit) =>
+            scaleOn && byWeight(hit.unit)
+              ? setModal({ weigh: { variantId: hit.variantId, name: hit.name, unit: hit.unit, via: "search", scanEventId: null } })
+              : void c.addVariant(hit.variantId)
+          }
+        />
         <button type="button" className="secondary quick-open" onClick={() => setModal("quick")}>
           <LayoutGrid />
           {t("Quick items")} <kbd>⇧F2</kbd>
@@ -582,6 +621,17 @@ export function Checkout({
               <Hash />
               {t("Quantity")} <kbd>F3</kbd>
             </button>
+            {scaleOn && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={!selectedLine || !byWeight(selectedLine.unit) || !!selectedLine.scaleLabel}
+                onClick={weighSelected}
+              >
+                <Weight />
+                {t("Weigh")} <kbd>⇧F3</kbd>
+              </button>
+            )}
             <button type="button" className="secondary" disabled={!selectedLine} onClick={() => c.selected && setEditing({ lineId: c.selected, field: "discount" })}>
               <Percent />
               {t("Discount")} <kbd>F4</kbd>
@@ -766,7 +816,17 @@ export function Checkout({
         />
       )}
       {shown === "quick" && (
-        <QuickSelectDialog exponent={exponent} onPick={(variantId) => c.addQuick(variantId)} onClose={() => setModal(null)} />
+        <QuickSelectDialog
+          exponent={exponent}
+          onPick={(variantId, unit, name) => {
+            if (scaleOn && byWeight(unit)) {
+              setModal({ weigh: { variantId, name, unit, via: "quickSelect", scanEventId: null } });
+              return Promise.resolve(false);
+            }
+            return c.addQuick(variantId);
+          }}
+          onClose={() => setModal(null)}
+        />
       )}
       {shown === "recovered" && recovered && (
         <RecoveryDialog
@@ -835,7 +895,19 @@ export function Checkout({
           }}
         />
       )}
-      {shown !== null && typeof shown === "object" && (
+      {shown !== null && typeof shown === "object" && "weigh" in shown && (
+        <WeighDialog
+          request={shown.weigh}
+          weigh={c.weighItem}
+          onTyped={(milli) => {
+            const r = shown.weigh;
+            if (r.lineId) void c.setQuantity(r.lineId, milli);
+            else void c.addTyped(r, milli);
+          }}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {shown !== null && typeof shown === "object" && "reason" in shown && (
         <Dialog
           title={shown.reason}
           confirmLabel={t("Continue")}

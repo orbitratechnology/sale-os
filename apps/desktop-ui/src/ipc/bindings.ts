@@ -167,6 +167,16 @@ export const commands = {
 	cartRecoveryDiscard: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery_discard", { revision })),
 	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
 	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
+	/**
+	 *  An item sold by weight, weighed on the scale (E20-T06): a stable weight becomes a new
+	 *  line's quantity; a moving, zero, negative or out-of-range weight is refused and nothing
+	 *  is added. `scanEventId` is the scan that answered `weigh` (via `scanner`).
+	 *  `typedQtyMilli`: the fallback, a weight typed instead (thousandths of the item's unit);
+	 *  it makes a line of its own too.
+	 */
+	cartAddWeighed: (variantId: VariantId, via: WeighViaDto, scanEventId: ScanEventId | null, typedQtyMilli: string | null) => typedError<WeighOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_weighed", { variantId, via, scanEventId, typedQtyMilli })),
+	/**  Weighs again for a line of an item sold by weight and sets its quantity (the Weigh key). */
+	cartWeighLine: (lineId: CartLineId) => typedError<WeighOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_weigh_line", { lineId })),
 	/**  Zero is refused: use `cart_remove_line`. */
 	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
 	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_remove_line", { lineId })),
@@ -439,6 +449,10 @@ export const commands = {
 	 *  signed-in user: the status bar).
 	 */
 	scannerStatus: () => typedError<ScannerStatusDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("scanner_status")),
+	/**  How the scale is doing (any signed-in user: the till weighs only when one is set up). */
+	scaleStatus: () => typedError<ScaleStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scale_status")),
+	/**  Reads the scale once (Settings → Devices → Test scale; audited). */
+	scaleTest: () => typedError<ScaleTestDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scale_test")),
 	/**  How the customer display is doing (any signed-in user). Its problems never stop a sale. */
 	displayStatus: () => typedError<DisplayStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("display_status")),
 	/**  Shows a test pattern on the customer display (Settings → Devices; audited). */
@@ -2570,6 +2584,48 @@ export type SavedFileDto = {
 	fileName: string,
 };
 
+export type ScaleStatusDto = ScaleStatusDto_Serialize | ScaleStatusDto_Deserialize;
+
+export type ScaleStatusDto_Deserialize = {
+	/**  False: no scale is set up; items sold by weight take a typed quantity. */
+	configured: boolean,
+	/**  Which scale, e.g. `COM3 @ 9600, Toledo 8217 (kg)`. */
+	target?: string | null,
+	/**  `ready`, `offline` or `unknown` (not read yet). */
+	state: string,
+	message?: string | null,
+};
+
+export type ScaleStatusDto_Serialize = {
+	/**  False: no scale is set up; items sold by weight take a typed quantity. */
+	configured: boolean,
+	/**  Which scale, e.g. `COM3 @ 9600, Toledo 8217 (kg)`. */
+	target: string | null,
+	/**  `ready`, `offline` or `unknown` (not read yet). */
+	state: string,
+	message: string | null,
+};
+
+export type ScaleTestDto = ScaleTestDto_Serialize | ScaleTestDto_Deserialize;
+
+export type ScaleTestDto_Deserialize = {
+	/**  `stable`, `moving`, `overload`, `underload` or `failed`. */
+	outcome: string,
+	/**  The weight in grams, exact decimal text, when the scale gave one. */
+	weightGrams?: string | null,
+	/**  Why it failed (`failed`). */
+	message?: string | null,
+};
+
+export type ScaleTestDto_Serialize = {
+	/**  `stable`, `moving`, `overload`, `underload` or `failed`. */
+	outcome: string,
+	/**  The weight in grams, exact decimal text, when the scale gave one. */
+	weightGrams: string | null,
+	/**  Why it failed (`failed`). */
+	message: string | null,
+};
+
 export type ScanEventId = string;
 
 export type ScanOutcomeDto = ScanOutcomeDto_Serialize | ScanOutcomeDto_Deserialize;
@@ -2585,7 +2641,12 @@ export type ScanOutcomeDto_Deserialize =
  *  Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
  *  problem: `keyboard_layout:<layout>` or `check_digit`.
  */
-{ outcome: "notFound"; code: string; hint?: string | null };
+{ outcome: "notFound"; code: string; hint?: string | null } | 
+/**
+ *  An item sold by weight while a scale is set up (E20-T06): the cart is unchanged; weigh
+ *  it with `cart_add_weighed` (same `scanEventId`), or type its weight.
+ */
+{ outcome: "weigh"; variantId: VariantId; name: string; unit: Unit };
 
 export type ScanOutcomeDto_Serialize = 
 /**  A new line. */
@@ -2598,7 +2659,12 @@ export type ScanOutcomeDto_Serialize =
  *  Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
  *  problem: `keyboard_layout:<layout>` or `check_digit`.
  */
-{ outcome: "notFound"; code: string; hint: string | null };
+{ outcome: "notFound"; code: string; hint: string | null } | 
+/**
+ *  An item sold by weight while a scale is set up (E20-T06): the cart is unchanged; weigh
+ *  it with `cart_add_weighed` (same `scanEventId`), or type its weight.
+ */
+{ outcome: "weigh"; variantId: VariantId; name: string; unit: Unit };
 
 /**  How a code reached `scan_submit`. */
 export type ScanSourceDto = "scanner" | "manual";
@@ -3156,6 +3222,40 @@ export type VariantInputDto_Serialize = {
 	scanQtyMilli: string | null,
 	barcodes: BarcodeInputDto_Serialize[],
 };
+
+/**  What a weighing did (`cart_add_weighed`, `cart_weigh_line`). */
+export type WeighOutcomeDto = WeighOutcomeDto_Serialize | WeighOutcomeDto_Deserialize;
+
+/**  What a weighing did (`cart_add_weighed`, `cart_weigh_line`). */
+export type WeighOutcomeDto_Deserialize = 
+/**  The line now holds the weight. */
+{ outcome: "weighed"; cart: CartViewDto_Deserialize; lineId: CartLineId; 
+/**  The stable weight in grams, exact decimal text (`1234.5`). */
+weightGrams: string } | 
+/**
+ *  Nothing changed. `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`,
+ *  `underload` or `failed` (then `message` says why).
+ */
+{ outcome: "refused"; reason: string; message: string };
+
+/**  What a weighing did (`cart_add_weighed`, `cart_weigh_line`). */
+export type WeighOutcomeDto_Serialize = 
+/**  The line now holds the weight. */
+{ outcome: "weighed"; cart: CartViewDto_Serialize; lineId: CartLineId; 
+/**  The stable weight in grams, exact decimal text (`1234.5`). */
+weightGrams: string } | 
+/**
+ *  Nothing changed. `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`,
+ *  `underload` or `failed` (then `message` says why).
+ */
+{ outcome: "refused"; reason: string; message: string };
+
+/**  How a weighed item was chosen (`cart_add_weighed`). */
+export type WeighViaDto = "search" | "quickSelect" | 
+/**  A scan that answered `weigh`: pass its `scanEventId`. */
+"scanner" | 
+/**  A typed code that answered `weigh`. */
+"manual";
 
 export type WorkspaceDto = {
 	businessName: string,

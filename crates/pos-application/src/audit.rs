@@ -75,6 +75,7 @@ actions! {
     DEVICE_REMOVED = "device.removed",
     DEVICE_TEST_PRINTED = "device.test_printed",
     DEVICE_TEST_DISPLAYED = "device.test_displayed",
+    DEVICE_TEST_WEIGHED = "device.test_weighed",
     CASH_DRAWER_OPENED = "cash_drawer.opened",
     CASH_SESSION_OPENED = "cash_session.opened",
     CASH_SESSION_CLOSED = "cash_session.closed",
