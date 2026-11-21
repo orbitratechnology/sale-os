@@ -68,6 +68,8 @@ export function PaymentPanel({
   const [external, setExternal] = useState({ amount: "", reference: "" });
   const [error, setError] = useState<IpcError | string | null>(null);
   const t = useT();
+  // The hint names a key: the sentence is translated whole and split where the key goes.
+  const [cashHintBefore, cashHintAfter = ""] = t("Type the amount the customer gave, or press {key} on an empty box for the exact amount.").split("{key}");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<CompletedSaleDto | null>(null);
   const [returned, setReturned] = useState<CompletedReturnDto | null>(null);
@@ -315,10 +317,22 @@ export function PaymentPanel({
         {!method ? (
           <>
             <form onSubmit={addCash} className="cash-form">
-              <label>
-                {t("Cash received ({currency}) · empty + Enter = exact", { currency: cart.currencyCode })}
-                <input ref={cashInput} inputMode="decimal" aria-label={t("Cash received")} value={cash} onChange={(e) => setCash(e.target.value)} disabled={busy || remaining === 0n} />
-              </label>
+              <label htmlFor="cash-received">{t("Cash received ({currency})", { currency: cart.currencyCode })}</label>
+              <p id="cash-hint" className="small field-hint">
+                {cashHintBefore}
+                <kbd>Enter</kbd>
+                {cashHintAfter}
+              </p>
+              <input
+                id="cash-received"
+                ref={cashInput}
+                inputMode="decimal"
+                aria-describedby="cash-hint"
+                placeholder="0.00"
+                value={cash}
+                onChange={(e) => setCash(e.target.value)}
+                disabled={busy || remaining === 0n}
+              />
               <div className="quick-cash">
                 <button type="button" disabled={busy || remaining === 0n} onClick={() => void complete([...tenders, { kind: "cash", amountMinor: remaining.toString(), reference: null }])}>
                   <Banknote />

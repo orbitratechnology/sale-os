@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { SectionTitle } from "../../ui/PanelHeader";
+import { CreditCard, Printer, ScanBarcode } from "../../ui/icons";
 import { commands, type IpcError } from "../../ipc";
 import type { DeviceDto, DiscoveryDto, PrinterProfileDto, PrinterStatusDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
@@ -223,7 +225,7 @@ function PrinterSection({
 
   return (
     <section aria-label="Receipt printer" className="device-section">
-      <h2>Receipt printer</h2>
+      <SectionTitle icon={Printer}>Receipt printer</SectionTitle>
       {status && (
         <p data-testid="device-printer-status" className="small">
           {status.configured ? (
@@ -345,7 +347,7 @@ function PrinterSection({
           )}
           <div className="row">
             <label>
-              Characters per line (empty = the model's) {errorFor("columnsOverride")}
+              Characters per line (optional) {errorFor("columnsOverride")}
               <input inputMode="numeric" value={draft.columns} placeholder={profile ? String(profile.columns) : ""} onChange={(e) => set({ columns: e.target.value })} />
             </label>
             <label>
@@ -360,8 +362,8 @@ function PrinterSection({
             <label>
               Cash drawer
               <select value={draft.drawerPin} onChange={(e) => set({ drawerPin: e.target.value as PrinterDraft["drawerPin"] })}>
-                <option value="pin2">Kick port pin 2 (most drawers)</option>
-                <option value="pin5">Kick port pin 5</option>
+                <option value="pin2">Pin 2 (most drawers)</option>
+                <option value="pin5">Pin 5</option>
               </select>
             </label>
             <label>
@@ -487,10 +489,10 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
 
   return (
     <section aria-label="Serial scanner" className="device-section">
-      <h2>Serial barcode scanner (optional)</h2>
+      <SectionTitle icon={ScanBarcode}>Serial barcode scanner (optional)</SectionTitle>
       <p className="small">
-        USB scanners in keyboard mode need nothing here. Use this only for scanners on a COM port (RS-232, USB-COM or Bluetooth SPP).
-        The till reconnects by itself after the scanner is unplugged.
+        Most USB scanners need nothing here: they type the code like a keyboard. Use this only for a scanner on a COM port
+        (RS-232, USB-COM or Bluetooth SPP). The till reconnects by itself after the scanner is unplugged.
       </p>
       <form onSubmit={(e) => void save(e)} className="row" aria-label="Scanner settings">
         <label>
@@ -544,14 +546,14 @@ function TerminalSection({ device, onChanged }: { device: DeviceDto | null; onCh
   }
   return (
     <section aria-label="Card terminal" className="device-section">
-      <h2>Card terminal</h2>
+      <SectionTitle icon={CreditCard}>Card terminal</SectionTitle>
       <p className="small">
-        A separate (standalone) terminal needs nothing here: record its payments as “Card (separate terminal)”. An integrated terminal is
-        connected through its provider once the agreement and test credentials exist. Until then the sandbox terminal lets you practise:
-        amounts ending in .01 decline, .02 time out (to practise settling), .03 take a few seconds.
+        A card machine that is not connected to the till needs nothing here: take the payment on it, then choose “Card (separate
+        terminal)” at the till. A connected terminal is set up through its provider. To practise, use the sandbox terminal: amounts
+        ending in .01 are declined, .02 time out, and .03 take a few seconds.
       </p>
       {device ? (
-        <div className="actions">
+        <div className="button-row">
           <span>{device.name}</span>
           <button type="button" className="secondary" onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}>
             Remove

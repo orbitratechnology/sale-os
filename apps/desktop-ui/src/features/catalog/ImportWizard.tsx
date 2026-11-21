@@ -158,8 +158,11 @@ export function ImportWizard({ onClose }: { onClose: (imported: boolean) => void
       {step.kind === "choose" && (
         <section className="card" aria-label="Choose a file">
           <p>
-            Choose a CSV file with a heading row. The products export is in this format; most spreadsheets can save as CSV
-            (comma, semicolon or tab separated; UTF-8 or Windows encoding).
+            Choose a spreadsheet saved as a CSV file, with the column names in the first row. Excel, Google Sheets and most
+            other spreadsheets can save as CSV.
+          </p>
+          <p className="small">
+            Tip: export your products first (Reports → Products) to see the columns the till expects.
           </p>
           <button type="button" disabled={busy} onClick={() => void choose()}>
             Choose file…

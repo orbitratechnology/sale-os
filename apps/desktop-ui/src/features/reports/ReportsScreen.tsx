@@ -2,6 +2,7 @@ import { TabList, tabPanelProps } from "../../ui/Tabs";
 import {
   ArrowLeft,
   ChartColumn,
+  ClipboardList,
   Inbox,
   Wallet,
 } from "../../ui/icons";
@@ -157,12 +158,13 @@ export function ReportsScreen({ workspace, onBack, onAudit }: { workspace: Works
           <ChartColumn />
           Reports
         </h1>
-        <span>
+        <span className="header-actions">
           {onAudit && (
             <button type="button" className="secondary" onClick={onAudit}>
+              <ClipboardList />
               Audit log
             </button>
-          )}{" "}
+          )}
           <button type="button" className="secondary" onClick={onBack}>
             <ArrowLeft />
             Back to till <kbd>Esc</kbd>

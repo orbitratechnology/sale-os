@@ -119,6 +119,12 @@
     --dur-fast: 120ms;
     --page-max: 70rem;
   }
+  /* Fingers on a touch screen need bigger targets than a mouse pointer. */
+  @media (pointer: coarse) {
+    :root {
+      --ctl-h: var(--ctl-h-lg);
+    }
+  }
 }
 
 /* ============================== base ============================== */
@@ -141,6 +147,10 @@
     background: var(--c-bg);
     -webkit-font-smoothing: antialiased;
     accent-color: var(--c-accent-solid);
+    font-size-adjust: from-font;
+  }
+  :where(.mono, .receipt-paper, code, pre, .chip) {
+    font-size-adjust: none;
   }
   ::selection {
     background: color-mix(in oklab, var(--c-text) 15%, transparent);
@@ -283,7 +293,7 @@
     display: inline-grid;
     place-items: center;
     min-inline-size: 1.25rem;
-    block-size: 1.25rem;
+    min-block-size: 1.25rem;
     padding: 0 0.3rem;
     margin-inline-start: var(--sp-1);
     font: var(--fw-medium) 0.6875rem / 1 var(--font-sans);
@@ -461,6 +471,12 @@
     font-weight: var(--fw-medium);
     margin: var(--sp-2) 0 0;
   }
+  .field-hint {
+    margin: 0;
+  }
+  .field-hint kbd {
+    margin-inline: 0.125rem;
+  }
   .field-error.inline {
     display: block;
     margin: var(--sp-1) 0 0;
@@ -612,6 +628,17 @@
   .returns-header h1 {
     flex: 1;
   }
+  /* An empty live region (filled only to announce a result) takes no room in the page. */
+  :is(.sales, .returns, .shell) > [aria-live]:empty {
+    margin-block-start: calc(-1 * var(--sp-5));
+  }
+  /* Several buttons at the end of a screen's header: one evenly spaced group. */
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
+  }
   .page-title {
     display: inline-flex;
     align-items: center;
@@ -659,6 +686,52 @@
   :is(.staff, .taxes, .settings-list) > h2:not(:first-child) {
     margin-block-start: var(--sp-6);
   }
+  /* Settings pages made of topics: even air between parts, more before each new topic. */
+  :is(.staff, .taxes, .panel-stack) {
+    display: grid;
+    gap: var(--sp-3);
+  }
+  :is(.staff, .taxes, .panel-stack) > :is(p, form, table, ul, dl) {
+    margin: 0;
+  }
+  :is(.staff, .taxes, .panel-stack) > .section-title:not(:first-child),
+  .panel-stack > section {
+    margin-block-start: var(--sp-4);
+  }
+  .settings-list > .panel-header + * {
+    margin-block-start: var(--sp-4);
+  }
+  .settings-list > .panel-header + .setting-row {
+    margin-block-start: 0;
+  }
+  .check-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2) var(--sp-5);
+    margin-block-start: var(--sp-2);
+  }
+  .plain-list li > .tag:first-of-type,
+  .plain-list li > strong + button.link {
+    margin-inline-start: var(--sp-2);
+  }
+  /* A question asked in place (restore a backup, join a business): a framed box. */
+  div[role="alertdialog"] {
+    display: grid;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    border: 1px solid var(--c-border-strong);
+    border-radius: var(--r-lg);
+    background: var(--c-surface-2);
+  }
+  div[role="alertdialog"] > * {
+    margin: 0;
+  }
+  dl.cloud-status {
+    padding: var(--sp-4) var(--sp-5);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-lg);
+    background: var(--c-surface-2);
+  }
   .plain-list {
     list-style: none;
     margin: 0;
@@ -697,9 +770,19 @@
     display: grid;
   }
   dialog.dialog::backdrop {
-    background: oklch(0 0 0 / 0.45);
+    background: transparent;
     overflow: hidden;
     overscroll-behavior: contain;
+    transition-property: background-color, display, overlay;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
+  }
+  dialog.dialog[open]::backdrop {
+    background: var(--c-backdrop);
+    @starting-style {
+      background: transparent;
+    }
   }
   /* A dialog that is itself focused (it drives its own keys) shows no ring around the panel. */
   dialog.dialog:focus-visible {
@@ -709,12 +792,34 @@
   .dialog-form {
     display: contents;
   }
-  @media (prefers-reduced-motion: no-preference) {
-    dialog.dialog[open] {
-      animation: zoom-in 150ms ease-out both;
+  /*
+   * Opening: fade in, and grow slightly for people who have not asked for less motion. Set with
+   * transitions from @starting-style; display and overlay are listed so the top layer keeps the
+   * dialog while it changes. (Closing unmounts it, so there is no exit to animate.)
+   */
+  dialog.dialog {
+    opacity: 0;
+    transition-property: opacity, scale, display, overlay;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
+    @media (prefers-reduced-motion: no-preference) {
+      scale: 0.96;
     }
-    dialog.dialog[open]::backdrop {
-      animation: fade-in 150ms ease-out both;
+    @media (prefers-reduced-motion: reduce) {
+      transition-duration: 80ms;
+    }
+  }
+  dialog.dialog[open] {
+    opacity: 1;
+    @starting-style {
+      opacity: 0;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      scale: 1;
+      @starting-style {
+        scale: 0.96;
+      }
     }
   }
   .dialog > h2,
@@ -913,6 +1018,139 @@
     background: var(--c-surface-3);
   }
 
+  /* Settings page header: an icon tile, the page name and one sentence on what it is for. */
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding-block-end: var(--sp-5);
+    margin-block-end: var(--sp-1);
+    border-block-end: 1px solid var(--c-border);
+  }
+  .panel-header h2 {
+    margin: 0;
+    font-size: var(--fs-xl);
+  }
+  .panel-header p {
+    margin: var(--sp-1) 0 0;
+  }
+  .icon-tile {
+    display: grid;
+    place-items: center;
+    flex: none;
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    border-radius: var(--r-lg);
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    color: var(--c-text);
+  }
+  .icon-tile .lucide {
+    inline-size: var(--icon-lg);
+    block-size: var(--icon-lg);
+  }
+  .icon-tile.sm {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+    border-radius: var(--r-md);
+    color: var(--c-text-muted);
+  }
+  .icon-tile.sm .lucide {
+    inline-size: var(--icon);
+    block-size: var(--icon);
+  }
+  /* A topic inside a settings page: an icon beside its heading. */
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-md);
+    margin: 0 0 var(--sp-2);
+  }
+  .section-title .lucide {
+    color: var(--c-text-muted);
+  }
+  /* A row of buttons under a sentence, rather than squeezed onto the end of it. */
+  .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: 0;
+  }
+  /* A short form whose fields stack one under another. */
+  .stack-form {
+    display: grid;
+    gap: var(--sp-4);
+    max-inline-size: 28rem;
+    justify-items: start;
+  }
+  .stack-form label {
+    justify-self: stretch;
+  }
+  .stack-form > .section-title {
+    margin: 0;
+  }
+  .stack-form > .section-title + p {
+    margin: calc(-1 * var(--sp-2)) 0 0;
+  }
+  /* A hint under a form, spanning its whole width. */
+  .form-hint {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  /* Table cells holding a row's buttons or links: kept together at the row's end. */
+  :is(td, th).row-actions {
+    text-align: end;
+    white-space: nowrap;
+  }
+  :is(.row-actions, .plain-list) button.link {
+    min-block-size: 1.5rem;
+  }
+
+  /* An on/off switch: a checkbox drawn as the toggle people know from their phones. */
+  input[type="checkbox"].switch {
+    appearance: none;
+    position: relative;
+    flex: none;
+    inline-size: 2.5rem;
+    block-size: 1.5rem;
+    margin: 0;
+    border-radius: var(--r-pill);
+    background: var(--c-border-strong);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) ease-out;
+  }
+  input[type="checkbox"].switch::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 0.1875rem;
+    inset-inline-start: 0.1875rem;
+    inline-size: 1.125rem;
+    block-size: 1.125rem;
+    border-radius: 50%;
+    background: oklch(1 0 0);
+    box-shadow: var(--sh-1);
+    transition: translate var(--dur-fast) ease-out;
+  }
+  input[type="checkbox"].switch:checked {
+    background: var(--c-success-solid);
+  }
+  input[type="checkbox"].switch:checked::before {
+    translate: 1rem 0;
+  }
+  .switch-field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-3);
+    justify-self: end;
+    font-weight: var(--fw-medium);
+  }
+  .switch-field > span {
+    min-inline-size: 1.75rem;
+    color: var(--c-text-muted);
+  }
+
   /* Settings rows: label and help on the left, the control on the right. */
   .settings-list {
     display: grid;
@@ -920,22 +1158,65 @@
   }
   .setting-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--sp-6);
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 20rem);
+    gap: var(--sp-3) var(--sp-6);
     align-items: center;
     padding: var(--sp-4) 0;
     border-block-end: 1px solid var(--c-border);
   }
+  .setting-row.has-icon {
+    grid-template-columns: auto minmax(0, 1fr) minmax(15rem, 20rem);
+    gap: var(--sp-3) var(--sp-4);
+  }
+  .setting-row:has(textarea, .logo-preview, dl) {
+    align-items: start;
+  }
   .setting-row:last-child {
     border-block-end: 0;
   }
+  /* The control column: fields fill it, so every row's fields line up. */
+  .setting-control {
+    display: grid;
+    gap: var(--sp-1);
+    min-inline-size: 0;
+  }
+  .setting-control > * {
+    min-inline-size: 0;
+  }
+  .setting-control > :is(input, select, textarea) {
+    inline-size: 100%;
+  }
+  .setting-control > .field-error {
+    margin: 0;
+  }
+  .setting-control > .small {
+    margin: 0;
+  }
+  .setting-control dl {
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--sp-1) var(--sp-4);
+  }
+  @media (max-width: 72rem) {
+    .setting-row,
+    .setting-row.has-icon {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .setting-row:not(.has-icon) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .setting-row.has-icon > .setting-control {
+      grid-column: 2;
+    }
+  }
   .setting-row > label,
-  .setting-row > span {
+  .setting-row > span,
+  .setting-row > .setting-text {
     display: grid;
     gap: var(--sp-1);
     font-weight: var(--fw-regular);
     color: var(--c-text-muted);
   }
+  .setting-text > label,
   .setting-row :is(label, span) > strong {
     font-size: var(--fs-sm);
     font-weight: var(--fw-medium);
@@ -947,9 +1228,32 @@
     align-items: center;
     flex-wrap: wrap;
   }
+  .setting-control .setting-edit {
+    flex-wrap: nowrap;
+    align-items: start;
+  }
+  .setting-control .setting-edit:has(textarea) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .setting-control .setting-edit > :is(input, textarea) {
+    flex: 1;
+    min-inline-size: 0;
+    inline-size: 0;
+  }
+  .setting-control .setting-edit:has(textarea) > textarea {
+    flex-basis: 100%;
+    inline-size: 100%;
+  }
   .setting-edit textarea {
-    min-inline-size: 20rem;
+    min-inline-size: 0;
+    inline-size: 100%;
     font-family: var(--font-mono);
+  }
+  .setting-edit .unit {
+    align-self: center;
+    color: var(--c-text-muted);
+    white-space: nowrap;
   }
   /* A wrapper (such as a tab panel) holding several cards of a page. */
   .stack {
@@ -1237,7 +1541,7 @@
     gap: var(--sp-2);
   }
   .pin-key {
-    block-size: 3.75rem;
+    min-block-size: 3.75rem;
     font-size: var(--fs-xl);
     font-weight: var(--fw-medium);
     background: var(--c-surface);
@@ -1296,6 +1600,9 @@
   .sandbox-banner .lucide {
     inline-size: 0.875rem;
     block-size: 0.875rem;
+  }
+  .sandbox-banner strong {
+    font-weight: var(--fw-semibold);
   }
   .sandbox-banner button.link {
     font-size: inherit;
@@ -1361,6 +1668,27 @@
   .topbar .lock {
     min-block-size: 2.25rem;
     padding-inline: var(--sp-3);
+  }
+  @media (max-width: 80rem) {
+    .screen-nav button kbd,
+    .topbar .lock kbd {
+      display: none;
+    }
+    .screen-nav button {
+      padding-inline: var(--sp-2);
+      gap: 0.375rem;
+    }
+    .brand {
+      padding-inline-end: var(--sp-3);
+    }
+  }
+  @media (max-width: 66rem) {
+    .brand-text {
+      display: none;
+    }
+    .entry .quick-open kbd {
+      display: none;
+    }
   }
 
   .entry {
@@ -1699,6 +2027,9 @@
     display: grid;
     gap: var(--sp-3);
   }
+  .cash-form > label + .field-hint {
+    margin-block-start: calc(-1 * var(--sp-2));
+  }
   .cash-form input {
     font-size: var(--fs-xl);
     font-variant-numeric: tabular-nums;
@@ -1839,6 +2170,13 @@
     min-inline-size: 16rem;
     min-block-size: var(--ctl-h-lg);
   }
+  .products-filters select {
+    min-block-size: var(--ctl-h-lg);
+    min-inline-size: 9rem;
+  }
+  .products-filters label {
+    gap: var(--sp-1);
+  }
   .plist {
     display: flex;
     flex-direction: column;
@@ -1852,13 +2190,13 @@
   }
   .plist-cols {
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1.2fr) 5rem 5rem 8rem;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1.2fr) 5rem 5rem 11rem;
     gap: var(--sp-3);
     align-items: center;
     padding: 0 var(--sp-4);
   }
   .plist-head {
-    block-size: 2.5rem;
+    min-block-size: 2.5rem;
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
     color: var(--c-text-muted);
@@ -1991,6 +2329,21 @@
   .sales-filters > [role="group"] {
     grid-column: 1 / -1;
   }
+  /* A form's button keeps its own width rather than stretching across a column. */
+  .sales-filters > button {
+    justify-self: start;
+  }
+  .sale-detail > dl.totals {
+    inline-size: min(100%, 22rem);
+    margin-inline-start: auto;
+  }
+  .sale-detail .print-controls,
+  .tax-invoice > .actions {
+    justify-content: flex-start;
+  }
+  .tax-invoice > .actions {
+    margin-block-start: var(--sp-2);
+  }
   .sale-detail {
     display: grid;
     gap: var(--sp-4);
@@ -2002,7 +2355,25 @@
     max-inline-size: 30rem;
   }
   .report-totals {
-    max-inline-size: 30rem;
+    column-gap: 0;
+    max-inline-size: 28rem;
+    padding: var(--sp-4) var(--sp-5);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-lg);
+    background: var(--c-surface-2);
+  }
+  .report-totals dt:has(strong) {
+    padding-block-start: var(--sp-2);
+    border-block-start: 1px solid var(--c-border);
+  }
+  .report-totals dt:has(strong) + dd {
+    padding-block-start: var(--sp-2);
+    border-block-start: 1px solid var(--c-border);
+  }
+  .report-totals dt:has(strong) ~ dt:has(strong),
+  .report-totals dt:has(strong) ~ dt:has(strong) + dd {
+    padding-block-start: 0;
+    border-block-start: 0;
   }
   .report-totals + .sales-table {
     margin-block-start: var(--sp-4);
@@ -2040,6 +2411,20 @@
   }
   .stock-flag.low {
     color: var(--c-warning);
+  }
+  /* In the products list a flag is a small badge beside the number, not loose text. */
+  .plist .stock-flag {
+    display: inline-block;
+    margin-inline-start: var(--sp-2);
+    padding: 0 var(--sp-2);
+    border-radius: var(--r-sm);
+    font-size: var(--fs-xs);
+    line-height: 1.5;
+    background: var(--c-danger-soft);
+    border: 1px solid color-mix(in oklab, currentColor 25%, transparent);
+  }
+  .plist .stock-flag.low {
+    background: var(--c-warning-soft);
   }
 
   /* ---- CSV import ---- */
@@ -2177,9 +2562,14 @@
     display: grid;
     gap: var(--sp-4);
   }
-  .device-section h2 {
-    font-size: var(--fs-lg);
+  .device-section .section-title {
     margin: 0 0 var(--sp-2);
+  }
+  .device-section > .small {
+    margin-block-end: var(--sp-3);
+  }
+  .device-form .actions {
+    margin-block-start: var(--sp-3);
   }
   .device-section + .device-section {
     border-block-start: 1px solid var(--c-border);
@@ -2196,6 +2586,20 @@
     gap: var(--sp-3);
     flex-wrap: wrap;
     align-items: end;
+  }
+  /* The printer's options sit in even columns, so none is left alone on a line. */
+  .device-form .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  }
+  .device-form .row :is(input, select) {
+    inline-size: 100%;
+  }
+  .device-form {
+    gap: var(--sp-3);
+  }
+  .device-form > .small {
+    margin: calc(-1 * var(--sp-1)) 0 0;
   }
   .device-form label,
   .device-section .row label {
@@ -2271,14 +2675,4 @@
   }
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-}
-@keyframes zoom-in {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-}
+

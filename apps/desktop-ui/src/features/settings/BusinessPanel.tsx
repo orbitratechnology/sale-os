@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { BusinessProfileDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import type { LucideIcon } from "lucide-react";
+import { Hash, Image, Landmark, Lock, Mail, MapPin, Monitor, Phone, Store } from "../../ui/icons";
 
 interface Draft {
   name: string;
@@ -23,7 +25,18 @@ const LABELS: Record<keyof Draft, string> = {
   registerName: "This till's name",
 };
 
+const ICONS: Record<keyof Draft, LucideIcon> = {
+  name: Store,
+  legalName: Landmark,
+  taxRegistrationNo: Hash,
+  addressLines: MapPin,
+  phone: Phone,
+  email: Mail,
+  registerName: Monitor,
+};
+
 const HELP: Partial<Record<keyof Draft, string>> = {
+  legalName: "The registered company name, if it is different.",
   name: "Printed at the top of every receipt.",
   taxRegistrationNo: "Printed on receipts, e.g. a VAT or GST number.",
   addressLines: "Up to 4 lines, printed under the name.",
@@ -115,23 +128,30 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
       id,
       value: draft[key],
       "aria-invalid": invalid || undefined,
-      "aria-describedby": invalid ? `${id}-error` : undefined,
+      "aria-describedby": [HELP[key] ? `${id}-help` : "", invalid ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined,
       onChange: (e: { target: { value: string } }) => {
         setSaved(false);
         setDraft({ ...draft, [key]: e.target.value });
       },
     };
+    const Icon = ICONS[key];
     return (
-      <div className="setting-row" key={key}>
-        <label htmlFor={id}>
-          <strong>{LABELS[key]}</strong>
-          {HELP[key] && <span className="small">{HELP[key]}</span>}
-        </label>
-        <div>
+      <div className="setting-row has-icon" key={key}>
+        <span className="icon-tile sm" aria-hidden="true">
+          <Icon />
+        </span>
+        <div className="setting-text">
+          <label htmlFor={id}>{LABELS[key]}</label>
+          {HELP[key] && (
+            <span id={`${id}-help`} className="small">
+              {HELP[key]}
+            </span>
+          )}
+        </div>
+        <div className="setting-control">
           {key === "addressLines" ? <textarea rows={4} {...common} /> : <input type={key === "email" ? "email" : "text"} {...common} />}
           {invalid && (
             <span id={`${id}-error`} role="alert" className="field-error">
-              {" "}
               {problem.text}
             </span>
           )}
@@ -152,11 +172,15 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
       />
       <form aria-label="Business details" noValidate onSubmit={(e) => void save(e)}>
       {(Object.keys(LABELS) as (keyof Draft)[]).map(input)}
-      <div className="setting-row">
+      <div className="setting-row has-icon">
+        <span className="icon-tile sm" aria-hidden="true">
+          <Lock />
+        </span>
         <span>
           <strong>Fixed at setup</strong>
-          <span className="small">Past sales and prices were made under these.</span>
+          <span className="small">Chosen when the till was set up. They cannot change, because past sales and prices were made under them.</span>
         </span>
+        <div className="setting-control">
         <dl className="small" data-testid="fixed-profile">
           <dt>Country</dt>
           <dd>{profile.countryCode}</dd>
@@ -169,16 +193,17 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
           <dt>Till code</dt>
           <dd>{profile.registerCode}</dd>
         </dl>
+        </div>
       </div>
-      <p aria-live="polite">
-        <button type="submit">Save details</button>{" "}
-        {saved && <span className="small">Saved. New receipts use these details.</span>}
+      <div className="actions" aria-live="polite">
+        {saved && <span className="saved-note">Saved. New receipts use these details.</span>}
         {problem && !problem.field && (
           <span role="alert" className="field-error">
             {problem.text}
           </span>
         )}
-      </p>
+        <button type="submit">Save details</button>
+      </div>
       </form>
     </>
   );
@@ -241,17 +266,20 @@ function LogoRow({
   };
 
   return (
-    <section className="setting-row" aria-label="Logo">
+    <section className="setting-row has-icon" aria-label="Logo">
+      <span className="icon-tile sm" aria-hidden="true">
+        <Image />
+      </span>
       <span>
         <strong>Logo</strong>
-        <span className="small">PNG or JPEG. Shown at the top of receipts saved as PDF.</span>
+        <span className="small">A PNG or JPEG picture, shown at the top of receipts saved as PDF.</span>
       </span>
-      <div>
+      <div className="setting-control">
         {url ? <img src={url} alt="The business logo" className="logo-preview" /> : <p className="small">{profile.hasLogo ? "Loading…" : "No logo."}</p>}
-        <p>
+        <p className="button-row">
           <button type="button" className="secondary" disabled={busy} onClick={() => void choose()}>
             {profile.hasLogo ? "Change logo…" : "Choose a logo…"}
-          </button>{" "}
+          </button>
           {profile.hasLogo && (
             <button type="button" className="secondary" onClick={() => void remove()}>
               Remove logo

@@ -423,7 +423,9 @@ export function Checkout({
       {workspace.mode === "sandbox" && (
         <div className="sandbox-banner" role="note">
           <FlaskConical />
-          {t("SANDBOX: practice mode. Sales here are excluded from reports.")}
+          <span>
+            <strong>{t("Practice mode")}</strong> {t("(sandbox): sales made here are not counted in reports.")}
+          </span>
           {onWentLive && (
             <>
               {" "}
@@ -517,7 +519,7 @@ export function Checkout({
           <input
             data-scan-field
             aria-label={t("Scan or type a code")}
-            placeholder={t("Scan or type a code, then Enter")}
+            placeholder={t("Scan or type a code")}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             autoComplete="off"

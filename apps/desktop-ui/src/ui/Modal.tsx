@@ -22,6 +22,7 @@ export function Modal({
   onDismiss,
   onSubmit,
   focusSelf,
+  alert,
   children,
 }: {
   /** Accessible name when there is no visible title to point at. */
@@ -38,6 +39,8 @@ export function Modal({
    * moves into its controls.
    */
   focusSelf?: boolean;
+  /** An urgent confirmation (restore, join): exposed as an alert dialog. */
+  alert?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement | null>(null);
@@ -81,7 +84,7 @@ export function Modal({
   }, []);
 
   return (
-    <dialog ref={ref} tabIndex={focusSelf ? -1 : undefined} aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} className={`dialog card ${className ?? ""}`.trim()}>
+    <dialog ref={ref} role={alert ? "alertdialog" : undefined} tabIndex={focusSelf ? -1 : undefined} aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} className={`dialog card ${className ?? ""}`.trim()}>
       {onSubmit ? (
         <form className="dialog-form" onSubmit={onSubmit}>
           {children}

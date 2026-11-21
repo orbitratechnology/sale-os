@@ -1,7 +1,7 @@
 # Sinhala and Tamil: review before the pilot (D-02)
 
 The till's cashier screens are drafted in Sinhala (`apps/desktop-ui/src/i18n/si.ts`) and Tamil
-(`apps/desktop-ui/src/i18n/ta.ts`), 301 sentences each. They were machine-drafted: a native
+(`apps/desktop-ui/src/i18n/ta.ts`), 302 sentences each. They were machine-drafted: a native
 speaker who works in Sri Lankan retail must review both before shops see them.
 
 ## How to review
@@ -43,8 +43,6 @@ speaker who works in Sri Lankan retail must review both before shops see them.
   (avoiding "வரி", which also means tax).
 - Fragments joined with other text: "No product with code" (followed by the code), "{items} from"
   (followed by a receipt number), "ref" (before an error reference).
-- "Scan or type a code, then Enter": the Tamil placeholder is cut off in the scan field; a
-  shorter phrase would fit.
 - Messages that name owner screens still in English ("Settings → Scanner", “none”,
   “Show on the quick-select grid”): the drafts translated the screen names; they will match once
   those screens are translated.
