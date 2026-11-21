@@ -365,7 +365,9 @@ accountant confirm them before anything is built.
 
 1. **A "no VAT" business:** done before this draft. The setup wizard accepts no tax rates
    and receipts then show no tax. The wizard now says so, and Sri Lanka's locale guesses
-   LKR.
+   LKR. Since 2026-11-21 the setting "Registered for VAT" (Settings → Taxes,
+   `tax.registered`) turns VAT off for a shop that has rates set up, keeping them for when it
+   registers: no tax on sales, no tax lines or tax number on receipts, no tax invoices.
 2. **Tax invoices:** built 2026-11-20 (status: "Sri Lanka tax invoice").
    - The supplier TIN is the business's tax registration no. (Settings > Business).
    - In the sale detail, "Issue tax invoice" asks for the buyer's TIN, name and address.

@@ -52,6 +52,8 @@ impl ReceiptQueries for SqliteStore {
             .and_then(|l| l.as_array())
             .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
             .unwrap_or_default();
+        // A business not registered for VAT prints no tax number and issues no tax invoices.
+        let registered = setting("tax.registered").await?.as_deref().map(str::trim) != Some("false");
         let width = setting("receipt.paper_width_mm")
             .await?
             .and_then(|v| v.trim().parse::<u32>().ok());
@@ -59,7 +61,8 @@ impl ReceiptQueries for SqliteStore {
             business_name: business,
             address_lines,
             phone,
-            tax_registration_no: tax_no,
+            tax_registration_no: tax_no.filter(|_| registered),
+            tax_registered: registered,
             header_lines: lines(setting("receipt.header_lines").await?),
             footer_lines: lines(setting("receipt.footer_lines").await?),
             register_name,

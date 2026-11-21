@@ -100,6 +100,11 @@ impl TaxInvoiceService {
             .receipts
             .receipt_info(ctx.register.register_id, actor.user_id)
             .await?;
+        if !info.tax_registered {
+            return Err(invalid(
+                "this business is not registered for VAT (Settings > Taxes), so it issues no tax invoices",
+            ));
+        }
         let supplier_tin = info
             .tax_registration_no
             .as_deref()

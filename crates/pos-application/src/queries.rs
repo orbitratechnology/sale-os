@@ -313,7 +313,10 @@ pub struct ReceiptInfo {
     pub business_name: String,
     pub address_lines: Vec<String>,
     pub phone: Option<String>,
+    /// `None` while the business is not registered for VAT (`tax.registered` off).
     pub tax_registration_no: Option<String>,
+    /// `tax.registered`: the business charges VAT and may issue tax invoices (D-02).
+    pub tax_registered: bool,
     /// `receipt.header_lines` / `receipt.footer_lines` settings.
     pub header_lines: Vec<String>,
     pub footer_lines: Vec<String>,
