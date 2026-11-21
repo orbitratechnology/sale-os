@@ -26,6 +26,7 @@ dependency rules, and how a command flows through the system.
   /pos-receipts            ReceiptDocument model, builders, PDF + ESC/POS + plain-text renderers
   /pos-observability       JSON logging with secret redaction and card-number masking (desktop + cloud)
   /pos-testkit             Builders, fixtures, golden-file helpers, fake clock/ids, in-memory transport
+  /pos-devtools            `pos-dev`: reset or seed a till database through the services (E00-T04, behind xtask)
 /contracts
   /openapi                 pos-cloud.v1.yaml (source of truth for REST)
   /events                  JSON Schema per event type + version (generated from pos-sync, checked in CI)
@@ -70,6 +71,7 @@ desktop-tauri     ← everything desktop-side
 cloud-api         ← pos-domain, pos-sync, pos-cloud-db   (never pos-local-db, never tauri)
 pos-observability ← (no internal deps; used by desktop-tauri and cloud-api)
 pos-testkit       ← dev-dependency only
+pos-devtools      ← pos-domain, pos-application, pos-local-db   (a developer tool; nothing depends on it)
 ```
 
 The PRD's main reuse claim is that the same domain crate runs on the desktop and in the cloud

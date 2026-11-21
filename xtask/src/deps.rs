@@ -50,6 +50,7 @@ pub const ALLOWED: &[(&str, &[&str])] = &[
         "pos-bench",
         &["pos-domain", "pos-application", "pos-local-db", "pos-sync"],
     ),
+    ("pos-devtools", &["pos-domain", "pos-application", "pos-local-db"]),
 ];
 
 /// External crates that must never appear in a crate's normal dependency tree.

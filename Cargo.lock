@@ -3979,6 +3979,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pos-devtools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "pos-application",
+ "pos-domain",
+ "pos-local-db",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "pos-domain"
 version = "0.1.0"
 dependencies = [

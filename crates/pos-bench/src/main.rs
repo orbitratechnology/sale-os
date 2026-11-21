@@ -371,7 +371,9 @@ async fn build(scale: Scale, plain: bool) -> Result<Bench> {
     .open(&owner, Money::from_minor(10_000))
     .await
     .map_err(|e| anyhow!("drawer: {e}"))?;
-    sqlx::query("ANALYZE").execute(store.db().writer()).await?;
+    // No ANALYZE: a till never gathers planner statistics, so the plans measured here must be
+    // the ones it gets without them. (With statistics SQLite skip-scanned the code lookups
+    // that, on a till, walked their whole index; fixed 2026-11-21 in catalog_queries.rs.)
     sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
         .execute(store.db().writer())
         .await?;
