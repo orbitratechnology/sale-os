@@ -3,7 +3,6 @@
 // Adding a command: add it here, to `specta_builder()`, and to capabilities/main.json.
 pub const COMMANDS: &[&str] = &[
     "app_info",
-    "dev_money_add",
     "app_bootstrap_state",
     "setup_create_workspace",
     "auth_list_users",

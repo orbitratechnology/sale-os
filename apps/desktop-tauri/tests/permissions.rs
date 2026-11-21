@@ -48,11 +48,6 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
     update["baseVersion"] = json!(1);
     vec![
         ("app_info", Public, json!({})),
-        (
-            "dev_money_add",
-            Public,
-            json!({"aMinor": "1", "bMinor": "2", "currency": "GBP"}),
-        ),
         ("app_bootstrap_state", Public, json!({})),
         (
             "setup_create_workspace",

@@ -10,11 +10,6 @@ export const commands = {
 	/**  Version, build flavour and local database status. No session required. */
 	appInfo: () => typedError<AppInfo_Serialize, IpcError_Serialize>(__TAURI_INVOKE("app_info")),
 	/**
-	 *  Stage 0 demo: adds two amounts with `pos-domain` (the same crate the cloud uses) and
-	 *  formats the result. Money crosses IPC as minor-unit strings.
-	 */
-	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError_Serialize>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
-	/**
 	 *  What the shell needs before anything else: set up yet? who is signed in? No session
 	 *  required.
 	 */
@@ -1642,12 +1637,6 @@ export type LinkResultDto = {
 export type MappingEntryDto = {
 	column: Column,
 	index: number,
-};
-
-export type MoneyAddResult = {
-	/**  Decimal string of minor units (ADR-001): never a JS number. */
-	sumMinor: string,
-	formatted: string,
 };
 
 export type MovementId = string;

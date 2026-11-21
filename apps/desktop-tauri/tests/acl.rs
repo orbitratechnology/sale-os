@@ -36,6 +36,21 @@ fn window(label: &str) -> (tauri::App<MockRuntime>, WebviewWindow<MockRuntime>) 
     (app, w)
 }
 
+/// The app's services on a fresh data directory, so an allowed command actually runs.
+fn with_services(app: &tauri::App<MockRuntime>) -> tempfile::TempDir {
+    use tauri::Manager;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let hasher: std::sync::Arc<dyn pos_application::auth::PinHasher> =
+        std::sync::Arc::new(pos_application::auth::Argon2PinHasher::with_params(256, 1, 1));
+    let services = tauri::async_runtime::block_on(desktop_tauri_lib::AppServices::start_with_hasher(
+        dir.path(),
+        None,
+        hasher,
+    ));
+    app.manage(services);
+    dir
+}
+
 fn invoke(w: &WebviewWindow<MockRuntime>, cmd: &str, body: Value) -> Result<String, String> {
     get_ipc_response(
         w,
@@ -64,14 +79,10 @@ fn assert_refused_by_acl(res: Result<String, String>, what: &str) {
 
 #[test]
 fn declared_command_is_allowed_from_main_window() {
-    let (_app, w) = window("main");
-    let res = invoke(
-        &w,
-        "dev_money_add",
-        json!({"aMinor": "1999", "bMinor": "1", "currency": "USD"}),
-    );
-    let body = res.expect("allowed command must succeed");
-    assert!(body.contains("20.00"), "{body}");
+    let (app, w) = window("main");
+    let _dir = with_services(&app);
+    let body = invoke(&w, "app_info", json!({})).expect("allowed command must succeed");
+    assert!(body.contains("schemaVersion"), "{body}");
 }
 
 #[test]
@@ -110,10 +121,5 @@ fn undeclared_command_is_refused() {
 #[test]
 fn windows_without_a_capability_cannot_call_anything() {
     let (_app, w) = window("popup");
-    let res = invoke(
-        &w,
-        "dev_money_add",
-        json!({"aMinor": "1", "bMinor": "1", "currency": "USD"}),
-    );
-    assert_refused_by_acl(res, "dev_money_add from an unlisted window");
+    assert_refused_by_acl(invoke(&w, "app_info", json!({})), "app_info from an unlisted window");
 }

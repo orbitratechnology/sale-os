@@ -13,7 +13,6 @@ export type {
   ErrorCode,
   ErrorDetails,
   IpcError,
-  MoneyAddResult,
   Role,
   SessionDto as Session,
   SignInUser,
