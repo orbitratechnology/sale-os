@@ -12,7 +12,7 @@
 use super::{Link, SendOutcome, Transport, TransportError};
 use crate::escpos;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
@@ -63,11 +63,19 @@ fn open_file(path: &Path) -> io::Result<(File, bool)> {
         rw.custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY);
         wo.custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY);
     }
-    match rw.open(path) {
-        Ok(f) => Ok((f, true)),
-        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => wo.open(path).map(|f| (f, false)),
-        Err(e) => Err(e),
+    let (mut file, readable) = match rw.open(path) {
+        Ok(f) => (f, true),
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => (wo.open(path)?, false),
+        Err(e) => return Err(e),
+    };
+    // A plain file stands in for a printer (debugging, tests): successive jobs follow each
+    // other. Unix gets that from O_APPEND; Windows has no such open flag for LPT/COM that is
+    // safe to request, so a regular file is positioned at its end instead. Devices are left
+    // alone (they have no position).
+    if file.metadata().is_ok_and(|m| m.is_file()) {
+        file.seek(SeekFrom::End(0))?;
     }
+    Ok((file, readable))
 }
 
 fn map_open_error(path: &Path, e: &io::Error) -> TransportError {
