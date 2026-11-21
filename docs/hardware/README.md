@@ -37,6 +37,10 @@ always prints as an image, because a code page prints its letters unjoined and i
 print stay text. Star Line Mode and plain-text printers transliterate what they can't print (`€`→`E`, `ß`→`s`,
 Chinese→pinyin), never `?`; so does every printer for Hebrew, which has no bundled font yet.
 
+**Printer status.** Network, serial and two-way USB printers that support Epson's *automatic status back* report
+"out of paper", "cover open" and errors the moment they happen, and the status bar shows it at once. Other printers
+are asked every 15 seconds. Printers that answer no status questions at all show "Printer set up" and still print.
+
 **What happens when it fails.**
 
 | You see | Meaning | What to do |

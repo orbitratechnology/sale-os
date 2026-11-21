@@ -129,6 +129,8 @@ pub(crate) struct Services {
     pub devices: pos_application::devices::DeviceService,
     /// Serial scanners, forwarded to the window as `scanner://scan` (E21-T04).
     pub scanners: Arc<crate::device_commands::ScannerHub>,
+    /// Status the receipt printer pushes, forwarded to the window as `printer://status`.
+    pub printer_feed: Arc<crate::device_commands::PrinterStatusFeed>,
     /// The card terminal's payment flow, when one is set up (E22-T02).
     pub payments: RwLock<Option<Arc<pos_application::payments::ProviderPaymentFlow>>>,
     pub queries: SqliteStore,
@@ -365,6 +367,7 @@ impl AppServices {
                     printer,
                 },
                 scanners: Arc::new(crate::device_commands::ScannerHub::default()),
+                printer_feed: Arc::new(crate::device_commands::PrinterStatusFeed::default()),
                 payments: RwLock::new(None),
                 conflicts: pos_application::conflict::ConflictService {
                     store: Arc::new(s.clone()),
@@ -477,6 +480,7 @@ impl AppServices {
         if let Err(e) = app.devices.activate(register.register_id).await {
             tracing::warn!(problem = %e, "receipt printer not activated; using the virtual printer");
         }
+        app.printer_feed.follow(app.devices.printer.clone());
         let devices = match pos_application::devices::DeviceQueries::devices(
             &app.queries,
             register.register_id,
@@ -524,6 +528,13 @@ impl AppServices {
     )> {
         let app = self.app().ok()?;
         Some((app.scanners.scans.subscribe(), app.scanners.health.subscribe()))
+    }
+
+    /// Receiver for the status the receipt printer pushes (forwarded to the window).
+    pub(crate) fn printer_events(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<crate::device_commands::PrinterStatusDto>> {
+        Some(self.app().ok()?.printer_feed.events.subscribe())
     }
 
     /// The card terminal's payment flow, when one is set up.

@@ -1269,7 +1269,13 @@ fn stock_figures_checked_and_rebuilt_over_ipc() {
             row[0]["recordedMilli"].as_str(),
             row[0]["fromMovementsMilli"].as_str(),
         ),
-        (Some("Tea"), Some("TEA"), Some("sellable"), Some("999"), Some("12000"))
+        (
+            Some("Tea"),
+            Some("TEA"),
+            Some("sellable"),
+            Some("999"),
+            Some("12000")
+        )
     );
     assert!(!row[0]["locationName"].as_str().unwrap().is_empty());
     assert_eq!(row[0]["variantId"], variant);
@@ -1338,7 +1344,10 @@ fn a_z_summary_pdf_over_ipc() {
     };
 
     // Cancelled: nothing saved, nothing recorded.
-    assert_eq!(pdf(json!({"sessionId": session, "paper": "receipt"})).unwrap(), Value::Null);
+    assert_eq!(
+        pdf(json!({"sessionId": session, "paper": "receipt"})).unwrap(),
+        Value::Null
+    );
     assert!(exported().is_empty());
     assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
     // The till's roll (80 mm by default), by session id.
@@ -1366,7 +1375,11 @@ fn a_z_summary_pdf_over_ipc() {
     assert_eq!(rows.len(), 2);
     let meta: Value = serde_json::from_str(rows[0]["metadata"].as_str().unwrap()).unwrap();
     assert_eq!(
-        (meta["receiptNumber"].as_str(), meta["format"].as_str(), meta["file"].as_str()),
+        (
+            meta["receiptNumber"].as_str(),
+            meta["format"].as_str(),
+            meta["file"].as_str()
+        ),
         (Some("R01-Z-0001"), Some("a4"), Some("z-a4.pdf"))
     );
     assert_eq!(rows[0]["entityType"], "receipt");
@@ -2449,5 +2462,109 @@ fn a_network_printer_saved_over_ipc_prints_the_next_receipt_and_kicks_the_drawer
     assert_eq!(
         invoke(&w, "printer_status", json!({})).unwrap()["configured"],
         false
+    );
+}
+
+#[test]
+fn a_printer_that_pushes_its_status_shows_paper_out_without_being_asked() {
+    // E20-T11 / ASB through the shell: a saved network printer that answers `GS a` with
+    // automatic status back is followed by its status link; when its paper runs out while
+    // idle, `printer_status` says so at once, from what was pushed, without a new
+    // connection. A small TCP printer stands in for the hardware.
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let paper_out = Arc::new(AtomicBool::new(false));
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let (flag, count) = (paper_out.clone(), accepted.clone());
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut c) = conn else { continue };
+            count.fetch_add(1, Ordering::SeqCst);
+            let flag = flag.clone();
+            std::thread::spawn(move || {
+                c.set_read_timeout(Some(std::time::Duration::from_millis(20)))
+                    .ok();
+                let block = |out: bool| if out { [0x18, 0, 0x0C, 0] } else { [0x10, 0, 0, 0] };
+                let (mut asb_on, mut sent_out) = (false, false);
+                let mut buf = [0u8; 4096];
+                loop {
+                    match c.read(&mut buf) {
+                        Ok(0) => return,
+                        Ok(n) => {
+                            if buf[..n].windows(3).any(|w| w == [0x1D, 0x61, 0x0F]) {
+                                asb_on = true;
+                                sent_out = flag.load(Ordering::SeqCst);
+                                if c.write_all(&block(sent_out)).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::WouldBlock
+                                || e.kind() == std::io::ErrorKind::TimedOut => {}
+                        Err(_) => return,
+                    }
+                    let out = flag.load(Ordering::SeqCst);
+                    if asb_on && out != sent_out {
+                        sent_out = out;
+                        if c.write_all(&block(out)).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let config = json!({"connection": {"kind": "network", "host": "127.0.0.1", "port": port},
+                        "profileId": "TM-T88V", "statusQuery": true});
+    invoke(
+        &w,
+        "device_save",
+        json!({"input": {"deviceId": null, "kind": "receipt_printer", "role": null, "name": "Front",
+            "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+    )
+    .unwrap();
+    let wait = |what: &str, f: &dyn Fn(&Value) -> bool| {
+        let started = std::time::Instant::now();
+        loop {
+            let status = invoke(&w, "printer_status", json!({})).unwrap();
+            if f(&status) {
+                return status;
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(5),
+                "{what}: {status}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+    let ready = wait("pushing", &|s| s["push"] == true);
+    assert_eq!(ready["state"], "ready", "{ready}");
+    let connections = accepted.load(Ordering::SeqCst);
+
+    paper_out.store(true, Ordering::SeqCst);
+    let out = wait("paper out", &|s| s["state"] == "offline");
+    assert_eq!(out["message"], "Out of paper");
+    assert_eq!(out["push"], true);
+    assert_eq!(
+        accepted.load(Ordering::SeqCst),
+        connections,
+        "pushed, not asked: no new connection"
     );
 }

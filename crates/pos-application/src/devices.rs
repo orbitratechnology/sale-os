@@ -134,6 +134,12 @@ impl ReceiptOutputPort for SwitchablePrinter {
         let printer = self.current().printer;
         printer.status().await
     }
+    fn pushes_status(&self) -> bool {
+        self.current().printer.pushes_status()
+    }
+    fn status_updates(&self) -> Option<tokio::sync::watch::Receiver<pos_device_ports::PushedStatus>> {
+        self.current().printer.status_updates()
+    }
 }
 
 /// What the operator entered for one device.
@@ -160,6 +166,9 @@ pub struct PrinterView {
     /// Why the status could not be read, when it could not.
     pub problem: Option<String>,
     pub drawer: bool,
+    /// The printer pushes its status (automatic status back): polling is only a slow
+    /// check, and changes arrive by themselves.
+    pub push: bool,
 }
 
 /// The outcome of opening the drawer after a sale. Never an error: the sale is done.
@@ -390,6 +399,7 @@ impl DeviceService {
             status,
             problem,
             drawer: handle.drawer.is_some(),
+            push: handle.printer.pushes_status(),
         })
     }
 

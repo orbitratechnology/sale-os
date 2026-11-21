@@ -1,23 +1,25 @@
 //! Device port traits (docs/backlog/06-rust-interfaces.md §10, ADR-024): barcode input,
-//! receipt output, cash drawer, payment. Implementations live in `pos-device-virtual`
+//! receipt output, cash drawer, payment, customer display. Implementations live in `pos-device-virtual`
 //! (simulators) and `pos-device-hw` (real transports: network, serial/COM, USB, OS spooler).
 //!
 //! The ports describe *what* a device does, never *how* it is connected: the application
 //! layer works the same with a network printer, a USB printer behind the Windows spooler or
 //! the virtual printer.
 
+pub mod display;
 pub mod drawer;
 pub mod payment;
 pub mod printer;
 pub mod scanner;
 
+pub use display::{CustomerDisplayPort, DisplayFrame, DisplayLine};
 pub use drawer::{CashDrawerPort, DrawerPin};
 pub use payment::{
     PaymentCapabilities, PaymentKind, PaymentPort, PaymentRequest, PaymentStatus, may_have_been_sent,
 };
 pub use printer::{
     CommandDialect, CutSupport, PaperLevel, PrintFailure, PrintResult, PrinterCapabilities, PrinterStatus,
-    ReceiptOutputPort,
+    PushedStatus, ReceiptOutputPort,
 };
 pub use scanner::{BarcodeInputPort, ScanEvent, ScanSource};
 

@@ -4,10 +4,10 @@
 
 use crate::app_commands::err;
 use crate::{AppServices, IpcError};
-use pos_application::devices::{DeviceConfigProblem, DeviceDriver, DeviceInput, PrinterHandle};
+use pos_application::devices::{DeviceConfigProblem, DeviceDriver, DeviceInput, PrinterHandle, PrinterView};
 use pos_application::records::{DeviceKind, DeviceRecord};
 use pos_device_hw::{PrinterConfig, ScannerConfig, SerialScanner};
-use pos_device_ports::{BarcodeInputPort, DeviceError, DeviceHealth, PaperLevel, PrintResult};
+use pos_device_ports::{BarcodeInputPort, DeviceError, DeviceHealth, PaperLevel, PrintResult, PushedStatus};
 use pos_domain::{DeviceId, ErrorCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -84,6 +84,9 @@ impl DeviceDriver for HwDriver {
             .map_err(|e| DeviceError::Unsupported(format!("stored printer settings: {e}")))?;
         let pin = c.drawer_pin.into();
         let printer = pos_device_hw::build_printer(&c)?;
+        // Printers that push their status (ESC/POS automatic status back) do so from now on;
+        // the others are polled as before.
+        printer.start_status_watch();
         Ok(PrinterHandle {
             printer: printer.clone(),
             drawer: Some(printer),
@@ -285,7 +288,7 @@ pub struct DeviceInputDto {
     pub base_version: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Type)]
+#[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PrinterStatusDto {
     /// False: no printer is set up; receipts go to the virtual printer (files) or PDF.
@@ -298,6 +301,9 @@ pub struct PrinterStatusDto {
     pub message: Option<String>,
     pub drawer: bool,
     pub drawer_open: Option<bool>,
+    /// The printer pushes its status: changes arrive as `printer://status` events, and
+    /// polling is only a slow check.
+    pub push: bool,
 }
 
 #[derive(Debug, Serialize, Type)]
@@ -406,12 +412,18 @@ pub async fn device_remove(services: State<'_, AppServices>, device_id: DeviceId
     Ok(())
 }
 
-/// The receipt printer's live state (any signed-in user: the status bar).
+/// The receipt printer's live state (any signed-in user: the status bar). A printer that
+/// pushes its status also sends every change to the window as `printer://status`.
 #[tauri::command]
 #[specta::specta]
 pub async fn printer_status(services: State<'_, AppServices>) -> Result<PrinterStatusDto, IpcError> {
     let ctx = services.context().await?;
     let v = services.app()?.devices.printer_view(&ctx).await.map_err(err)?;
+    Ok(printer_status_dto(&v))
+}
+
+/// What the status bar shows for a printer view.
+pub fn printer_status_dto(v: &PrinterView) -> PrinterStatusDto {
     let (state, message) = match (&v.status, &v.problem) {
         (_, Some(p)) => ("offline", Some(p.clone())),
         (Some(s), None) => {
@@ -432,15 +444,70 @@ pub async fn printer_status(services: State<'_, AppServices>) -> Result<PrinterS
         }
         (None, None) => ("unknown", None),
     };
-    Ok(PrinterStatusDto {
+    PrinterStatusDto {
         configured: v.configured,
         adapter: v.adapter.into(),
-        target: v.target,
+        target: v.target.clone(),
         state: state.into(),
         message,
         drawer: v.drawer,
-        drawer_open: v.status.and_then(|s| s.drawer_open),
-    })
+        drawer_open: v.status.as_ref().and_then(|s| s.drawer_open),
+        push: v.push,
+    }
+}
+
+/// Follows the current printer's pushed status and sends every change out as a
+/// [`PrinterStatusDto`] (the shell forwards them to the window as `printer://status`).
+pub struct PrinterStatusFeed {
+    task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    pub events: tokio::sync::broadcast::Sender<PrinterStatusDto>,
+}
+
+impl Default for PrinterStatusFeed {
+    fn default() -> Self {
+        Self {
+            task: std::sync::Mutex::new(None),
+            events: tokio::sync::broadcast::channel(16).0,
+        }
+    }
+}
+
+impl PrinterStatusFeed {
+    /// Follows `printer` (the one just activated) instead of the previous one.
+    pub fn follow(&self, printer: Arc<pos_application::devices::SwitchablePrinter>) {
+        let mut task = self
+            .task
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(t) = task.take() {
+            t.abort();
+        }
+        let handle = printer.current();
+        let Some(mut updates) = handle.printer.status_updates() else {
+            return;
+        };
+        let events = self.events.clone();
+        *task = Some(tokio::spawn(async move {
+            while updates.changed().await.is_ok() {
+                let pushed = updates.borrow_and_update().clone();
+                let (status, problem) = match pushed {
+                    PushedStatus::Status(s) => (Some(s), None),
+                    PushedStatus::Lost(why) => (None, Some(why)),
+                    PushedStatus::None => (None, None),
+                };
+                let view = PrinterView {
+                    configured: printer.is_configured(),
+                    adapter: handle.printer.adapter(),
+                    target: handle.printer.target(),
+                    status,
+                    problem,
+                    drawer: handle.drawer.is_some(),
+                    push: handle.printer.pushes_status(),
+                };
+                let _ = events.send(printer_status_dto(&view));
+            }
+        }));
+    }
 }
 
 /// Prints a test page on the current printer: ruler, character set, barcode, cut.

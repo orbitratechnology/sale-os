@@ -26,7 +26,7 @@ pub mod transport;
 pub use config::{
     FieldError, PrinterConfig, PrinterConnection, ScannerConfig, SerialSettings, Terminator, build_printer,
 };
-pub use printer::{DrawerOpenLevel, HwPrinter, IdentifiedPrinter, PrinterTimeouts};
+pub use printer::{AsbTimings, DrawerOpenLevel, HwPrinter, IdentifiedPrinter, PrinterTimeouts, StatusSource};
 pub use profiles::{FontChoice, PrinterProfile, match_identified, profile, profiles};
 pub use scanner::SerialScanner;
 pub use transport::{SendOutcome, Transport, TransportError};

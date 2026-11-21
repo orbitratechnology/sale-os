@@ -416,7 +416,10 @@ export const commands = {
 	/**  Adds or changes a device; a printer is used from the next print, a scanner restarts. */
 	deviceSave: (input: DeviceInputDto_Deserialize) => typedError<DeviceDto, IpcError_Serialize>(__TAURI_INVOKE("device_save", { input })),
 	deviceRemove: (deviceId: DeviceId) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("device_remove", { deviceId })),
-	/**  The receipt printer's live state (any signed-in user: the status bar). */
+	/**
+	 *  The receipt printer's live state (any signed-in user: the status bar). A printer that
+	 *  pushes its status also sends every change to the window as `printer://status`.
+	 */
 	printerStatus: () => typedError<PrinterStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("printer_status")),
 	/**  Prints a test page on the current printer: ruler, character set, barcode, cut. */
 	printerTest: () => typedError<TestPrintDto, IpcError_Serialize>(__TAURI_INVOKE("printer_test")),
@@ -1877,6 +1880,11 @@ export type PrinterStatusDto_Deserialize = {
 	message?: string | null,
 	drawer: boolean,
 	drawerOpen?: boolean | null,
+	/**
+	 *  The printer pushes its status: changes arrive as `printer://status` events, and
+	 *  polling is only a slow check.
+	 */
+	push: boolean,
 };
 
 export type PrinterStatusDto_Serialize = {
@@ -1890,6 +1898,11 @@ export type PrinterStatusDto_Serialize = {
 	message: string | null,
 	drawer: boolean,
 	drawerOpen: boolean | null,
+	/**
+	 *  The printer pushes its status: changes arrive as `printer://status` events, and
+	 *  polling is only a slow check.
+	 */
+	push: boolean,
 };
 
 export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;

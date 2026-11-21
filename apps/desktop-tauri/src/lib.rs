@@ -239,6 +239,23 @@ pub fn run() {
                     }
                 });
             }
+            // Status a receipt printer pushes (automatic status back) reaches the status bar
+            // at once, without waiting for the next poll.
+            if let Some(mut status) = services.printer_events() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri::Emitter;
+                    loop {
+                        match status.recv().await {
+                            Ok(s) => {
+                                let _ = handle.emit("printer://status", s);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(_) => break,
+                        }
+                    }
+                });
+            }
             app.manage(services);
             Ok(())
         })

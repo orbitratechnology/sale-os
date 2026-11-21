@@ -1808,9 +1808,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "printer_status": {
       needSession(s);
       const p = s.devices.find((d) => d.kind === "receipt_printer");
-      if (!p) return { configured: false, adapter: "virtual", target: null, state: "unknown", message: null, drawer: false, drawerOpen: null };
+      if (!p) return { configured: false, adapter: "virtual", target: null, state: "unknown", message: null, drawer: false, drawerOpen: null, push: false };
       const c = JSON.parse(p.configJson) as { connection: { host?: string; port?: number } };
-      return { configured: true, adapter: "escpos_net", target: `${c.connection.host}:${c.connection.port}`, state: "ready", message: null, drawer: true, drawerOpen: false };
+      return { configured: true, adapter: "escpos_net", target: `${c.connection.host}:${c.connection.port}`, state: "ready", message: null, drawer: true, drawerOpen: false, push: true };
     }
     case "devices_list": {
       const me = needSession(s);

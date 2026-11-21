@@ -1,6 +1,7 @@
 //! An ESC/POS printer emulator for tests: answers `DLE EOT n` from a scripted state and
-//! `GS I n` with a scripted identity, and records every other byte as job data. Served over
-//! TCP (tokio listener) or, on unix, over a pseudo-terminal pair (virtual null-modem).
+//! `GS I n` with a scripted identity, sends automatic status back (`GS a n`) blocks when
+//! scripted to, and records every other byte as job data. Served over TCP (tokio listener)
+//! or, on unix, over a pseudo-terminal pair (virtual null-modem).
 
 #![allow(dead_code)]
 
@@ -56,6 +57,27 @@ impl Status {
         error: IDLE,
         paper: IDLE | 0x0C,
     };
+
+    /// The same state as a 4-byte automatic status back block.
+    pub fn asb(&self) -> [u8; 4] {
+        let mut first = 0x10 | (self.printer & 0x0C);
+        if self.offline & 0x04 != 0 {
+            first |= 0x20;
+        }
+        let errors = if self.offline & 0x40 != 0 {
+            self.error & 0x6C
+        } else {
+            0
+        };
+        let mut paper = 0;
+        if self.paper & 0x0C != 0 {
+            paper |= 0x03;
+        }
+        if self.paper & 0x60 != 0 || self.offline & 0x20 != 0 {
+            paper |= 0x0C;
+        }
+        [first, errors, paper, 0]
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,6 +102,11 @@ pub struct Script {
     pub mode: Mode,
     /// Time spent "printing" each chunk, to widen race windows.
     pub chunk_delay: Duration,
+    /// Sends an ASB block when `GS a n` (n > 0) switches it on, and on every pushed change.
+    pub asb: bool,
+    /// Wraps every `DLE EOT` reply in the middle of an ASB block (two bytes before, two
+    /// after), as a printer that pushes status while it is being asked might.
+    pub asb_noise: bool,
 }
 
 impl Default for Script {
@@ -93,6 +120,8 @@ impl Default for Script {
             model_id: None,
             mode: Mode::Normal,
             chunk_delay: Duration::ZERO,
+            asb: false,
+            asb_noise: false,
         }
     }
 }
@@ -103,9 +132,26 @@ pub struct Proto {
     pending: Vec<u8>,
     pub job: Vec<u8>,
     pub queries: Vec<u8>,
+    /// Every `n` of `GS a n` received.
+    pub asb_commands: Vec<u8>,
+    /// The last `GS a n`: ASB is on while it is not zero.
+    pub asb_enabled: u8,
 }
 
 impl Proto {
+    /// The state the printer reports now.
+    pub fn current(&self, script: &Script) -> Status {
+        match script.after_job {
+            Some(after) if !self.job.is_empty() => after,
+            _ => script.status,
+        }
+    }
+
+    /// The block to push for a state change, when ASB is on.
+    pub fn push_block(&self, script: &Script) -> Option<[u8; 4]> {
+        (script.asb && self.asb_enabled != 0).then(|| self.current(script).asb())
+    }
+
     /// Feeds received bytes; returns the reply to send.
     pub fn feed(&mut self, script: &Script, bytes: &[u8]) -> Vec<u8> {
         let mut reply = Vec::new();
@@ -120,21 +166,34 @@ impl Proto {
             [] if b == 0x10 || b == 0x1D => self.pending.push(b),
             [] => self.job.push(b),
             [0x10] if b == 0x04 => self.pending.push(b),
-            [0x1D] if b == 0x49 => self.pending.push(b),
+            [0x1D] if b == 0x49 || b == 0x61 => self.pending.push(b),
             [0x10, 0x04] => {
                 self.pending.clear();
                 self.queries.push(b);
                 if script.answers_status {
-                    let st = match script.after_job {
-                        Some(after) if !self.job.is_empty() => after,
-                        _ => script.status,
-                    };
-                    reply.push(match b {
+                    let st = self.current(script);
+                    let answer = match b {
                         1 => st.printer,
                         2 => st.offline,
                         3 => st.error,
                         _ => st.paper,
-                    });
+                    };
+                    if script.asb_noise {
+                        let block = st.asb();
+                        reply.extend_from_slice(&block[..2]);
+                        reply.push(answer);
+                        reply.extend_from_slice(&block[2..]);
+                    } else {
+                        reply.push(answer);
+                    }
+                }
+            }
+            [0x1D, 0x61] => {
+                self.pending.clear();
+                self.asb_commands.push(b);
+                self.asb_enabled = b;
+                if script.asb && b != 0 {
+                    reply.extend_from_slice(&self.current(script).asb());
                 }
             }
             [0x1D, 0x49] => {
@@ -167,6 +226,7 @@ impl Proto {
 pub struct Connection {
     pub job: Vec<u8>,
     pub queries: Vec<u8>,
+    pub asb_commands: Vec<u8>,
 }
 
 pub struct TcpEmulator {
@@ -175,6 +235,11 @@ pub struct TcpEmulator {
     pub connections: Arc<Mutex<Vec<Connection>>>,
     active: Arc<AtomicUsize>,
     pub max_active: Arc<AtomicUsize>,
+    /// Every `GS a n` received on any connection, as it arrives.
+    pub asb_commands: Arc<Mutex<Vec<u8>>>,
+    /// Connections accepted so far.
+    pub accepted: Arc<AtomicUsize>,
+    pushes: tokio::sync::broadcast::Sender<()>,
 }
 
 impl TcpEmulator {
@@ -187,24 +252,33 @@ impl TcpEmulator {
             connections: Arc::default(),
             active: Arc::default(),
             max_active: Arc::default(),
+            asb_commands: Arc::default(),
+            accepted: Arc::default(),
+            pushes: tokio::sync::broadcast::channel(16).0,
         };
-        let (script, conns, active, max) = (
+        let (script, conns, active, max, asb_seen, accepted, pushes) = (
             Arc::clone(&emu.script),
             Arc::clone(&emu.connections),
             Arc::clone(&emu.active),
             Arc::clone(&emu.max_active),
+            Arc::clone(&emu.asb_commands),
+            Arc::clone(&emu.accepted),
+            emu.pushes.clone(),
         );
         tokio::spawn(async move {
             loop {
                 let Ok((mut stream, _)) = listener.accept().await else {
                     return;
                 };
-                let (script, conns, active, max) = (
+                accepted.fetch_add(1, Ordering::SeqCst);
+                let (script, conns, active, max, asb_seen) = (
                     Arc::clone(&script),
                     Arc::clone(&conns),
                     Arc::clone(&active),
                     Arc::clone(&max),
+                    Arc::clone(&asb_seen),
                 );
+                let mut pushed = pushes.subscribe();
                 tokio::spawn(async move {
                     let now = active.fetch_add(1, Ordering::SeqCst) + 1;
                     max.fetch_max(now, Ordering::SeqCst);
@@ -215,12 +289,31 @@ impl TcpEmulator {
                     } else {
                         let mut buf = [0u8; 4096];
                         loop {
-                            let n = match stream.read(&mut buf).await {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => n,
+                            let n = tokio::select! {
+                                r = stream.read(&mut buf) => match r {
+                                    Ok(0) | Err(_) => break,
+                                    Ok(n) => n,
+                                },
+                                p = pushed.recv() => {
+                                    if p.is_err() {
+                                        continue;
+                                    }
+                                    let s = script.lock().unwrap().clone();
+                                    if let Some(block) = proto.push_block(&s)
+                                        && stream.write_all(&block).await.is_err()
+                                    {
+                                        break;
+                                    }
+                                    continue;
+                                }
                             };
                             let s = script.lock().unwrap().clone();
+                            let seen = proto.asb_commands.len();
                             let reply = proto.feed(&s, &buf[..n]);
+                            asb_seen
+                                .lock()
+                                .unwrap()
+                                .extend_from_slice(&proto.asb_commands[seen..]);
                             if !s.chunk_delay.is_zero() {
                                 tokio::time::sleep(s.chunk_delay).await;
                             }
@@ -237,6 +330,7 @@ impl TcpEmulator {
                     conns.lock().unwrap().push(Connection {
                         job: proto.job,
                         queries: proto.queries,
+                        asb_commands: proto.asb_commands,
                     });
                     // Count down before closing, so a client that saw our close never
                     // overlaps with this connection.
@@ -271,6 +365,17 @@ impl TcpEmulator {
         f(&mut self.script.lock().unwrap());
     }
 
+    /// The printer's state changes (paper ran out, cover opened…): every open connection
+    /// with ASB on gets the new block at once, and `DLE EOT` answers follow the new state.
+    pub fn push(&self, status: Status) {
+        self.script.lock().unwrap().status = status;
+        let _ = self.pushes.send(());
+    }
+
+    pub fn active(&self) -> usize {
+        self.active.load(Ordering::SeqCst)
+    }
+
     /// Waits until `n` connections have finished (the emulator side closes after the client).
     pub async fn wait_connections(&self, n: usize) {
         for _ in 0..200 {
@@ -287,6 +392,8 @@ impl TcpEmulator {
 pub struct SerialEmulator {
     pub slave_path: String,
     pub proto: Arc<Mutex<Proto>>,
+    pub script: Arc<Mutex<Script>>,
+    pushed: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
     _slave: serialport::TTYPort,
@@ -303,12 +410,26 @@ impl SerialEmulator {
         serialport::SerialPort::set_timeout(&mut master, Duration::from_millis(20)).unwrap();
         let proto = Arc::new(Mutex::new(Proto::default()));
         let stop = Arc::new(AtomicBool::new(false));
-        let (p, st) = (Arc::clone(&proto), Arc::clone(&stop));
+        let script = Arc::new(Mutex::new(script));
+        let pushed = Arc::new(AtomicBool::new(false));
+        let (p, st, sc, pu) = (
+            Arc::clone(&proto),
+            Arc::clone(&stop),
+            Arc::clone(&script),
+            Arc::clone(&pushed),
+        );
         let thread = std::thread::spawn(move || {
             let mut buf = [0u8; 1024];
             while !st.load(Ordering::SeqCst) {
+                if pu.swap(false, Ordering::SeqCst) {
+                    let s = sc.lock().unwrap().clone();
+                    if let Some(block) = p.lock().unwrap().push_block(&s) {
+                        let _ = master.write_all(&block);
+                    }
+                }
                 match master.read(&mut buf) {
                     Ok(n) if n > 0 => {
+                        let script = sc.lock().unwrap().clone();
                         let reply = p.lock().unwrap().feed(&script, &buf[..n]);
                         if !reply.is_empty() {
                             let _ = master.write_all(&reply);
@@ -321,6 +442,8 @@ impl SerialEmulator {
         Self {
             slave_path,
             proto,
+            script,
+            pushed,
             stop,
             thread: Some(thread),
             _slave: slave,
@@ -329,6 +452,16 @@ impl SerialEmulator {
 
     pub fn job(&self) -> Vec<u8> {
         self.proto.lock().unwrap().job.clone()
+    }
+
+    /// As [`TcpEmulator::push`].
+    pub fn push(&self, status: Status) {
+        self.script.lock().unwrap().status = status;
+        self.pushed.store(true, Ordering::SeqCst);
+    }
+
+    pub fn asb_commands(&self) -> Vec<u8> {
+        self.proto.lock().unwrap().asb_commands.clone()
     }
 
     /// Waits until at least `n` job bytes arrived.
