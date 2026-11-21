@@ -30,6 +30,7 @@ pos-testkit = { path = "crates/pos-testkit" }
 pos-sync-http = { path = "crates/pos-sync-http" }
 
 # external
+ab_glyph_rasterizer = "0.1"
 anyhow = "1"
 argon2 = { version = "0.5.3", features = ["std"] }
 base64 = "0.22"

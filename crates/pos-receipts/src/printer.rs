@@ -79,6 +79,10 @@ pub struct EncodeOptions {
     /// [`crate::text::render`] is the width they were rendered for (every receipt has a
     /// full-width rule). Transliteration never makes a line wider than this.
     pub columns: Option<usize>,
+    /// Print a line that needs a script no code page has (Sinhala, Tamil, Arabic,
+    /// Devanagari, CJK, Hangul) as an image instead of transliterating it
+    /// ([`crate::raster`]). ESC/POS only; other dialects keep transliterating.
+    pub raster: bool,
 }
 
 impl Default for EncodeOptions {
@@ -95,6 +99,7 @@ impl Default for EncodeOptions {
             qr: false,
             drawer_kick: None,
             columns: None,
+            raster: false,
         }
     }
 }
@@ -131,6 +136,11 @@ pub fn encode(lines: &[TextLine], opts: &EncodeOptions) -> Vec<u8> {
         }
         if l.style == Style::Barcode && w.symbol(l.text.trim(), opts, columns) == Symbol::Barcode {
             // The barcode prints the number below itself.
+            continue;
+        }
+        if opts.raster && opts.dialect == Dialect::EscPos && crate::raster::line_needs_raster(&l.text) {
+            // The image is the whole line and advances the paper itself.
+            w.raster(&crate::raster::render_line(&l.text, want, columns));
             continue;
         }
         w.text(&fit(&l.text, columns, &page_set), pages, &mut current);
@@ -455,6 +465,14 @@ impl Writer {
         }
     }
 
+    fn raster(&mut self, b: &crate::raster::Bitmap) {
+        if let Writer::EscPos(p) = self {
+            let width = u16::try_from(b.width / 8).unwrap_or(u16::MAX);
+            let height = u16::try_from(b.height).unwrap_or(u16::MAX);
+            p.raster(width, height, &b.data);
+        }
+    }
+
     fn lf(&mut self) {
         match self {
             Writer::EscPos(p) => {
@@ -736,6 +754,15 @@ fn parse_escpos(rest: &[u8]) -> Option<(Op, usize)> {
             let kind = if *m & 1 == 0 { "full" } else { "partial" };
             (cmd(format!("CUT {kind} no-feed")), 3)
         }
+        [GS, b'v', b'0', _m, xl, xh, yl, yh, data @ ..]
+            if data.len()
+                >= usize::from(u16::from_le_bytes([*xl, *xh]))
+                    * usize::from(u16::from_le_bytes([*yl, *yh])) =>
+        {
+            let (x, y) = (u16::from_le_bytes([*xl, *xh]), u16::from_le_bytes([*yl, *yh]));
+            let n = usize::from(x) * usize::from(y);
+            (cmd(format!("IMAGE {}x{y}", u32::from(x) * 8)), 8 + n)
+        }
         [GS, b'h', n, ..] => (cmd(format!("BARCODE height {n}")), 3),
         [GS, b'w', n, ..] => (cmd(format!("BARCODE width {n}")), 3),
         [GS, b'H', n, ..] => {
@@ -883,6 +910,7 @@ pub fn decode(bytes: &[u8], dialect: Dialect, code_pages: &[(CodePage, u8)]) -> 
                     "FORM FEED",
                     "BARCODE CODE128",
                     "BARCODE type",
+                    "IMAGE",
                 ]
                 .iter()
                 .any(|p| c.starts_with(p))
@@ -976,6 +1004,70 @@ mod tests {
                 assert_eq!(commands, expected, "{dialect:?}");
             }
         }
+    }
+
+    #[test]
+    fn script_lines_print_as_images_on_the_grid_and_the_rest_stays_text() {
+        let lines = [
+            line("Tea                         2.50", Style::Normal),
+            line("සීනි 1kg                  295.00", Style::Normal),
+            line("தேநீர்                     250.00", Style::Bold),
+            line("TOTAL                     547.50", Style::Bold),
+        ];
+        let o = EncodeOptions {
+            raster: true,
+            columns: Some(32),
+            ..opts(Dialect::EscPos, &[(CodePage::Cp858, 19)])
+        };
+        let job = decode(&encode(&lines, &o), Dialect::EscPos, &o.code_pages);
+        let shown: Vec<&str> = job.lines().collect();
+        assert!(shown[1].contains("\"Tea"), "{job}");
+        // 32 columns of 12 dots: a 384-dot image, one per script line, no transliteration.
+        assert!(shown[2].starts_with("[IMAGE 384x"), "{job}");
+        assert!(
+            shown[3].starts_with("[BOLD on][IMAGE 384x") || shown[3].starts_with("[IMAGE 384x"),
+            "{job}"
+        );
+        assert!(job.contains("\"TOTAL"), "{job}");
+        assert!(!job.contains("sini") && !job.contains("siini"), "{job}");
+        // Without raster, or in another dialect, the line is transliterated as before.
+        for o in [
+            EncodeOptions {
+                raster: false,
+                ..o.clone()
+            },
+            EncodeOptions {
+                dialect: Dialect::StarLine,
+                ..o.clone()
+            },
+            EncodeOptions {
+                dialect: Dialect::PlainText,
+                ..o.clone()
+            },
+        ] {
+            let job = decode(&encode(&lines, &o), o.dialect, &o.code_pages);
+            assert!(!job.contains("IMAGE"), "{:?}: {job}", o.dialect);
+        }
+    }
+
+    #[test]
+    fn image_bytes_are_never_read_as_text_or_commands() {
+        let lines = [line("කිරි", Style::Normal), line("after", Style::Normal)];
+        let o = EncodeOptions {
+            raster: true,
+            columns: Some(48),
+            ..EncodeOptions::default()
+        };
+        let ops = parse(&encode(&lines, &o), Dialect::EscPos);
+        let kinds: Vec<String> = ops
+            .iter()
+            .map(|op| match op {
+                Op::Command(c) => c.split(' ').next().unwrap_or_default().to_owned(),
+                Op::Text(t) => format!("text:{}", String::from_utf8_lossy(t)),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(kinds, ["INIT", "IMAGE", "text:after", "Lf", "FEED", "CUT"]);
     }
 
     #[test]

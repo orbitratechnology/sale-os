@@ -78,8 +78,18 @@ fn printer() -> Printer {
     Printer { port, jobs, paper }
 }
 
-#[tokio::test]
-async fn a_real_sale_prints_correctly_on_a_42_column_epson_over_the_network() {
+/// One sale, printed to an in-test TM-T88V over TCP, and what it put on paper.
+struct Printed {
+    shop: common::Shop,
+    p: Printer,
+    prints: PrintService,
+    bytes: Vec<u8>,
+    /// The job decoded with the printer's own code pages, as the paper would show it.
+    paper: String,
+}
+
+/// Sells one item called `name` and prints the receipt.
+async fn sell_and_print(name: &str) -> Printed {
     let shop = common::shop().await;
     let s = shop.store.clone();
     let mut v = VariantInput::simple(Money::from_minor(1999));
@@ -91,7 +101,7 @@ async fn a_real_sale_prints_correctly_on_a_42_column_epson_over_the_network() {
     .create(
         &shop.owner,
         ProductInput {
-            name: "Café crème — Größe L Ąę £€".into(),
+            name: name.into(),
             description: None,
             category_id: None,
             product_type: ProductType::Stock,
@@ -173,6 +183,24 @@ async fn a_real_sale_prints_correctly_on_a_42_column_epson_over_the_network() {
         .filter_map(|(name, n)| pos_receipts::CodePage::from_name(name).map(|p| (p, *n)))
         .collect();
     let paper = pos_receipts::printer::decode(&bytes, pos_receipts::Dialect::EscPos, &pages);
+    Printed {
+        shop,
+        p,
+        prints,
+        bytes,
+        paper,
+    }
+}
+
+#[tokio::test]
+async fn a_real_sale_prints_correctly_on_a_42_column_epson_over_the_network() {
+    let Printed {
+        shop,
+        p,
+        prints,
+        bytes,
+        paper,
+    } = sell_and_print("Café crème — Größe L Ąę £€").await;
     assert!(paper.contains("Café crème"), "{paper}");
     assert!(paper.contains("Größe"), "{paper}");
     assert!(paper.contains("Ąę"), "{paper}");
@@ -201,4 +229,33 @@ async fn a_real_sale_prints_correctly_on_a_42_column_epson_over_the_network() {
     p.paper.store(0x12, Ordering::SeqCst);
     let retried = prints.retry(&shop.owner, failed.job_id).await.unwrap();
     assert_eq!(retried.status, PrintStatus::Completed);
+}
+
+/// D-02: a Sinhala or Tamil name has no code page on any receipt printer. It reaches the
+/// paper as a shaped image on the 42-column grid (504 dots), never as transliterated Latin,
+/// and the rest of the receipt stays text.
+#[tokio::test]
+async fn sinhala_and_tamil_names_print_as_images_on_an_epson() {
+    for name in ["පොල් තෙල් 750ml", "தேங்காய் எண்ணெய்"] {
+        let Printed { bytes, paper, .. } = sell_and_print(name).await;
+        assert!(paper.contains("[IMAGE 504x"), "{name}: {paper}");
+        assert!(
+            !paper.contains("pol") && !paper.contains("then"),
+            "{name} transliterated: {paper}"
+        );
+        assert!(paper.contains("TOTAL"), "the rest stays text: {paper}");
+        assert!(paper.contains("BARCODE") && paper.contains("CUT"), "{paper}");
+        // Nothing in the image is read as a command (no stray cut or drawer kick).
+        let ops = pos_receipts::printer::parse(&bytes, pos_receipts::Dialect::EscPos);
+        let cuts = ops
+            .iter()
+            .filter(|op| matches!(op, pos_receipts::printer::Op::Command(c) if c.starts_with("CUT") || c.starts_with("DRAWER")))
+            .count();
+        assert_eq!(cuts, 1, "{paper}");
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, pos_receipts::printer::Op::Unknown(_))),
+            "{paper}"
+        );
+    }
 }

@@ -10,6 +10,7 @@ pub mod escpos;
 pub mod logo;
 pub mod pdf;
 pub mod printer;
+pub mod raster;
 pub mod star;
 pub mod text;
 

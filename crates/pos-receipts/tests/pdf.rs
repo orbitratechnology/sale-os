@@ -224,7 +224,9 @@ fn fonts_are_embedded_noto_subsets() {
     );
 }
 
-const NAMES: [&str; 6] = [
+const NAMES: [&str; 8] = [
+    "සීනි 1kg",
+    "தேங்காய் எண்ணெய்",
     "كولا غازية",
     "मसाला चाय",
     "可口可乐 330ml",
@@ -256,7 +258,14 @@ fn non_latin_names_have_glyphs_and_come_back_out() {
     for format in [PdfFormat::Receipt58, PdfFormat::Receipt80, PdfFormat::A4] {
         let pdf = render_pdf(&d, format).unwrap();
         let f = fonts(&pdf);
-        for want in ["NotoSansArabic", "NotoSansDevanagari", "NotoSansSC", "NotoSansKR"] {
+        for want in [
+            "NotoSansSinhala",
+            "NotoSansTamil",
+            "NotoSansArabic",
+            "NotoSansDevanagari",
+            "NotoSansSC",
+            "NotoSansKR",
+        ] {
             assert!(
                 f.iter().any(|n| n.starts_with(want)),
                 "{format:?}: {want} in {f:?}"
@@ -275,8 +284,12 @@ fn non_latin_names_have_glyphs_and_come_back_out() {
         // differ; every letter is still mapped back. Arabic is shaped and drawn right to
         // left; pdf-extract does not reassemble right-to-left runs (MuPDF reads
         // "كولا غازية" back in order), so here it is checked by its font and coverage above.
-        for c in "मसाला चाय".chars().filter(|c| !c.is_whitespace()) {
-            assert!(text.contains(c), "{format:?}: {c} not in\n{text}");
+        // Sinhala and Tamil are shaped the same way (vowel signs reordered and joined).
+        for n in ["मसाला चाय", "සීනි 1kg", "தேங்காய் எண்ணெய்"]
+        {
+            for c in n.chars().filter(|c| !c.is_whitespace()) {
+                assert!(text.contains(c), "{format:?}: {c} of {n} not in\n{text}");
+            }
         }
     }
 }

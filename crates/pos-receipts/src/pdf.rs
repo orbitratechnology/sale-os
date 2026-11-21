@@ -4,8 +4,8 @@
 //!
 //! Fonts (SIL Open Font License, `fonts/OFL.txt`): Noto Sans Mono for the receipt-width
 //! layout (the same lines as the preview and the printer), Noto Sans for A4, and fallbacks
-//! for Arabic, Devanagari, Chinese/Japanese (GB 2312 + JIS X 0208 subset) and Korean
-//! (KS X 1001 Hangul subset). Each run of text is shaped with rustybuzz in the font that
+//! for Sinhala, Tamil, Arabic, Devanagari, Chinese/Japanese (GB 2312 + JIS X 0208 subset)
+//! and Korean (KS X 1001 Hangul subset). Each run of text is shaped with rustybuzz in the font that
 //! covers it, so Arabic letters join and Devanagari forms conjuncts; only the glyphs used
 //! are embedded (subset) with a ToUnicode map, so the text can be copied and searched.
 //!
@@ -54,18 +54,22 @@ pub enum PdfError {
 
 /// The embedded fonts, in fallback order after the base font.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum FontId {
+pub(crate) enum FontId {
     Mono,
     MonoBold,
     Sans,
     SansBold,
+    Sinhala,
+    Tamil,
     Arabic,
     Devanagari,
     Cjk,
     Hangul,
 }
 
-const FALLBACK: [FontId; 6] = [
+const FALLBACK: [FontId; 8] = [
+    FontId::Sinhala,
+    FontId::Tamil,
     FontId::Arabic,
     FontId::Devanagari,
     FontId::Cjk,
@@ -81,6 +85,8 @@ impl FontId {
             FontId::MonoBold => include_bytes!("../fonts/NotoSansMono-Bold.ttf"),
             FontId::Sans => include_bytes!("../fonts/NotoSans-Regular.ttf"),
             FontId::SansBold => include_bytes!("../fonts/NotoSans-Bold.ttf"),
+            FontId::Sinhala => include_bytes!("../fonts/NotoSansSinhala-Regular.ttf"),
+            FontId::Tamil => include_bytes!("../fonts/NotoSansTamil-Regular.ttf"),
             FontId::Arabic => include_bytes!("../fonts/NotoSansArabic-Regular.ttf"),
             FontId::Devanagari => include_bytes!("../fonts/NotoSansDevanagari-Regular.ttf"),
             FontId::Cjk => include_bytes!("../fonts/NotoSansCJK-Subset.ttf"),
@@ -89,8 +95,8 @@ impl FontId {
     }
 }
 
-struct Loaded {
-    shaper: Face<'static>,
+pub(crate) struct Loaded {
+    pub(crate) shaper: Face<'static>,
     pdf: PdfFont,
 }
 
@@ -100,6 +106,8 @@ static FONTS: LazyLock<Vec<(FontId, Loaded)>> = LazyLock::new(|| {
         FontId::MonoBold,
         FontId::Sans,
         FontId::SansBold,
+        FontId::Sinhala,
+        FontId::Tamil,
         FontId::Arabic,
         FontId::Devanagari,
         FontId::Cjk,
@@ -115,7 +123,7 @@ static FONTS: LazyLock<Vec<(FontId, Loaded)>> = LazyLock::new(|| {
     .collect()
 });
 
-fn font(id: FontId) -> &'static Loaded {
+pub(crate) fn font(id: FontId) -> &'static Loaded {
     &FONTS
         .iter()
         .find(|(f, _)| *f == id)
@@ -148,19 +156,43 @@ pub fn missing_glyphs(text: &str) -> Vec<char> {
 }
 
 /// A run of text in one font, shaped.
-struct Run {
-    font: FontId,
-    text: String,
+pub(crate) struct Run {
+    pub(crate) font: FontId,
+    pub(crate) text: String,
     glyphs: Vec<KrillaGlyph>,
+    /// The same glyphs, for drawing outlines (the raster renderer).
+    pub(crate) placed: Vec<Placed>,
     /// Advance in ems.
-    advance: f32,
+    pub(crate) advance: f32,
     /// Receipt columns the run takes.
-    columns: usize,
+    pub(crate) columns: usize,
+}
+
+/// A shaped glyph: its id and its advance and offsets in ems.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct Placed {
+    pub(crate) id: u16,
+    pub(crate) x_advance: f32,
+    pub(crate) x_offset: f32,
+    pub(crate) y_offset: f32,
+}
+
+/// Whether `c` is drawn by a fallback script font (Sinhala, Tamil, Arabic, Devanagari,
+/// CJK, Hangul) that neither base font covers: a receipt printer's code pages have none of
+/// these, and transliteration would lose them, so such a line prints as an image.
+pub(crate) fn needs_script_font(c: char) -> bool {
+    !c.is_control()
+        && !c.is_whitespace()
+        && !covers(FontId::Mono, c)
+        && !covers(FontId::Sans, c)
+        && FALLBACK
+            .into_iter()
+            .any(|f| !matches!(f, FontId::Mono | FontId::Sans) && covers(f, c))
 }
 
 /// Splits `text` into runs by font (a run keeps going while its font covers the next
 /// character, so spaces and digits stay inside an Arabic or CJK run) and shapes each.
-fn runs(text: &str, base: FontId) -> Vec<Run> {
+pub(crate) fn runs(text: &str, base: FontId) -> Vec<Run> {
     let mut parts: Vec<(FontId, String)> = Vec::new();
     for c in text.chars() {
         match parts.last_mut() {
@@ -177,12 +209,13 @@ fn runs(text: &str, base: FontId) -> Vec<Run> {
     parts
         .into_iter()
         .map(|(f, s)| {
-            let (glyphs, advance) = shape(f, &s);
+            let (glyphs, placed, advance) = shape(f, &s);
             let columns = s.chars().map(char_columns).sum();
             Run {
                 font: f,
                 text: s,
                 glyphs,
+                placed,
                 advance,
                 columns,
             }
@@ -191,8 +224,9 @@ fn runs(text: &str, base: FontId) -> Vec<Run> {
 }
 
 /// Shapes `text` in one font (as krilla's own simple shaping does, with the cluster
-/// ranges it needs for the ToUnicode map). Returns the glyphs and the advance in ems.
-fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, f32) {
+/// ranges it needs for the ToUnicode map). Returns the glyphs, the same glyphs as plain
+/// positions, and the advance in ems.
+fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, Vec<Placed>, f32) {
     let face = &font(id).shaper;
     let upem = face.units_per_em() as f32;
     let mut buffer = UnicodeBuffer::new();
@@ -206,6 +240,7 @@ fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, f32) {
     let positions = output.glyph_positions();
     let infos = output.glyph_infos();
     let mut glyphs = Vec::with_capacity(infos.len());
+    let mut placed = Vec::with_capacity(infos.len());
     let mut advance = 0.0;
     for (i, (info, pos)) in infos.iter().zip(positions).enumerate() {
         let start = info.cluster as usize;
@@ -218,6 +253,12 @@ fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, f32) {
         let end = next.map_or(text.len(), |x| x.cluster as usize);
         let x_advance = pos.x_advance as f32 / upem;
         advance += x_advance;
+        placed.push(Placed {
+            id: u16::try_from(info.glyph_id).unwrap_or(0),
+            x_advance,
+            x_offset: pos.x_offset as f32 / upem,
+            y_offset: pos.y_offset as f32 / upem,
+        });
         glyphs.push(KrillaGlyph::new(
             GlyphId::new(info.glyph_id),
             x_advance,
@@ -228,7 +269,7 @@ fn shape(id: FontId, text: &str) -> (Vec<KrillaGlyph>, f32) {
             None,
         ));
     }
-    (glyphs, advance)
+    (glyphs, placed, advance)
 }
 
 /// Width of `text` in points at `size`.
@@ -869,5 +910,47 @@ fn put(surface: &mut krilla::surface::Surface<'_>, r: &Run, x: f32, y: f32, size
     );
     if squeeze.is_some() {
         surface.pop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// On the receipt grid a Sinhala or Tamil name fits the columns the layout gives it
+    /// (`char_columns`), so it is drawn at full size, not squeezed.
+    #[test]
+    fn sinhala_and_tamil_fit_their_columns_on_the_grid() {
+        // The grid's cell is the monospace advance (0.6 em) at the grid's font size.
+        let mono = &font(FontId::Mono).shaper;
+        let zero = mono.glyph_index('0').expect("zero");
+        let cell = f32::from(mono.glyph_hor_advance(zero).expect("advance")) / mono.units_per_em() as f32;
+        for word in [
+            "සීනි",
+            "පාන්",
+            "කිරි",
+            "බිත්තර",
+            "තේ කොළ",
+            "පොල් තෙල්",
+            "සබන්",
+            "சர்க்கரை",
+            "பால்",
+            "முட்டை",
+            "தேநீர்",
+            "சோப்பு",
+            "தேங்காய் எண்ணெய்",
+            "ரொட்டி",
+        ] {
+            for r in runs(word, FontId::Mono) {
+                let room = r.columns as f32 * cell;
+                assert!(
+                    r.advance <= room + 1e-3,
+                    "{word}: run {:?} is {:.2} em for {} columns ({room:.2} em)",
+                    r.text,
+                    r.advance,
+                    r.columns
+                );
+            }
+        }
     }
 }
