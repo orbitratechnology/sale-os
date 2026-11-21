@@ -1,7 +1,7 @@
 # Sinhala and Tamil: review before the pilot (D-02)
 
 The whole till is drafted in Sinhala (`apps/desktop-ui/src/i18n/si.ts`) and Tamil
-(`apps/desktop-ui/src/i18n/ta.ts`), 1,190 sentences each: the cashier screens first (302), then
+(`apps/desktop-ui/src/i18n/ta.ts`), 1,194 sentences each: the cashier screens first (302), then
 on 2026-11-21 the owner and manager screens, settings, setup and the card terminal. They were machine-drafted: a native
 speaker who works in Sri Lankan retail must review both before shops see them.
 

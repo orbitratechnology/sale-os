@@ -4,7 +4,7 @@ import type { Role, StaffDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { useT, type T } from "../../i18n";
 import { SectionTitle } from "../../ui/PanelHeader";
-import { UserPlus, Users } from "../../ui/icons";
+import { UserCheck, UserPlus, UserX, Users } from "../../ui/icons";
 
 /** Each role's name and what it may do, in the order the role pickers list them. */
 const ROLE_COPY: Record<Role, { label: string; help: string }> = {
@@ -44,13 +44,15 @@ type Editing =
   | { kind: "none" }
   | { kind: "edit"; user: StaffDto; name: string; role: Role }
   | { kind: "pin"; user: StaffDto; pin: string; again: string }
-  | { kind: "deactivate"; user: StaffDto };
+  | { kind: "deactivate"; user: StaffDto }
+  | { kind: "reactivate"; user: StaffDto };
 
 /**
  * Staff (E05-T06, owner): who can sign in to this till and what they may do. Each person
  * has their own PIN; nobody shares the owner's. An owner can rename, change a role, set a
  * temporary PIN (changed at the next sign-in) and deactivate. Deactivated staff keep their
- * history and can no longer sign in. Rust refuses to leave the business without an owner.
+ * history and can no longer sign in; an owner can reactivate them (same role and PIN). Rust
+ * refuses to leave the business without an owner.
  */
 export function StaffPanel() {
   const t = useT();
@@ -130,6 +132,14 @@ export function StaffPanel() {
     if (editing.kind !== "deactivate") return;
     const res = await commands.staffDeactivate(editing.user.userId, editing.user.version);
     settle(res, t("{name} can no longer sign in. Their sales and history are kept.", { name: editing.user.displayName }));
+  }
+
+  async function reactivate(user: StaffDto) {
+    setNotice(null);
+    setProblem(null);
+    setEditing({ kind: "reactivate", user });
+    const res = await commands.staffReactivate(user.userId, user.version);
+    settle(res, t("{name} can sign in again with their own PIN.", { name: user.displayName }));
   }
 
   // The confirmation names the person in bold: the sentence is translated whole and split there.
@@ -281,9 +291,43 @@ export function StaffPanel() {
         </tbody>
       </table>
       {inactive.length > 0 && (
-        <p className="small" data-testid="staff-inactive">
-          {t("Deactivated: {names}", { names: inactive.map((u) => u.displayName).join(", ") })}
-        </p>
+        <>
+          <SectionTitle icon={UserX}>{t("Deactivated staff")}</SectionTitle>
+          <table className="sales-table" aria-label={t("Deactivated staff")} data-testid="staff-inactive">
+            <thead>
+              <tr>
+                <th scope="col">{t("Name")}</th>
+                <th scope="col">{t("Role")}</th>
+                <th scope="col" className="row-actions">
+                  <span className="visually-hidden">{t("Actions")}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {inactive.map((u) => (
+                <tr key={u.userId}>
+                  <th scope="row">{u.displayName}</th>
+                  <td>
+                    <span className="tag">{roleLabel(u.role, t)}</span>
+                  </td>
+                  <td className="row-actions">
+                    <button
+                      type="button"
+                      className="link"
+                      aria-label={t("Reactivate {name}", { name: u.displayName })}
+                      aria-describedby={editing.kind === "reactivate" && editing.user.userId === u.userId && problem ? `staff-${u.userId}-error` : undefined}
+                      onClick={() => void reactivate(u)}
+                    >
+                      <UserCheck />
+                      {t("Reactivate")}
+                    </button>
+                    {rowProblem(u)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
 
       <SectionTitle icon={UserPlus}>{t("Add a staff member")}</SectionTitle>

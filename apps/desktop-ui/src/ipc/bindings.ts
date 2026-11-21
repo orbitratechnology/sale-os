@@ -38,6 +38,8 @@ export const commands = {
 	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_create", { input })),
 	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_update", { input })),
 	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
+	/**  Lets a deactivated staff member sign in again (owner, like deactivating). */
+	staffReactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reactivate", { userId, baseVersion })),
 	/**  Sets a temporary PIN; the user must change it at next sign-in. */
 	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
 	/**

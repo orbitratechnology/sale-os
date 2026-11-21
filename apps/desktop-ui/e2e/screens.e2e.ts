@@ -1904,7 +1904,7 @@ describe("staff (E05-T06)", () => {
     // Cal leaves: no longer on the PIN pad, history kept.
     await table.getByRole("button", { name: "Deactivate Cal" }).click();
     await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
-    await page.getByTestId("staff-inactive").filter({ hasText: "Deactivated: Cal" }).waitFor();
+    await page.getByRole("table", { name: "Deactivated staff" }).getByRole("rowheader", { name: "Cal" }).waitFor();
     // No PIN is ever shown back.
     expect(await page.getByRole("main").textContent()).not.toContain("9999");
     const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
@@ -1920,6 +1920,54 @@ describe("staff (E05-T06)", () => {
     await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
     await page.getByRole("button", { name: /Tom/ }).waitFor();
     expect(await page.getByRole("button", { name: /Cal/ }).count()).toBe(0);
+  });
+});
+
+describe("staff reactivation", () => {
+  it("the owner brings a deactivated person back; a taken name and a stale list are explained", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Staff" }).click();
+    const table = page.getByRole("table", { name: "Staff" });
+    const panel = page.getByRole("tabpanel", { name: "Staff" });
+    await table.getByRole("button", { name: "Deactivate Cal" }).click();
+    await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
+    const gone = page.getByRole("table", { name: "Deactivated staff" });
+    await gone.getByRole("rowheader", { name: "Cal" }).waitFor();
+    // A new Cal joins meanwhile: the old one cannot come back under the same name.
+    const add = page.getByRole("form", { name: "Add a staff member" });
+    await add.getByLabel("Name").fill("Cal");
+    await add.getByLabel("PIN (4–8 digits)").fill("5555");
+    await add.getByLabel("PIN again").fill("5555");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByText("Cal can now sign in as cashier.").waitFor();
+    await gone.getByRole("button", { name: "Reactivate Cal" }).click();
+    await gone.getByRole("alert").filter({ hasText: "Another active staff member already has this name." }).waitFor();
+    await table.getByRole("button", { name: "Edit Cal" }).click();
+    const edit = page.getByRole("form", { name: "Edit Cal" });
+    await edit.getByLabel("Name").fill("Cal B");
+    await edit.getByRole("button", { name: "Save" }).click();
+    await table.getByRole("rowheader", { name: "Cal B" }).waitFor();
+    // Someone else changed the old Cal meanwhile (another register): the list reloads.
+    await page.evaluate(() => {
+      const old = window.__fake.users.find((u) => u.displayName === "Cal" && u.active === false);
+      if (old) old.version = (old.version ?? 1) + 1;
+    });
+    await gone.getByRole("button", { name: "Reactivate Cal" }).click();
+    await panel.getByRole("alert").filter({ hasText: "Someone changed this staff member meanwhile" }).waitFor();
+    await gone.getByRole("button", { name: "Reactivate Cal" }).click();
+    await panel.getByText("Cal can sign in again with their own PIN.").waitFor();
+    await table.getByRole("rowheader", { name: "Cal", exact: true }).waitFor();
+    expect(await page.getByRole("table", { name: "Deactivated staff" }).count()).toBe(0);
+    const sent = await calls(page, "staff_reactivate");
+    expect(sent).toHaveLength(3);
+    expect(sent[1]?.baseVersion).toBe(sent[0]?.baseVersion);
+    expect(sent[2]?.baseVersion).toBe(Number(sent[1]?.baseVersion) + 1);
+    // Cal is back on the PIN pad.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F12");
+    await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
+    await page.getByRole("button", { name: /^Cal\b(?! B)/ }).waitFor();
   });
 });
 

@@ -467,3 +467,101 @@ async fn reset_pin_forces_a_change_and_deactivated_staff_cannot_sign_in() {
             .all(|s| s.user_id != bea.user_id)
     );
 }
+
+#[tokio::test]
+async fn a_deactivated_person_is_reactivated_by_an_owner_and_signs_in_again() {
+    let w = world().await;
+    let bea = w
+        .staff
+        .create(&w.as_owner(), new_staff("Bea", Role::Cashier))
+        .await
+        .unwrap();
+    let cal = w
+        .staff
+        .create(&w.as_owner(), new_staff("Cal", Role::Manager))
+        .await
+        .unwrap();
+    // Someone active cannot be "reactivated".
+    let err = w.staff.reactivate(&w.as_owner(), bea.user_id, 1).await.unwrap_err();
+    assert_eq!(err, AppError::Staff(StaffError::AlreadyActive));
+    assert_eq!(err.error_code(), ErrorCode::ValidationFailed);
+    let off = w.staff.deactivate(&w.as_owner(), bea.user_id, 1).await.unwrap();
+    assert_eq!(off.version, 2);
+
+    // Owner only, like deactivating: a manager, a cashier, or a locked till are refused.
+    for actor in [Some(&cal), Some(&bea)] {
+        let err = w
+            .staff
+            .reactivate(&w.ctx(actor), bea.user_id, 2)
+            .await
+            .unwrap_err();
+        assert_eq!(err.error_code(), ErrorCode::PermissionDenied);
+    }
+    let err = w.staff.reactivate(&w.ctx(None), bea.user_id, 2).await.unwrap_err();
+    assert_eq!(err.error_code(), ErrorCode::SessionLocked);
+    // A stale version is a conflict, and nothing changes.
+    let err = w.staff.reactivate(&w.as_owner(), bea.user_id, 1).await.unwrap_err();
+    assert_eq!(err.error_code(), ErrorCode::ConflictVersion);
+    assert!(!w.store.staff(bea.user_id).await.unwrap().unwrap().active);
+
+    let back = w.staff.reactivate(&w.as_owner(), bea.user_id, 2).await.unwrap();
+    assert_eq!((back.active, back.version, back.role), (true, 3, Role::Cashier));
+    let stored = w.store.staff(bea.user_id).await.unwrap().unwrap();
+    assert_eq!((stored.active, stored.version), (true, 3));
+    // Her own PIN works again, and she is back on the PIN pad.
+    w.auth
+        .login(&w.ctx(None), bea.user_id, pin("5678"))
+        .await
+        .unwrap();
+    assert!(
+        w.auth
+            .sign_in_list()
+            .await
+            .unwrap()
+            .iter()
+            .any(|s| s.user_id == bea.user_id)
+    );
+
+    // Audited once, linked to the staff.upserted event that carries the active record.
+    assert_eq!(
+        w.count("SELECT count(*) FROM audit_events WHERE action = 'staff.reactivated'")
+            .await,
+        1
+    );
+    let linked: (String, String) = sqlx::query_as(
+        "SELECT o.event_type, o.payload_json FROM audit_events a JOIN outbox_events o ON o.event_id = a.outbox_event_id
+          WHERE a.action = 'staff.reactivated'",
+    )
+    .fetch_one(w.store.db().readers())
+    .await
+    .unwrap();
+    assert_eq!(linked.0, "staff.upserted");
+    let payload: serde_json::Value = serde_json::from_str(&linked.1).unwrap();
+    assert_eq!(payload["active"], true, "{payload}");
+    assert_eq!(payload["version"], 3, "{payload}");
+}
+
+#[tokio::test]
+async fn reactivating_needs_the_name_to_be_free_among_active_staff() {
+    let w = world().await;
+    let bea = w
+        .staff
+        .create(&w.as_owner(), new_staff("Bea", Role::Cashier))
+        .await
+        .unwrap();
+    w.staff.deactivate(&w.as_owner(), bea.user_id, 1).await.unwrap();
+    // A new Bea joined meanwhile: the old one cannot come back under the same name.
+    let new_bea = w
+        .staff
+        .create(&w.as_owner(), new_staff("BEA", Role::Cashier))
+        .await
+        .unwrap();
+    let err = w.staff.reactivate(&w.as_owner(), bea.user_id, 2).await.unwrap_err();
+    assert_eq!(err, AppError::Staff(StaffError::NameTaken));
+    // Once the new one is renamed, she can.
+    w.staff
+        .update(&w.as_owner(), new_bea.user_id, 1, Some("Bea N".into()), None)
+        .await
+        .unwrap();
+    w.staff.reactivate(&w.as_owner(), bea.user_id, 2).await.unwrap();
+}

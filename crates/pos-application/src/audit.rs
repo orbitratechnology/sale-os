@@ -33,6 +33,7 @@ actions! {
     STAFF_CREATED = "staff.created",
     STAFF_UPDATED = "staff.updated",
     STAFF_DEACTIVATED = "staff.deactivated",
+    STAFF_REACTIVATED = "staff.reactivated",
     STAFF_PIN_RESET = "staff.pin_reset",
     SETTINGS_UPDATED = "settings.updated",
     BUSINESS_CREATED = "business.created",

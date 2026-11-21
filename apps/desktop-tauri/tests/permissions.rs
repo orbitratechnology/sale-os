@@ -122,6 +122,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             json!({"userId": UNKNOWN_ID, "baseVersion": 1}),
         ),
         (
+            "staff_reactivate",
+            Perm(StaffManage),
+            json!({"userId": UNKNOWN_ID, "baseVersion": 1}),
+        ),
+        (
             "staff_reset_pin",
             Perm(StaffManage),
             json!({"userId": UNKNOWN_ID, "baseVersion": 1, "pin": "5555"}),

@@ -502,6 +502,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       u.version = (u.version ?? 1) + 1;
       return staffDto(u);
     }
+    case "staff_reactivate": {
+      ownerOnly(s);
+      const u = staffAt(s, String(a.userId), Number(a.baseVersion));
+      if (u.active !== false) fail("VALIDATION_FAILED");
+      staffName(s, u.displayName, u.userId);
+      u.active = true;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
     case "staff_reset_pin": {
       ownerOnly(s);
       const u = staffAt(s, String(a.userId), Number(a.baseVersion));

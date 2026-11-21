@@ -19,6 +19,7 @@
     "allow-staff-create",
     "allow-staff-update",
     "allow-staff-deactivate",
+    "allow-staff-reactivate",
     "allow-staff-reset-pin",
     "allow-register-go-live",
     "allow-settings-get",

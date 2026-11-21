@@ -80,6 +80,8 @@ pub enum StaffError {
     LastOwner,
     #[error("this staff member is deactivated")]
     Deactivated,
+    #[error("this staff member is already active")]
+    AlreadyActive,
     #[error("staff member not found")]
     NotFound,
     #[error("the new PIN must differ from the current one")]
