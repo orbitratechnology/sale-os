@@ -98,6 +98,8 @@ export interface FakeState {
   devices: { deviceId: string; kind: string; role: string; name: string; configJson: string; enabled: boolean; version: number }[];
   /** Drawer pulses sent (no sale and cash sales). */
   drawerOpens: string[];
+  /** What the customer display was last told: "test" or "total_due". */
+  displayShown: string[];
   /** Card-terminal attempts (E22-T02, sandbox rules: .01 declines, .02 uncertain). */
   attempts: Map<string, { cartId: string; amountMinor: string; status: string; polls: number; used: boolean; reason: string | null }>;
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
@@ -248,6 +250,7 @@ function initialStateInner(preset: Preset): FakeState {
     printScript: [],
     devices: [],
     drawerOpens: [],
+    displayShown: [],
     attempts: new Map(),
     printJobs: new Map(),
     printed: 0,
@@ -1837,8 +1840,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const me = needSession(s);
       if (me.role === "cashier") fail("PERMISSION_DENIED");
       const input = a.input as { deviceId: string | null; kind: string; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
-      const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string };
+      const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string; serial?: { port?: string } };
       if (input.kind === "receipt_printer" && config.connection?.kind === "network" && !config.connection.host) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "connection.host", value: null, ownerProductId: null, remainingMinor: null });
+      if (input.kind === "customer_display" && !config.serial?.port) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "serial.port", value: null, ownerProductId: null, remainingMinor: null });
       const old = s.devices.find((d) => d.deviceId === input.deviceId);
       if (old && old.version !== input.baseVersion) fail("CONFLICT_VERSION");
       const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role: "main", name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
@@ -1848,6 +1852,30 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "device_remove":
       needSession(s);
       s.devices = s.devices.filter((d) => d.deviceId !== a.deviceId);
+      return null;
+    case "display_status": {
+      needSession(s);
+      const d = s.devices.find((x) => x.kind === "customer_display");
+      if (!d) return { configured: false, target: null, state: "unknown", message: null };
+      const c = JSON.parse(d.configJson) as { serial: { port: string; baud?: number }; protocol?: string };
+      const target = `${c.serial.port} @ ${c.serial.baud ?? 9600}, ${c.protocol === "cd5220" ? "CD5220" : "ESC/POS"}`;
+      const broken = c.serial.port.includes("missing");
+      const tested = s.displayShown.includes("test");
+      return { configured: true, target, state: broken && tested ? "offline" : tested ? "ready" : "unknown", message: broken && tested ? `${c.serial.port} not found: unplugged or wrong port` : null };
+    }
+    case "display_test": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const d = s.devices.find((x) => x.kind === "customer_display");
+      if (!d) return fail("DEVICE_UNAVAILABLE");
+      s.displayShown.push("test");
+      const c = JSON.parse(d.configJson) as { serial: { port: string } };
+      if (c.serial.port.includes("missing")) return { outcome: "failed", message: `the device is not connected: ${c.serial.port} not found: unplugged or wrong port` };
+      return { outcome: "shown", message: `${c.serial.port} @ 9600, ESC/POS` };
+    }
+    case "display_show_total":
+      needSession(s);
+      s.displayShown.push("total_due");
       return null;
     case "printer_test":
       needSession(s);

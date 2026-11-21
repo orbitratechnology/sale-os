@@ -13,6 +13,14 @@ use pos_domain::cart::{AddVia, CartChange};
 use pos_domain::{ApprovalId, CartLineId, ProductId, ScanEventId, VariantId};
 use tauri::State;
 
+/// The customer display follows the cart: `line` (or the last line) and the total, the
+/// welcome line when empty. Queued, never awaited: it cannot slow down or fail the command.
+fn display_cart(services: &AppServices, view: &pos_application::cart::CartView, line: Option<CartLineId>) {
+    if let Ok(app) = services.app() {
+        app.devices.display.show_cart(view, line);
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn tax_list(services: State<'_, AppServices>) -> Result<Vec<TaxCategoryDto>, IpcError> {
@@ -284,6 +292,11 @@ pub async fn scan_submit(
         .map_err(err)?;
     Ok(match outcome {
         ScanOutcome::Added { view, change, hint } => {
+            let line = match &change {
+                CartChange::LineAdded(l) | CartChange::QuantityIncreased { line: l, .. } => Some(*l),
+                _ => None,
+            };
+            display_cart(&services, &view, line);
             let cart = CartViewDto::from_view(&view)?;
             let hint = crate::dto::scan_hint(&hint);
             match change {
@@ -334,12 +347,17 @@ pub async fn cart_add_variant(
         AddViaDto::Search => AddVia::Search,
         AddViaDto::QuickSelect => AddVia::QuickSelect,
     };
-    let (view, _) = services
+    let (view, change) = services
         .app()?
         .carts
         .add_variant(&ctx, variant_id, qty, via)
         .await
         .map_err(err)?;
+    let line = match change {
+        CartChange::LineAdded(l) | CartChange::QuantityIncreased { line: l, .. } => Some(l),
+        _ => None,
+    };
+    display_cart(&services, &view, line);
     CartViewDto::from_view(&view)
 }
 
@@ -359,6 +377,7 @@ pub async fn cart_set_quantity(
         .set_quantity(&ctx, line_id, qty)
         .await
         .map_err(err)?;
+    display_cart(&services, &view, Some(line_id));
     CartViewDto::from_view(&view)
 }
 
@@ -375,6 +394,7 @@ pub async fn cart_remove_line(
         .remove_line(&ctx, line_id)
         .await
         .map_err(err)?;
+    display_cart(&services, &view, None);
     CartViewDto::from_view(&view)
 }
 
@@ -396,7 +416,10 @@ pub async fn cart_set_line_discount(
         .set_line_discount(&ctx, line_id, discount)
         .await
     {
-        Ok(view) => CartViewDto::from_view(&view),
+        Ok(view) => {
+            display_cart(&services, &view, Some(line_id));
+            CartViewDto::from_view(&view)
+        }
         Err(e) => Err(err(e)),
     };
     services.settle(token, &res);
@@ -414,7 +437,10 @@ pub async fn cart_set_order_discount(
     let discount = discount.map(DiscountDto::into_domain).transpose()?;
     let (ctx, token) = services.context_with_approval(approval_token_id).await?;
     let res = match services.app()?.carts.set_order_discount(&ctx, discount).await {
-        Ok(view) => CartViewDto::from_view(&view),
+        Ok(view) => {
+            display_cart(&services, &view, None);
+            CartViewDto::from_view(&view)
+        }
         Err(e) => Err(err(e)),
     };
     services.settle(token, &res);
@@ -439,7 +465,10 @@ pub async fn cart_override_price(
         .override_price(&ctx, line_id, price, &reason)
         .await
     {
-        Ok(view) => CartViewDto::from_view(&view),
+        Ok(view) => {
+            display_cart(&services, &view, Some(line_id));
+            CartViewDto::from_view(&view)
+        }
         Err(e) => Err(err(e)),
     };
     services.settle(token, &res);
@@ -457,6 +486,7 @@ pub async fn cart_clear(services: State<'_, AppServices>, revision: u32) -> Resu
         .clear(&ctx, u64::from(revision))
         .await
         .map_err(err)?;
+    display_cart(&services, &view, None);
     CartViewDto::from_view(&view)
 }
 
@@ -477,7 +507,10 @@ pub async fn cart_void(
         .void(&ctx, u64::from(revision), &reason)
         .await
     {
-        Ok(view) => CartViewDto::from_view(&view),
+        Ok(view) => {
+            display_cart(&services, &view, None);
+            CartViewDto::from_view(&view)
+        }
         Err(e) => Err(err(e)),
     };
     services.settle(token, &res);
@@ -520,6 +553,7 @@ pub async fn cart_recovery(services: State<'_, AppServices>) -> Result<Option<Re
 pub async fn cart_recovery_resume(services: State<'_, AppServices>) -> Result<CartViewDto, IpcError> {
     let ctx = services.context().await?;
     let view = services.app()?.carts.resume_recovered(&ctx).await.map_err(err)?;
+    display_cart(&services, &view, None);
     CartViewDto::from_view(&view)
 }
 
@@ -584,6 +618,7 @@ pub async fn cart_park(
         .park(&ctx, u64::from(revision), label.as_deref())
         .await
         .map_err(err)?;
+    display_cart(&services, &view, None);
     CartViewDto::from_view(&view)
 }
 
@@ -604,6 +639,7 @@ pub async fn cart_resume(
 ) -> Result<CartViewDto, IpcError> {
     let ctx = services.context().await?;
     let view = services.app()?.carts.resume(&ctx, cart_id).await.map_err(err)?;
+    display_cart(&services, &view, None);
     CartViewDto::from_view(&view)
 }
 
@@ -664,6 +700,8 @@ pub async fn checkout_complete(
             .await
             .map_err(err)?
     };
+    // The change on the customer display (queued; the welcome line follows when idle).
+    app.devices.display.show_sale_done(&done.sale);
     let mut dto = CompletedSaleDto::from_completed(&done);
     let open_on_cash = setting_bool(&app.queries, "drawer.open_on_cash_sale", true).await;
     dto.drawer = match app

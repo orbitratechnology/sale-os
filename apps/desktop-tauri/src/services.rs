@@ -365,6 +365,7 @@ impl AppServices {
                     devices: a,
                     driver: Arc::new(crate::device_commands::HwDriver),
                     printer,
+                    display: Arc::new(pos_application::customer_display::CustomerDisplay::default()),
                 },
                 scanners: Arc::new(crate::device_commands::ScannerHub::default()),
                 printer_feed: Arc::new(crate::device_commands::PrinterStatusFeed::default()),
@@ -481,6 +482,10 @@ impl AppServices {
             tracing::warn!(problem = %e, "receipt printer not activated; using the virtual printer");
         }
         app.printer_feed.follow(app.devices.printer.clone());
+        self.refresh_shop_name().await;
+        if let Err(e) = app.devices.activate_display(register.register_id).await {
+            tracing::warn!(problem = %e, "customer display not activated");
+        }
         let devices = match pos_application::devices::DeviceQueries::devices(
             &app.queries,
             register.register_id,
@@ -517,6 +522,14 @@ impl AppServices {
                 timeout: pos_application::payments::DEFAULT_PAYMENT_TIMEOUT,
             })
         });
+    }
+
+    /// The customer display's welcome line names the shop.
+    pub(crate) async fn refresh_shop_name(&self) {
+        let Ok(app) = self.app() else { return };
+        if let Ok(Some(ws)) = app.queries.workspace_summary().await {
+            app.devices.display.set_shop(&ws.business_name);
+        }
     }
 
     /// Receivers for serial-scanner scans and health (forwarded to the window by the shell).

@@ -105,7 +105,7 @@ impl SerialSettings {
         }
     }
 
-    fn validate_into(&self, prefix: &str, errors: &mut Vec<FieldError>) {
+    pub(crate) fn validate_into(&self, prefix: &str, errors: &mut Vec<FieldError>) {
         if let Err(m) = check_port_name(&self.port) {
             errors.push(FieldError::new(format!("{prefix}port"), m));
         }

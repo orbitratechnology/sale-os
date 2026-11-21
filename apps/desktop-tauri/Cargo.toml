@@ -41,6 +41,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true
+# A pseudo-terminal pair stands in for a serial customer display.
+serialport.workspace = true
 sqlx = { workspace = true, features = ["sqlite"] }
 tempfile.workspace = true
 tauri = { workspace = true, features = ["test"] }

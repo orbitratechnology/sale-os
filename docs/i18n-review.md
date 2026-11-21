@@ -38,10 +38,14 @@ speaker who works in Sri Lankan retail must review both before shops see them.
 | manager | කළමනාකරු | முகாமையாளர் |
 | change (money back) | ඉතිරි මුදල | மீதிப் பணம் |
 | discount | වට්ටම | தள்ளுபடி |
+| customer display (pole display) | පාරිභෝගික සංදර්ශකය (කණු සංදර්ශකය) | வாடிக்கையாளர் காட்சித் திரை (கம்பக் காட்சித் திரை) |
 
 ## Sentences the drafts were least sure of
 
 Owner screens (2026-11-21):
+
+- Customer display: "pole display" was rendered literally (කණු / கம்பம்); a reviewer may know
+  the word shops use. "Command set" (විධාන කට්ටලය / கட்டளைத் தொகுப்பு) is technical either way.
 
 - Short words used in more than one place: "From" (a date range and a stock movement's
   source), "Full", "Partial", "Check", "Made", "Why", "Use".

@@ -1,12 +1,12 @@
 //! Devices attached to this till (E20-T11, E21-T04, E22-T02, ADR-024): the hardware driver
-//! behind `DeviceService`, serial scanners forwarded to the UI, the sandbox payment
-//! terminal, and the IPC commands of Settings → Devices.
+//! behind `DeviceService`, serial scanners forwarded to the UI, the customer display, the
+//! sandbox payment terminal, and the IPC commands of Settings → Devices.
 
 use crate::app_commands::err;
 use crate::{AppServices, IpcError};
 use pos_application::devices::{DeviceConfigProblem, DeviceDriver, DeviceInput, PrinterHandle, PrinterView};
 use pos_application::records::{DeviceKind, DeviceRecord};
-use pos_device_hw::{PrinterConfig, ScannerConfig, SerialScanner};
+use pos_device_hw::{DisplayConfig, HwCustomerDisplay, PrinterConfig, ScannerConfig, SerialScanner};
 use pos_device_ports::{BarcodeInputPort, DeviceError, DeviceHealth, PaperLevel, PrintResult, PushedStatus};
 use pos_domain::{DeviceId, ErrorCode};
 use serde::{Deserialize, Serialize};
@@ -72,11 +72,21 @@ impl DeviceDriver for HwDriver {
                     })
                 }
             }
-            DeviceKind::CustomerDisplay => Err(DeviceConfigProblem {
-                field: "kind".into(),
-                message: "customer displays are not supported yet".into(),
-            }),
+            DeviceKind::CustomerDisplay => {
+                let c: DisplayConfig = parse(config)?;
+                c.validate().map_err(first_problem)?;
+                Ok(serde_json::to_value(c).unwrap_or_default())
+            }
         }
+    }
+
+    async fn open_display(
+        &self,
+        config: &Value,
+    ) -> Result<Arc<dyn pos_device_ports::CustomerDisplayPort>, DeviceError> {
+        let c: DisplayConfig = serde_json::from_value(config.clone())
+            .map_err(|e| DeviceError::Unsupported(format!("stored display settings: {e}")))?;
+        Ok(Arc::new(HwCustomerDisplay::from_config(&c)?))
     }
 
     async fn open_printer(&self, config: &Value) -> Result<PrinterHandle, DeviceError> {
@@ -378,6 +388,7 @@ pub async fn device_save(
         )
     })?;
     let app = services.app()?;
+    services.refresh_shop_name().await;
     let saved = app
         .devices
         .save(
@@ -653,4 +664,87 @@ pub async fn drawer_open(
         .map_err(err);
     services.settle(token, &result);
     result
+}
+
+// ---------- customer display ----------
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayStatusDto {
+    /// False: no customer display is set up.
+    pub configured: bool,
+    /// Which display, e.g. `COM5 @ 9600, ESC/POS`.
+    pub target: Option<String>,
+    /// `ready`, `offline` or `unknown` (nothing shown yet).
+    pub state: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayTestDto {
+    /// `shown` or `failed`.
+    pub outcome: String,
+    /// Which display it went to (`shown`), or why it did not take it (`failed`).
+    pub message: String,
+}
+
+/// How the customer display is doing (any signed-in user). Its problems never stop a sale.
+#[tauri::command]
+#[specta::specta]
+pub async fn display_status(services: State<'_, AppServices>) -> Result<DisplayStatusDto, IpcError> {
+    let ctx = services.context().await?;
+    let v = services.app()?.devices.display_view(&ctx).map_err(err)?;
+    let (state, message) = match v.health {
+        DeviceHealth::Ready => ("ready", None),
+        DeviceHealth::Warning(m) | DeviceHealth::Offline(m) => ("offline", Some(m)),
+        DeviceHealth::Unknown => ("unknown", None),
+    };
+    Ok(DisplayStatusDto {
+        configured: v.configured,
+        target: v.target,
+        state: state.into(),
+        message,
+    })
+}
+
+/// Shows a test pattern on the customer display (Settings → Devices; audited).
+#[tauri::command]
+#[specta::specta]
+pub async fn display_test(services: State<'_, AppServices>) -> Result<DisplayTestDto, IpcError> {
+    let ctx = services.context().await?;
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        services.app()?.devices.test_display(&ctx),
+    )
+    .await
+    .map_err(|_| {
+        IpcError::coded(
+            ErrorCode::DeviceUnavailable,
+            "the display did not answer in 10 seconds",
+        )
+    })?
+    .map_err(err)?;
+    Ok(match result {
+        Ok(target) => DisplayTestDto {
+            outcome: "shown".into(),
+            message: target,
+        },
+        Err(why) => DisplayTestDto {
+            outcome: "failed".into(),
+            message: why,
+        },
+    })
+}
+
+/// At payment: the customer display shows the open cart's total due. Never fails because
+/// of the display (it may be missing or unplugged).
+#[tauri::command]
+#[specta::specta]
+pub async fn display_show_total(services: State<'_, AppServices>) -> Result<(), IpcError> {
+    let ctx = services.context().await?;
+    let app = services.app()?;
+    let view = app.carts.current(&ctx).await.map_err(err)?;
+    app.devices.display.show_total_due(&view);
+    Ok(())
 }

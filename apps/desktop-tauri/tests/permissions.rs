@@ -515,6 +515,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(DrawerOpen),
             json!({"reason": "harness", "approvalTokenId": null}),
         ),
+        // Customer display: none set up, so the test gets DEVICE_UNAVAILABLE and showing
+        // the total due does nothing.
+        ("display_status", Session, json!({})),
+        ("display_test", Perm(DeviceConfigure), json!({})),
+        ("display_show_total", Perm(SaleComplete), json!({})),
         // Card terminal (E22-T02): none configured, so allowed calls get DEVICE_UNAVAILABLE.
         (
             "payment_start",
@@ -2567,4 +2572,224 @@ fn a_printer_that_pushes_its_status_shows_paper_out_without_being_asked() {
         connections,
         "pushed, not asked: no new connection"
     );
+}
+
+/// A customer display's side of a virtual null-modem cable: records every byte it gets.
+#[cfg(unix)]
+struct PtyDisplay {
+    path: String,
+    received: Arc<std::sync::Mutex<Vec<u8>>>,
+    _slave: serialport::TTYPort,
+}
+
+#[cfg(unix)]
+impl PtyDisplay {
+    fn start() -> Self {
+        use std::io::Read;
+        let (mut master, slave) = serialport::TTYPort::pair().expect("pty pair");
+        let path = serialport::SerialPort::name(&slave).expect("slave name");
+        serialport::SerialPort::set_timeout(&mut master, std::time::Duration::from_millis(20)).unwrap();
+        let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = received.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 512];
+            loop {
+                match master.read(&mut buf) {
+                    Ok(n) if n > 0 => sink.lock().unwrap().extend_from_slice(&buf[..n]),
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(_) => return,
+                }
+            }
+        });
+        Self {
+            path,
+            received,
+            _slave: slave,
+        }
+    }
+
+    /// Waits until `needle` has arrived after byte `from`; returns where it ends.
+    fn wait_for(&self, from: usize, needle: &[u8]) -> usize {
+        let started = std::time::Instant::now();
+        loop {
+            {
+                let got = self.received.lock().unwrap();
+                if let Some(at) = got[from.min(got.len())..]
+                    .windows(needle.len())
+                    .position(|w| w == needle)
+                {
+                    return from + at + needle.len();
+                }
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(5),
+                    "never received {:?}; got {:?}",
+                    String::from_utf8_lossy(needle),
+                    String::from_utf8_lossy(&got)
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_customer_display_on_a_serial_port_follows_a_sale_over_ipc() {
+    // Settings → Devices saves a pole display on a serial port; from then on the display
+    // greets with the shop's name, shows each scanned item with the running total, the
+    // total due at payment and the change after the sale, all as ESC/POS display bytes on
+    // the wire; "Test display" is audited; switching to CD5220 changes the bytes.
+    use pos_device_hw::DisplayProtocol;
+    use pos_device_hw::display::{frame_bytes, init_bytes};
+    use pos_device_ports::{DisplayFrame, DisplayLine};
+    let pair = |l: &str, r: &str| DisplayLine::Pair(l.into(), r.into());
+    let esc = |f: DisplayFrame| frame_bytes(DisplayProtocol::EscPos, &f);
+    let pty = PtyDisplay::start();
+
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Kamal Stores", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let status = invoke(&w, "display_status", json!({})).unwrap();
+    assert_eq!(status["configured"], false);
+    let none = invoke(&w, "display_test", json!({})).unwrap_err();
+    assert_eq!(none["code"], "DEVICE_UNAVAILABLE", "{none}");
+    // Showing the total with no display does nothing, and fails nothing.
+    invoke(&w, "display_show_total", json!({})).unwrap();
+
+    let save = |config: Value, id: Value, version: Value| {
+        invoke(
+            &w,
+            "device_save",
+            json!({"input": {"deviceId": id, "kind": "customer_display", "role": null, "name": "Pole",
+                "configJson": config.to_string(), "enabled": true, "baseVersion": version}}),
+        )
+    };
+    let bad = save(
+        json!({"serial": {"port": "", "baud": 9600}, "protocol": "escPos"}),
+        Value::Null,
+        Value::Null,
+    )
+    .unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    assert_eq!(bad["details"]["field"], "serial.port");
+
+    let saved = save(
+        json!({"serial": {"port": pty.path, "baud": 9600}, "protocol": "escPos"}),
+        Value::Null,
+        Value::Null,
+    )
+    .unwrap();
+    let mut welcome = init_bytes(DisplayProtocol::EscPos);
+    welcome.extend(esc(DisplayFrame::new(
+        DisplayLine::Centered("WELCOME".into()),
+        DisplayLine::Centered("Kamal Stores".into()),
+    )));
+    let mut at = pty.wait_for(0, &welcome);
+
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Café crème");
+    product["product"]["variants"][0]["sku"] = json!("CAFE");
+    product["product"]["variants"][0]["priceMinor"] = json!("250");
+    invoke(&w, "product_create", product).unwrap();
+    let scan = |n: u8| {
+        invoke(
+            &w,
+            "scan_submit",
+            json!({"scanEventId": format!("0190a5b0-0000-7000-8000-0000000000{n:02x}"), "raw": "CAFE", "source": "manual"}),
+        )
+        .unwrap()["cart"]
+            .clone()
+    };
+    scan(1);
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            pair("Cafe creme", "2.50"),
+            pair("TOTAL", "2.50"),
+        )),
+    );
+    let cart = scan(2);
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            pair("Cafe creme", "5.00"),
+            pair("TOTAL", "5.00"),
+        )),
+    );
+
+    invoke(&w, "display_show_total", json!({})).unwrap();
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            DisplayLine::Text("TOTAL DUE".into()),
+            pair("", "5.00"),
+        )),
+    );
+    invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "2000", "reference": null}], "terminal": null}),
+    )
+    .unwrap();
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(pair("PAID", "20.00"), pair("CHANGE", "15.00"))),
+    );
+
+    let tested = invoke(&w, "display_test", json!({})).unwrap();
+    assert_eq!(tested["outcome"], "shown", "{tested}");
+    pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            DisplayLine::Centered("SALE OS DISPLAY TEST".into()),
+            DisplayLine::Text("12345678901234567890".into()),
+        )),
+    );
+    let status = invoke(&w, "display_status", json!({})).unwrap();
+    assert_eq!(status["configured"], true);
+    assert_eq!(status["state"], "ready");
+    assert_eq!(
+        status["target"],
+        format!("{} @ 9600, ESC/POS", pty.path),
+        "{status}"
+    );
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "device.test_displayed", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1, "{audited}");
+
+    // The CD5220 command set instead: the new device writes its own init and lines.
+    let from = pty.received.lock().unwrap().len();
+    save(
+        json!({"serial": {"port": pty.path, "baud": 9600}, "protocol": "cd5220"}),
+        saved["deviceId"].clone(),
+        saved["version"].clone(),
+    )
+    .unwrap();
+    let mut cd = init_bytes(DisplayProtocol::Cd5220);
+    cd.extend(frame_bytes(
+        DisplayProtocol::Cd5220,
+        &DisplayFrame::new(
+            DisplayLine::Centered("WELCOME".into()),
+            DisplayLine::Centered("Kamal Stores".into()),
+        ),
+    ));
+    pty.wait_for(from, &cd);
 }

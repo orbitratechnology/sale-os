@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { SectionTitle } from "../../ui/PanelHeader";
-import { CreditCard, Printer, ScanBarcode } from "../../ui/icons";
+import { CreditCard, Monitor, Printer, ScanBarcode } from "../../ui/icons";
 import { commands, type IpcError } from "../../ipc";
-import type { DeviceDto, DiscoveryDto, PrinterProfileDto, PrinterStatusDto } from "../../ipc/bindings";
+import type { DeviceDto, DiscoveryDto, DisplayStatusDto_Serialize as DisplayStatusDto, PrinterProfileDto, PrinterStatusDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { useT } from "../../i18n";
 
@@ -107,9 +107,16 @@ function fromDevice(dev: DeviceDto): PrinterDraft {
   };
 }
 
+type DisplayProtocol = "escPos" | "cd5220";
+/** Each display command set's name in the list, translated at render. */
+const PROTOCOL_LABEL_COPY: Record<DisplayProtocol, string> = {
+  escPos: "Epson ESC/POS (Epson DM-D and compatibles)",
+  cd5220: "CD5220 (many unbranded pole displays)",
+};
+
 /**
  * This till's devices (E20-T11, DEV-001…009): the receipt printer (any connection, any
- * model), a serial barcode scanner, and the card terminal. Keyboard-wedge scanners need no
+ * model), a serial barcode scanner, the customer display, and the card terminal. Keyboard-wedge scanners need no
  * set-up here: they work as soon as they are plugged in (Settings → Scanner for timing).
  */
 export function DevicesPanel() {
@@ -119,6 +126,8 @@ export function DevicesPanel() {
   const [error, setError] = useState<IpcError | null>(null);
   /** The printer section's last outcome; kept here because saving remounts the section. */
   const [printerMessage, setPrinterMessage] = useState<string | null>(null);
+  /** The same for the customer display. */
+  const [displayMessage, setDisplayMessage] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void commands.devicesList().then((r) => (r.status === "ok" ? setDevices(r.data) : setError(r.error)));
@@ -147,6 +156,13 @@ export function DevicesPanel() {
         setResult={setPrinterMessage}
       />
       <ScannerSection key={`scanner-${byKind("scanner")?.deviceId ?? "new"}-${byKind("scanner")?.version ?? 0}`} device={byKind("scanner")} onChanged={load} />
+      <DisplaySection
+        key={`display-${byKind("customer_display")?.deviceId ?? "new"}-${byKind("customer_display")?.version ?? 0}`}
+        device={byKind("customer_display")}
+        onChanged={load}
+        message={displayMessage}
+        setMessage={setDisplayMessage}
+      />
       <TerminalSection device={byKind("payment_terminal")} onChanged={load} />
     </div>
   );
@@ -533,6 +549,120 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
           >
             {t("Remove")}
           </button>
+        )}
+      </form>
+      {message && (
+        <p role="status" className="small">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function DisplaySection({
+  device,
+  onChanged,
+  message,
+  setMessage,
+}: {
+  device: DeviceDto | null;
+  onChanged: () => void;
+  message: string | null;
+  setMessage: (m: string | null) => void;
+}) {
+  const t = useT();
+  const stored = device ? (JSON.parse(device.configJson) as { serial?: { port?: string; baud?: number }; protocol?: DisplayProtocol }) : null;
+  const [port, setPort] = useState(stored?.serial?.port ?? "");
+  const [baud, setBaud] = useState(String(stored?.serial?.baud ?? 9600));
+  const [protocol, setProtocol] = useState<DisplayProtocol>(stored?.protocol ?? "escPos");
+  const [status, setStatus] = useState<DisplayStatusDto | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(() => {
+    void commands.displayStatus().then((r) => r.status === "ok" && setStatus(r.data));
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const res = await commands.deviceSave({
+      deviceId: device?.deviceId ?? null,
+      kind: "customer_display",
+      role: null,
+      name: `Customer display on ${port.trim()}`,
+      configJson: JSON.stringify({ serial: { port: port.trim(), baud: parseInt(baud, 10) }, protocol }),
+      enabled: true,
+      baseVersion: device?.version ?? null,
+    });
+    setBusy(false);
+    setMessage(res.status === "ok" ? t("Saved. The display greets customers and shows each item and the total.") : describeError(res.error));
+    if (res.status === "ok") onChanged();
+  }
+
+  async function test() {
+    setBusy(true);
+    setMessage(null);
+    const res = await commands.displayTest();
+    setBusy(false);
+    setMessage(res.status === "ok" ? (res.data.outcome === "shown" ? t("Sent. The display should show SALE OS DISPLAY TEST and a ruler that fills the second line.") : t("The display did not take it: {reason}", { reason: res.data.message })) : describeError(res.error));
+    refresh();
+  }
+
+  return (
+    <section aria-label={t("Customer display")} className="device-section">
+      <SectionTitle icon={Monitor}>{t("Customer display (optional)")}</SectionTitle>
+      <p className="small">
+        {t(
+          "A pole display facing the customer, with two lines of 20 characters, on a COM port (RS-232 or USB-COM). It shows each item and the running total, the total due at payment, the change, and your shop's name when the till is idle. Letters it cannot show are written in plain Latin letters.",
+        )}
+      </p>
+      {status?.configured && (
+        <p data-testid="device-display-status" className="small">
+          {status.target} ·{" "}
+          <strong>{status.state === "ready" ? t("Ready") : status.state === "offline" ? t("Not working: {reason}", { reason: status.message ?? "" }) : t("Nothing shown yet")}</strong>
+        </p>
+      )}
+      <form onSubmit={(e) => void save(e)} className="row" aria-label={t("Display settings")}>
+        <label>
+          {t("Port")}
+          <input value={port} placeholder={t("COM6 or /dev/ttyUSB1")} onChange={(e) => setPort(e.target.value)} />
+        </label>
+        <label>
+          {t("Speed (baud)")}
+          <select value={baud} onChange={(e) => setBaud(e.target.value)}>
+            {BAUDS.map((b) => (
+              <option key={b}>{b}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t("Command set")}
+          <select value={protocol} onChange={(e) => setProtocol(e.target.value as DisplayProtocol)}>
+            {(Object.keys(PROTOCOL_LABEL_COPY) as DisplayProtocol[]).map((p) => (
+              <option key={p} value={p}>
+                {t(PROTOCOL_LABEL_COPY[p])}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" disabled={!port.trim() || busy}>
+          {t("Save display")}
+        </button>
+        {device && (
+          <>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void test()}>
+              {t("Test display")}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}
+            >
+              {t("Remove")}
+            </button>
+          </>
         )}
       </form>
       {message && (

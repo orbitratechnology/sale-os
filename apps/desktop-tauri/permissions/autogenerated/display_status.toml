@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-display-status"
+description = "Enables the display_status command without any pre-configured scope."
+commands.allow = ["display_status"]
+
+[[permission]]
+identifier = "deny-display-status"
+description = "Denies the display_status command without any pre-configured scope."
+commands.deny = ["display_status"]

@@ -1,7 +1,7 @@
 /**
  * E20-T11 / E22-T02 / E21 in Chromium against the scripted backend: setting up a printer
  * (network, found by discovery), the status bar, "No sale", the drawer after a cash sale,
- * and card payments on the sandbox terminal: approve, decline and an unknown outcome
+ * the customer display (set up, tested, total due at payment), and card payments on the sandbox terminal: approve, decline and an unknown outcome
  * settled by the operator. Rust's behaviour behind each command is tested in Rust.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -94,6 +94,57 @@ describe("Settings → Devices (E20-T11)", () => {
     expect(await page.getByLabel("Connection").inputValue()).toBe("spooler");
     expect(await page.getByLabel("Printer", { exact: true }).inputValue()).toBe("EPSON TM-T20III Receipt");
     expect(await page.locator("option[value=TSP143IIIU]").evaluate((o) => (o as HTMLOptionElement).disabled)).toBe(true);
+    await page.close();
+  }, 60_000);
+});
+
+describe("customer display", () => {
+  it("sets up a pole display with its command set, tests it, and shows the total due at payment", async () => {
+    const page = await till();
+    await devicesPage(page);
+    const section = page.getByRole("region", { name: "Customer display" });
+    expect(await section.getByRole("button", { name: "Save display" }).isDisabled()).toBe(true);
+    await section.getByLabel("Port").fill("/dev/ttyUSB1");
+    await section.getByLabel("Command set").selectOption("cd5220");
+    await section.getByRole("button", { name: "Save display" }).click();
+    await page.getByText("Saved. The display greets customers and shows each item and the total.").waitFor();
+    const saved = await calls(page, "device_save");
+    const input = saved.at(-1)?.input as { kind: string; configJson: string };
+    expect(input.kind).toBe("customer_display");
+    expect(JSON.parse(input.configJson)).toEqual({ serial: { port: "/dev/ttyUSB1", baud: 9600 }, protocol: "cd5220" });
+
+    await section.getByRole("button", { name: "Test display" }).click();
+    await page.getByText(/^Sent\. The display should show SALE OS DISPLAY TEST/).waitFor();
+    await section.getByTestId("device-display-status").filter({ hasText: "Ready" }).waitFor();
+    await section.getByTestId("device-display-status").filter({ hasText: "/dev/ttyUSB1 @ 9600, CD5220" }).waitFor();
+
+    // Payment puts the total due on the display.
+    await page.getByRole("button", { name: /Back to till/ }).click();
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await scan(page, COLA);
+    await page.keyboard.press("F9");
+    await page.getByRole("button", { name: /^Exact/ }).waitFor();
+    await expect.poll(() => page.evaluate(() => window.__fake.displayShown.at(-1))).toBe("total_due");
+    expect(await page.evaluate(() => window.__fake.displayShown[0])).toBe("test");
+    await page.close();
+  }, 60_000);
+
+  it("a display that is not there says so on the settings page, and payment goes on", async () => {
+    const page = await till();
+    await devicesPage(page);
+    const section = page.getByRole("region", { name: "Customer display" });
+    await section.getByLabel("Port").fill("/dev/missing0");
+    await section.getByRole("button", { name: "Save display" }).click();
+    await page.getByText("Saved. The display greets customers and shows each item and the total.").waitFor();
+    await section.getByRole("button", { name: "Test display" }).click();
+    await page.getByText(/^The display did not take it: .*not found/).waitFor();
+    await section.getByTestId("device-display-status").filter({ hasText: /Not working: .*not found/ }).waitFor();
+
+    await page.getByRole("button", { name: /Back to till/ }).click();
+    await scan(page, COLA);
+    await page.keyboard.press("F9");
+    await page.getByRole("button", { name: /^Exact/ }).click();
+    await page.getByRole("dialog", { name: "Sale completed" }).waitFor();
     await page.close();
   }, 60_000);
 });

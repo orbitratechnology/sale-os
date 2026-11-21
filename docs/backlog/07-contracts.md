@@ -347,7 +347,7 @@ sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded, tax_invoice.issued,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
-device.saved, device.removed, device.test_printed, cash_drawer.opened,
+device.saved, device.removed, device.test_printed, device.test_displayed, cash_drawer.opened,
 cash_session.opened, cash_session.closed,
 report.exported, data.exported, backup.created, backup.restored, backup.event_restored, security.recovery_key_viewed,
 sync.linked, sync.device_revoked, sync.conflict_resolved, sync.event_rejected

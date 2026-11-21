@@ -432,6 +432,15 @@ export const commands = {
 	devicesDiscover: (subnet: string | null, port: number | null) => typedError<DiscoveryDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("devices_discover", { subnet, port })),
 	/**  "No sale": opens the cash drawer with a reason. Cashiers need a manager's approval. */
 	drawerOpen: (reason: string, approvalTokenId: ApprovalId | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("drawer_open", { reason, approvalTokenId })),
+	/**  How the customer display is doing (any signed-in user). Its problems never stop a sale. */
+	displayStatus: () => typedError<DisplayStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("display_status")),
+	/**  Shows a test pattern on the customer display (Settings → Devices; audited). */
+	displayTest: () => typedError<DisplayTestDto, IpcError_Serialize>(__TAURI_INVOKE("display_test")),
+	/**
+	 *  At payment: the customer display shows the open cart's total due. Never fails because
+	 *  of the display (it may be missing or unplugged).
+	 */
+	displayShowTotal: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("display_show_total")),
 	/**  Sends `amountMinor` of the open cart to the terminal. */
 	paymentStart: (cartId: CartId, amountMinor: string) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_start", { cartId, amountMinor })),
 	/**  Asks the terminal again (the UI calls this while the customer pays). */
@@ -1351,6 +1360,35 @@ export type DiscoveryDto_Serialize = {
 	network: NetworkResponder_Serialize[],
 	/**  Why the network scan did not run, when it did not. */
 	networkProblem: string | null,
+};
+
+export type DisplayStatusDto = DisplayStatusDto_Serialize | DisplayStatusDto_Deserialize;
+
+export type DisplayStatusDto_Deserialize = {
+	/**  False: no customer display is set up. */
+	configured: boolean,
+	/**  Which display, e.g. `COM5 @ 9600, ESC/POS`. */
+	target?: string | null,
+	/**  `ready`, `offline` or `unknown` (nothing shown yet). */
+	state: string,
+	message?: string | null,
+};
+
+export type DisplayStatusDto_Serialize = {
+	/**  False: no customer display is set up. */
+	configured: boolean,
+	/**  Which display, e.g. `COM5 @ 9600, ESC/POS`. */
+	target: string | null,
+	/**  `ready`, `offline` or `unknown` (nothing shown yet). */
+	state: string,
+	message: string | null,
+};
+
+export type DisplayTestDto = {
+	/**  `shown` or `failed`. */
+	outcome: string,
+	/**  Which display it went to (`shown`), or why it did not take it (`failed`). */
+	message: string,
 };
 
 /**  What happens to the returned goods (INV-009). */

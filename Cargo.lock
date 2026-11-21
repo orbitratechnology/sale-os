@@ -1199,6 +1199,7 @@ dependencies = [
  "pos-sync-http",
  "serde",
  "serde_json",
+ "serialport",
  "specta",
  "specta-typescript",
  "sqlx",
@@ -3947,6 +3948,7 @@ name = "pos-device-hw"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "deunicode",
  "libc",
  "pos-device-ports",
  "pos-domain",

@@ -81,6 +81,24 @@ after being unplugged.
 
 **Not supported yet:** USB HID-POS scanners. Most can be switched to keyboard or COM mode with a set-up barcode.
 
+## Customer displays
+
+Settings → Devices → Customer display. For the common 2-line, 20-character pole displays (VFD) on a COM port: RS-232
+or USB-serial (they appear as COM ports). Enter the port, the speed (usually 9600) and the command set:
+
+| Command set | Use it for |
+|---|---|
+| Epson ESC/POS | Epson DM-D110/D210 and displays sold as "ESC/POS compatible" |
+| CD5220 | Many unbranded pole displays; often chosen with a DIP switch on the display |
+
+Use **Test display**: the first line must read `SALE OS DISPLAY TEST` and the second a ruler `1234…890` filling the
+whole line. If you see odd characters or nothing, try the other command set, then the speed.
+
+The display shows the item just scanned with the running total, the total due at payment, the change after the sale,
+and "WELCOME" with the shop's name when the till is idle. It shows plain Latin letters only: accents are dropped
+(`Café` → `Cafe`) and Sinhala, Tamil and other scripts are written by sound (`කිරි` → `kiri`). Long names are shortened.
+A display that is unplugged or broken never stops a sale; Settings → Devices shows what is wrong.
+
 ## Card terminals
 
 - **Standalone terminal (any brand):** take the payment on the terminal, then record it as *Card (separate terminal)*
