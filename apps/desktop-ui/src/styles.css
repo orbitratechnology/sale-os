@@ -2190,7 +2190,8 @@
   }
   .plist-cols {
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1.2fr) 5rem 5rem 11rem;
+    /* 7rem: a single Tamil or Sinhala word ("Variants", "Barcodes") is wider than 5rem. */
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1.2fr) 7rem 7rem 11rem;
     gap: var(--sp-3);
     align-items: center;
     padding: 0 var(--sp-4);

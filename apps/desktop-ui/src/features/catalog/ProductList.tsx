@@ -11,6 +11,7 @@ import { commands, type IpcError, type Workspace } from "../../ipc";
 import type { CategoryDto, ProductRowDto_Serialize as ProductRowDto, ProductStatusDto } from "../../ipc/bindings";
 import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
+import { useT } from "../../i18n";
 import { describeError } from "../shell/errors";
 import { flatTree } from "./categories";
 
@@ -52,6 +53,7 @@ export function ProductList({
   /** Owners and managers: import products from a CSV file. */
   onImport?: () => void;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState<Filter>({ query: "", status: "active", tracked: "any", category: "" });
   const [categories, setCategories] = useState<CategoryDto[]>([]);
   useEffect(() => {
@@ -117,13 +119,13 @@ export function ProductList({
   useEffect(() => {
     const key = JSON.stringify(filter);
     const delay = filter.query === lastQuery.current ? 0 : FILTER_DEBOUNCE_MS;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       if (key === lastKey.current) return;
       lastKey.current = key;
       lastQuery.current = filter.query;
       start(filter);
     }, delay);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [filter, start]);
 
   useEffect(() => {
@@ -198,7 +200,7 @@ export function ProductList({
               <button type="button" className="plist-open" onClick={() => onOpen(r.productId)} data-testid="product-row">
                 {r.name}
               </button>
-              {r.archived && <span className="tag">archived</span>}
+              {r.archived && <span className="tag">{t("archived")}</span>}
             </span>
             <span role="cell" className="mono">
               {r.sku ?? ""}
@@ -214,16 +216,16 @@ export function ProductList({
             </span>
             <span role="cell">
               {r.onHandMilli == null ? (
-                "Not tracked"
+                t("Not tracked")
               ) : (
                 <>
                   {formatMilli(r.onHandMilli)}
-                  {r.negativeStock && <span className="stock-flag"> Negative stock</span>}
-                  {r.lowStock && <span className="stock-flag low"> Low stock</span>}
+                  {r.negativeStock && <span className="stock-flag"> {t("Negative stock")}</span>}
+                  {r.lowStock && <span className="stock-flag low"> {t("Low stock")}</span>}
                   {r.syncConflict && (
-                    <span className="stock-flag" title="Changed here and in the cloud: this till uses its own values until resolved">
+                    <span className="stock-flag" title={t("Changed here and in the cloud: this till uses its own values until resolved")}>
                       {" "}
-                      Sync conflict
+                      {t("Sync conflict")}
                     </span>
                   )}
                 </>
@@ -232,7 +234,7 @@ export function ProductList({
           </>
         ) : (
           <span role="cell" className="small">
-            Loading…
+            {t("Loading…")}
           </span>
         )}
       </div>,
@@ -244,65 +246,65 @@ export function ProductList({
       <header className="products-head">
         <h1 className="page-title">
           <Package />
-          Products
+          {t("Products")}
         </h1>
         <span className="small" aria-live="polite" data-testid="product-total">
-          {total === null ? "" : `${total} ${total === 1 ? "product" : "products"}`}
+          {total === null ? "" : total === 1 ? t("{n} product", { n: total }) : t("{n} products", { n: total })}
         </span>
         {canEdit && onImport && (
           <button type="button" className="secondary" onClick={onImport}>
             <Upload />
-            Import CSV
+            {t("Import CSV")}
           </button>
         )}
         {canEdit && onCategories && (
           <button type="button" className="secondary" onClick={onCategories}>
             <FolderTree />
-            Categories
+            {t("Categories")}
           </button>
         )}
         {canEdit && (
           <button type="button" onClick={onNew}>
             <Plus />
-            New product
+            {t("New product")}
           </button>
         )}
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to till <kbd>Esc</kbd>
+          {t("Back to till")} <kbd>Esc</kbd>
         </button>
       </header>
       <div className="products-filters">
         <input
           type="search"
-          aria-label="Filter by name, SKU or barcode"
-          placeholder="Filter by name, SKU or barcode"
+          aria-label={t("Filter by name, SKU or barcode")}
+          placeholder={t("Filter by name, SKU or barcode")}
           value={filter.query}
           autoFocus
           onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))}
         />
         <label>
-          Status
+          {t("Status")}
           <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value as ProductStatusDto }))}>
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-            <option value="all">All</option>
+            <option value="active">{t("Active")}</option>
+            <option value="archived">{t("Archived")}</option>
+            <option value="all">{t("All")}</option>
           </select>
         </label>
         <label>
-          Stock
+          {t("Stock")}
           <select value={filter.tracked} onChange={(e) => setFilter((f) => ({ ...f, tracked: e.target.value as Filter["tracked"] }))}>
-            <option value="any">Any</option>
-            <option value="yes">Tracked</option>
-            <option value="no">Not tracked</option>
-            <option value="low">Low stock</option>
+            <option value="any">{t("Any")}</option>
+            <option value="yes">{t("Tracked")}</option>
+            <option value="no">{t("Not tracked")}</option>
+            <option value="low">{t("Low stock")}</option>
           </select>
         </label>
         {categories.length > 0 && (
           <label>
-            Category
+            {t("Category")}
             <select value={filter.category} onChange={(e) => setFilter((f) => ({ ...f, category: e.target.value }))}>
-              <option value="">Any</option>
+              <option value="">{t("Any")}</option>
               {flatTree(categories).map(({ category: c, depth }) => (
                 <option key={c.categoryId} value={c.categoryId}>
                   {"— ".repeat(depth - 1)}
@@ -318,20 +320,20 @@ export function ProductList({
           {describeError(error)}
         </p>
       )}
-      <div role="table" aria-label="Products" aria-rowcount={count + 1} className="plist">
+      <div role="table" aria-label={t("Products")} aria-rowcount={count + 1} className="plist">
         <div role="row" aria-rowindex={1} className="plist-head plist-cols">
-          <span role="columnheader">Name</span>
+          <span role="columnheader">{t("Name")}</span>
           <span role="columnheader">SKU</span>
           <span role="columnheader" className="num">
-            Price
+            {t("Price")}
           </span>
           <span role="columnheader" className="num">
-            Variants
+            {t("Variants")}
           </span>
           <span role="columnheader" className="num">
-            Barcodes
+            {t("Barcodes")}
           </span>
-          <span role="columnheader">Stock</span>
+          <span role="columnheader">{t("Stock")}</span>
         </div>
         <div ref={viewport} className="plist-viewport" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} onKeyDown={onListKey} data-testid="product-viewport">
           <div style={{ height: count * ROW_PX, position: "relative" }}>{visible}</div>
@@ -340,7 +342,7 @@ export function ProductList({
           <span className="empty-icon">
             <PackageSearch />
           </span>
-          <p>No products match.</p>
+          <p>{t("No products match.")}</p>
         </div>
       )}
         </div>

@@ -8,6 +8,7 @@ import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { SaleDetail } from "../sales/SaleDetail";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 /** What a stock movement or an audit entry points at. */
 export type RecordRef = { kind: "sale" | "return" | "document"; id: string };
@@ -33,6 +34,7 @@ export function RecordView({
 }: {
   record: RecordRef;
   workspace: Workspace;
+  /** The back button's text, already translated. */
   backLabel: string;
   onBack: () => void;
   /** "Return items" on a sale. */
@@ -66,17 +68,18 @@ function BackButton({ label, onBack }: { label: string; onBack: () => void }) {
 
 /** A return as recorded: its stored refund receipt, which can be printed again. */
 function ReturnRecord({ returnId, backLabel, onBack }: { returnId: string; backLabel: string; onBack: () => void }) {
+  const t = useT();
   useEscape(onBack);
   return (
     <main className="sales">
       <header className="returns-header">
         <h1 className="page-title" tabIndex={-1}>
           <Undo2 />
-          Return
+          {t("Return")}
         </h1>
         <BackButton label={backLabel} onBack={onBack} />
       </header>
-      <section className="card sale-detail" aria-label="Return detail">
+      <section className="card sale-detail" aria-label={t("Return detail")}>
         <PrintControls source={{ kind: "return", id: returnId }} autoPrint={false} />
         <ReceiptPreview source={{ kind: "return", id: returnId }} />
       </section>
@@ -84,14 +87,14 @@ function ReturnRecord({ returnId, backLabel, onBack }: { returnId: string; backL
   );
 }
 
-const DOC_TYPE: Record<string, string> = {
+const DOC_TYPE_COPY: Record<string, string> = {
   opening: "Opening stock",
   receipt: "Goods received",
   adjustment: "Stock adjustment",
   write_off: "Write-off",
 };
 
-const REASON: Record<string, string> = {
+const STOCK_REASON_COPY: Record<string, string> = {
   damage: "Damaged",
   loss: "Lost",
   theft: "Theft",
@@ -102,6 +105,7 @@ const REASON: Record<string, string> = {
 
 /** A posted stock document: who posted it, why, and each movement it made. */
 function DocumentRecord({ documentId, workspace, backLabel, onBack }: { documentId: string; workspace: Workspace; backLabel: string; onBack: () => void }) {
+  const t = useT();
   const [doc, setDoc] = useState<StockDocumentDto | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   useEscape(onBack);
@@ -126,10 +130,10 @@ function DocumentRecord({ documentId, workspace, backLabel, onBack }: { document
           <ClipboardList />
           {doc ? (
             <>
-              {DOC_TYPE[doc.docType] ?? doc.docType} <span className="mono">{doc.documentNo}</span>
+              {t(DOC_TYPE_COPY[doc.docType] ?? doc.docType)} <span className="mono">{doc.documentNo}</span>
             </>
           ) : (
-            "Stock document"
+            t("Stock document")
           )}
         </h1>
         <BackButton label={backLabel} onBack={onBack} />
@@ -140,30 +144,30 @@ function DocumentRecord({ documentId, workspace, backLabel, onBack }: { document
         </p>
       )}
       {doc && (
-        <section className="card sale-detail" aria-label="Stock document">
+        <section className="card sale-detail" aria-label={t("Stock document")}>
           <p>
-            {doc.localTime} · posted by {doc.actorName}
-            {doc.approverName ? ` · approved by ${doc.approverName}` : ""}
+            {doc.localTime} · {t("posted by {name}", { name: doc.actorName })}
+            {doc.approverName ? ` · ${t("approved by {name}", { name: doc.approverName })}` : ""}
           </p>
           {(doc.reason || doc.supplierName || doc.reference || doc.note) && (
-            <dl className="totals" aria-label="About this document">
-              {doc.reason && <Row label="Reason" value={REASON[doc.reason] ?? doc.reason} />}
-              {doc.supplierName && <Row label="Supplier" value={doc.supplierName} />}
-              {doc.reference && <Row label="Reference" value={doc.reference} />}
-              {doc.note && <Row label="Note" value={doc.note} />}
+            <dl className="totals" aria-label={t("About this document")}>
+              {doc.reason && <Row label={t("Reason")} value={t(STOCK_REASON_COPY[doc.reason] ?? doc.reason)} />}
+              {doc.supplierName && <Row label={t("Supplier")} value={doc.supplierName} />}
+              {doc.reference && <Row label={t("Reference")} value={doc.reference} />}
+              {doc.note && <Row label={t("Note")} value={doc.note} />}
             </dl>
           )}
-          <table className="sales-table" aria-label="Lines">
+          <table className="sales-table" aria-label={t("Lines")}>
             <thead>
               <tr>
-                <th scope="col">Item</th>
-                <th scope="col">Stock</th>
+                <th scope="col">{t("Item")}</th>
+                <th scope="col">{t("Stock")}</th>
                 <th scope="col" className="num">
-                  Change
+                  {t("stock quantity::Change")}
                 </th>
                 {showCost && (
                   <th scope="col" className="num">
-                    Unit cost
+                    {t("Unit cost")}
                   </th>
                 )}
               </tr>
@@ -175,14 +179,14 @@ function DocumentRecord({ documentId, workspace, backLabel, onBack }: { document
                     {l.name}
                     {l.sku && <span className="small"> · {l.sku}</span>}
                   </th>
-                  <td>{l.bucket === "damaged" ? "Damaged" : "Sellable"}</td>
+                  <td>{l.bucket === "damaged" ? t("Damaged") : t("Sellable")}</td>
                   <td className="num">{l.deltaMilli.startsWith("-") ? formatMilli(l.deltaMilli) : `+${formatMilli(l.deltaMilli)}`}</td>
                   {showCost && <td className="num">{l.unitCostMinor === null ? "" : money(l.unitCostMinor)}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="small">A posted document cannot be changed. To correct it, post an adjustment.</p>
+          <p className="small">{t("A posted document cannot be changed. To correct it, post an adjustment.")}</p>
         </section>
       )}
     </main>

@@ -1,18 +1,26 @@
 # Sinhala and Tamil: review before the pilot (D-02)
 
-The till's cashier screens are drafted in Sinhala (`apps/desktop-ui/src/i18n/si.ts`) and Tamil
-(`apps/desktop-ui/src/i18n/ta.ts`), 302 sentences each. They were machine-drafted: a native
+The whole till is drafted in Sinhala (`apps/desktop-ui/src/i18n/si.ts`) and Tamil
+(`apps/desktop-ui/src/i18n/ta.ts`), 1,190 sentences each: the cashier screens first (302), then
+on 2026-11-21 the owner and manager screens, settings, setup and the card terminal. They were machine-drafted: a native
 speaker who works in Sri Lankan retail must review both before shops see them.
 
 ## How to review
 
 - Pick the language on the sign-in screen (සිංහල / தமிழ்) and walk through a sale, a payment, a
-  parked cart and a manager approval. Everything a cashier sees on those screens is translated;
-  owner screens (settings, reports, products, import) are still English.
+  parked cart and a manager approval, then the owner's screens: products and import, stock,
+  the drawer and Z summary, reports, sales history and returns, the audit log, every settings
+  page and the setup wizard.
+- Still English by design: names and data the shop types (products, staff, categories), codes
+  and file formats, and messages that come from the Rust core (a few validation sentences, the
+  printed receipt's own words).
 - Each file maps the English sentence (left) to its translation (right). Change the right-hand
   side only. Keep every `{placeholder}` (it is replaced by a name, an amount or a number), key
   names such as F2 or Esc, and Western digits. `pnpm test` fails if a placeholder is lost.
 - Shorter is better on buttons: in Tamil some labels wrap onto two lines.
+- A key that starts with a context, such as `verb::Change` or `stock quantity::Change`, is the
+  same English word with another meaning; the context is never shown. "Change" alone is the
+  customer's change (money back).
 
 ## Terms chosen (confirm or replace; each is used in many sentences)
 
@@ -32,6 +40,19 @@ speaker who works in Sri Lankan retail must review both before shops see them.
 | discount | වට්ටම | தள்ளுபடி |
 
 ## Sentences the drafts were least sure of
+
+Owner screens (2026-11-21):
+
+- Short words used in more than one place: "From" (a date range and a stock movement's
+  source), "Full", "Partial", "Check", "Made", "Why", "Use".
+- "Practice mode" / "sandbox" share one word (පුහුණු / பயிற்சி).
+- Tamil: "Note" is குறிப்புரை and "Reference" குறிப்பு (they sit side by side on a stock
+  document); "Write-off" is இருப்பு நீக்கம், avoiding தள்ளுபடி (discount).
+- Unit names: Sinhala and Tamil add the code in brackets for "Box" and "Pack" like the others.
+- The scanner-rule help keeps `price|weight|count` and `"none"` in English: they are typed into
+  rules or stored.
+
+Cashier screens:
 
 - "Go live…" (switching from practice to real sales): Sinhala "සැබෑ විකිණීම අරඹන්න…",
   Tamil "உண்மை விற்பனைக்கு மாறவும்…".

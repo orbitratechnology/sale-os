@@ -7,8 +7,10 @@ import { commands, type IpcError } from "../../ipc";
 import type { StockHistoryDto, StockReportDto } from "../../ipc/bindings";
 import { formatMilli } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { useT, type T } from "../../i18n";
 
-const MOVEMENT: Record<string, string> = {
+/** Movement types in plain words; English, translated at render with `t`. */
+const MOVEMENT_COPY: Record<string, string> = {
   opening: "Opening stock",
   receipt: "Goods received",
   sale: "Sale",
@@ -20,6 +22,12 @@ const MOVEMENT: Record<string, string> = {
   write_off: "Written off",
   correction: "Count correction",
 };
+
+/** A movement type in words; an unknown type as it is. */
+function movementText(type: string, t: T): string {
+  const english = Object.hasOwn(MOVEMENT_COPY, type) ? MOVEMENT_COPY[type] : undefined;
+  return english ? t(english) : type;
+}
 
 /**
  * Stock on hand (E11-T05): every stock-tracked item with sellable and damaged quantities, its
@@ -37,6 +45,7 @@ export function StockOverview({
   /** A history row's sale, return or stock document. */
   onRecord: (record: RecordRef) => void;
 }) {
+  const t = useT();
   const { lowOnly, open } = state;
   const setLowOnly = (v: boolean) => onState({ ...state, lowOnly: v });
   const setOpen = (v: OverviewState["open"]) => onState({ ...state, open: v, focus: null });
@@ -77,33 +86,33 @@ export function StockOverview({
   }, [history, focus]);
 
   return (
-    <section className="card return-form" aria-label="Stock on hand">
+    <section className="card return-form" aria-label={t("Stock on hand")}>
       <p className="drawer-needed" role="note">
-        Stock on hand is calculated from recorded movements; it is not a physical count.
+        {t("Stock on hand is calculated from recorded movements; it is not a physical count.")}
       </p>
       <label className="check">
-        <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> Low and negative only
+        <input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} /> {t("Low and negative only")}
       </label>
       {error && (
         <p role="alert" className="field-error">
           {describeError(error)}
         </p>
       )}
-      <table className="sales-table" aria-label="On hand">
+      <table className="sales-table" aria-label={t("On hand")}>
         <thead>
           <tr>
-            <th scope="col">Item</th>
+            <th scope="col">{t("Item")}</th>
             <th scope="col" className="num">
-              On hand
+              {t("On hand")}
             </th>
             <th scope="col" className="num">
-              Damaged
+              {t("Damaged")}
             </th>
             <th scope="col" className="num">
-              Low at
+              {t("Low at")}
             </th>
-            <th scope="col">Status</th>
-            <th scope="col">Last movement</th>
+            <th scope="col">{t("Status")}</th>
+            <th scope="col">{t("Last movement")}</th>
           </tr>
         </thead>
         <tbody>
@@ -129,9 +138,9 @@ export function StockOverview({
                 <td className="num">{r.damagedMilli === "0" ? "" : formatMilli(r.damagedMilli)}</td>
                 <td className="num">{r.lowStockThresholdMilli ? formatMilli(r.lowStockThresholdMilli) : ""}</td>
                 <td>
-                  <span className={`stock-status ${r.status}`}>{r.status === "ok" ? "OK" : r.status === "low" ? "Low" : "Negative"}</span>
+                  <span className={`stock-status ${r.status}`}>{r.status === "ok" ? t("OK") : r.status === "low" ? t("Low") : t("Negative")}</span>
                 </td>
-                <td className="small">{r.lastMovementMs ? when(r.lastMovementMs) : "never"}</td>
+                <td className="small">{r.lastMovementMs ? when(r.lastMovementMs) : t("never")}</td>
               </tr>
             );
           })}
@@ -142,38 +151,38 @@ export function StockOverview({
           <span className="empty-icon">
             <Inbox />
           </span>
-          <p>Nothing to show.</p>
+          <p>{t("Nothing to show.")}</p>
         </div>
       )}
 
       {open && (
-        <div aria-label={`History: ${open.name}`} role="region">
-          <h2>History: {open.name}</h2>
+        <div aria-label={t("History: {name}", { name: open.name })} role="region">
+          <h2>{t("History: {name}", { name: open.name })}</h2>
           {!history ? (
-            <p className="small">Loading…</p>
+            <p className="small">{t("Loading…")}</p>
           ) : history.length === 0 ? (
-            <p className="small">No movements yet.</p>
+            <p className="small">{t("No movements yet.")}</p>
           ) : (
-            <table className="sales-table" aria-label="Movements">
+            <table className="sales-table" aria-label={t("Movements")}>
               <thead>
                 <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">What</th>
+                  <th scope="col">{t("When")}</th>
+                  <th scope="col">{t("What")}</th>
                   <th scope="col" className="num">
-                    Change
+                    {t("stock quantity::Change")}
                   </th>
-                  <th scope="col">Stock</th>
-                  <th scope="col">From</th>
-                  <th scope="col">By</th>
+                  <th scope="col">{t("Stock")}</th>
+                  <th scope="col">{t("From")}</th>
+                  <th scope="col">{t("By")}</th>
                 </tr>
               </thead>
               <tbody>
                 {history.map((h) => (
                   <tr key={h.movementId} data-testid="history-row">
                     <td>{h.localTime}</td>
-                    <td>{MOVEMENT[h.movementType] ?? h.movementType}</td>
+                    <td>{movementText(h.movementType, t)}</td>
                     <td className="num">{h.deltaMilli.startsWith("-") ? formatMilli(h.deltaMilli) : `+${formatMilli(h.deltaMilli)}`}</td>
-                    <td>{h.bucket === "damaged" ? "Damaged" : "Sellable"}</td>
+                    <td>{h.bucket === "damaged" ? t("Damaged") : t("Sellable")}</td>
                     <td className="mono">
                       <SourceLink
                         history={h}

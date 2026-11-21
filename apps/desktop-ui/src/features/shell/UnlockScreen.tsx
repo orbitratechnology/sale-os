@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
 import { describeError } from "./errors";
+import { useT } from "../../i18n";
 
 /**
  * ADR-023: the till's data is encrypted and this computer does not have the key (a new
@@ -9,6 +10,11 @@ import { describeError } from "./errors";
  * restarts the app.
  */
 export function UnlockScreen() {
+  const t = useT();
+  // The explanation names the recovery key in bold: translated whole and split where it goes.
+  const [keyBefore, keyAfter = ""] = t(
+    "Sale OS keeps this till's data encrypted. This computer does not have the key, so it needs the {key} the owner wrote down (Settings → Backups). Nothing has been lost or changed.",
+  ).split("{key}");
   const [key, setKey] = useState("");
   const [error, setError] = useState<IpcError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,17 +32,18 @@ export function UnlockScreen() {
 
   return (
     <section className="card" aria-labelledby="unlock-title">
-      <h2 id="unlock-title">This till's data is locked</h2>
+      <h2 id="unlock-title">{t("This till's data is locked")}</h2>
       <p>
-        Sale OS keeps this till's data encrypted. This computer does not have the key, so it needs the <strong>recovery
-        key</strong> the owner wrote down (Settings → Backups). Nothing has been lost or changed.
+        {keyBefore}
+        <strong>{t("recovery key")}</strong>
+        {keyAfter}
       </p>
       {done ? (
-        <p role="status">Unlocked. Sale OS is restarting…</p>
+        <p role="status">{t("Unlocked. Sale OS is restarting…")}</p>
       ) : (
         <form onSubmit={(e) => void submit(e)}>
           <label>
-            Recovery key
+            {t("Recovery key")}
             <input
               className="mono"
               autoFocus
@@ -54,10 +61,10 @@ export function UnlockScreen() {
           )}
           <p>
             <button type="submit" disabled={busy || key.replace(/[\s-]/g, "").length !== 64}>
-              Unlock
+              {t("Unlock")}
             </button>
           </p>
-          <p className="small">Without the recovery key the data cannot be opened. Do not delete the data folder: contact support.</p>
+          <p className="small">{t("Without the recovery key the data cannot be opened. Do not delete the data folder: contact support.")}</p>
         </form>
       )}
     </section>

@@ -9,7 +9,8 @@ import { formatMilli } from "../../lib/decimal";
 import { formatMoney } from "../../lib/money";
 import { describeError } from "../shell/errors";
 import { SaleDetail } from "./SaleDetail";
-import { TENDER_LABEL } from "./labels";
+import { TENDER_LABEL_COPY } from "./labels";
+import { useT } from "../../i18n";
 
 const EMPTY: SalesFilter = { from: null, to: null, receipt: null, cashierUserId: null, tender: null };
 
@@ -28,6 +29,7 @@ export function SalesScreen({
   /** Start a return for this receipt number. */
   onReturn: (receiptNumber: string) => void;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState<SalesFilter>(EMPTY);
   const [receipt, setReceipt] = useState("");
   const [rows, setRows] = useState<SaleRowDto[]>([]);
@@ -46,8 +48,8 @@ export function SalesScreen({
 
   // The receipt field filters after a short pause in typing (or at once on Enter).
   useEffect(() => {
-    const t = window.setTimeout(() => setFilter((f) => ({ ...f, receipt: receipt.trim() || null })), 250);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setFilter((f) => ({ ...f, receipt: receipt.trim() || null })), 250);
+    return () => window.clearTimeout(timer);
   }, [receipt]);
 
   const load = useCallback((f: SalesFilter, after: string | null) => {
@@ -105,45 +107,45 @@ export function SalesScreen({
       <header className="returns-header">
         <h1 className="page-title">
           <ReceiptText />
-          Sales
+          {t("Sales")}
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to till <kbd>Esc</kbd>
+          {t("Back to till")} <kbd>Esc</kbd>
         </button>
       </header>
       <form
         className="card sales-filters"
         role="search"
-        aria-label="Filter sales"
+        aria-label={t("Filter sales")}
         onSubmit={(e) => {
           e.preventDefault();
           set({ receipt: receipt.trim() || null });
         }}
       >
         <label>
-          Receipt number
+          {t("Receipt number")}
           <input
             ref={receiptInput}
             value={receipt}
             onChange={(e) => setReceipt(e.target.value)}
-            placeholder="e.g. R01-000123"
+            placeholder={t("e.g. {receipt}", { receipt: "R01-000123" })}
             autoComplete="off"
             spellCheck={false}
           />
         </label>
         <label>
-          From
+          {t("From")}
           <input type="date" value={filter.from ?? ""} onChange={(e) => set({ from: e.target.value || null })} />
         </label>
         <label>
-          To
+          {t("To")}
           <input type="date" value={filter.to ?? ""} onChange={(e) => set({ to: e.target.value || null })} />
         </label>
         <label>
-          Cashier
+          {t("Cashier")}
           <select value={filter.cashierUserId ?? ""} onChange={(e) => set({ cashierUserId: e.target.value || null })}>
-            <option value="">Anyone</option>
+            <option value="">{t("Anyone")}</option>
             {users.map((u) => (
               <option key={u.userId} value={u.userId}>
                 {u.displayName}
@@ -152,12 +154,12 @@ export function SalesScreen({
           </select>
         </label>
         <label>
-          Payment
+          {t("Payment")}
           <select value={filter.tender ?? ""} onChange={(e) => set({ tender: (e.target.value || null) as TenderKind | null })}>
-            <option value="">Any</option>
-            {(Object.keys(TENDER_LABEL) as TenderKind[]).map((k) => (
+            <option value="">{t("Any")}</option>
+            {(Object.keys(TENDER_LABEL_COPY) as TenderKind[]).map((k) => (
               <option key={k} value={k}>
-                {TENDER_LABEL[k]}
+                {t(TENDER_LABEL_COPY[k])}
               </option>
             ))}
           </select>
@@ -169,20 +171,20 @@ export function SalesScreen({
           {describeError(error)}
         </p>
       )}
-      <section className="card" aria-label="Sales list">
+      <section className="card" aria-label={t("Sales list")}>
         <table className="sales-table">
           <thead>
             <tr>
-              <th scope="col">Time</th>
-              <th scope="col">Receipt</th>
-              <th scope="col">Cashier</th>
-              <th scope="col">Items</th>
-              <th scope="col">Payment</th>
+              <th scope="col">{t("Time")}</th>
+              <th scope="col">{t("Receipt")}</th>
+              <th scope="col">{t("Cashier")}</th>
+              <th scope="col">{t("Items")}</th>
+              <th scope="col">{t("Payment")}</th>
               <th scope="col" className="num">
-                Total {workspace.currencyCode}
+                {t("Total {currency}", { currency: workspace.currencyCode })}
               </th>
               <th scope="col" className="num">
-                Refunded
+                {t("Refunded")}
               </th>
             </tr>
           </thead>
@@ -194,11 +196,11 @@ export function SalesScreen({
                   <button type="button" className="link mono" onClick={() => setOpen(r.saleId)}>
                     {r.receiptNumber}
                   </button>
-                  {r.mode === "sandbox" && <span className="small"> · sandbox</span>}
+                  {r.mode === "sandbox" && <span className="small"> · {t("sandbox")}</span>}
                 </td>
                 <td>{r.cashierName}</td>
                 <td>{formatMilli(r.itemCountMilli)}</td>
-                <td>{r.tenders.map((k) => TENDER_LABEL[k]).join(" + ")}</td>
+                <td>{r.tenders.map((k) => t(TENDER_LABEL_COPY[k])).join(" + ")}</td>
                 <td className="num">{money(r.totalMinor, r.currencyExponent)}</td>
                 <td className="num">{r.refundedMinor === "0" ? "" : `-${money(r.refundedMinor, r.currencyExponent)}`}</td>
               </tr>
@@ -210,13 +212,13 @@ export function SalesScreen({
           <span className="empty-icon">
             <ReceiptText />
           </span>
-          <p>No sales match.</p>
+          <p>{t("No sales match.")}</p>
         </div>
       )}
         {next && (
           <div className="actions">
             <button type="button" className="secondary" onClick={() => void load(filter, next)}>
-              Show more
+              {t("Show more")}
             </button>
           </div>
         )}

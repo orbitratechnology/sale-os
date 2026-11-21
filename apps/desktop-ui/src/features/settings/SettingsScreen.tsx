@@ -36,6 +36,7 @@ import { commands, type IpcError } from "../../ipc";
 import type { SettingDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 import { BackupsPanel } from "./BackupsPanel";
 import { BusinessPanel } from "./BusinessPanel";
 import { CloudPanel } from "./CloudPanel";
@@ -69,6 +70,7 @@ export function SettingsScreen({
   /** The till joined another business: its data and staff were replaced. */
   onRelinked: () => void;
 }) {
+  const t = useT();
   const [settings, setSettings] = useState<SettingDto[] | null>(null);
   const [group, setGroup] = useState<string | null>(initialGroup ?? null);
   const [error, setError] = useState<IpcError | null>(null);
@@ -101,17 +103,33 @@ export function SettingsScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  const groups = limited ? [DEVICES] : [...new Set((settings ?? []).map((s) => s.group)), BUSINESS, STAFF, TAXES, DEVICES, CLOUD, BACKUPS];
+  const panels = [BUSINESS, STAFF, TAXES, DEVICES, CLOUD, BACKUPS];
+  // A registry setting may live on a panel's page (Taxes: "Registered for VAT"); that page keeps its place.
+  const groups = limited ? [DEVICES] : [...new Set((settings ?? []).map((s) => s.group).filter((g) => !panels.includes(g))), ...panels];
+  const rows = (g: string) =>
+    (settings ?? [])
+      .filter((s) => s.group === g)
+      .map((s) => (
+        <SettingRow
+          key={s.key}
+          setting={s}
+          onSaved={(updated) => {
+            setSettings((all) => all?.map((x) => (x.key === updated.key ? updated : x)) ?? null);
+            onChanged();
+          }}
+          onConflict={load}
+        />
+      ));
   return (
     <main className="sales">
       <header className="returns-header">
         <h1 className="page-title">
           <Settings />
-          Settings
+          {t("Settings")}
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          Back to till <kbd>Esc</kbd>
+          {t("Back to till")} <kbd>Esc</kbd>
         </button>
       </header>
       {error && (
@@ -121,25 +139,28 @@ export function SettingsScreen({
       )}
       <div className="settings-layout">
       <TabList
-        label="Settings pages"
+        label={t("Settings pages")}
         idBase="settings"
         className="side-nav"
         vertical
-        tabs={groups.map((g) => ({ value: g, label: g, icon: GROUP_ICONS[g] ?? Settings }))}
+        tabs={groups.map((g) => ({ value: g, label: t(GROUP_NAME_COPY[g] ?? g), icon: GROUP_ICONS[g] ?? Settings }))}
         selected={group}
         onSelect={setGroup}
       />
       {group && (
         <section className="card settings-list" {...tabPanelProps("settings", group)}>
-          <PanelHeader icon={GROUP_ICONS[group] ?? Settings} title={group}>
-            {GROUP_HELP[group]}
+          <PanelHeader icon={GROUP_ICONS[group] ?? Settings} title={t(GROUP_NAME_COPY[group] ?? group)}>
+            {GROUP_HELP_COPY[group] && t(GROUP_HELP_COPY[group])}
           </PanelHeader>
           {group === BUSINESS ? (
             <BusinessPanel onChanged={onChanged} />
           ) : group === STAFF ? (
             <StaffPanel />
           ) : group === TAXES ? (
-            <TaxesPanel />
+            <>
+              {rows(TAXES)}
+              <TaxesPanel registered={settings?.find((s) => s.key === "tax.registered")?.valueJson.trim() !== "false"} />
+            </>
           ) : group === DEVICES ? (
             <DevicesPanel />
           ) : group === CLOUD ? (
@@ -147,19 +168,7 @@ export function SettingsScreen({
           ) : group === BACKUPS ? (
             <BackupsPanel />
           ) : (
-            (settings ?? [])
-              .filter((s) => s.group === group)
-              .map((s) => (
-                <SettingRow
-                  key={s.key}
-                  setting={s}
-                  onSaved={(updated) => {
-                    setSettings((all) => all?.map((x) => (x.key === updated.key ? updated : x)) ?? null);
-                    onChanged();
-                  }}
-                  onConflict={load}
-                />
-              ))
+            rows(group)
           )}
         </section>
       )}
@@ -168,8 +177,8 @@ export function SettingsScreen({
   );
 }
 
-/** Plain words for choice values that are codes (units); others show as stored. */
-const CHOICE_LABEL: Record<string, string> = {
+/** Plain words for choice values that are codes (units); others (key names such as Enter and Tab) show as stored. */
+const CHOICE_LABEL_COPY: Record<string, string> = {
   '"ea"': "Each (ea)",
   '"kg"': "Kilogram (kg)",
   '"g"': "Gram (g)",
@@ -181,13 +190,30 @@ const CHOICE_LABEL: Record<string, string> = {
   '"pack"': "Pack",
   "58": "58 mm (narrow)",
   "80": "80 mm (standard)",
-  '"Enter"': "Enter",
-  '"Tab"': "Tab",
   '"none"': "Nothing (a short pause ends the code)",
 };
 
+/**
+ * Each page's name as shown: the registry's groups and the panels. The English name stays the
+ * page's value; only the tab's label and the heading are translated.
+ */
+const GROUP_NAME_COPY: Record<string, string> = {
+  Inventory: "Inventory",
+  Products: "Products",
+  "Cash drawer": "Cash drawer",
+  Security: "Security",
+  Receipts: "Receipts",
+  Scanner: "Scanner",
+  Business: "Business",
+  Staff: "Staff",
+  Taxes: "Taxes",
+  Devices: "Devices",
+  Cloud: "Cloud",
+  Backups: "Backups",
+};
+
 /** One plain sentence under each page's name, saying what the page is for. */
-const GROUP_HELP: Record<string, string> = {
+const GROUP_HELP_COPY: Record<string, string> = {
   Inventory: "What the till does when stock runs low or out.",
   Products: "Starting values for the products you add.",
   "Cash drawer": "When the cash drawer must be open, and when it opens by itself.",
@@ -224,7 +250,7 @@ const SETTING_ICONS: Record<string, LucideIcon> = {
 };
 
 /** The unit shown after a number field, so nobody has to guess what the number means. */
-const UNITS: Record<string, string> = {
+const UNIT_COPY: Record<string, string> = {
   "security.lock_timeout_secs": "seconds",
   "scanner.max_key_gap_ms": "ms",
 };
@@ -246,6 +272,7 @@ const GROUP_ICONS: Record<string, LucideIcon> = {
 };
 
 function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onSaved: (s: SettingDto) => void; onConflict: () => void }) {
+  const t = useT();
   const current: unknown = JSON.parse(setting.valueJson);
   const [draft, setDraft] = useState(() => toText(setting, current));
   const [state, setState] = useState<{ kind: "idle" } | { kind: "saved" } | { kind: "error"; message: string }>({ kind: "idle" });
@@ -262,7 +289,7 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
       return;
     }
     if (res.error.code === "CONFLICT_VERSION") {
-      setState({ kind: "error", message: "Someone changed this meanwhile; the current value is shown." });
+      setState({ kind: "error", message: t("Someone changed this meanwhile; the current value is shown.") });
       onConflict();
       return;
     }
@@ -273,12 +300,12 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
   function parse(text: string): string | { error: string } {
     const k = setting.kind;
     if (k.type === "int") {
-      if (!/^\d+$/.test(text.trim())) return { error: `Enter a whole number from ${k.min} to ${k.max}.` };
+      if (!/^\d+$/.test(text.trim())) return { error: t("Enter a whole number from {min} to {max}.", { min: k.min, max: k.max }) };
       return text.trim().replace(/^0+(?=\d)/, "");
     }
     if (k.type === "ppm") {
       const ppm = percentToPpm(text);
-      return ppm === null ? { error: "Enter a percentage from 0 to 100." } : String(ppm);
+      return ppm === null ? { error: t("Enter a percentage from 0 to 100.") } : String(ppm);
     }
     if (k.type === "lines") {
       const lines = text.split("\n").map((l) => l.trimEnd()).filter((l) => l.length > 0);
@@ -288,11 +315,12 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
   }
 
   const k = setting.kind;
+  const unit = UNIT_COPY[setting.key];
   const control = (() => {
     if (k.type === "bool") {
       return (
         <span className="switch-field">
-          <span aria-hidden="true">{current === true ? "On" : "Off"}</span>
+          <span aria-hidden="true">{current === true ? t("On") : t("Off")}</span>
           <input
             id={id}
             type="checkbox"
@@ -312,7 +340,7 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
         <select id={id} {...described} value={setting.valueJson} onChange={(e) => void save(e.target.value)}>
           {k.options.map((o) => (
             <option key={o} value={o}>
-              {CHOICE_LABEL[o] ?? o.replace(/^"|"$/g, "")}
+              {CHOICE_LABEL_COPY[o] ? t(CHOICE_LABEL_COPY[o]) : o.replace(/^"|"$/g, "")}
             </option>
           ))}
         </select>
@@ -336,9 +364,9 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
       >
         {input}
         {k.type === "ppm" && <span className="unit">%</span>}
-        {UNITS[setting.key] && <span className="unit">{UNITS[setting.key]}</span>}
+        {unit && <span className="unit">{t(unit)}</span>}
         <button type="submit" className="secondary">
-          Save
+          {t("Save")}
         </button>
       </form>
     );
@@ -351,15 +379,15 @@ function SettingRow({ setting, onSaved, onConflict }: { setting: SettingDto; onS
         <Icon />
       </span>
       <div className="setting-text">
-        <label htmlFor={id}>{setting.label}</label>
+        <label htmlFor={id}>{t(setting.label)}</label>
         <span id={`${id}-help`} className="small">
-          {setting.help}
+          {t(setting.help)}
         </span>
       </div>
       <div className="setting-control">
         {control}
         <span aria-live="polite" className="small setting-status">
-          {state.kind === "saved" && <span className="saved-note">Saved.</span>}
+          {state.kind === "saved" && <span className="saved-note">{t("Saved.")}</span>}
           {state.kind === "error" && (
             <span role="alert" id={`${id}-error`} className="field-error">
               {state.message}

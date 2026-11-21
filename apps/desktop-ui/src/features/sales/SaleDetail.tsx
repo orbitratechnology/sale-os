@@ -10,7 +10,8 @@ import { formatMoney } from "../../lib/money";
 import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
-import { REASON_LABEL, TENDER_LABEL } from "./labels";
+import { REASON_LABEL_COPY, TENDER_LABEL_COPY } from "./labels";
+import { useT } from "../../i18n";
 import { SaleSyncMark } from "../sync/SaleSyncMark";
 import { TaxInvoicePanel } from "./TaxInvoicePanel";
 
@@ -20,16 +21,17 @@ import { TaxInvoicePanel } from "./TaxInvoicePanel";
  */
 export function SaleDetail({
   saleId,
-  backLabel = "Back to sales",
+  backLabel,
   onBack,
   onReturn,
 }: {
   saleId: string;
-  /** Where Esc and the back button go: the sales list, the stock history, the audit log. */
+  /** Where Esc and the back button go (already translated): the sales list, the stock history, the audit log. */
   backLabel?: string;
   onBack: () => void;
   onReturn: (receiptNumber: string) => void;
 }) {
+  const t = useT();
   const [sale, setSale] = useState<Detail | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -66,40 +68,40 @@ export function SaleDetail({
       <header className="returns-header">
         <h1 className="page-title">
           <ReceiptText />
-          Sale <span className="mono">{sale.receiptNumber}</span>
+          {t("Sale")} <span className="mono">{sale.receiptNumber}</span>
         </h1>
         <button type="button" className="secondary" onClick={onBack}>
           <ArrowLeft />
-          {backLabel} <kbd>Esc</kbd>
+          {backLabel ?? t("Back to sales")} <kbd>Esc</kbd>
         </button>
       </header>
-      <section className="card sale-detail" aria-label="Sale detail">
+      <section className="card sale-detail" aria-label={t("Sale detail")}>
         <p>
-          {sale.localTime} · served by {sale.cashierName}
-          {sale.approverName ? ` · approved by ${sale.approverName}` : ""}
-          {sale.mode === "sandbox" ? " · SANDBOX" : ""}
+          {sale.localTime} · {t("served by {name}", { name: sale.cashierName })}
+          {sale.approverName ? ` · ${t("approved by {name}", { name: sale.approverName })}` : ""}
+          {sale.mode === "sandbox" ? ` · ${t("SANDBOX")}` : ""}
         </p>
         <p className="small" data-testid="sale-sync">
           <SaleSyncMark saleId={sale.saleId} />
         </p>
-        <table className="sales-table" aria-label="Lines">
+        <table className="sales-table" aria-label={t("Lines")}>
           <thead>
             <tr>
-              <th scope="col">Item</th>
+              <th scope="col">{t("Item")}</th>
               <th scope="col" className="num">
-                Qty
+                {t("Qty")}
               </th>
               <th scope="col" className="num">
-                Price
+                {t("Price")}
               </th>
               <th scope="col" className="num">
-                Discount
+                {t("Discount")}
               </th>
               <th scope="col" className="num">
-                Total
+                {t("Total")}
               </th>
               <th scope="col" className="num">
-                Returned
+                {t("Returned")}
               </th>
             </tr>
           </thead>
@@ -122,67 +124,79 @@ export function SaleDetail({
             ))}
           </tbody>
         </table>
-        {sale.lines.some((l) => l.priceOverridden) && <p className="small">* price changed at the till</p>}
+        {sale.lines.some((l) => l.priceOverridden) && <p className="small">* {t("price changed at the till")}</p>}
 
-        <dl className="totals" aria-label="Totals">
-          <dt>Subtotal</dt>
+        <dl className="totals" aria-label={t("Totals")}>
+          <dt>{t("Subtotal")}</dt>
           <dd>{money(sale.subtotalMinor)}</dd>
           {sale.lineDiscountTotalMinor !== "0" && (
             <>
-              <dt>Item discounts</dt>
+              <dt>{t("Item discounts")}</dt>
               <dd>-{money(sale.lineDiscountTotalMinor)}</dd>
             </>
           )}
           {sale.orderDiscountTotalMinor !== "0" && (
             <>
-              <dt>Order discount</dt>
+              <dt>{t("Order discount")}</dt>
               <dd>-{money(sale.orderDiscountTotalMinor)}</dd>
             </>
           )}
-          {sale.taxBreakdown.map((t) => (
+          {sale.taxBreakdown.map((tax) => (
             <Row
-              key={t.name}
-              label={`${t.name}${sale.taxMode === "inclusive" ? " (included)" : ""}`}
-              value={money(t.taxMinor)}
+              key={tax.name}
+              label={sale.taxMode === "inclusive" ? t("{tax} (included)", { tax: tax.name }) : tax.name}
+              value={money(tax.taxMinor)}
             />
           ))}
-          {sale.roundingMinor !== "0" && <Row label="Rounding" value={money(sale.roundingMinor)} />}
+          {sale.roundingMinor !== "0" && <Row label={t("Rounding")} value={money(sale.roundingMinor)} />}
           <dt>
-            <strong>Total {sale.currencyCode}</strong>
+            <strong>{t("Total {currency}", { currency: sale.currencyCode })}</strong>
           </dt>
           <dd data-testid="sale-total">
             <strong>{money(sale.totalMinor)}</strong>
           </dd>
         </dl>
 
-        <h2>Payment</h2>
-        <ul className="plain-list" aria-label="Tenders">
-          {sale.tenders.map((t, i) => (
+        <h2>{t("Payment")}</h2>
+        <ul className="plain-list" aria-label={t("Tenders")}>
+          {sale.tenders.map((tender, i) => (
             <li key={i}>
-              <strong>{TENDER_LABEL[t.kind]}</strong> {money(t.amountMinor)}
-              {t.receivedMinor && t.kind === "cash" ? ` · received ${money(t.receivedMinor)}` : ""}
-              {t.changeMinor !== "0" ? ` · change ${money(t.changeMinor)}` : ""}
-              {t.kind !== "cash" && (
+              <strong>{t(TENDER_LABEL_COPY[tender.kind])}</strong> {money(tender.amountMinor)}
+              {tender.receivedMinor && tender.kind === "cash" ? ` · ${t("received {amount}", { amount: money(tender.receivedMinor) })}` : ""}
+              {tender.changeMinor !== "0" ? ` · ${t("change {amount}", { amount: money(tender.changeMinor) })}` : ""}
+              {tender.kind !== "cash" && (
                 <span className="small">
                   {" "}
-                  · {t.confirmationSource === "provider" ? "Confirmed by the payment provider" : "Externally confirmed by operator"}
+                  ·{" "}
+                  {tender.confirmationSource === "provider"
+                    ? t("Confirmed by the payment provider")
+                    : t("Externally confirmed by operator")}
                 </span>
               )}
-              {t.reference && <span className="small"> · ref {t.reference}</span>}
-              {t.status !== "confirmed" && <span className="small"> · {t.status}</span>}
+              {tender.reference && (
+                <span className="small">
+                  {" "}
+                  · {t("ref")} {tender.reference}
+                </span>
+              )}
+              {tender.status !== "confirmed" && <span className="small"> · {tender.status}</span>}
             </li>
           ))}
         </ul>
 
-        <h2>Returns</h2>
+        <h2>{t("Returns")}</h2>
         {sale.returns.length === 0 ? (
-          <p className="small">None.</p>
+          <p className="small">{t("None.")}</p>
         ) : (
-          <ul className="plain-list" aria-label="Returns">
+          <ul className="plain-list" aria-label={t("Returns")}>
             {sale.returns.map((r) => (
               <li key={r.returnId}>
-                <span className="mono">{r.returnNumber}</span> · {r.localTime} · {REASON_LABEL[r.reason] ?? r.reason} · refunded{" "}
-                {money(r.totalMinor)} ({r.refunds.map((k) => TENDER_LABEL[k]).join(" + ")})
+                <span className="mono">{r.returnNumber}</span> · {r.localTime} ·{" "}
+                {t(REASON_LABEL_COPY[r.reason] ?? r.reason)} ·{" "}
+                {t("refunded {amount} ({tenders})", {
+                  amount: money(r.totalMinor),
+                  tenders: r.refunds.map((k) => t(TENDER_LABEL_COPY[k])).join(" + "),
+                })}
               </li>
             ))}
           </ul>
@@ -193,11 +207,11 @@ export function SaleDetail({
         <TaxInvoicePanel saleId={sale.saleId} hasVat={sale.taxTotalMinor !== "0"} />
         <div className="actions">
           <button type="button" className="secondary" onClick={() => setShowReceipt((s) => !s)}>
-            {showReceipt ? "Hide receipt" : "Show receipt"}
+            {showReceipt ? t("Hide receipt") : t("Show receipt")}
           </button>
           {anyLeft && (
             <button type="button" onClick={() => onReturn(sale.receiptNumber)}>
-              Return items
+              {t("Return items")}
             </button>
           )}
         </div>

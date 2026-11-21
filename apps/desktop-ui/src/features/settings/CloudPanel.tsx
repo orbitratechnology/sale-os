@@ -6,9 +6,10 @@ import { indicatorText, refusalText } from "../sync/syncText";
 import { SectionTitle } from "../../ui/PanelHeader";
 import { Dialog } from "../checkout/Dialog";
 import { CloudOff, Link, Lock, RefreshCw, TriangleExclamationPoint } from "../../ui/icons";
+import { useT, type T } from "../../i18n";
 
-function when(iso: string | null | undefined): string {
-  return iso ? new Date(iso).toLocaleString() : "not yet";
+function when(iso: string | null | undefined, t: T): string {
+  return iso ? new Date(iso).toLocaleString() : t("not yet");
 }
 
 /**
@@ -18,6 +19,7 @@ function when(iso: string | null | undefined): string {
  * joining replaces its data). Sales never wait for any of this.
  */
 export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
+  const t = useT();
   const [status, setStatus] = useState<SyncStatusDto | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [email, setEmail] = useState("");
@@ -53,7 +55,7 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
   async function exportSupport() {
     const res = await commands.syncRepairAction("export_support", null);
     if (res.status !== "ok") return setError(res.error);
-    setExported(res.data.savedFileName ? `Saved ${res.data.savedFileName}. Send it to support.` : null);
+    setExported(res.data.savedFileName ? t("Saved {file}. Send it to support.", { file: res.data.savedFileName }) : null);
   }
   useEffect(load, [load]);
 
@@ -82,22 +84,22 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
     setJoining(null);
     setReplace(false);
     if (res.data.signInAgain) {
-      setDone(`Joined. This till is ${res.data.registerCode} now. Sign in with your staff PIN for that business.`);
+      setDone(t("Joined. This till is {code} now. Sign in with your staff PIN for that business.", { code: res.data.registerCode }));
       onRelinked();
       return;
     }
-    setDone(`Linked. This till is ${res.data.registerCode}; what it did offline is being sent now.`);
+    setDone(t("Linked. This till is {code}; what it did offline is being sent now.", { code: res.data.registerCode }));
     load();
   }
 
-  if (!status) return <p aria-busy="true">Loading…</p>;
+  if (!status) return <p aria-busy="true">{t("Loading…")}</p>;
   if (!status.cloudConfigured) {
     return (
       <div className="empty-state">
         <span className="empty-icon">
           <CloudOff />
         </span>
-        <p>No cloud is set up for this app, so this till works on its own. Everything stays on this computer.</p>
+        <p>{t("No cloud is set up for this app, so this till works on its own. Everything stays on this computer.")}</p>
       </div>
     );
   }
@@ -107,59 +109,66 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
     <div className="panel-stack">
       {status.linkState === "revoked" && (
         <p role="alert">
-          This register was disconnected by the owner. Sales continue on this till and are kept here; link it again to
-          sync.
+          {t("This register was disconnected by the owner. Sales continue on this till and are kept here; link it again to sync.")}
         </p>
       )}
-      {status.linkState === "linking" && <p role="status">Linking was interrupted. Sign in again to finish it.</p>}
+      {status.linkState === "linking" && <p role="status">{t("Linking was interrupted. Sign in again to finish it.")}</p>}
       {done && <p role="status">{done}</p>}
       {linked ? (
         <dl className="cloud-status">
-          <dt>Status</dt>
-          <dd>Linked{status.registerCode ? ` as ${status.registerCode}` : ""} · {indicatorText(status)}</dd>
-          <dt>Conflicts</dt>
-          <dd>{status.conflicts === 0 ? "None" : status.conflicts}</dd>
-          <dt>Refused by the cloud</dt>
-          <dd>{status.rejected === 0 ? "None" : status.rejected}</dd>
-          <dt>Waiting to send</dt>
-          <dd>{status.pending === 0 ? "Nothing" : `${status.pending} change${status.pending === 1 ? "" : "s"}`}</dd>
-          <dt>Last sent</dt>
-          <dd>{when(status.lastPushOkAt)}</dd>
-          <dt>Last received</dt>
-          <dd>{when(status.lastPullOkAt)}</dd>
+          <dt>{t("Status")}</dt>
+          <dd>
+            {status.registerCode ? t("Linked as {code}", { code: status.registerCode }) : t("Linked")} · {indicatorText(status, t)}
+          </dd>
+          <dt>{t("Conflicts")}</dt>
+          <dd>{status.conflicts === 0 ? t("None") : status.conflicts}</dd>
+          <dt>{t("Refused by the cloud")}</dt>
+          <dd>{status.rejected === 0 ? t("None") : status.rejected}</dd>
+          <dt>{t("Waiting to send")}</dt>
+          <dd>
+            {status.pending === 0
+              ? t("Nothing")
+              : status.pending === 1
+                ? t("{n} change", { n: status.pending })
+                : t("{n} changes", { n: status.pending })}
+          </dd>
+          <dt>{t("Last sent")}</dt>
+          <dd>{when(status.lastPushOkAt, t)}</dd>
+          <dt>{t("Last received")}</dt>
+          <dd>{when(status.lastPullOkAt, t)}</dd>
         </dl>
       ) : null}
       {status.clockSkewWarning && (
-        <p role="alert">This computer's clock is more than 10 minutes off. Correct the date and time.</p>
+        <p role="alert">{t("This computer's clock is more than 10 minutes off. Correct the date and time.")}</p>
       )}
       {linked && (
         <p className="button-row">
           <button type="button" onClick={() => void commands.syncRetryNow().then(load)}>
             <RefreshCw />
-            Send now
+            {t("Send now")}
           </button>
           <button type="button" className="secondary" onClick={() => void exportSupport()}>
-            Export for support
+            {t("Export for support")}
           </button>
         </p>
       )}
       {exported && <p role="status">{exported}</p>}
       {queue && queue.events.length > 0 && (
-        <section aria-label="Refused by the cloud">
-          <SectionTitle icon={TriangleExclamationPoint}>Refused by the cloud</SectionTitle>
+        <section aria-label={t("Refused by the cloud")}>
+          <SectionTitle icon={TriangleExclamationPoint}>{t("Refused by the cloud")}</SectionTitle>
           <ul className="repair-queue">
             {queue.events.map((e) => (
               <li key={e.eventId}>
                 <p>
-                  <strong>{e.eventType}</strong> #{e.localSequence} · <span className="mono">{e.code ?? "unknown"}</span>
-                  {e.kind === "blocked" ? " · holding up later changes" : ""}
+                  <strong>{e.eventType}</strong> #{e.localSequence} · <span className="mono">{e.code ?? t("unknown")}</span>
+                  {e.kind === "blocked" ? ` · ${t("holding up later changes")}` : ""}
                 </p>
-                <p>{refusalText(e.code)}</p>
+                <p>{refusalText(e.code, t)}</p>
                 <button type="button" className="secondary" onClick={() => void viewPayload(e.eventId)}>
-                  {payload?.eventId === e.eventId ? "Hide what was sent" : "View what was sent"}
+                  {payload?.eventId === e.eventId ? t("Hide what was sent") : t("View what was sent")}
                 </button>
                 {payload?.eventId === e.eventId && (
-                  <pre className="payload" aria-label={`What was sent for #${e.localSequence}`}>
+                  <pre className="payload" aria-label={t("What was sent for #{n}", { n: e.localSequence })}>
                     {payload.json}
                   </pre>
                 )}
@@ -169,16 +178,18 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         </section>
       )}
       {queue && queue.conflicts.length > 0 && (
-        <section aria-label="Conflicts">
-          <SectionTitle icon={TriangleExclamationPoint}>Conflicts</SectionTitle>
+        <section aria-label={t("Conflicts")}>
+          <SectionTitle icon={TriangleExclamationPoint}>{t("Conflicts")}</SectionTitle>
           <p>
-            These were changed here and in the cloud at the same time. The cloud kept its version; settling them comes
-            with the conflict screen.
+            {t(
+              "These were changed here and in the cloud at the same time. The cloud kept its version; settling them comes with the conflict screen.",
+            )}
           </p>
           <ul>
             {queue.conflicts.map((c) => (
               <li key={c.conflictId}>
-                {c.aggregateType} · edited here from version {c.localBaseVersion}, the cloud is at {c.serverVersion}
+                {c.aggregateType} ·{" "}
+                {t("edited here from version {local}, the cloud is at {server}", { local: c.localBaseVersion, server: c.serverVersion })}
               </li>
             ))}
           </ul>
@@ -190,46 +201,48 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
         </p>
       )}
       {!linked && !options && (
-        <form onSubmit={(e) => void signIn(e)} aria-label="Cloud sign-in" noValidate className="stack-form">
-          <SectionTitle icon={Lock}>Sign in to your cloud account</SectionTitle>
+        <form onSubmit={(e) => void signIn(e)} aria-label={t("Cloud sign-in")} noValidate className="stack-form">
+          <SectionTitle icon={Lock}>{t("Sign in to your cloud account")}</SectionTitle>
           <p className="small">
-            Linking sends this till's sales, products and stock to your online account, and keeps them in step with your other
-            tills. Selling never waits for the internet.
+            {t(
+              "Linking sends this till's sales, products and stock to your online account, and keeps them in step with your other tills. Selling never waits for the internet.",
+            )}
           </p>
           <label>
-            Cloud account email
+            {t("Cloud account email")}
             <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </label>
           <label>
-            Password
+            {t("Password")}
             <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
           <button type="submit" disabled={busy || !email.trim() || !password}>
             <Link />
-            Sign in to link
+            {t("Sign in to link")}
           </button>
         </form>
       )}
       {options && !joining && (
-        <section aria-label="Link this till">
-          <h3>Create a new cloud business</h3>
-          <p>Use this till's business, products and staff as the cloud business. Nothing here changes.</p>
+        <section aria-label={t("Link this till")}>
+          <h3>{t("Create a new cloud business")}</h3>
+          <p>{t("Use this till's business, products and staff as the cloud business. Nothing here changes.")}</p>
           <button type="button" disabled={busy} onClick={() => void complete("create", null, false)}>
-            {options.ownBusinessInCloud ? "Finish linking this till's business" : "Create the cloud business from this till"}
+            {options.ownBusinessInCloud ? t("Finish linking this till's business") : t("Create the cloud business from this till")}
           </button>
           {replace && (
             <p>
-              Another device is linked to this till in the cloud.{" "}
+              {t("Another device is linked to this till in the cloud.")}{" "}
               <button type="button" disabled={busy} onClick={() => void complete("create", null, true)}>
-                Replace it with this computer
+                {t("Replace it with this computer")}
               </button>
             </p>
           )}
-          <h3>Or join an existing one</h3>
+          <h3>{t("Or join an existing one")}</h3>
           {!options.mayJoin && (
             <p id="join-blocked">
-              Joining replaces this till's data with the other business's, so it is only possible before this till has live
-              sales or products.
+              {t(
+                "Joining replaces this till's data with the other business's, so it is only possible before this till has live sales or products.",
+              )}
             </p>
           )}
           <ul>
@@ -243,7 +256,7 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
                   aria-describedby={options.mayJoin ? undefined : "join-blocked"}
                   onClick={() => setJoining(b)}
                 >
-                  Join {b.name}
+                  {t("Join {name}", { name: b.name })}
                 </button>
               </li>
             ))}
@@ -252,18 +265,19 @@ export function CloudPanel({ onRelinked }: { onRelinked: () => void }) {
       )}
       {joining && (
         <Dialog
-          title="Join a business"
+          title={t("Join a business")}
           alert
           safeFocus
           danger
-          confirmLabel={`Join ${joining.name}`}
+          confirmLabel={t("Join {name}", { name: joining.name })}
           confirmDisabled={busy}
           onConfirm={() => void complete("join", joining.businessId, false)}
           onCancel={() => setJoining(null)}
         >
           <p>
-            Joining replaces everything on this till with {joining.name}'s products, settings and staff. Its first sale gets
-            its own register number.
+            {t("Joining replaces everything on this till with {name}'s products, settings and staff. Its first sale gets its own register number.", {
+              name: joining.name,
+            })}
           </p>
         </Dialog>
       )}

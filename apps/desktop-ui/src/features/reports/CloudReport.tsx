@@ -4,23 +4,43 @@ import type {
   CloudSalesReportDto,
   TenderKind,
 } from "../../ipc/bindings";
+import { useT, type T } from "../../i18n";
 import { formatMoney } from "../../lib/money";
 import { TENDER_LABEL } from "../sales/labels";
 import { clock, cloudLabel } from "./cloudLabel";
 
-export const GROUPS: {
-  value: CloudGroupByDto;
-  label: string;
-  column: string;
-}[] = [
-  { value: "day", label: "By day", column: "Day" },
-  { value: "register", label: "By register", column: "Register" },
-  { value: "tender", label: "By payment", column: "Payment" },
-];
+/** The groupings, in order; English, translated at render with `t`. */
+const GROUP_COPY: Record<CloudGroupByDto, { label: string; column: string }> = {
+  day: { label: "By day", column: "Day" },
+  register: { label: "By register", column: "Register" },
+  tender: { label: "By payment", column: "Payment" },
+};
 
-function name(r: CloudReportRowDto, groupBy: string): string {
-  if (groupBy === "tender") return TENDER_LABEL[r.key as TenderKind] ?? r.label;
+/** `label` and `column` are English: show them through `t`. */
+export const GROUPS: { value: CloudGroupByDto; label: string; column: string }[] = (
+  Object.keys(GROUP_COPY) as CloudGroupByDto[]
+).map((value) => ({ value, ...GROUP_COPY[value] }));
+
+function name(r: CloudReportRowDto, groupBy: string, t: T): string {
+  if (groupBy === "tender") {
+    const tender = TENDER_LABEL[r.key as TenderKind] as string | undefined;
+    return tender === undefined ? r.label : t(tender);
+  }
   return r.label;
+}
+
+/** The table's accessible name. */
+function tableName(groupBy: string, t: T): string {
+  switch (groupBy) {
+    case "day":
+      return t("All registers by day");
+    case "register":
+      return t("All registers by register");
+    case "tender":
+      return t("All registers by payment");
+    default:
+      return "All registers ";
+  }
 }
 
 /**
@@ -30,9 +50,10 @@ function name(r: CloudReportRowDto, groupBy: string): string {
 export function CloudReport({ r }: { r: CloudSalesReportDto }) {
   const money = (m: string) => formatMoney(m, { exponent: r.currencyExponent });
   const neg = (m: string) => (m === "0" ? money("0") : `-${money(m)}`);
-  const label = cloudLabel(r);
+  const t = useT();
+  const label = cloudLabel(r, undefined, t);
   const tender = r.groupBy === "tender";
-  const column = GROUPS.find((g) => g.value === r.groupBy)?.column ?? "";
+  const column = GROUPS.find((g) => g.value === r.groupBy)?.column;
   return (
     <>
       <p
@@ -40,40 +61,40 @@ export function CloudReport({ r }: { r: CloudSalesReportDto }) {
         data-testid="cloud-label"
         role={label.stale ? "alert" : undefined}
       >
-        All registers (cloud) · {label.text}
+        {t("All registers (cloud) · {status}", { status: label.text })}
       </p>
       <table
         className="sales-table"
-        aria-label={`All registers ${GROUPS.find((g) => g.value === r.groupBy)?.label.toLowerCase() ?? ""}`}
+        aria-label={tableName(r.groupBy, t)}
       >
         <thead>
           <tr>
-            <th scope="col">{column}</th>
+            <th scope="col">{column ? t(column) : ""}</th>
             <th scope="col" className="num">
-              {tender ? "Taken" : "Sales"}
+              {tender ? t("Taken") : t("Sales")}
             </th>
             {!tender && (
               <>
                 <th scope="col" className="num">
-                  Discounts
+                  {t("Discounts")}
                 </th>
                 <th scope="col" className="num">
-                  Tax
+                  {t("Tax")}
                 </th>
               </>
             )}
             <th scope="col" className="num">
-              Refunds
+              {t("Refunds")}
             </th>
             <th scope="col" className="num">
-              Net
+              {t("Net")}
             </th>
           </tr>
         </thead>
         <tbody>
           {r.rows.map((x) => (
             <tr key={x.key} data-testid="cloud-row">
-              <th scope="row">{name(x, r.groupBy)}</th>
+              <th scope="row">{name(x, r.groupBy, t)}</th>
               <td className="num">
                 {money(x.salesMinor)} ({x.salesCount})
               </td>
@@ -95,7 +116,7 @@ export function CloudReport({ r }: { r: CloudSalesReportDto }) {
         {r.rows.length > 0 && (
           <tfoot>
             <tr data-testid="cloud-total">
-              <th scope="row">Total</th>
+              <th scope="row">{t("Total")}</th>
               <td className="num">
                 {money(r.total.salesMinor)} ({r.total.salesCount})
               </td>
@@ -114,30 +135,29 @@ export function CloudReport({ r }: { r: CloudSalesReportDto }) {
         )}
       </table>
       {r.rows.length === 0 && (
-        <p className="small">No sales from any register in this period.</p>
+        <p className="small">{t("No sales from any register in this period.")}</p>
       )}
       {r.registers.length > 0 && (
         <details>
-          <summary>Registers</summary>
-          <ul className="small" aria-label="Registers">
+          <summary>{t("Registers")}</summary>
+          <ul className="small" aria-label={t("Registers")}>
             {r.registers.map((g) => (
               <li key={g.code}>
                 <strong>{g.code}</strong> {g.name} ·{" "}
                 {g.current
-                  ? "up to date"
+                  ? t("up to date")
                   : g.pendingKnown
-                    ? "has data not yet sent"
+                    ? t("has data not yet sent")
                     : g.lastAckAt
-                      ? `last heard from ${clock(g.lastAckAt)}`
-                      : "not heard from yet"}
+                      ? t("last heard from {time}", { time: clock(g.lastAckAt) })
+                      : t("not heard from yet")}
               </li>
             ))}
           </ul>
         </details>
       )}
       <p className="small">
-        Live sales only; refunds are of returns made in the period, at any
-        register.
+        {t("Live sales only; refunds are of returns made in the period, at any register.")}
       </p>
     </>
   );

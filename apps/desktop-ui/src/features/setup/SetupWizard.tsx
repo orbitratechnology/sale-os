@@ -3,6 +3,7 @@ import { commands, type IpcError } from "../../ipc";
 import { percentToPpm } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
 import { localeDefaults } from "./localeDefaults";
+import { useT } from "../../i18n";
 
 /**
  * First run (E04-T02): business → region → tax → owner → review. Each step is a form, so
@@ -33,7 +34,21 @@ interface Draft {
 const STEPS = ["Business", "Region", "Tax", "Owner", "Review"] as const;
 const MAX_RATES = 3;
 
+/** The steps' names as shown, translated at render (`STEPS` stays the code's own names). */
+const STEP_COPY: Record<(typeof STEPS)[number], string> = {
+  Business: "Business",
+  Region: "Region",
+  Tax: "Tax",
+  Owner: "Owner",
+  Review: "Review",
+};
+
 export function SetupWizard({ onDone }: { onDone: () => void }) {
+  const t = useT();
+  // The notice names the mode in bold: the sentence is translated whole and split where it goes.
+  const [noticeBefore, noticeAfter = ""] = t(
+    "Not linked to the cloud: everything stays on this computer until you link it. The till starts in {mode} so you can practise; switch to live when you are ready.",
+  ).split("{mode}");
   const defaults = localeDefaults();
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>({
@@ -59,24 +74,24 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
   function check(): string | null {
     switch (STEPS[step]) {
       case "Business":
-        return draft.businessName.trim() ? null : "Enter the business name.";
+        return draft.businessName.trim() ? null : t("Enter the business name.");
       case "Region":
-        if (!/^[A-Za-z]{2}$/.test(draft.countryCode.trim())) return "Enter a two-letter country code, e.g. GB.";
-        if (!draft.timezone.trim()) return "Enter a time zone, e.g. Europe/London.";
-        return /^[A-Za-z]{3}$/.test(draft.currencyCode.trim()) ? null : "Enter a three-letter currency code, e.g. GBP.";
+        if (!/^[A-Za-z]{2}$/.test(draft.countryCode.trim())) return t("Enter a two-letter country code, e.g. GB.");
+        if (!draft.timezone.trim()) return t("Enter a time zone, e.g. Europe/London.");
+        return /^[A-Za-z]{3}$/.test(draft.currencyCode.trim()) ? null : t("Enter a three-letter currency code, e.g. GBP.");
       case "Tax": {
         const used = draft.rates.filter((r) => r.name.trim() || r.percent.trim());
         for (const r of used) {
-          if (!r.name.trim()) return "Give every tax rate a name.";
-          if (percentToPpm(r.percent) === null) return `Enter the rate for ${r.name.trim()} as a percentage, e.g. 20.`;
+          if (!r.name.trim()) return t("Give every tax rate a name.");
+          if (percentToPpm(r.percent) === null) return t("Enter the rate for {name} as a percentage, e.g. 20.", { name: r.name.trim() });
         }
         const names = used.map((r) => r.name.trim().toLowerCase());
-        return new Set(names).size === names.length ? null : "Tax rate names must be different.";
+        return new Set(names).size === names.length ? null : t("Tax rate names must be different.");
       }
       case "Owner":
-        if (!draft.ownerName.trim()) return "Enter the owner's name.";
-        if (!/^\d{4,8}$/.test(draft.pin)) return "The PIN must be 4 to 8 digits.";
-        return draft.pin === draft.pinAgain ? null : "The two PINs do not match.";
+        if (!draft.ownerName.trim()) return t("Enter the owner's name.");
+        if (!/^\d{4,8}$/.test(draft.pin)) return t("The PIN must be 4 to 8 digits.");
+        return draft.pin === draft.pinAgain ? null : t("The two PINs do not match.");
       default:
         return null;
     }
@@ -129,35 +144,36 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
   return (
     <main className="setup">
       <header className="setup-head">
-        <h1>Set up Sale OS</h1>
-        <ol className="steps" aria-label="Setup steps">
+        <h1>{t("Set up Sale OS")}</h1>
+        <ol className="steps" aria-label={t("Setup steps")}>
           {STEPS.map((s, i) => (
             <li key={s} aria-current={i === step ? "step" : undefined} className={i < step ? "done" : undefined}>
-              {s}
+              {t(STEP_COPY[s])}
             </li>
           ))}
         </ol>
       </header>
       <p className="notice">
-        Not linked to the cloud: everything stays on this computer until you link it. The till starts in{" "}
-        <strong>sandbox mode</strong> so you can practise; switch to live when you are ready.
+        {noticeBefore}
+        <strong>{t("sandbox mode")}</strong>
+        {noticeAfter}
       </p>
 
       <form className="card setup-form" onSubmit={(e) => void next(e)} noValidate>
-        <h2>{STEPS[step]}</h2>
+        <h2>{t(STEP_COPY[STEPS[step] ?? "Business"])}</h2>
         {STEPS[step] === "Business" && (
           <>
-            <Field label="Business name">
+            <Field label={t("Business name")}>
               {(id) => <input id={id} autoFocus value={draft.businessName} onChange={(e) => set("businessName", e.target.value)} />}
             </Field>
-            <Field label="Address (printed on receipts, one line each)">
+            <Field label={t("Address (printed on receipts, one line each)")}>
               {(id) => <textarea id={id} rows={3} value={draft.addressLines} onChange={(e) => set("addressLines", e.target.value)} />}
             </Field>
             <div className="row">
-              <Field label="Phone (optional)">
+              <Field label={t("Phone (optional)")}>
                 {(id) => <input id={id} type="tel" value={draft.phone} onChange={(e) => set("phone", e.target.value)} />}
               </Field>
-              <Field label="Email (optional)">
+              <Field label={t("Email (optional)")}>
                 {(id) => <input id={id} type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} />}
               </Field>
             </div>
@@ -165,13 +181,13 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
         )}
         {STEPS[step] === "Region" && (
           <div className="row">
-            <Field label="Country code">
+            <Field label={t("Country code")}>
               {(id) => <input id={id} autoFocus maxLength={2} value={draft.countryCode} onChange={(e) => set("countryCode", e.target.value)} />}
             </Field>
-            <Field label="Time zone">
+            <Field label={t("Time zone")}>
               {(id) => <input id={id} value={draft.timezone} onChange={(e) => set("timezone", e.target.value)} />}
             </Field>
-            <Field label="Currency">
+            <Field label={t("Currency")}>
               {(id) => <input id={id} maxLength={3} value={draft.currencyCode} onChange={(e) => set("currencyCode", e.target.value)} />}
             </Field>
           </div>
@@ -179,27 +195,27 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
         {STEPS[step] === "Tax" && (
           <>
             <fieldset className="choice">
-              <legend>Shelf prices</legend>
+              <legend>{t("Shelf prices")}</legend>
               <label>
                 <input type="radio" name="taxmode" autoFocus={draft.pricesIncludeTax} checked={draft.pricesIncludeTax} onChange={() => set("pricesIncludeTax", true)} />
-                Include tax (common for VAT and GST)
+                {t("Include tax (common for VAT and GST)")}
               </label>
               <label>
                 <input type="radio" name="taxmode" autoFocus={!draft.pricesIncludeTax} checked={!draft.pricesIncludeTax} onChange={() => set("pricesIncludeTax", false)} />
-                Exclude tax (tax is added at the till)
+                {t("Exclude tax (tax is added at the till)")}
               </label>
             </fieldset>
             <p className="small">
-              Up to {MAX_RATES} rates now; more in settings. Not registered for VAT? Leave the rates empty: receipts then show no tax.
+              {t("Up to {n} rates now; more in settings. Not registered for VAT? Leave the rates empty: sales then carry no tax. Change it later in Settings → Taxes.", { n: MAX_RATES })}
             </p>
             {draft.rates.map((r, i) => (
               <div className="row" key={i}>
-                <Field label={`Rate ${i + 1} name`}>
+                <Field label={t("Rate {n} name", { n: i + 1 })}>
                   {(id) => (
                     <input id={id} value={r.name} onChange={(e) => set("rates", draft.rates.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
                   )}
                 </Field>
-                <Field label={`Rate ${i + 1} (%)`}>
+                <Field label={t("Rate {n} (%)", { n: i + 1 })}>
                   {(id) => (
                     <input id={id} inputMode="decimal" value={r.percent} onChange={(e) => set("rates", draft.rates.map((x, j) => (j === i ? { ...x, percent: e.target.value } : x)))} />
                   )}
@@ -208,41 +224,41 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
             ))}
             {draft.rates.length < MAX_RATES && (
               <button type="button" className="secondary" onClick={() => set("rates", [...draft.rates, { name: "", percent: "" }])}>
-                Add another rate
+                {t("Add another rate")}
               </button>
             )}
           </>
         )}
         {STEPS[step] === "Owner" && (
           <>
-            <Field label="Owner's name">
+            <Field label={t("Owner's name")}>
               {(id) => <input id={id} autoFocus autoComplete="off" value={draft.ownerName} onChange={(e) => set("ownerName", e.target.value)} />}
             </Field>
             <div className="row">
-              <Field label="PIN (4 to 8 digits)">
+              <Field label={t("PIN (4 to 8 digits)")}>
                 {(id) => <input id={id} type="password" inputMode="numeric" autoComplete="new-password" value={draft.pin} onChange={(e) => set("pin", e.target.value)} />}
               </Field>
-              <Field label="PIN again">
+              <Field label={t("PIN again")}>
                 {(id) => <input id={id} type="password" inputMode="numeric" autoComplete="new-password" value={draft.pinAgain} onChange={(e) => set("pinAgain", e.target.value)} />}
               </Field>
             </div>
-            <p className="small">The owner can add cashiers and managers after setup.</p>
+            <p className="small">{t("The owner can add cashiers and managers after setup.")}</p>
           </>
         )}
         {STEPS[step] === "Review" && (
           <dl>
-            <dt>Business</dt>
+            <dt>{t("Business")}</dt>
             <dd>{draft.businessName}</dd>
-            <dt>Region</dt>
+            <dt>{t("Region")}</dt>
             <dd>
               {draft.countryCode.toUpperCase()} · {draft.timezone} · {draft.currencyCode.toUpperCase()}
             </dd>
-            <dt>Tax</dt>
+            <dt>{t("Tax")}</dt>
             <dd>
-              {draft.pricesIncludeTax ? "Prices include tax" : "Tax added at the till"}
+              {draft.pricesIncludeTax ? t("Prices include tax") : t("Tax added at the till")}
               {draft.rates.filter((r) => r.name.trim()).map((r) => ` · ${r.name.trim()} ${r.percent.trim()}%`)}
             </dd>
-            <dt>Owner</dt>
+            <dt>{t("Owner")}</dt>
             <dd>{draft.ownerName}</dd>
           </dl>
         )}
@@ -254,18 +270,18 @@ export function SetupWizard({ onDone }: { onDone: () => void }) {
         )}
         {failure && (
           <p role="alert" className="field-error">
-            {describeError(failure)} <span className="mono small">ref {failure.correlationId}</span>
+            {describeError(failure)} <span className="mono small">{t("ref")} {failure.correlationId}</span>
           </p>
         )}
         <div className="actions">
           {step > 0 && (
             <button type="button" className="secondary" onClick={() => setStep((s) => s - 1)} disabled={busy}>
-              Back
+              {t("Back")}
             </button>
           )}
           {/* Keyed so it remounts on Review: autoFocus only applies when an element mounts. */}
           <button type="submit" key={STEPS[step] === "Review" ? "create" : "next"} disabled={busy} autoFocus={STEPS[step] === "Review"}>
-            {busy ? "Creating…" : STEPS[step] === "Review" ? "Create and sign in" : "Next"}
+            {busy ? t("Creating…") : STEPS[step] === "Review" ? t("Create and sign in") : t("Next")}
           </button>
         </div>
       </form>

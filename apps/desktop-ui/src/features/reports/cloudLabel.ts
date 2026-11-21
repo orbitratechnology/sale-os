@@ -1,4 +1,7 @@
 import type { CloudSalesReportDto } from "../../ipc/bindings";
+import { currentLanguage, translate, type T } from "../../i18n";
+
+const shown: T = (english, vars) => translate(currentLanguage(), english, vars);
 
 /** HH:MM on this computer's clock; the date too when it is not today. */
 export function clock(iso: string, now: Date = new Date()): string {
@@ -13,10 +16,10 @@ export function clock(iso: string, now: Date = new Date()): string {
     : `${at.toLocaleDateString()} ${time}`;
 }
 
-function registers(n: number): string {
+function registers(n: number, t: T): string {
   return n === 1
-    ? "1 register has unsynced data"
-    : `${n} registers have unsynced data`;
+    ? t("1 register has unsynced data")
+    : t("{n} registers have unsynced data", { n });
 }
 
 /**
@@ -27,16 +30,23 @@ function registers(n: number): string {
 export function cloudLabel(
   r: CloudSalesReportDto,
   now: Date = new Date(),
+  t: T = shown,
 ): { text: string; stale: boolean } {
   const partial =
     r.unsyncedRegisters === 0
-      ? "Fully synchronized"
+      ? t("Fully synchronized")
       : r.lastSyncedAt
-        ? `Last synced ${clock(r.lastSyncedAt, now)} — ${registers(r.unsyncedRegisters)}`
-        : registers(r.unsyncedRegisters);
+        ? t("Last synced {time} — {registers}", {
+            time: clock(r.lastSyncedAt, now),
+            registers: registers(r.unsyncedRegisters, t),
+          })
+        : registers(r.unsyncedRegisters, t);
   if (r.freshness === "stale") {
     return {
-      text: `Stale: the cloud can't be reached. Figures from ${clock(r.fetchedAt, now)} (${partial})`,
+      text: t("Stale: the cloud can't be reached. Figures from {time} ({partial})", {
+        time: clock(r.fetchedAt, now),
+        partial,
+      }),
       stale: true,
     };
   }

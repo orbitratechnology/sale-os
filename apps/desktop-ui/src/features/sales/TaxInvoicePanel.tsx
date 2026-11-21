@@ -6,6 +6,7 @@ import type { ReceiptDto } from "../../ipc/bindings";
 import { PrintControls } from "../receipts/PrintControls";
 import { ReceiptPreview } from "../receipts/ReceiptPreview";
 import { describeError } from "../shell/errors";
+import { useT } from "../../i18n";
 
 /**
  * A sale's VAT tax invoice (D-02, Sri Lanka Gazette 2481/22). A VAT-registered buyer asks
@@ -14,6 +15,7 @@ import { describeError } from "../shell/errors";
  * recorded.
  */
 export function TaxInvoicePanel({ saleId, hasVat }: { saleId: string; hasVat: boolean }) {
+  const t = useT();
   const [invoice, setInvoice] = useState<ReceiptDto | null | undefined>(undefined);
   const [asking, setAsking] = useState(false);
   const [show, setShow] = useState(false);
@@ -29,18 +31,23 @@ export function TaxInvoicePanel({ saleId, hasVat }: { saleId: string; hasVat: bo
   }, [saleId]);
 
   if (invoice === undefined) return null;
+  const [issuedBefore, issuedAfter = ""] = t("Issued {number}.").split("{number}");
   return (
-    <section aria-label="Tax invoice" className="tax-invoice">
-      <h2>Tax invoice</h2>
+    <section aria-label={t("Tax invoice")} className="tax-invoice">
+      <h2>{t("Tax invoice")}</h2>
       {invoice ? (
         <>
           <p>
-            Issued <strong className="mono" data-testid="tax-invoice-number">{invoice.receiptNumber}</strong>.
+            {issuedBefore}
+            <strong className="mono" data-testid="tax-invoice-number">
+              {invoice.receiptNumber}
+            </strong>
+            {issuedAfter}
           </p>
           <PrintControls source={{ kind: "taxInvoice", id: saleId }} autoPrint={false} />
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setShow((s) => !s)}>
-              {show ? "Hide tax invoice" : "Show tax invoice"}
+              {show ? t("Hide tax invoice") : t("Show tax invoice")}
             </button>
           </div>
           {show && <ReceiptPreview source={{ kind: "taxInvoice", id: saleId }} />}
@@ -49,11 +56,11 @@ export function TaxInvoicePanel({ saleId, hasVat }: { saleId: string; hasVat: bo
         <div className="actions">
           <button type="button" className="secondary" onClick={() => setAsking(true)}>
             <FileText />
-            Issue tax invoice
+            {t("Issue tax invoice")}
           </button>
         </div>
       ) : (
-        <p className="small">No VAT on this sale, so it has no tax invoice.</p>
+        <p className="small">{t("No VAT on this sale, so it has no tax invoice.")}</p>
       )}
       {asking && (
         <IssueDialog
@@ -77,6 +84,7 @@ function IssueDialog({ saleId, onCancel, onIssued }: { saleId: string; onCancel:
   const [error, setError] = useState<IpcError | null>(null);
   const [busy, setBusy] = useState(false);
   const titleId = useId();
+  const t = useT();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -95,18 +103,20 @@ function IssueDialog({ saleId, onCancel, onIssued }: { saleId: string; onCancel:
 
   return (
     <Modal labelledBy={titleId} onDismiss={onCancel} onSubmit={(e) => void submit(e)}>
-      <h2 id={titleId}>Issue a tax invoice</h2>
-      <p className="small">As on the buyer's VAT registration certificate. A sale has one tax invoice; it cannot be changed once issued.</p>
+      <h2 id={titleId}>{t("Issue a tax invoice")}</h2>
+      <p className="small">
+        {t("As on the buyer's VAT registration certificate. A sale has one tax invoice; it cannot be changed once issued.")}
+      </p>
       <label>
-        Buyer's TIN (9 digits)
+        {t("Buyer's TIN (9 digits)")}
         <input value={tin} onChange={(e) => setTin(e.target.value)} inputMode="numeric" autoComplete="off" maxLength={15} data-autofocus required />
       </label>
       <label>
-        Buyer's name
+        {t("Buyer's name")}
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoComplete="off" required />
       </label>
       <label>
-        Buyer's address (up to 4 lines)
+        {t("Buyer's address (up to 4 lines)")}
         <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} maxLength={330} required />
       </label>
       {error && (
@@ -116,10 +126,10 @@ function IssueDialog({ saleId, onCancel, onIssued }: { saleId: string; onCancel:
       )}
       <div className="actions">
         <button type="button" className="secondary" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
         <button type="submit" disabled={busy}>
-          {busy ? "Issuing…" : "Issue tax invoice"}
+          {busy ? t("Issuing…") : t("Issue tax invoice")}
         </button>
       </div>
     </Modal>

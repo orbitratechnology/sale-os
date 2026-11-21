@@ -3,19 +3,20 @@ import { commands, type IpcError } from "../../ipc";
 import type { TaxConfigDto, TaxRateConfigDto } from "../../ipc/bindings";
 import { percentToPpm, ppmToPercent } from "../../lib/decimal";
 import { describeError } from "../shell/errors";
+import { useT, type T } from "../../i18n";
 import { SectionTitle } from "../../ui/PanelHeader";
 import { Pencil, Percent, Plus, Tag } from "../../ui/icons";
 
-function message(e: IpcError): string {
+function message(e: IpcError, t: T): string {
   const d = e.details;
   if (e.code === "VALIDATION_FAILED") {
-    if (d?.field === "categories") return `Still used by ${d.value ?? "a tax category"}: take it out of those first.`;
-    if (d?.field === "name" && d.value) return `Another active rate called "${d.value}" covers some of the same days.`;
-    if (d?.field === "name") return "Enter a name.";
-    if (d?.field === "period") return "The end date must be after the start date.";
-    if (d?.field === "default") return "One tax category must stay the default: make another one the default instead.";
+    if (d?.field === "categories") return t("Still used by {name}: take it out of those first.", { name: d.value ?? t("a tax category") });
+    if (d?.field === "name" && d.value) return t("Another active rate called \"{name}\" covers some of the same days.", { name: d.value });
+    if (d?.field === "name") return t("Enter a name.");
+    if (d?.field === "period") return t("The end date must be after the start date.");
+    if (d?.field === "default") return t("One tax category must stay the default: make another one the default instead.");
   }
-  if (e.code === "CONFLICT_VERSION") return "It was changed meanwhile; the current values are shown.";
+  if (e.code === "CONFLICT_VERSION") return t("It was changed meanwhile; the current values are shown.");
   return describeError(e);
 }
 
@@ -33,7 +34,8 @@ const blank = {
  * rates products use), exactly one of them the default. A rate change on a date is a new
  * rate starting that day and the old one ending that day.
  */
-export function TaxesPanel() {
+export function TaxesPanel({ registered = true }: { registered?: boolean }) {
+  const t = useT();
   const [cfg, setCfg] = useState<TaxConfigDto | null>(null);
   const [rate, setRate] = useState(blank);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export function TaxesPanel() {
 
   const done = (res: { status: "ok" } | { status: "error"; error: IpcError }) => {
     if (res.status === "ok") setError(null);
-    else setError(message(res.error));
+    else setError(message(res.error, t));
     load();
     return res.status === "ok";
   };
@@ -54,7 +56,7 @@ export function TaxesPanel() {
   async function saveRate(e: FormEvent) {
     e.preventDefault();
     const ppm = percentToPpm(rate.percent);
-    if (ppm === null) return setError("Enter the rate as a percentage, e.g. 20 or 7.5.");
+    if (ppm === null) return setError(t("Enter the rate as a percentage, e.g. 20 or 7.5."));
     const ok = done(await commands.taxRateSave(rate.id, rate.name, ppm, rate.from || null, rate.to || null, rate.version));
     if (ok) setRate(blank);
   }
@@ -69,7 +71,7 @@ export function TaxesPanel() {
       to: r.to ?? "",
     });
 
-  if (!cfg) return <p className="small">Loading…</p>;
+  if (!cfg) return <p className="small">{t("Loading…")}</p>;
   const activeRates = cfg.rates.filter((r) => !r.archived);
   return (
     <div className="taxes">
@@ -78,18 +80,25 @@ export function TaxesPanel() {
           {error}
         </p>
       )}
-      <SectionTitle icon={Percent}>Rates</SectionTitle>
-      <table className="sales-table" aria-label="Tax rates">
+      {!registered && (
+        <p className="callout-warning" role="note">
+          {t(
+            "Not registered for VAT: sales carry no tax, receipts show no tax or tax number, and no tax invoices are issued. The rates below are kept for when you register.",
+          )}
+        </p>
+      )}
+      <SectionTitle icon={Percent}>{t("Rates")}</SectionTitle>
+      <table className="sales-table" aria-label={t("Tax rates")}>
         <thead>
           <tr>
-            <th scope="col">Name</th>
+            <th scope="col">{t("Name")}</th>
             <th scope="col" className="num">
-              Rate
+              {t("Rate")}
             </th>
-            <th scope="col">From</th>
-            <th scope="col">Until (not including)</th>
+            <th scope="col">{t("From")}</th>
+            <th scope="col">{t("Until (not including)")}</th>
             <th scope="col" className="row-actions">
-              <span className="visually-hidden">Actions</span>
+              <span className="visually-hidden">{t("Actions")}</span>
             </th>
           </tr>
         </thead>
@@ -98,64 +107,64 @@ export function TaxesPanel() {
             <tr key={r.taxRateId} data-testid="rate-row">
               <th scope="row">{r.name}</th>
               <td className="num">{ppmToPercent(r.ratePpm)}%</td>
-              <td>{r.from ?? "always"}</td>
-              <td>{r.to ?? "no end"}</td>
+              <td>{r.from ?? t("always")}</td>
+              <td>{r.to ?? t("no end")}</td>
               <td className="row-actions">
-                <button type="button" className="link" aria-label={`Edit ${r.name}`} onClick={() => edit(r)}>
-                  Edit
+                <button type="button" className="link" aria-label={t("Edit {name}", { name: r.name })} onClick={() => edit(r)}>
+                  {t("Edit")}
                 </button>{" "}
                 <button
                   type="button"
                   className="link"
-                  aria-label={`Archive ${r.name}`}
+                  aria-label={t("Archive {name}", { name: r.name })}
                   onClick={() => void commands.taxRateArchive(r.taxRateId, r.version).then(done)}
                 >
-                  Archive
+                  {t("Archive")}
                 </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <SectionTitle icon={rate.id ? Pencil : Plus}>{rate.id ? "Change a rate" : "Add a rate"}</SectionTitle>
-      <form className="card sales-filters" aria-label={rate.id ? "Change a rate" : "Add a rate"} onSubmit={(e) => void saveRate(e)}>
+      <SectionTitle icon={rate.id ? Pencil : Plus}>{rate.id ? t("Change a rate") : t("Add a rate")}</SectionTitle>
+      <form className="card sales-filters" aria-label={rate.id ? t("Change a rate") : t("Add a rate")} onSubmit={(e) => void saveRate(e)}>
         <label>
-          Name
-          <input value={rate.name} onChange={(e) => setRate({ ...rate, name: e.target.value })} placeholder="e.g. VAT 20%" />
+          {t("Name")}
+          <input value={rate.name} onChange={(e) => setRate({ ...rate, name: e.target.value })} placeholder={t("e.g. VAT 20%")} />
         </label>
         <label>
-          Rate (%)
+          {t("Rate (%)")}
           <input inputMode="decimal" value={rate.percent} onChange={(e) => setRate({ ...rate, percent: e.target.value })} />
         </label>
         <label>
-          From
+          {t("From")}
           <input type="date" value={rate.from} onChange={(e) => setRate({ ...rate, from: e.target.value })} />
         </label>
         <label>
-          Until (not including)
+          {t("Until (not including)")}
           <input type="date" value={rate.to} onChange={(e) => setRate({ ...rate, to: e.target.value })} />
         </label>
-        <p className="small form-hint">Leave the dates empty for a rate that always applies.</p>
+        <p className="small form-hint">{t("Leave the dates empty for a rate that always applies.")}</p>
         <span className="button-row form-hint">
-          <button type="submit">{rate.id ? "Save rate" : "Add rate"}</button>
+          <button type="submit">{rate.id ? t("Save rate") : t("Add rate")}</button>
           {rate.id && (
             <button type="button" className="secondary" onClick={() => setRate(blank)}>
-              Cancel
+              {t("Cancel")}
             </button>
           )}
         </span>
       </form>
 
-      <SectionTitle icon={Tag}>Tax categories</SectionTitle>
-      <p className="small">Each product belongs to one tax category. Tick the rates that apply to it; they are added up on the receipt.</p>
-      <ul className="plain-list" aria-label="Tax categories">
+      <SectionTitle icon={Tag}>{t("Tax categories")}</SectionTitle>
+      <p className="small">{t("Each product belongs to one tax category. Tick the rates that apply to it; they are added up on the receipt.")}</p>
+      <ul className="plain-list" aria-label={t("Tax categories")}>
         {cfg.categories
           .filter((c) => !c.archived)
           .map((c) => (
             <li key={c.taxCategoryId} data-testid="taxcat-row">
               <strong>{c.name}</strong>
               {c.isDefault ? (
-                <span className="tag">default</span>
+                <span className="tag">{t("default")}</span>
               ) : (
                 <>
                   {" "}
@@ -164,11 +173,11 @@ export function TaxesPanel() {
                     className="link"
                     onClick={() => void commands.taxCategorySave(c.taxCategoryId, c.name, c.rateIds, true, c.version).then(done)}
                   >
-                    Make default
+                    {t("Make default")}
                   </button>
                 </>
               )}
-              <div role="group" aria-label={`Rates in ${c.name}`} className="check-list">
+              <div role="group" aria-label={t("Rates in {name}", { name: c.name })} className="check-list">
                 {activeRates.map((r) => (
                   <label key={r.taxRateId} className="check">
                     <input
@@ -189,7 +198,7 @@ export function TaxesPanel() {
       </ul>
       <form
         className="setting-edit"
-        aria-label="Add a tax category"
+        aria-label={t("Add a tax category")}
         onSubmit={(e) => {
           e.preventDefault();
           void commands.taxCategorySave(null, newCategory, [], false, null).then((res) => {
@@ -197,9 +206,9 @@ export function TaxesPanel() {
           });
         }}
       >
-        <input aria-label="New tax category" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="e.g. Zero-rated" />
+        <input aria-label={t("New tax category")} value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder={t("e.g. Zero-rated")} />
         <button type="submit" className="secondary" disabled={!newCategory.trim()}>
-          Add tax category
+          {t("Add tax category")}
         </button>
       </form>
     </div>

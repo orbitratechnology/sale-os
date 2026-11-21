@@ -2008,6 +2008,24 @@ describe("taxes (E06-T05)", () => {
     expect(violations).toEqual([]);
   });
 
+  it("a shop not registered for VAT turns tax off on the Taxes page, keeping its rates (D-02)", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Taxes" }).click();
+    // One Taxes page: the switch sits above the rates, not on a page of its own.
+    expect(await page.getByRole("tab", { name: "Taxes" }).count()).toBe(1);
+    const registered = page.getByRole("switch", { name: "Registered for VAT" });
+    expect(await registered.isChecked()).toBe(true);
+    expect(await page.getByText("Not registered for VAT").count()).toBe(0);
+    await registered.click();
+    await page.getByText("Not registered for VAT: sales carry no tax").waitFor();
+    await page.getByRole("table", { name: "Tax rates" }).getByText("VAT 20%").waitFor();
+    expect(await calls(page, "settings_update")).toEqual([{ key: "tax.registered", valueJson: "false", baseVersion: 1 }]);
+    await registered.click();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "settings_update").length === 2);
+    expect(await page.getByText("Not registered for VAT").count()).toBe(0);
+  });
+
   it("a manager has no Taxes page: Settings shows them only Devices (DeviceConfigure)", async () => {
     const page = await open("signIn");
     await page.getByRole("button", { name: /Mia/ }).click();

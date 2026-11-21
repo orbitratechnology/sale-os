@@ -29,12 +29,14 @@ import type {
   ScanDetectorConfig,
   ScanSuffix,
 } from "./features/scan/scanDetector";
+import { useT } from "./i18n";
 
 /**
  * The app shell: first run → sign-in → checkout. Rust holds the session; this component only
  * mirrors it, and goes back to sign-in whenever a command reports `SESSION_LOCKED`.
  */
 export function App() {
+  const t = useT();
   const [state, setState] = useState<BootstrapState | null>(null);
   const [error, setError] = useState<IpcError | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "till" });
@@ -47,8 +49,6 @@ export function App() {
   useEffect(() => {
     // Startup timing for scripts/ui-latency.mjs: the first screen a person can use is up.
     if (place !== "loading" && performance.getEntriesByName(FIRST_SCREEN_MARK).length === 0) performance.mark(FIRST_SCREEN_MARK);
-    // The window title names the screen (WCAG 2.4.2), for the taskbar and screen readers.
-    document.title = `${TITLES[place]} · Sale OS`;
     // A new screen starts focus at its heading, unless it focused a field itself; the till keeps
     // focus on the page, where the scanner types (scanner-ready mode).
     if (place === "till" || place === "loading") return;
@@ -65,6 +65,11 @@ export function App() {
     });
     return () => cancelAnimationFrame(frame);
   }, [place]);
+  useEffect(() => {
+    // The window title names the screen (WCAG 2.4.2), for the taskbar and screen readers; it
+    // follows the till's language.
+    document.title = `${t(TITLE_COPY[place])} · Sale OS`;
+  }, [place, t]);
 
   const apply = useCallback((res: Result<BootstrapState>) => {
     if (res.status === "ok") {
@@ -365,7 +370,8 @@ type Place = Screen["kind"] | "loading" | "setup" | "signIn";
 /** Performance marks read by scripts/ui-latency.mjs (pilot measurements). */
 export const FIRST_SCREEN_MARK = "sale-os:first-screen";
 
-const TITLES: Record<Place, string> = {
+/** The window title per screen, translated at render. */
+const TITLE_COPY: Record<Place, string> = {
   loading: "Starting",
   setup: "Set up",
   signIn: "Sign in",

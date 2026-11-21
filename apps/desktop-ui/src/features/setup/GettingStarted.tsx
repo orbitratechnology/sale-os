@@ -1,5 +1,6 @@
 import { Modal } from "../../ui/Modal";
 import { useEffect, useRef } from "react";
+import { useT } from "../../i18n";
 
 /**
  * "Getting started" (E04-T02 steps 5–7): what is left after the wizard, each a button to the
@@ -19,6 +20,14 @@ export function GettingStarted({
   onGoLive: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
+  // Two steps start with a verb in bold: each sentence is translated whole and split where it goes.
+  const [practiseBefore, practiseAfter = ""] = t(
+    "{practise} a few sales, a return, and opening and closing the drawer. Practice sales are left out of reports.",
+  ).split("{practise}");
+  const [goLiveBefore, goLiveAfter = ""] = t(
+    "{goLive} when you are ready. You confirm with your PIN; practice sales stay out of reports.",
+  ).split("{goLive}");
   const first = useRef<HTMLButtonElement | null>(null);
   useEffect(() => first.current?.focus(), []);
   useEffect(() => {
@@ -33,58 +42,61 @@ export function GettingStarted({
   }, [onClose]);
 
   return (
-    <Modal label="Getting started" className="wide">
-        <h2>Getting started</h2>
-        <p>The till is ready to sell in practice (SANDBOX) mode. When you have a moment:</p>
+    <Modal label={t("Getting started")} className="wide">
+        <h2>{t("Getting started")}</h2>
+        <p>{t("The till is ready to sell in practice (SANDBOX) mode. When you have a moment:")}</p>
         <ol className="getting-started">
           <li>
             <div>
               <span>
-                <strong>Products.</strong> Add them one by one, or import a CSV file from your supplier or old till.
+                <strong>{t("Products.")}</strong> {t("Add them one by one, or import a CSV file from your supplier or old till.")}
               </span>
               <button type="button" className="secondary" ref={first} onClick={onProducts}>
-                Open Products <kbd>F6</kbd>
+                {t("Open Products")} <kbd>F6</kbd>
               </button>
             </div>
           </li>
           <li>
             <div>
               <span>
-                <strong>Staff.</strong> Give each cashier and manager their own PIN. Nobody shares the owner&apos;s.
+                <strong>{t("Staff.")}</strong> {t("Give each cashier and manager their own PIN. Nobody shares the owner's.")}
               </span>
               <button type="button" className="secondary" onClick={onStaff}>
-                Add staff
+                {t("Add staff")}
               </button>
             </div>
           </li>
           <li>
             <div>
               <span>
-                <strong>Receipts.</strong> Check the details printed on receipts, and add your logo.
+                <strong>{t("Receipts.")}</strong> {t("Check the details printed on receipts, and add your logo.")}
               </span>
               <button type="button" className="secondary" onClick={onBusiness}>
-                Business details
+                {t("Business details")}
               </button>
             </div>
           </li>
           <li>
-            <strong>Practise</strong> a few sales, a return, and opening and closing the drawer. Practice sales are left out of
-            reports.
+            {practiseBefore}
+            <strong>{t("Practise")}</strong>
+            {practiseAfter}
           </li>
           <li>
             <div>
               <span>
-                <strong>Go live</strong> when you are ready. You confirm with your PIN; practice sales stay out of reports.
+                {goLiveBefore}
+                <strong>{t("Go live")}</strong>
+                {goLiveAfter}
               </span>
               <button type="button" className="secondary" onClick={onGoLive}>
-                Go live…
+                {t("Go live…")}
               </button>
             </div>
           </li>
         </ol>
         <div className="actions">
           <button type="button" onClick={onClose}>
-            Later
+            {t("Later")}
           </button>
         </div>
     </Modal>

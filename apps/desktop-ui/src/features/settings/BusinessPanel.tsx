@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { commands, type IpcError } from "../../ipc";
 import type { BusinessProfileDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
+import { useT, type T } from "../../i18n";
 import type { LucideIcon } from "lucide-react";
 import { Hash, Image, Landmark, Lock, Mail, MapPin, Monitor, Phone, Store } from "../../ui/icons";
 
@@ -15,7 +16,7 @@ interface Draft {
   registerName: string;
 }
 
-const LABELS: Record<keyof Draft, string> = {
+const LABEL_COPY: Record<keyof Draft, string> = {
   name: "Business name",
   legalName: "Legal name",
   taxRegistrationNo: "Tax registration number",
@@ -35,7 +36,7 @@ const ICONS: Record<keyof Draft, LucideIcon> = {
   registerName: Monitor,
 };
 
-const HELP: Partial<Record<keyof Draft, string>> = {
+const HELP_COPY: Partial<Record<keyof Draft, string>> = {
   legalName: "The registered company name, if it is different.",
   name: "Printed at the top of every receipt.",
   taxRegistrationNo: "Printed on receipts, e.g. a VAT or GST number.",
@@ -55,15 +56,15 @@ function draftOf(p: BusinessProfileDto): Draft {
   };
 }
 
-function message(e: IpcError): { field: keyof Draft | null; text: string } {
+function message(e: IpcError, t: T): { field: keyof Draft | null; text: string } {
   const field = (e.details?.field ?? null) as keyof Draft | null;
-  if (e.code === "CONFLICT_VERSION") return { field: null, text: "Someone changed these details meanwhile; the current ones are shown." };
-  if (e.code === "VALIDATION_FAILED" && field && field in LABELS) {
-    const label = LABELS[field];
-    if (field === "email") return { field, text: "That is not an email address." };
-    if (field === "addressLines" && !e.details?.value) return { field, text: "At most 4 address lines." };
-    if (e.details?.value) return { field, text: `${label}: at most ${e.details.value} characters.` };
-    return { field, text: `${label} is required.` };
+  if (e.code === "CONFLICT_VERSION") return { field: null, text: t("Someone changed these details meanwhile; the current ones are shown.") };
+  if (e.code === "VALIDATION_FAILED" && field && field in LABEL_COPY) {
+    const label = t(LABEL_COPY[field]);
+    if (field === "email") return { field, text: t("That is not an email address.") };
+    if (field === "addressLines" && !e.details?.value) return { field, text: t("At most 4 address lines.") };
+    if (e.details?.value) return { field, text: t("{label}: at most {n} characters.", { label, n: e.details.value }) };
+    return { field, text: t("{label} is required.", { label }) };
   }
   return { field: null, text: describeError(e) };
 }
@@ -75,6 +76,7 @@ function message(e: IpcError): { field: keyof Draft | null; text: string } {
  * past sales and prices were made under them.
  */
 export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
+  const t = useT();
   const [profile, setProfile] = useState<BusinessProfileDto | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [problem, setProblem] = useState<{ field: keyof Draft | null; text: string } | null>(null);
@@ -89,7 +91,7 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
   }, []);
   useEffect(load, [load]);
 
-  if (!profile || !draft) return problem ? <p role="alert" className="field-error">{problem.text}</p> : <p className="small">Loading…</p>;
+  if (!profile || !draft) return problem ? <p role="alert" className="field-error">{problem.text}</p> : <p className="small">{t("Loading…")}</p>;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -117,7 +119,7 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
       return;
     }
     setSaved(false);
-    setProblem(message(res.error));
+    setProblem(message(res.error, t));
     if (res.error.code === "CONFLICT_VERSION") load();
   }
 
@@ -128,23 +130,24 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
       id,
       value: draft[key],
       "aria-invalid": invalid || undefined,
-      "aria-describedby": [HELP[key] ? `${id}-help` : "", invalid ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined,
+      "aria-describedby": [HELP_COPY[key] ? `${id}-help` : "", invalid ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined,
       onChange: (e: { target: { value: string } }) => {
         setSaved(false);
         setDraft({ ...draft, [key]: e.target.value });
       },
     };
     const Icon = ICONS[key];
+    const help = HELP_COPY[key];
     return (
       <div className="setting-row has-icon" key={key}>
         <span className="icon-tile sm" aria-hidden="true">
           <Icon />
         </span>
         <div className="setting-text">
-          <label htmlFor={id}>{LABELS[key]}</label>
-          {HELP[key] && (
+          <label htmlFor={id}>{t(LABEL_COPY[key])}</label>
+          {help && (
             <span id={`${id}-help`} className="small">
-              {HELP[key]}
+              {t(help)}
             </span>
           )}
         </div>
@@ -170,46 +173,46 @@ export function BusinessPanel({ onChanged }: { onChanged: () => void }) {
         }}
         onConflict={load}
       />
-      <form aria-label="Business details" noValidate onSubmit={(e) => void save(e)}>
-      {(Object.keys(LABELS) as (keyof Draft)[]).map(input)}
+      <form aria-label={t("Business details")} noValidate onSubmit={(e) => void save(e)}>
+      {(Object.keys(LABEL_COPY) as (keyof Draft)[]).map(input)}
       <div className="setting-row has-icon">
         <span className="icon-tile sm" aria-hidden="true">
           <Lock />
         </span>
         <span>
-          <strong>Fixed at setup</strong>
-          <span className="small">Chosen when the till was set up. They cannot change, because past sales and prices were made under them.</span>
+          <strong>{t("Fixed at setup")}</strong>
+          <span className="small">{t("Chosen when the till was set up. They cannot change, because past sales and prices were made under them.")}</span>
         </span>
         <div className="setting-control">
         <dl className="small" data-testid="fixed-profile">
-          <dt>Country</dt>
+          <dt>{t("Country")}</dt>
           <dd>{profile.countryCode}</dd>
-          <dt>Time zone</dt>
+          <dt>{t("Time zone")}</dt>
           <dd>{profile.timezone}</dd>
-          <dt>Currency</dt>
+          <dt>{t("Currency")}</dt>
           <dd>{profile.currencyCode}</dd>
-          <dt>Prices</dt>
-          <dd>{profile.pricesIncludeTax ? "include tax" : "exclude tax"}</dd>
-          <dt>Till code</dt>
+          <dt>{t("Prices")}</dt>
+          <dd>{profile.pricesIncludeTax ? t("include tax") : t("exclude tax")}</dd>
+          <dt>{t("Till code")}</dt>
           <dd>{profile.registerCode}</dd>
         </dl>
         </div>
       </div>
       <div className="actions" aria-live="polite">
-        {saved && <span className="saved-note">Saved. New receipts use these details.</span>}
+        {saved && <span className="saved-note">{t("Saved. New receipts use these details.")}</span>}
         {problem && !problem.field && (
           <span role="alert" className="field-error">
             {problem.text}
           </span>
         )}
-        <button type="submit">Save details</button>
+        <button type="submit">{t("Save details")}</button>
       </div>
       </form>
     </>
   );
 }
 
-const LOGO_PROBLEMS: Record<string, string> = {
+const LOGO_PROBLEM_COPY: Record<string, string> = {
   tooLarge: "That file is larger than 10 MB. Choose a smaller image.",
   notAnImage: "That file is not a PNG or JPEG image.",
   unreadable: "That image could not be read. Try saving it again as PNG.",
@@ -228,6 +231,7 @@ function LogoRow({
   onChanged: (p: BusinessProfileDto) => void;
   onConflict: () => void;
 }) {
+  const t = useT();
   const [fetched, setFetched] = useState<{ version: number; url: string | null } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -246,9 +250,12 @@ function LogoRow({
 
   const failed = (e: IpcError) => {
     if (e.code === "CONFLICT_VERSION") {
-      setProblem("Someone changed the business details meanwhile; try again.");
+      setProblem(t("Someone changed the business details meanwhile; try again."));
       onConflict();
-    } else setProblem(e.details?.field === "logo" ? (LOGO_PROBLEMS[e.details.value ?? ""] ?? describeError(e)) : describeError(e));
+    } else {
+      const logoProblem = e.details?.field === "logo" ? LOGO_PROBLEM_COPY[e.details.value ?? ""] : undefined;
+      setProblem(logoProblem ? t(logoProblem) : describeError(e));
+    }
   };
   const choose = async () => {
     setBusy(true);
@@ -266,23 +273,23 @@ function LogoRow({
   };
 
   return (
-    <section className="setting-row has-icon" aria-label="Logo">
+    <section className="setting-row has-icon" aria-label={t("Logo")}>
       <span className="icon-tile sm" aria-hidden="true">
         <Image />
       </span>
       <span>
-        <strong>Logo</strong>
-        <span className="small">A PNG or JPEG picture, shown at the top of receipts saved as PDF.</span>
+        <strong>{t("Logo")}</strong>
+        <span className="small">{t("A PNG or JPEG picture, shown at the top of receipts saved as PDF.")}</span>
       </span>
       <div className="setting-control">
-        {url ? <img src={url} alt="The business logo" className="logo-preview" /> : <p className="small">{profile.hasLogo ? "Loading…" : "No logo."}</p>}
+        {url ? <img src={url} alt={t("The business logo")} className="logo-preview" /> : <p className="small">{profile.hasLogo ? t("Loading…") : t("No logo.")}</p>}
         <p className="button-row">
           <button type="button" className="secondary" disabled={busy} onClick={() => void choose()}>
-            {profile.hasLogo ? "Change logo…" : "Choose a logo…"}
+            {profile.hasLogo ? t("Change logo…") : t("Choose a logo…")}
           </button>
           {profile.hasLogo && (
             <button type="button" className="secondary" onClick={() => void remove()}>
-              Remove logo
+              {t("Remove logo")}
             </button>
           )}
         </p>
