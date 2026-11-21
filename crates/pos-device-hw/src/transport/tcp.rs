@@ -62,21 +62,46 @@ impl Transport for TcpTransport {
 
     async fn open(&self, timeout: Duration) -> Result<Box<dyn Link>, TransportError> {
         let addr = self.addr();
-        let stream =
-            match tokio::time::timeout(timeout, TcpStream::connect((self.host.as_str(), self.port))).await {
-                Err(_) => {
-                    return Err(TransportError::Unreachable(format!(
-                        "{addr} did not answer within {} ms",
-                        timeout.as_millis()
-                    )));
-                }
-                Ok(Err(e)) => return Err(TransportError::Unreachable(format!("{addr}: {e}"))),
-                Ok(Ok(s)) => s,
-            };
+        let stream = match tokio::time::timeout(timeout, connect_bounded(self.host.as_str(), self.port)).await
+        {
+            Err(_) => {
+                return Err(TransportError::Unreachable(format!(
+                    "{addr} did not answer within {} ms",
+                    timeout.as_millis()
+                )));
+            }
+            Ok(Err(e)) => return Err(TransportError::Unreachable(format!("{addr}: {e}"))),
+            Ok(Ok(s)) => s,
+        };
         let _ = stream.set_nodelay(true);
         tracing::debug!(target: "pos_device_hw", %addr, "connected");
         Ok(Box::new(TcpLink { stream, addr }))
     }
+}
+
+/// The OS send buffer for a printer link. A fixed size matters on Windows: without one,
+/// dynamic send buffering lets the OS accept megabytes for a printer that reads nothing,
+/// and the job would look sent. Bounded, a finished write means the job is at most this far
+/// from the printer, and one that is never read times out (uncertain) on every platform.
+/// Receipts are a few kilobytes; even a raster job streams fine through 64 KiB.
+const SEND_BUFFER: u32 = 64 * 1024;
+
+async fn connect_bounded(host: &str, port: u16) -> std::io::Result<TcpStream> {
+    let mut last = None;
+    for addr in tokio::net::lookup_host((host, port)).await? {
+        let socket = if addr.is_ipv4() {
+            tokio::net::TcpSocket::new_v4()?
+        } else {
+            tokio::net::TcpSocket::new_v6()?
+        };
+        socket.set_send_buffer_size(SEND_BUFFER)?;
+        match socket.connect(addr).await {
+            Ok(s) => return Ok(s),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last
+        .unwrap_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "the host name has no address")))
 }
 
 struct TcpLink {
