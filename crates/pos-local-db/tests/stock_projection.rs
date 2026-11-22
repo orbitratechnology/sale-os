@@ -314,7 +314,12 @@ async fn verify_finds_a_tampered_balance_and_rebuild_repairs_it() {
     assert_eq!(
         drift
             .iter()
-            .map(|d| (d.item_name.as_str(), d.sku.as_deref(), d.location_name.as_str(), d.bucket.as_str()))
+            .map(|d| (
+                d.item_name.as_str(),
+                d.sku.as_deref(),
+                d.location_name.as_str(),
+                d.bucket.as_str()
+            ))
             .collect::<Vec<_>>(),
         vec![
             ("Cake", Some("CAKE"), "Main", "sellable"),

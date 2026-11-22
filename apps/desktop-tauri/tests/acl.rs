@@ -121,5 +121,8 @@ fn undeclared_command_is_refused() {
 #[test]
 fn windows_without_a_capability_cannot_call_anything() {
     let (_app, w) = window("popup");
-    assert_refused_by_acl(invoke(&w, "app_info", json!({})), "app_info from an unlisted window");
+    assert_refused_by_acl(
+        invoke(&w, "app_info", json!({})),
+        "app_info from an unlisted window",
+    );
 }

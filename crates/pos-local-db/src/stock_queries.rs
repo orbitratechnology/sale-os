@@ -183,7 +183,17 @@ impl StockQueries for SqliteStore {
     }
 
     async fn stock_drift(&self) -> Result<Vec<pos_application::records::StockDrift>, QueryError> {
-        type Row = (String, String, String, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>);
+        type Row = (
+            String,
+            String,
+            String,
+            i64,
+            i64,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
         let rows: Vec<Row> = sqlx::query_as(
             "WITH m AS (SELECT location_id, variant_id, bucket, sum(quantity_delta_milli) AS q
                         FROM stock_movements GROUP BY location_id, variant_id, bucket),

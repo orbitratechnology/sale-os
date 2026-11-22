@@ -482,7 +482,11 @@ async fn a_deactivated_person_is_reactivated_by_an_owner_and_signs_in_again() {
         .await
         .unwrap();
     // Someone active cannot be "reactivated".
-    let err = w.staff.reactivate(&w.as_owner(), bea.user_id, 1).await.unwrap_err();
+    let err = w
+        .staff
+        .reactivate(&w.as_owner(), bea.user_id, 1)
+        .await
+        .unwrap_err();
     assert_eq!(err, AppError::Staff(StaffError::AlreadyActive));
     assert_eq!(err.error_code(), ErrorCode::ValidationFailed);
     let off = w.staff.deactivate(&w.as_owner(), bea.user_id, 1).await.unwrap();
@@ -497,10 +501,18 @@ async fn a_deactivated_person_is_reactivated_by_an_owner_and_signs_in_again() {
             .unwrap_err();
         assert_eq!(err.error_code(), ErrorCode::PermissionDenied);
     }
-    let err = w.staff.reactivate(&w.ctx(None), bea.user_id, 2).await.unwrap_err();
+    let err = w
+        .staff
+        .reactivate(&w.ctx(None), bea.user_id, 2)
+        .await
+        .unwrap_err();
     assert_eq!(err.error_code(), ErrorCode::SessionLocked);
     // A stale version is a conflict, and nothing changes.
-    let err = w.staff.reactivate(&w.as_owner(), bea.user_id, 1).await.unwrap_err();
+    let err = w
+        .staff
+        .reactivate(&w.as_owner(), bea.user_id, 1)
+        .await
+        .unwrap_err();
     assert_eq!(err.error_code(), ErrorCode::ConflictVersion);
     assert!(!w.store.staff(bea.user_id).await.unwrap().unwrap().active);
 
@@ -556,7 +568,11 @@ async fn reactivating_needs_the_name_to_be_free_among_active_staff() {
         .create(&w.as_owner(), new_staff("BEA", Role::Cashier))
         .await
         .unwrap();
-    let err = w.staff.reactivate(&w.as_owner(), bea.user_id, 2).await.unwrap_err();
+    let err = w
+        .staff
+        .reactivate(&w.as_owner(), bea.user_id, 2)
+        .await
+        .unwrap_err();
     assert_eq!(err, AppError::Staff(StaffError::NameTaken));
     // Once the new one is renamed, she can.
     w.staff

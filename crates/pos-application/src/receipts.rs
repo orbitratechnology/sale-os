@@ -150,7 +150,9 @@ impl ReceiptPdfService {
         logo: Option<&pos_receipts::logo::Logo>,
     ) -> Result<ReceiptPdf, AppError> {
         let stored = match of {
-            ReceiptOf::ZSummary(session) => Some(crate::cash::stored_z(self.cash.as_ref(), ctx, session).await?),
+            ReceiptOf::ZSummary(session) => {
+                Some(crate::cash::stored_z(self.cash.as_ref(), ctx, session).await?)
+            }
             ReceiptOf::Sale(id) => {
                 ctx.authorize(Permission::SalesView)?;
                 self.receipts.sale_receipt(id).await?

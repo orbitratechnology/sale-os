@@ -293,7 +293,11 @@ async fn a_business_not_registered_for_vat_charges_none_and_issues_no_invoices()
     let doc = receipt(&shop, without).await;
     assert!(doc.totals.tax.is_empty(), "no tax lines: {:?}", doc.totals.tax);
     assert_eq!(doc.header.tax_registration_no, None);
-    assert_eq!(doc.totals.total, Money::from_minor(250), "the shelf price is what is paid");
+    assert_eq!(
+        doc.totals.total,
+        Money::from_minor(250),
+        "the shelf price is what is paid"
+    );
     let e = service(&shop.store)
         .issue(&shop.owner, with_vat, buyer())
         .await
@@ -303,6 +307,12 @@ async fn a_business_not_registered_for_vat_charges_none_and_issues_no_invoices()
     set_registered(&shop, true).await;
     let again = sell(&shop, &["TEA"]).await;
     assert!(tax_total(&shop, again).await > 0);
-    assert_eq!(receipt(&shop, again).await.header.tax_registration_no.as_deref(), Some("104567890"));
-    service(&shop.store).issue(&shop.owner, again, buyer()).await.unwrap();
+    assert_eq!(
+        receipt(&shop, again).await.header.tax_registration_no.as_deref(),
+        Some("104567890")
+    );
+    service(&shop.store)
+        .issue(&shop.owner, again, buyer())
+        .await
+        .unwrap();
 }

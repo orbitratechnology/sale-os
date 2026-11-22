@@ -269,7 +269,11 @@ async fn validation() {
     e.setup.create_workspace(i).await.unwrap();
     // ... and is recorded as not registered for VAT (D-02), so receipts show no tax number.
     assert_eq!(
-        scalar(&e.store, "SELECT value_json FROM business_settings WHERE key = 'tax.registered'").await,
+        scalar(
+            &e.store,
+            "SELECT value_json FROM business_settings WHERE key = 'tax.registered'"
+        )
+        .await,
         "false"
     );
     let _: &dyn LocalStore = &e.store;
