@@ -81,7 +81,7 @@ fn staff_details(e: &pos_domain::staff::StaffError) -> Option<ErrorDetails> {
         S::NameTooLong => at("displayName", Some(MAX_NAME_LEN.to_string())),
         S::NameTaken => at("displayName", Some("taken".into())),
         S::LastOwner => at("role", Some("lastOwner".into())),
-        S::Deactivated | S::NotFound => return None,
+        S::Deactivated | S::AlreadyActive | S::NotFound => return None,
     })
 }
 

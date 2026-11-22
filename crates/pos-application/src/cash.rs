@@ -283,25 +283,34 @@ impl CashService {
         ctx: &CommandContext,
         session: Option<CashSessionId>,
     ) -> Result<(ReceiptId, String), AppError> {
-        ctx.authorize(Permission::CashSessionViewVariance)?;
-        let id = match session {
-            Some(id) => id,
-            None => self
-                .cash
-                .last_closed_cash_session(ctx.register.register_id)
-                .await?
-                .ok_or_else(|| {
-                    AppError::Validation(
-                        "no closed session on this till yet".into(),
-                        ErrorCode::ValidationFailed,
-                    )
-                })?,
-        };
-        self.cash.cash_session_receipt(id).await?.ok_or_else(|| {
-            AppError::Validation(
-                "that session has no Z summary".into(),
-                ErrorCode::ValidationFailed,
-            )
-        })
+        stored_z(self.cash.as_ref(), ctx, session).await
     }
+}
+
+/// A closed session's stored Z summary (`None`: the last one on this till). Needs
+/// `CashSessionViewVariance`: the summary states expected cash and the variance.
+pub(crate) async fn stored_z(
+    cash: &dyn CashQueries,
+    ctx: &CommandContext,
+    session: Option<CashSessionId>,
+) -> Result<(ReceiptId, String), AppError> {
+    ctx.authorize(Permission::CashSessionViewVariance)?;
+    let id = match session {
+        Some(id) => id,
+        None => cash
+            .last_closed_cash_session(ctx.register.register_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Validation(
+                    "no closed session on this till yet".into(),
+                    ErrorCode::ValidationFailed,
+                )
+            })?,
+    };
+    cash.cash_session_receipt(id).await?.ok_or_else(|| {
+        AppError::Validation(
+            "that session has no Z summary".into(),
+            ErrorCode::ValidationFailed,
+        )
+    })
 }

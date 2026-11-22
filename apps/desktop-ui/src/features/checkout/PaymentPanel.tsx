@@ -92,6 +92,12 @@ export function PaymentPanel({
     cashInput.current?.focus();
   }, [tenders.length]);
 
+  // The customer display shows the total due (fire and forget: a missing or broken display
+  // never gets in the way of payment). An exchange's net amount is not the cart's total.
+  useEffect(() => {
+    if (!exchange) void commands.displayShowTotal();
+  }, [cart.cartId, cart.revision, exchange]);
+
   // A terminal is set up when its attempts can be listed. Approved, unused attempts come
   // back as tenders; one still pending or uncertain reopens the terminal view.
   useEffect(() => {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scale-status"
+description = "Enables the scale_status command without any pre-configured scope."
+commands.allow = ["scale_status"]
+
+[[permission]]
+identifier = "deny-scale-status"
+description = "Denies the scale_status command without any pre-configured scope."
+commands.deny = ["scale_status"]

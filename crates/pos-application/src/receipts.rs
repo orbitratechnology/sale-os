@@ -3,9 +3,9 @@
 
 use crate::audit::{self, AuditEntry};
 use crate::context::{AppError, CommandContext};
-use crate::queries::ReceiptQueries;
+use crate::queries::{CashQueries, ReceiptQueries};
 use crate::{LocalStore, OutboxDraft, WriteSet};
-use pos_domain::{ErrorCode, Permission, ReceiptId, ReturnId, SaleId};
+use pos_domain::{CashSessionId, ErrorCode, Permission, ReceiptId, ReturnId, SaleId};
 use pos_receipts::ReceiptDocument;
 use pos_receipts::pdf::{PdfFormat, render_pdf_with_logo};
 use pos_receipts::text::{COLUMNS_58MM, COLUMNS_80MM, TextLine, render};
@@ -108,6 +108,9 @@ pub enum ReceiptOf {
     Return(ReturnId),
     /// The sale's tax invoice (D-02).
     TaxInvoice(SaleId),
+    /// A closed cash session's Z summary (`None`: the last one on this till). Needs
+    /// `CashSessionViewVariance`, as reading it does.
+    ZSummary(Option<CashSessionId>),
 }
 
 /// The paper of a PDF: the receipt as printed (the till's paper width), or an A4 page.
@@ -132,6 +135,8 @@ pub struct ReceiptPdf {
 /// rendered from the stored document, so it says what the receipt said when it was made.
 pub struct ReceiptPdfService {
     pub receipts: Arc<dyn ReceiptQueries>,
+    /// Z summaries are found through their cash session.
+    pub cash: Arc<dyn CashQueries>,
     pub store: Arc<dyn LocalStore>,
 }
 
@@ -144,13 +149,24 @@ impl ReceiptPdfService {
         paper: PdfPaper,
         logo: Option<&pos_receipts::logo::Logo>,
     ) -> Result<ReceiptPdf, AppError> {
-        ctx.authorize(Permission::SalesView)?;
-        let actor = ctx.actor()?;
         let stored = match of {
-            ReceiptOf::Sale(id) => self.receipts.sale_receipt(id).await?,
-            ReceiptOf::Return(id) => self.receipts.return_receipt(id).await?,
-            ReceiptOf::TaxInvoice(id) => self.receipts.tax_invoice_receipt(id).await?,
+            ReceiptOf::ZSummary(session) => {
+                Some(crate::cash::stored_z(self.cash.as_ref(), ctx, session).await?)
+            }
+            ReceiptOf::Sale(id) => {
+                ctx.authorize(Permission::SalesView)?;
+                self.receipts.sale_receipt(id).await?
+            }
+            ReceiptOf::Return(id) => {
+                ctx.authorize(Permission::SalesView)?;
+                self.receipts.return_receipt(id).await?
+            }
+            ReceiptOf::TaxInvoice(id) => {
+                ctx.authorize(Permission::SalesView)?;
+                self.receipts.tax_invoice_receipt(id).await?
+            }
         };
+        let actor = ctx.actor()?;
         let (receipt_id, json) = stored.ok_or_else(|| {
             AppError::Validation("there is no receipt to save".into(), ErrorCode::ValidationFailed)
         })?;
@@ -183,6 +199,7 @@ impl ReceiptPdfService {
             ReceiptOf::Sale(_) => "receipt",
             ReceiptOf::Return(_) => "refund",
             ReceiptOf::TaxInvoice(_) => "tax-invoice",
+            ReceiptOf::ZSummary(_) => "z-summary",
         };
         let suffix = if format == PdfFormat::A4 { "-A4" } else { "" };
         Ok(ReceiptPdf {

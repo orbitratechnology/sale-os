@@ -82,6 +82,7 @@ export {
   Unlink,
   Upload,
   User,
+  UserCheck,
   UserPlus,
   UserX,
   Users,

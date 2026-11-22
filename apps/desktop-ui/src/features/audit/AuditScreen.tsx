@@ -41,6 +41,7 @@ const ACTION_COPY: Record<string, string> = {
   "staff.created": "Staff added",
   "staff.updated": "Staff changed",
   "staff.deactivated": "Staff deactivated",
+  "staff.reactivated": "Staff reactivated",
   "staff.pin_reset": "PIN reset",
   "business.created": "Shop set up",
   "location.upserted": "Location saved",

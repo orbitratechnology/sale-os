@@ -492,6 +492,12 @@ pub struct StockDrift {
     pub recorded: pos_domain::Quantity,
     /// The sum of the movements (0 when there are none).
     pub from_movements: pos_domain::Quantity,
+    /// The item as the stock screen names it (product name and variant label); empty when
+    /// the variant is not in this device's catalogue.
+    pub item_name: String,
+    pub sku: Option<String>,
+    /// The location's name; empty when it is not known on this device.
+    pub location_name: String,
 }
 
 /// One stock movement as the history shows it (E11-T05).
@@ -706,6 +712,7 @@ pub enum DeviceKind {
     Scanner,
     PaymentTerminal,
     CustomerDisplay,
+    Scale,
 }
 
 impl DeviceKind {
@@ -715,6 +722,7 @@ impl DeviceKind {
             DeviceKind::Scanner => "scanner",
             DeviceKind::PaymentTerminal => "payment_terminal",
             DeviceKind::CustomerDisplay => "customer_display",
+            DeviceKind::Scale => "scale",
         }
     }
 
@@ -724,6 +732,7 @@ impl DeviceKind {
             DeviceKind::Scanner,
             DeviceKind::PaymentTerminal,
             DeviceKind::CustomerDisplay,
+            DeviceKind::Scale,
         ]
         .into_iter()
         .find(|k| k.as_str() == s)

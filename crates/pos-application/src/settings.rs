@@ -193,7 +193,8 @@ pub const REGISTRY: &[SettingDef] = &[
         group: "Scanner",
         label: "Beep when a code is not found or an action is refused",
         help: "A short low tone. The message is always shown on screen too.",
-    },    SettingDef {
+    },
+    SettingDef {
         key: "tax.registered",
         kind: SettingKind::Bool,
         default: "true",

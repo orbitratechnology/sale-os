@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cash-session-z-export-pdf"
+description = "Enables the cash_session_z_export_pdf command without any pre-configured scope."
+commands.allow = ["cash_session_z_export_pdf"]
+
+[[permission]]
+identifier = "deny-cash-session-z-export-pdf"
+description = "Denies the cash_session_z_export_pdf command without any pre-configured scope."
+commands.deny = ["cash_session_z_export_pdf"]

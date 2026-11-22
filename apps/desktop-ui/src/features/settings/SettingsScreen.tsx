@@ -223,7 +223,7 @@ const GROUP_HELP_COPY: Record<string, string> = {
   Business: "Your shop's details, printed on receipts.",
   Staff: "Who can sign in to this till, and what each person may do.",
   Taxes: "Tax rates, and the tax categories products belong to.",
-  Devices: "The receipt printer, cash drawer, serial scanner and card terminal.",
+  Devices: "The receipt printer, cash drawer, scanners, customer display, scale and card terminal.",
   Cloud: "Link this till to your online account so sales and products sync.",
   Backups: "Automatic copies of this till's data, and how to bring one back.",
 };

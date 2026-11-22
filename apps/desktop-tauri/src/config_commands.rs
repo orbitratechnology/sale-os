@@ -181,6 +181,9 @@ pub async fn business_profile_update(
         )
         .await
         .map_err(err)?;
+    // The customer display's welcome line names the shop.
+    let display = &services.app()?.devices.display;
+    display.set_shop(&v.business.name);
     crate::dto::BusinessProfileDto::from_view(&v)
 }
 

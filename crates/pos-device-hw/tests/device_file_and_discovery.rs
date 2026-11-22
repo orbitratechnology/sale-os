@@ -77,10 +77,11 @@ async fn probe_and_scan_find_the_emulated_printer() {
             .is_ok()
     );
 
-    let closed = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        l.local_addr().unwrap().port()
-    };
+    // Bound but not listening: the port stays reserved for this test (a released port can
+    // be handed to a listener in another test meanwhile), and connecting is refused.
+    let reserved = tokio::net::TcpSocket::new_v4().unwrap();
+    reserved.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let closed = reserved.local_addr().unwrap().port();
     assert!(
         discovery::probe("127.0.0.1", closed, Duration::from_millis(500))
             .await

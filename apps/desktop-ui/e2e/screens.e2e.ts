@@ -1196,6 +1196,22 @@ describe("cash drawer (E15-T02)", () => {
     await closed.getByTestId("print-status").filter({ hasText: /printed/i }).waitFor();
     expect(await calls(page, "cash_session_z_print")).toHaveLength(1);
 
+    // The Z summary saves as a PDF too, through Rust's Save dialog (E13-T04).
+    await page.evaluate(() => {
+      window.__fake.saveAs = [null];
+    });
+    await closed.getByRole("button", { name: "Save as PDF" }).click();
+    await page.waitForFunction(() => window.__ipc.filter((c) => c.cmd === "cash_session_z_export_pdf").length === 1);
+    expect(await closed.getByTestId("pdf-status").textContent()).toBe("");
+    await closed.getByRole("button", { name: "Save A4 PDF" }).click();
+    await closed.getByTestId("pdf-status").filter({ hasText: "Saved z-summary-R01-Z-0001-A4.pdf." }).waitFor();
+    const zSession = await page.evaluate(() => window.__fake.drawer.lastClosed?.id);
+    expect(await calls(page, "cash_session_z_export_pdf")).toEqual([
+      { sessionId: zSession, paper: "receipt" },
+      { sessionId: zSession, paper: "a4" },
+    ]);
+    // Nothing here names a file path: the WebView only says which summary and which paper.
+
     await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
     const serious = await page.evaluate(async () => {
       const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
@@ -1204,6 +1220,30 @@ describe("cash drawer (E15-T02)", () => {
     });
     expect(serious).toEqual([]);
   });
+  it("the last Z summary saves as a PDF from the closed drawer", async () => {
+    const page = await till("checkout");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F10");
+    await page.getByLabel(/Opening float/).fill("20");
+    await page.keyboard.press("Enter");
+    await page.getByText("R01-Z-0001").waitFor();
+    await page.getByLabel(/Counted cash/).fill("20");
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Close the drawer?" }).getByRole("button", { name: "Close drawer" }).click();
+    await page.getByRole("region", { name: "Drawer closed" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+
+    await page.keyboard.press("F10");
+    const form = page.getByRole("form", { name: "Open the drawer" });
+    await form.getByRole("button", { name: "Last Z summary" }).click();
+    await form.getByTestId("receipt-text").filter({ hasText: "Z SUMMARY" }).waitFor();
+    await form.getByRole("button", { name: "Save as PDF" }).click();
+    await form.getByTestId("pdf-status").filter({ hasText: "Saved z-summary-R01-Z-0001.pdf." }).waitFor();
+    // The last closed session (null): Rust looks it up for this till.
+    expect(await calls(page, "cash_session_z_export_pdf")).toEqual([{ sessionId: null, paper: "receipt" }]);
+  });
+
   it("closing warns about parked carts, which stay parked (POS-012)", async () => {
     const page = await till("checkout");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
@@ -1395,6 +1435,123 @@ describe("stock (E11-T02/T03)", () => {
     await history.waitFor();
     await page.keyboard.press("Escape");
     await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+});
+
+describe("stock figures check (E11-T06)", () => {
+  async function axeSerious(page: Page): Promise<string[]> {
+    await page.addScriptTag({ path: createRequire(import.meta.url).resolve("axe-core/axe.min.js") });
+    return page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document) => Promise<{ violations: { id: string; impact: string; nodes: { html: string }[] }[] }> } }).axe;
+      const res = await axe.run(document);
+      return res.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(" | ")}`);
+    });
+  }
+
+  it("the check runs when opened and says when every figure matches its history", async () => {
+    const page = await checkout();
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "Check figures" }).click();
+    const check = page.getByRole("region", { name: "Check stock figures" });
+    await check.getByTestId("stock-check-result").filter({ hasText: "All stock figures match their history." }).waitFor();
+    // (React's development StrictMode runs the opening effect twice; the app runs it once.)
+    const opened = (await calls(page, "stock_verify")).length;
+    expect(opened).toBeGreaterThanOrEqual(1);
+    // Nothing to rebuild: no table and no rebuild button.
+    expect(await check.getByRole("table").count()).toBe(0);
+    expect(await check.getByRole("button", { name: "Rebuild stock figures" }).count()).toBe(0);
+    await check.getByRole("button", { name: "Check again" }).click();
+    await page.waitForFunction((n) => window.__ipc.filter((c) => c.cmd === "stock_verify").length === n + 1, opened);
+    await check.getByTestId("stock-check-result").waitFor();
+    expect(await axeSerious(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+  });
+
+  it("lists figures that differ; the owner rebuilds them after an alert, and the check runs again", async () => {
+    const page = await checkout();
+    await page.evaluate(() => {
+      window.__fake.stockDrift = [
+        { itemName: "Cola 330ml", sku: "COLA", locationName: "Main", bucket: "sellable", recordedMilli: "999", fromMovementsMilli: "40000" },
+        { itemName: "", sku: null, locationName: "", bucket: "damaged", recordedMilli: "0", fromMovementsMilli: "-1500" },
+      ];
+    });
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "Check figures" }).click();
+    const check = page.getByRole("region", { name: "Check stock figures" });
+    await check.getByTestId("stock-check-result").filter({ hasText: "2 stock figures do not match their history." }).waitFor();
+    const table = check.getByRole("table", { name: "Stock figures that do not match" });
+    expect(await table.getByRole("columnheader").allTextContents()).toEqual(["Item", "Location", "Stock", "Recorded", "From history"]);
+    const rows = await table.getByTestId("drift-row").evaluateAll((trs) =>
+      trs.map((tr) => [...tr.querySelectorAll("th, td")].map((c) => c.textContent?.trim())),
+    );
+    expect(rows).toEqual([
+      ["Cola 330ml · COLA", "Main", "Sellable", "0.999", "40"],
+      ["Unknown item", "Unknown location", "Damaged", "0", "-1.5"],
+    ]);
+    expect(await axeSerious(page)).toEqual([]);
+
+    // Cancel first: an alert dialog whose focus starts on Cancel, so Enter does not rebuild.
+    await check.getByRole("button", { name: "Rebuild stock figures" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Rebuild stock figures?" });
+    await dialog.getByText("2 stock figures will be set to the totals of their recorded movements.").waitFor();
+    await dialog.getByText("recorded in the audit log").waitFor();
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Cancel");
+    // Once the dialog has faded in (axe would otherwise measure it half transparent).
+    await page.waitForFunction(() => getComputedStyle(document.querySelector("dialog[open]") as Element).opacity === "1");
+    expect(await axeSerious(page)).toEqual([]);
+    await page.keyboard.press("Enter");
+    await dialog.waitFor({ state: "detached" });
+    expect(await calls(page, "stock_rebuild")).toHaveLength(0);
+    // Escape closes the dialog only, not the stock screen.
+    await check.getByRole("button", { name: "Rebuild stock figures" }).click();
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    await check.waitFor();
+    expect(await calls(page, "stock_rebuild")).toHaveLength(0);
+
+    await check.getByRole("button", { name: "Rebuild stock figures" }).click();
+    await dialog.getByRole("button", { name: "Rebuild" }).click();
+    await check.getByTestId("stock-rebuilt").filter({ hasText: "2 stock figures were rebuilt from their history." }).waitFor();
+    await check.getByTestId("stock-check-result").filter({ hasText: "All stock figures match their history." }).waitFor();
+    expect(await calls(page, "stock_rebuild")).toHaveLength(1);
+    // Verified on opening, and again right after the rebuild.
+    const order = await page.evaluate(() => window.__ipc.map((c) => c.cmd).filter((c) => c === "stock_verify" || c === "stock_rebuild"));
+    expect(order[0]).toBe("stock_verify");
+    expect(order.slice(-2)).toEqual(["stock_rebuild", "stock_verify"]);
+    expect(await check.getByRole("table").count()).toBe(0);
+    expect(await axeSerious(page)).toEqual([]);
+  });
+
+  it("a manager sees the figures that differ but the rebuild is the owner's", async () => {
+    const page = await open("signIn");
+    await page.evaluate(() => {
+      window.__fake.stockDrift = [{ itemName: "Crisps", sku: "CRISP", locationName: "Main", bucket: "sellable", recordedMilli: "3000", fromMovementsMilli: "2000" }];
+    });
+    await page.getByRole("button", { name: /Mia/ }).click();
+    await page.keyboard.type("2222");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F11");
+    await page.getByRole("tab", { name: "Check figures" }).click();
+    const check = page.getByRole("region", { name: "Check stock figures" });
+    await check.getByTestId("stock-check-result").filter({ hasText: "1 stock figure does not match its history." }).waitFor();
+    await check.getByText("Only the owner can rebuild them").waitFor();
+    expect(await check.getByTestId("drift-row").count()).toBe(1);
+    expect(await check.getByRole("button", { name: "Rebuild stock figures" }).count()).toBe(0);
+  });
+
+  it("a cashier has no check view", async () => {
+    const page = await open("signIn");
+    await page.getByRole("button", { name: /Cal/ }).click();
+    await page.keyboard.type("3333");
+    await page.keyboard.press("Enter");
+    await page.getByRole("region", { name: "Cart lines" }).waitFor();
+    await page.keyboard.press("F11");
+    await page.getByRole("region", { name: "Stock on hand" }).waitFor();
+    expect(await page.getByRole("tab", { name: "Check figures" }).count()).toBe(0);
+    expect(await calls(page, "stock_verify")).toHaveLength(0);
   });
 });
 
@@ -1904,7 +2061,7 @@ describe("staff (E05-T06)", () => {
     // Cal leaves: no longer on the PIN pad, history kept.
     await table.getByRole("button", { name: "Deactivate Cal" }).click();
     await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
-    await page.getByTestId("staff-inactive").filter({ hasText: "Deactivated: Cal" }).waitFor();
+    await page.getByRole("table", { name: "Deactivated staff" }).getByRole("rowheader", { name: "Cal" }).waitFor();
     // No PIN is ever shown back.
     expect(await page.getByRole("main").textContent()).not.toContain("9999");
     const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
@@ -1920,6 +2077,54 @@ describe("staff (E05-T06)", () => {
     await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
     await page.getByRole("button", { name: /Tom/ }).waitFor();
     expect(await page.getByRole("button", { name: /Cal/ }).count()).toBe(0);
+  });
+});
+
+describe("staff reactivation", () => {
+  it("the owner brings a deactivated person back; a taken name and a stale list are explained", async () => {
+    const page = await checkout();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("tab", { name: "Staff" }).click();
+    const table = page.getByRole("table", { name: "Staff" });
+    const panel = page.getByRole("tabpanel", { name: "Staff" });
+    await table.getByRole("button", { name: "Deactivate Cal" }).click();
+    await page.getByRole("group", { name: "Deactivate Cal" }).getByRole("button", { name: "Deactivate" }).click();
+    const gone = page.getByRole("table", { name: "Deactivated staff" });
+    await gone.getByRole("rowheader", { name: "Cal" }).waitFor();
+    // A new Cal joins meanwhile: the old one cannot come back under the same name.
+    const add = page.getByRole("form", { name: "Add a staff member" });
+    await add.getByLabel("Name").fill("Cal");
+    await add.getByLabel("PIN (4–8 digits)").fill("5555");
+    await add.getByLabel("PIN again").fill("5555");
+    await add.getByRole("button", { name: "Add" }).click();
+    await panel.getByText("Cal can now sign in as cashier.").waitFor();
+    await gone.getByRole("button", { name: "Reactivate Cal" }).click();
+    await gone.getByRole("alert").filter({ hasText: "Another active staff member already has this name." }).waitFor();
+    await table.getByRole("button", { name: "Edit Cal" }).click();
+    const edit = page.getByRole("form", { name: "Edit Cal" });
+    await edit.getByLabel("Name").fill("Cal B");
+    await edit.getByRole("button", { name: "Save" }).click();
+    await table.getByRole("rowheader", { name: "Cal B" }).waitFor();
+    // Someone else changed the old Cal meanwhile (another register): the list reloads.
+    await page.evaluate(() => {
+      const old = window.__fake.users.find((u) => u.displayName === "Cal" && u.active === false);
+      if (old) old.version = (old.version ?? 1) + 1;
+    });
+    await gone.getByRole("button", { name: "Reactivate Cal" }).click();
+    await panel.getByRole("alert").filter({ hasText: "Someone changed this staff member meanwhile" }).waitFor();
+    await gone.getByRole("button", { name: "Reactivate Cal" }).click();
+    await panel.getByText("Cal can sign in again with their own PIN.").waitFor();
+    await table.getByRole("rowheader", { name: "Cal", exact: true }).waitFor();
+    expect(await page.getByRole("table", { name: "Deactivated staff" }).count()).toBe(0);
+    const sent = await calls(page, "staff_reactivate");
+    expect(sent).toHaveLength(3);
+    expect(sent[1]?.baseVersion).toBe(sent[0]?.baseVersion);
+    expect(sent[2]?.baseVersion).toBe(Number(sent[1]?.baseVersion) + 1);
+    // Cal is back on the PIN pad.
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("F12");
+    await page.getByRole("heading", { name: "Who is signing in?" }).waitFor();
+    await page.getByRole("button", { name: /^Cal\b(?! B)/ }).waitFor();
   });
 });
 

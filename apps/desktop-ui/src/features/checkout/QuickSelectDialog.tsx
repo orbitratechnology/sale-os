@@ -22,7 +22,8 @@ export function QuickSelectDialog({
   onClose,
 }: {
   exponent: number;
-  onPick: (variantId: string) => Promise<boolean>;
+  /** `unit`: items sold by weight (`kg`, `g`) may be weighed instead of added. */
+  onPick: (variantId: string, unit: string, name: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const t = useT();
@@ -60,8 +61,8 @@ export function QuickSelectDialog({
   }, [choosing, onClose]);
 
   const pick = useCallback(
-    async (name: string, variantId: string) => {
-      if (await onPick(variantId)) setAdded(name);
+    async (name: string, variantId: string, unit: string) => {
+      if (await onPick(variantId, unit, name)) setAdded(name);
       setChoosing(null);
     },
     [onPick],
@@ -104,7 +105,7 @@ export function QuickSelectDialog({
         {choosing ? (
           <div role="group" aria-label={t("Choose a {name}", { name: choosing.name })} className="quick-grid">
             {choosing.variants.map((v) => (
-              <button key={v.variantId} type="button" className="quick-tile" onClick={() => void pick(`${choosing.name} ${v.label}`, v.variantId)}>
+              <button key={v.variantId} type="button" className="quick-tile" onClick={() => void pick(`${choosing.name} ${v.label}`, v.variantId, v.unit)}>
                 <span className="quick-name">{v.label || choosing.name}</span>
                 <span className="quick-price">{money(v.priceMinor)}</span>
               </button>
@@ -126,7 +127,7 @@ export function QuickSelectDialog({
                     className="quick-tile"
                     data-testid="quick-tile"
                     aria-haspopup={only ? undefined : "true"}
-                    onClick={() => (only ? void pick(p.name, only.variantId) : setChoosing(p))}
+                    onClick={() => (only ? void pick(p.name, only.variantId, only.unit) : setChoosing(p))}
                   >
                     <span className="quick-name">{p.name}</span>
                     <span className="quick-price">{priceOf(p)}</span>

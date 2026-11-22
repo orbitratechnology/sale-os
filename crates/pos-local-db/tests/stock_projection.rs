@@ -310,6 +310,22 @@ async fn verify_finds_a_tampered_balance_and_rebuild_repairs_it() {
         ),
         (tea, 999, 8_000)
     );
+    // Named as the stock screen shows them, with the location, so the owner can tell which.
+    assert_eq!(
+        drift
+            .iter()
+            .map(|d| (
+                d.item_name.as_str(),
+                d.sku.as_deref(),
+                d.location_name.as_str(),
+                d.bucket.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Cake", Some("CAKE"), "Main", "sellable"),
+            ("Tea", Some("TEA"), "Main", "sellable")
+        ]
+    );
 
     // Only the owner rebuilds; it reports what was wrong, audits it, and leaves no drift.
     for role in [Role::Cashier, Role::Manager] {

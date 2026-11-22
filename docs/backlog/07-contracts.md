@@ -52,7 +52,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | ReportsView, ReportsExport | ✓ | ✓ | – | |
 | AuditView, SettingsEdit, StaffManage, DeviceLink, SyncManage | ✓ | – | – | |
 | ConflictResolve | ✓ | ✓ | – | |
-| DeviceConfigure | ✓ | ✓ | – | This till's printers, scanners and terminals; test print (ADR-024) |
+| DeviceConfigure | ✓ | ✓ | – | This till's printers, scanners (serial, USB HID-POS), customer display, scale and terminals; test print, display and scale (ADR-024) |
 | DrawerOpen | ✓ | ✓ | approval | "No sale": opens the cash drawer with a reason, audited as `cash_drawer.opened` (E20-T05) |
 | DevtoolsUse | debug builds only | | | |
 
@@ -71,7 +71,7 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `auth_logout` / `auth_lock` | session | `→ ()` | E05-T05 |
 | `auth_unlock` | none | `{ pin } → SessionDto` (the same user, or a manager who takes over) | E05-T05 |
 | `auth_request_approval` | session | `{ approverUserId, pin, scope } → { approvalTokenId, expiresAt }` | E05-T04 |
-| `staff_list` / `staff_create` / `staff_update` / `staff_deactivate` / `staff_reset_pin` | StaffManage | … | E05-T01 |
+| `staff_list` / `staff_create` / `staff_update` / `staff_deactivate` / `staff_reactivate` / `staff_reset_pin` | StaffManage | … | E05-T01 |
 | `categories_list` / `category_save` / `category_archive` | CatalogView / CatalogEdit | Tree at most 3 levels, no cycles (`VALIDATION_FAILED`, `details.field = parent`); archiving needs no active subcategories; versioned | E06-T05 |
 | `tax_config_get` / `tax_rate_save` / `tax_rate_archive` / `tax_category_save` | SettingsEdit (owner) | Rates with `from` (inclusive) / `to` (exclusive) business dates; same-name active rates may not overlap; a used rate cannot be archived (`details.value` lists the categories); exactly one default category (setting a new default moves the flag) | E06-T05 |
 | `settings_get` / `settings_update` | session / SettingsEdit | `{ key, value, baseVersion }` | E04-T03 |
@@ -91,9 +91,10 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `import_products_commit` | CatalogImport | `{ jobId } → { productsCreated, productsUpdated, rowsCommitted }`; 500 products per transaction, each with one `catalog.import_committed` audit row; run again to resume | E06-T07 |
 | `import_products_error_report` | CatalogImport | `{ jobId } → { path, fileName } \| null`: the rows not imported with an `error` column, saved through the system dialog | E06-T07 |
 | `import_products_cancel` | CatalogImport | `{ jobId } → ()` before committing | E06-T07 |
-| `scan_submit` | SaleComplete | `{ scanEventId, raw, source, symbologyHint? } → ScanOutcome` (`Added{line} \| Incremented{line} \| NotFound{code} \| Duplicate \| Invalid{reason}`) | E07-T02 |
+| `scan_submit` | SaleComplete | `{ scanEventId, raw, source, symbologyHint? } → ScanOutcome` (`Added{line} \| Incremented{line} \| NotFound{code} \| Duplicate \| Invalid{reason} \| Weigh{variant}`; `Weigh`: an item sold by weight while a scale is set up, recorded but not added) | E07-T02, E20-T06 |
 | `cart_current` | session | `→ CartView` (cart and `PricedCart`) | E09-T01 |
 | `cart_add_variant` | SaleComplete | `{ variantId, qty?, via } → CartView` | E09-T01 |
+| `cart_add_weighed` / `cart_weigh_line` | SaleComplete | `{ variantId, via, scanEventId?, typedQtyMilli? }` / `{ lineId }` → `Weighed{cart, lineId, weightGrams} \| Refused{reason, message}`: a stable weight above zero from the scale (or a typed one) as a line of its own / the line's new quantity; `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`, `underload`, `failed` | E20-T06 |
 | `cart_set_quantity` / `cart_remove_line` | SaleComplete | `→ CartView` | E09-T01 |
 | `cart_set_line_discount` / `cart_set_order_discount` | CartLineDiscount / CartOrderDiscount (+ approval) | `{ …, discount (with `reason` above the limit), approvalTokenId? } → CartView` | E08-T02 |
 | `cart_override_price` | PriceOverride (+ approval) | `{ lineId, unitPriceMinor, reason, approvalTokenId? } → CartView` | E08-T02 |
@@ -111,13 +112,14 @@ There are three contract surfaces. Each has one source of truth and is checked i
 | `inventory_post_document` | InventoryReceive (opening/receipt) / InventoryAdjust (adjustment/write_off) | `InventoryDocumentDraft → DocumentDto` | E11-T02/T03 |
 | `cash_session_current` / `cash_session_open` / `cash_session_close` | see matrix | | E15-T02 |
 | `cash_session_z_get` / `cash_session_z_print` | CashSessionViewVariance | `{ sessionId? }` (null: the last closed session) | E15-T02 |
+| `cash_session_z_export_pdf` | CashSessionViewVariance | `{ sessionId?, paper: receipt\|a4 } → { path, fileName } \| null` (null: the user cancelled the save dialog); audited `receipt.exported_pdf` | E15-T02, E13-T04 |
 | `stock_document_get` | InventoryView | `{ documentId } → { documentNo, docType, reason?, supplierName?, reference?, note?, localTime, actorName, approverName?, lines[] }` | E11-T05 |
 | `stock_overview` / `stock_history` | InventoryView | `{ lowOnly }` → the stock report rows; `{ variantId, limit }` → movements newest first with type, delta, bucket, source number, user, time | E11-T05 |
 | `settings_get` / `settings_update` | SettingsEdit (owner) | `→ [{ key, group, label, help, kind, valueJson, defaultJson, version }]`; `{ key, valueJson, baseVersion } → setting` (unknown key or wrong type: `VALIDATION_FAILED`; stale version: `CONFLICT_VERSION`). Registry and defaults: docs/settings.md (generated) | E04-T03 |
 | `business_profile_get` / `business_profile_update` | SettingsEdit (owner) | `→ BusinessProfileDto` (name, legal name, tax registration no., address lines, phone, email, this till's name; country, time zone, currency and tax mode read-only); `{ input, businessVersion, registerVersion } → BusinessProfileDto`. Only what changed is written; `business.updated` (audit metadata: the names of the changed fields) and `register.upserted` (audit `register.updated` from/to). Invalid input: `VALIDATION_FAILED` with `details.field` (and `details.value` = the maximum length) | E04-T03 |
 | `app_preferences` / `auth_lock` | session | Scanner suffix and key gap, idle-lock seconds; `auth_lock` ends the session for inactivity (`auth.session_locked`) | E04-T03 |
 | `audit_list` | AuditView (owner) | `{ filter: { action? (exact, or a group ending in `.`), userId? (actor or approver), from?, to? (business dates) }, before?, limit? } → { rows: [{ localTime, action, actorName, approverName, entityType, entityId, entityLabel, metadata }], next }` | E15-T01 |
-| `stock_verify` | InventoryView | `→ [{ variantId, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
+| `stock_verify` | InventoryView | `→ [{ locationId, locationName, variantId, itemName, sku, bucket, recordedMilli, fromMovementsMilli }]` (empty is healthy) | E11-T06 |
 | `stock_rebuild` | SettingsEdit (owner) | `→` the drift that was repaired; audited `inventory.projection_rebuilt` | E11-T06 |
 | `receipt_get_document` | SalesView | `{ source, id } → ReceiptDocument` | E13-T03 |
 | `receipt_export_pdf` | SalesView | `{ saleId \| returnId, paper: receipt\|a4 } → { path, fileName } \| null` (null: the user cancelled the save dialog); audited `receipt.exported_pdf` | E13-T04 |
@@ -337,7 +339,7 @@ Server-side validation for facts (they are `rejected` if any check fails):
 
 ```text
 auth.login, auth.login_failed, auth.locked_out, auth.logout, auth.session_locked, auth.approval_granted,
-staff.created, staff.updated, staff.deactivated, staff.pin_reset,
+staff.created, staff.updated, staff.deactivated, staff.reactivated, staff.pin_reset,
 settings.updated, business.created, business.updated, location.upserted, register.updated, mode.changed,
 catalog.product_created, catalog.product_updated, catalog.product_archived, catalog.import_committed, catalog.category_saved,
 tax.config_updated,
@@ -346,7 +348,7 @@ sale.completed, tender.recorded_external, tender.status_changed,
 return.completed, refund.recorded, tax_invoice.issued,
 inventory.opening_posted, inventory.receipt_posted, inventory.adjustment_posted, inventory.write_off_posted, inventory.negative_flagged, inventory.projection_rebuilt,
 receipt.reprinted, receipt.exported_pdf, print.unknown_resolved,
-device.saved, device.removed, device.test_printed, cash_drawer.opened,
+device.saved, device.removed, device.test_printed, device.test_displayed, device.test_weighed, cash_drawer.opened,
 cash_session.opened, cash_session.closed,
 report.exported, data.exported, backup.created, backup.restored, backup.event_restored, security.recovery_key_viewed,
 sync.linked, sync.device_revoked, sync.conflict_resolved, sync.event_rejected

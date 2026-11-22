@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { currentLanguage, translate, type T } from "../../i18n";
 import { commands, type ApprovalScope, type CartView, type DiscountInput, type IpcError, type Result } from "../../ipc";
+import type { WeighOutcomeDto_Serialize as WeighOutcome } from "../../ipc/bindings";
 
 export type Notice =
   | { kind: "error"; error: IpcError }
   | { kind: "notFound"; code: string; hint: string | null }
   | { kind: "info"; text: string };
+
+/** An item sold by weight to weigh (E20-T06): a new line, or `lineId` weighed again. */
+export interface WeighRequest {
+  variantId: string;
+  name: string;
+  /** `kg` or `g`. */
+  unit: string;
+  via: "search" | "quickSelect" | "scanner" | "manual";
+  scanEventId: string | null;
+  /** Weigh this existing line again (the Weigh key) instead of adding one. */
+  lineId?: string;
+}
+
+/** What a weighing came to: weighed (applied to the cart), refused with a reason, or an error shown as a notice. */
+export type WeighResult = { kind: "weighed"; grams: string } | { kind: "refused"; reason: string; message: string } | { kind: "error" };
 
 /** A command that needs a manager's approval: what to approve, and how to retry with it. */
 export interface PendingApproval {
@@ -26,7 +42,11 @@ export const HIGHLIGHT_MS = 150;
  * if it is newer: a higher revision of the same cart, or a later request after the cart
  * was replaced (void).
  */
-export function useCart(onSignedOut: () => void) {
+export function useCart(onSignedOut: () => void, onWeigh?: (request: WeighRequest) => void) {
+  const weighRef = useRef(onWeigh);
+  useEffect(() => {
+    weighRef.current = onWeigh;
+  });
   const [cart, setCart] = useState<CartView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
@@ -119,6 +139,10 @@ export function useCart(onSignedOut: () => void) {
       const out = res.data;
       if (out.outcome === "notFound") {
         setNotice({ kind: "notFound", code: out.code, hint: out.hint });
+      } else if (out.outcome === "weigh") {
+        // Sold by weight and a scale is set up: the till weighs it under this scan (E20-T06).
+        setNotice(null);
+        weighRef.current?.({ variantId: out.variantId, name: out.name, unit: out.unit, via: source === "manual" ? "manual" : "scanner", scanEventId });
       } else if (out.outcome === "duplicate") {
         apply(out.cart, seq);
       } else {
@@ -126,6 +150,25 @@ export function useCart(onSignedOut: () => void) {
         setNotice(out.hint ? { kind: "info", text: scanHintText(out.hint) } : null);
         apply(out.cart, seq, out.lineId);
       }
+    },
+    [apply, failed],
+  );
+
+  /** A weighing (E20-T06): a weighed line is applied and selected; a refusal is returned for the dialog to show. */
+  const weigh = useCallback(
+    async (call: () => Promise<Result<WeighOutcome>>): Promise<WeighResult> => {
+      const seq = ++issued.current;
+      const res = await call();
+      if (res.status === "error") {
+        failed(res.error);
+        return { kind: "error" };
+      }
+      if (res.data.outcome === "weighed") {
+        apply(res.data.cart, seq, res.data.lineId);
+        setNotice(null);
+        return { kind: "weighed", grams: res.data.weightGrams };
+      }
+      return { kind: "refused", reason: res.data.reason, message: res.data.message };
     },
     [apply, failed],
   );
@@ -145,6 +188,11 @@ export function useCart(onSignedOut: () => void) {
     approval,
     setApproval,
     addVariant: (variantId: string) => run(() => commands.cartAddVariant(variantId, null, "search")),
+    /** E20-T06: weigh an item sold by weight (a new line), or weigh a line again. */
+    weighItem: (r: WeighRequest) =>
+      weigh(() => (r.lineId ? commands.cartWeighLine(r.lineId) : commands.cartAddWeighed(r.variantId, r.via, r.scanEventId, null))),
+    /** The fallback: the weight typed in, as the quantity (thousandths of the unit); a line of its own. */
+    addTyped: (r: WeighRequest, qtyMilli: string) => weigh(() => commands.cartAddWeighed(r.variantId, r.via, r.scanEventId, qtyMilli)),
     /** E09-T04: a tile on the quick-select grid. */
     addQuick: (variantId: string) => run(() => commands.cartAddVariant(variantId, null, "quickSelect")),
     setQuantity: (lineId: string, qtyMilli: string) => run(() => commands.cartSetQuantity(lineId, qtyMilli), lineId),

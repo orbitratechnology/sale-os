@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { SectionTitle } from "../../ui/PanelHeader";
-import { CreditCard, Printer, ScanBarcode } from "../../ui/icons";
+import { CreditCard, Monitor, Printer, ScanBarcode, Weight } from "../../ui/icons";
 import { commands, type IpcError } from "../../ipc";
-import type { DeviceDto, DiscoveryDto, PrinterProfileDto, PrinterStatusDto } from "../../ipc/bindings";
+import type {
+  DeviceDto,
+  DiscoveryDto,
+  DisplayStatusDto_Serialize as DisplayStatusDto,
+  HidPosDevice_Serialize as HidPosDevice,
+  PrinterProfileDto,
+  PrinterStatusDto,
+  ScaleStatusDto,
+  ScannerStatusDto_Serialize as ScannerStatusDto,
+} from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { useT } from "../../i18n";
 
@@ -107,9 +116,16 @@ function fromDevice(dev: DeviceDto): PrinterDraft {
   };
 }
 
+type DisplayProtocol = "escPos" | "cd5220";
+/** Each display command set's name in the list, translated at render. */
+const PROTOCOL_LABEL_COPY: Record<DisplayProtocol, string> = {
+  escPos: "Epson ESC/POS (Epson DM-D and compatibles)",
+  cd5220: "CD5220 (many unbranded pole displays)",
+};
+
 /**
  * This till's devices (E20-T11, DEV-001…009): the receipt printer (any connection, any
- * model), a serial barcode scanner, and the card terminal. Keyboard-wedge scanners need no
+ * model), a serial barcode scanner, a USB HID-POS scanner, the customer display, the scale, and the card terminal. Keyboard-wedge scanners need no
  * set-up here: they work as soon as they are plugged in (Settings → Scanner for timing).
  */
 export function DevicesPanel() {
@@ -119,6 +135,12 @@ export function DevicesPanel() {
   const [error, setError] = useState<IpcError | null>(null);
   /** The printer section's last outcome; kept here because saving remounts the section. */
   const [printerMessage, setPrinterMessage] = useState<string | null>(null);
+  /** The same for the customer display. */
+  const [displayMessage, setDisplayMessage] = useState<string | null>(null);
+  /** The same for the USB HID-POS scanner. */
+  const [hidMessage, setHidMessage] = useState<string | null>(null);
+  /** The same for the scale. */
+  const [scaleMessage, setScaleMessage] = useState<string | null>(null);
 
   const load = useCallback(() => {
     void commands.devicesList().then((r) => (r.status === "ok" ? setDevices(r.data) : setError(r.error)));
@@ -129,7 +151,7 @@ export function DevicesPanel() {
     void commands.printerProfiles().then((r) => r.status === "ok" && setProfiles(r.data));
   }, [load]);
 
-  const byKind = (k: string) => devices?.find((d) => d.kind === k && d.role === "main") ?? null;
+  const byKind = (k: string, role = "main") => devices?.find((d) => d.kind === k && d.role === role) ?? null;
   return (
     <div className="devices">
       {error && (
@@ -147,6 +169,27 @@ export function DevicesPanel() {
         setResult={setPrinterMessage}
       />
       <ScannerSection key={`scanner-${byKind("scanner")?.deviceId ?? "new"}-${byKind("scanner")?.version ?? 0}`} device={byKind("scanner")} onChanged={load} />
+      <HidScannerSection
+        key={`hidpos-${byKind("scanner", HID_ROLE)?.deviceId ?? "new"}-${byKind("scanner", HID_ROLE)?.version ?? 0}`}
+        device={byKind("scanner", HID_ROLE)}
+        onChanged={load}
+        message={hidMessage}
+        setMessage={setHidMessage}
+      />
+      <DisplaySection
+        key={`display-${byKind("customer_display")?.deviceId ?? "new"}-${byKind("customer_display")?.version ?? 0}`}
+        device={byKind("customer_display")}
+        onChanged={load}
+        message={displayMessage}
+        setMessage={setDisplayMessage}
+      />
+      <ScaleSection
+        key={`scale-${byKind("scale")?.deviceId ?? "new"}-${byKind("scale")?.version ?? 0}`}
+        device={byKind("scale")}
+        onChanged={load}
+        message={scaleMessage}
+        setMessage={setScaleMessage}
+      />
       <TerminalSection device={byKind("payment_terminal")} onChanged={load} />
     </div>
   );
@@ -537,6 +580,428 @@ function ScannerSection({ device, onChanged }: { device: DeviceDto | null; onCha
       </form>
       {message && (
         <p role="status" className="small">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** The role a USB HID-POS scanner is saved under, beside the serial scanner (`main`). */
+const HID_ROLE = "hidpos";
+
+/** "Honeywell Xenon 1900 (0c2e:0b61)": the same name Rust gives it. */
+function hidLabel(d: HidPosDevice): string {
+  const hex = (n: number) => n.toString(16).padStart(4, "0");
+  const name = [d.manufacturer, d.product]
+    .map((x) => (x ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return `${name || "HID-POS scanner"} (${hex(d.vendorId)}:${hex(d.productId)})`;
+}
+
+/** A USB scanner in HID-POS mode (usage page 0x8C): it sends codes to the till instead of typing them (E21-T04). */
+function HidScannerSection({
+  device,
+  onChanged,
+  message,
+  setMessage,
+}: {
+  device: DeviceDto | null;
+  onChanged: () => void;
+  message: string | null;
+  setMessage: (m: string | null) => void;
+}) {
+  const t = useT();
+  const stored = device ? (JSON.parse(device.configJson) as { hidPos?: { label?: string | null } }) : null;
+  const [found, setFound] = useState<HidPosDevice[] | null>(null);
+  const [chosen, setChosen] = useState("");
+  const [status, setStatus] = useState<ScannerStatusDto | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(() => {
+    if (!device) return;
+    void commands.scannerStatus().then((r) => r.status === "ok" && setStatus(r.data.find((x) => x.deviceId === device.deviceId) ?? null));
+  }, [device]);
+  useEffect(refresh, [refresh]);
+
+  async function find() {
+    setBusy(true);
+    setMessage(null);
+    const res = await commands.hidScannersList();
+    setBusy(false);
+    if (res.status === "error") return setMessage(describeError(res.error));
+    setFound(res.data);
+    setChosen(res.data[0]?.path ?? "");
+    refresh();
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    const d = found?.find((x) => x.path === chosen);
+    if (!d) return;
+    setBusy(true);
+    const label = hidLabel(d);
+    const res = await commands.deviceSave({
+      deviceId: device?.deviceId ?? null,
+      kind: "scanner",
+      role: HID_ROLE,
+      name: label,
+      configJson: JSON.stringify({
+        hidPos: { vendorId: d.vendorId, productId: d.productId, serialNumber: d.serialNumber, path: d.path, label },
+      }),
+      enabled: true,
+      baseVersion: device?.version ?? null,
+    });
+    setBusy(false);
+    setMessage(res.status === "ok" ? t("Saved. Scans from {name} go to the till.", { name: label }) : describeError(res.error));
+    if (res.status === "ok") onChanged();
+  }
+
+  return (
+    <section aria-label={t("USB HID-POS scanner")} className="device-section">
+      <SectionTitle icon={ScanBarcode}>{t("USB HID-POS scanner (optional)")}</SectionTitle>
+      <p className="small">
+        {t(
+          "For a USB scanner set to HID-POS mode (USB HID Point of Sale), which sends codes to the till instead of typing them. Plug it in, press “Find USB scanners” and choose it. The till finds it again after it is unplugged.",
+        )}
+      </p>
+      {device && (
+        <p data-testid="device-hidpos-status" className="small">
+          {stored?.hidPos?.label ?? device.name} ·{" "}
+          <strong>
+            {status?.state === "ready"
+              ? t("Ready")
+              : status?.state === "offline"
+                ? t("Not working: {reason}", { reason: status.message ?? "" })
+                : t("Waiting for the scanner")}
+          </strong>
+        </p>
+      )}
+      <form onSubmit={(e) => void save(e)} className="row" aria-label={t("USB scanner settings")}>
+        <button type="button" className="secondary" disabled={busy} onClick={() => void find()}>
+          {t("Find USB scanners")}
+        </button>
+        {found && found.length > 0 && (
+          <label>
+            {t("Scanner")}
+            <select value={chosen} onChange={(e) => setChosen(e.target.value)}>
+              {found.map((d) => (
+                <option key={d.path} value={d.path}>
+                  {hidLabel(d)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button type="submit" disabled={!chosen || busy}>
+          {t("Save USB scanner")}
+        </button>
+        {device && (
+          <button type="button" className="secondary" onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}>
+            {t("Remove")}
+          </button>
+        )}
+      </form>
+      {found && found.length === 0 && (
+        <p role="status" className="small">
+          {t("No HID-POS scanner found. Check it is plugged in and set to HID-POS mode with the set-up barcode in its manual.")}
+        </p>
+      )}
+      {message && (
+        <p role="status" className="small">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function DisplaySection({
+  device,
+  onChanged,
+  message,
+  setMessage,
+}: {
+  device: DeviceDto | null;
+  onChanged: () => void;
+  message: string | null;
+  setMessage: (m: string | null) => void;
+}) {
+  const t = useT();
+  const stored = device ? (JSON.parse(device.configJson) as { serial?: { port?: string; baud?: number }; protocol?: DisplayProtocol }) : null;
+  const [port, setPort] = useState(stored?.serial?.port ?? "");
+  const [baud, setBaud] = useState(String(stored?.serial?.baud ?? 9600));
+  const [protocol, setProtocol] = useState<DisplayProtocol>(stored?.protocol ?? "escPos");
+  const [status, setStatus] = useState<DisplayStatusDto | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(() => {
+    void commands.displayStatus().then((r) => r.status === "ok" && setStatus(r.data));
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const res = await commands.deviceSave({
+      deviceId: device?.deviceId ?? null,
+      kind: "customer_display",
+      role: null,
+      name: `Customer display on ${port.trim()}`,
+      configJson: JSON.stringify({ serial: { port: port.trim(), baud: parseInt(baud, 10) }, protocol }),
+      enabled: true,
+      baseVersion: device?.version ?? null,
+    });
+    setBusy(false);
+    setMessage(res.status === "ok" ? t("Saved. The display greets customers and shows each item and the total.") : describeError(res.error));
+    if (res.status === "ok") onChanged();
+  }
+
+  async function test() {
+    setBusy(true);
+    setMessage(null);
+    const res = await commands.displayTest();
+    setBusy(false);
+    setMessage(res.status === "ok" ? (res.data.outcome === "shown" ? t("Sent. The display should show SALE OS DISPLAY TEST and a ruler that fills the second line.") : t("The display did not take it: {reason}", { reason: res.data.message })) : describeError(res.error));
+    refresh();
+  }
+
+  return (
+    <section aria-label={t("Customer display")} className="device-section">
+      <SectionTitle icon={Monitor}>{t("Customer display (optional)")}</SectionTitle>
+      <p className="small">
+        {t(
+          "A pole display facing the customer, with two lines of 20 characters, on a COM port (RS-232 or USB-COM). It shows each item and the running total, the total due at payment, the change, and your shop's name when the till is idle. Letters it cannot show are written in plain Latin letters.",
+        )}
+      </p>
+      {status?.configured && (
+        <p data-testid="device-display-status" className="small">
+          {status.target} ·{" "}
+          <strong>{status.state === "ready" ? t("Ready") : status.state === "offline" ? t("Not working: {reason}", { reason: status.message ?? "" }) : t("Nothing shown yet")}</strong>
+        </p>
+      )}
+      <form onSubmit={(e) => void save(e)} className="row" aria-label={t("Display settings")}>
+        <label>
+          {t("Port")}
+          <input value={port} placeholder={t("COM6 or /dev/ttyUSB1")} onChange={(e) => setPort(e.target.value)} />
+        </label>
+        <label>
+          {t("Speed (baud)")}
+          <select value={baud} onChange={(e) => setBaud(e.target.value)}>
+            {BAUDS.map((b) => (
+              <option key={b}>{b}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t("Command set")}
+          <select value={protocol} onChange={(e) => setProtocol(e.target.value as DisplayProtocol)}>
+            {(Object.keys(PROTOCOL_LABEL_COPY) as DisplayProtocol[]).map((p) => (
+              <option key={p} value={p}>
+                {t(PROTOCOL_LABEL_COPY[p])}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" disabled={!port.trim() || busy}>
+          {t("Save display")}
+        </button>
+        {device && (
+          <>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void test()}>
+              {t("Test display")}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}
+            >
+              {t("Remove")}
+            </button>
+          </>
+        )}
+      </form>
+      {message && (
+        <p role="status" className="small">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+type ScaleProtocol = "toledo8217" | "continuousAscii";
+/** Each scale protocol's name in the list, translated at render. */
+const SCALE_PROTOCOL_COPY: Record<ScaleProtocol, string> = {
+  toledo8217: "Toledo 8217 (the till asks with W)",
+  continuousAscii: "Continuous output (ST,GS,+ 1.234kg)",
+};
+type DataFormat = "8N1" | "7E1" | "7O1";
+const DATA_FORMATS: Record<DataFormat, { dataBits: string; parity: string }> = {
+  "8N1": { dataBits: "eight", parity: "none" },
+  "7E1": { dataBits: "seven", parity: "even" },
+  "7O1": { dataBits: "seven", parity: "odd" },
+};
+
+/** A weight in grams ("1234.5") as the cashier reads it: "1.2345 kg" from a kilogram, else "250 g". */
+function gramsText(grams: string): string {
+  const negative = grams.startsWith("-");
+  const g = negative ? grams.slice(1) : grams;
+  const [whole = "0", frac = ""] = g.split(".");
+  if (whole.length <= 3) return `${grams} g`;
+  const kgWhole = whole.slice(0, -3);
+  const kgFrac = (whole.slice(-3) + frac).replace(/0+$/, "").padEnd(3, "0");
+  return `${negative ? "-" : ""}${kgWhole}.${kgFrac} kg`;
+}
+
+/** A serial scale (E20-T06): items sold by weight take their quantity from it. */
+function ScaleSection({
+  device,
+  onChanged,
+  message,
+  setMessage,
+}: {
+  device: DeviceDto | null;
+  onChanged: () => void;
+  message: string | null;
+  setMessage: (m: string | null) => void;
+}) {
+  const t = useT();
+  const stored = device
+    ? (JSON.parse(device.configJson) as { serial?: { port?: string; baud?: number; dataBits?: string; parity?: string }; protocol?: ScaleProtocol; unit?: "kg" | "g" })
+    : null;
+  const storedFormat = (Object.keys(DATA_FORMATS) as DataFormat[]).find(
+    (f) => DATA_FORMATS[f].dataBits === (stored?.serial?.dataBits ?? "eight") && DATA_FORMATS[f].parity === (stored?.serial?.parity ?? "none"),
+  );
+  const [port, setPort] = useState(stored?.serial?.port ?? "");
+  const [baud, setBaud] = useState(String(stored?.serial?.baud ?? 9600));
+  const [format, setFormat] = useState<DataFormat>(storedFormat ?? "8N1");
+  const [protocol, setProtocol] = useState<ScaleProtocol>(stored?.protocol ?? "toledo8217");
+  const [unit, setUnit] = useState<"kg" | "g">(stored?.unit ?? "kg");
+  const [status, setStatus] = useState<ScaleStatusDto | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(() => {
+    void commands.scaleStatus().then((r) => r.status === "ok" && setStatus(r.data));
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const res = await commands.deviceSave({
+      deviceId: device?.deviceId ?? null,
+      kind: "scale",
+      role: null,
+      name: `Scale on ${port.trim()}`,
+      configJson: JSON.stringify({ serial: { port: port.trim(), baud: parseInt(baud, 10), ...DATA_FORMATS[format] }, protocol, unit }),
+      enabled: true,
+      baseVersion: device?.version ?? null,
+    });
+    setBusy(false);
+    setMessage(res.status === "ok" ? t("Saved. Items sold by weight are weighed on this scale.") : describeError(res.error));
+    if (res.status === "ok") onChanged();
+  }
+
+  async function test() {
+    setBusy(true);
+    setMessage(null);
+    const res = await commands.scaleTest();
+    setBusy(false);
+    if (res.status === "error") setMessage(describeError(res.error));
+    else {
+      const d = res.data;
+      const weight = d.weightGrams === null ? "" : gramsText(d.weightGrams);
+      setMessage(
+        d.outcome === "stable"
+          ? t("The scale reads {weight} (stable).", { weight })
+          : d.outcome === "moving"
+            ? weight
+              ? t("The scale reads {weight} and is still moving.", { weight })
+              : t("The scale is still moving.")
+            : d.outcome === "overload"
+              ? t("The scale says it is overloaded.")
+              : d.outcome === "underload"
+                ? t("The scale reads below its range. Zero it.")
+                : t("The scale did not answer: {reason}", { reason: d.message ?? "" }),
+      );
+    }
+    refresh();
+  }
+
+  return (
+    <section aria-label={t("Scale")} className="device-section">
+      <SectionTitle icon={Weight}>{t("Scale (optional)")}</SectionTitle>
+      <p className="small">
+        {t(
+          "A counter scale on a COM port (RS-232 or USB-COM). Items sold by kg or g are then weighed when they are added: only a steady weight above zero is used, and the weight can still be typed. Set the speed, data format and protocol to match the scale's settings.",
+        )}
+      </p>
+      {status?.configured && (
+        <p data-testid="device-scale-status" className="small">
+          {status.target} ·{" "}
+          <strong>{status.state === "ready" ? t("Ready") : status.state === "offline" ? t("Not working: {reason}", { reason: status.message ?? "" }) : t("Not read yet")}</strong>
+        </p>
+      )}
+      <form onSubmit={(e) => void save(e)} className="row" aria-label={t("Scale settings")}>
+        <label>
+          {t("Port")}
+          <input value={port} placeholder={t("COM3 or /dev/ttyUSB2")} onChange={(e) => setPort(e.target.value)} />
+        </label>
+        <label>
+          {t("Speed (baud)")}
+          <select value={baud} onChange={(e) => setBaud(e.target.value)}>
+            {BAUDS.map((b) => (
+              <option key={b}>{b}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t("Data format")}
+          <select value={format} onChange={(e) => setFormat(e.target.value as DataFormat)}>
+            {(Object.keys(DATA_FORMATS) as DataFormat[]).map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t("Protocol")}
+          <select value={protocol} onChange={(e) => setProtocol(e.target.value as ScaleProtocol)}>
+            {(Object.keys(SCALE_PROTOCOL_COPY) as ScaleProtocol[]).map((p) => (
+              <option key={p} value={p}>
+                {t(SCALE_PROTOCOL_COPY[p])}
+              </option>
+            ))}
+          </select>
+        </label>
+        {protocol === "toledo8217" && (
+          <label>
+            {t("The scale weighs in")}
+            <select value={unit} onChange={(e) => setUnit(e.target.value as "kg" | "g")}>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+            </select>
+          </label>
+        )}
+        <button type="submit" disabled={!port.trim() || busy}>
+          {t("Save scale")}
+        </button>
+        {device && (
+          <>
+            <button type="button" className="secondary" disabled={busy} onClick={() => void test()}>
+              {t("Test scale")}
+            </button>
+            <button type="button" className="secondary" onClick={() => void commands.deviceRemove(device.deviceId).then(() => onChanged())}>
+              {t("Remove")}
+            </button>
+          </>
+        )}
+      </form>
+      {message && (
+        <p role="status" className="small" data-testid="device-scale-message">
           {message}
         </p>
       )}

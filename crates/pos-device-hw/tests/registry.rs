@@ -62,6 +62,7 @@ fn the_registry_is_valid() {
                 "device_file",
                 "spooler",
                 "usb_hid_keyboard",
+                "usb_hid_pos",
                 "bluetooth",
                 "virtual"
             ]

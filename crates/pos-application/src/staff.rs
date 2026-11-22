@@ -1,5 +1,5 @@
-//! Staff management (E05-T01, IAM-001/002). Owners create, update, deactivate and reset
-//! PINs; anyone signed in can change their own PIN.
+//! Staff management (E05-T01, IAM-001/002). Owners create, update, deactivate, reactivate
+//! and reset PINs; anyone signed in can change their own PIN.
 
 use crate::audit::{self, AuditEntry};
 use crate::auth::{PinHasher, blocking};
@@ -115,6 +115,34 @@ impl StaffService {
             Some(base_version),
             audit::STAFF_DEACTIVATED,
             serde_json::json!({}),
+        )
+        .await?;
+        Ok(record)
+    }
+
+    /// Lets a deactivated staff member sign in again, with their role and PIN as they were.
+    /// Owner only, like deactivating. Names are unique among active staff, so a name someone
+    /// else took meanwhile is refused (rename first).
+    pub async fn reactivate(
+        &self,
+        ctx: &CommandContext,
+        user_id: UserId,
+        base_version: u64,
+    ) -> Result<StaffRecord, AppError> {
+        ctx.authorize(Permission::StaffManage)?;
+        let mut record = self.load(user_id).await?;
+        if record.active {
+            return Err(StaffError::AlreadyActive.into());
+        }
+        self.ensure_name_free(&record.display_name, Some(user_id)).await?;
+        record.active = true;
+        self.bump(ctx, &mut record, base_version);
+        self.save(
+            ctx,
+            record.clone(),
+            Some(base_version),
+            audit::STAFF_REACTIVATED,
+            serde_json::json!({ "role": record.role }),
         )
         .await?;
         Ok(record)

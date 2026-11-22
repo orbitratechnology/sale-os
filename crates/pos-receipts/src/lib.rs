@@ -2,6 +2,8 @@
 //! monospace text for previews and printers (E13-T03), the printer encoder for ESC/POS, Star
 //! Line Mode and plain text with code pages (E13-T01/T05), and PDF (E13-T04).
 
+pub mod bidi;
+pub mod code128;
 pub mod codepage;
 #[rustfmt::skip]
 mod codepage_tables;

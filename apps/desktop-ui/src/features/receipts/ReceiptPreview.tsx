@@ -3,6 +3,7 @@ import { commands, type IpcError } from "../../ipc";
 import type { ReceiptDto } from "../../ipc/bindings";
 import { describeError } from "../shell/errors";
 import { useT } from "../../i18n";
+import { receiptFields } from "./receiptFields";
 
 /**
  * Whose receipt: a sale's (`id: null` is the last sale on this till), a return's, a closed
@@ -73,7 +74,7 @@ export function ReceiptPreview({ source }: { source: ReceiptSource }) {
       <pre className="receipt-paper" style={{ width: `${receipt.columns + 2}ch` }} data-testid="receipt-text">
         {receipt.lines.map((l, i) => (
           <span key={i} className={l.bold ? "receipt-bold" : undefined}>
-            {l.text}
+            {receiptFields(l.text)?.map((p, k) => (p.field ? <bdi key={k}>{p.text}</bdi> : p.text)) ?? l.text}
             {"\n"}
           </span>
         ))}

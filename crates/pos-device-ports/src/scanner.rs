@@ -1,5 +1,5 @@
 //! Barcode input for scanners that are not keyboard wedges (serial RS-232, USB virtual COM,
-//! Bluetooth SPP). Keyboard-wedge scans are captured in the UI (ADR-022) and reach the cart
+//! Bluetooth SPP, USB HID-POS). Keyboard-wedge scans are captured in the UI (ADR-022) and reach the cart
 //! through the same scan command, so both paths end in one place.
 
 use crate::{DeviceError, DeviceHealth};
@@ -12,6 +12,8 @@ pub enum ScanSource {
     Virtual,
     /// A serial, USB-COM or Bluetooth-SPP scanner, by its port name.
     Serial(String),
+    /// A USB HID-POS scanner (usage page 0x8C), by its name and IDs.
+    HidPos(String),
 }
 
 /// One physical scan. `id` is unique per scan; a repeated *delivery* of the same scan keeps

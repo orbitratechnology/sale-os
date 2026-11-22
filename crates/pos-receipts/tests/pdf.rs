@@ -395,3 +395,281 @@ fn the_logo_is_drawn_above_the_receipt_and_the_text_is_unchanged() {
     let z = render_pdf_with_logo(&doc("z_summary"), PdfFormat::Receipt80, Some(&logo)).unwrap();
     assert!(images(&z).is_empty(), "no logo on a Z summary");
 }
+
+/// A Z summary on A4 is laid out from its section, not as receipt lines: each figure sits
+/// on one line with its label (its count in its own column), the tables are in the printed
+/// summary's order, and the copy, sandbox, over/short and empty cases read as they should.
+#[test]
+fn a_z_summary_on_a4_is_laid_out_from_its_section() {
+    let d = doc("z_summary");
+    let pdf = render_pdf(&d, PdfFormat::A4).unwrap();
+    let f = fonts(&pdf);
+    assert!(
+        f.contains("NotoSans-Regular")
+            && f.contains("NotoSans-Bold")
+            && !f.iter().any(|n| n.contains("Mono")),
+        "proportional fonts, not the receipt grid: {f:?}"
+    );
+    let pages = read(&pdf);
+    assert_eq!(pages.len(), 1);
+    let lines = &pages[0].1;
+    let at = |want: &str| {
+        lines
+            .iter()
+            .position(|l| l == want)
+            .unwrap_or_else(|| panic!("{want:?} not in {lines:#?}"))
+    };
+    // Every figure of the printed summary, by its label, in the same order.
+    let order: Vec<usize> = [
+        "Corner Shop Z summary",
+        "1 High Street No. R01-Z-0007",
+        "Opened 2026-01-01 08:58 by Olu",
+        "Closed 2026-01-01 17:30 by Mia",
+        "Takings Count Amount",
+        "Sales 12 123.45",
+        "incl. tax 20.57",
+        "Discounts given -3.00",
+        "Cash rounding 0.02",
+        "Returns 2 -6.50",
+        "Payments taken Count Amount",
+        "Card (external) 4 43.45",
+        "Cash 9 80.00",
+        "Refunds paid Count Amount",
+        "Card (external) 1 -4.00",
+        "Cash 1 -2.50",
+        "Cash in the drawer Amount",
+        "Opening float 100.00",
+        "+ Cash from sales 80.00",
+        "- Cash refunds -2.50",
+        "Expected cash 177.50",
+        "Counted cash 177.00",
+        "Variance (short) -0.50",
+        "50p coin found under the drawer after the count",
+        "R01-Z-0007",
+    ]
+    .iter()
+    .map(|w| at(w))
+    .collect();
+    assert!(order.is_sorted(), "out of order: {order:?}\n{lines:#?}");
+    // The receipt-width lines are not what is drawn.
+    assert!(
+        !lines
+            .iter()
+            .any(|l| l.contains("Z SUMMARY") || l.contains("EXPECTED CASH"))
+    );
+
+    // A reprint from a sandbox till, nothing taken, counted over, with a long note.
+    let mut quiet = d.clone();
+    quiet.copy = pos_receipts::document::CopyKind::Reprint;
+    quiet.sandbox = true;
+    let z = quiet.z.as_mut().unwrap();
+    z.totals.tenders.clear();
+    z.totals.refunds.clear();
+    z.totals.discount_total = pos_domain::Money::ZERO;
+    z.totals.rounding_total = pos_domain::Money::ZERO;
+    z.variance = pos_domain::Money::from_minor(25);
+    z.note = Some("word ".repeat(60).trim_end().to_owned());
+    let lines = read(&render_pdf(&quiet, PdfFormat::A4).unwrap())
+        .into_iter()
+        .flat_map(|(_, l)| l)
+        .collect::<Vec<_>>();
+    // (The right-hand header column reads back on the same line as the shop's details.)
+    for want in ["REPRINT", "SANDBOX - PRACTICE", "None", "Variance (over) +0.25"] {
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == want || l.ends_with(&format!(" {want}"))),
+            "{want:?} not in {lines:#?}"
+        );
+    }
+    assert!(
+        !lines
+            .iter()
+            .any(|l| l.starts_with("Refunds paid") || l.starts_with("Discounts given"))
+    );
+    // The note wraps inside the margins and loses no word.
+    let words: usize = lines
+        .iter()
+        .filter(|l| l.starts_with("word"))
+        .map(|l| l.split(' ').count())
+        .sum();
+    assert_eq!(words, 60);
+    assert!(lines.iter().filter(|l| l.starts_with("word")).count() >= 2);
+
+    // Even: "Variance 0.00".
+    let mut even = d;
+    even.z.as_mut().unwrap().variance = pos_domain::Money::ZERO;
+    let lines = read(&render_pdf(&even, PdfFormat::A4).unwrap()).remove(0).1;
+    assert!(lines.iter().any(|l| l == "Variance 0.00"), "{lines:#?}");
+}
+
+/// The filled rectangles on each page, as (left, width) in points, grouped by the path
+/// they were filled in (one group per barcode). Read from the page content streams.
+fn filled_rects(pdf: &[u8]) -> Vec<Vec<Vec<(f64, f64)>>> {
+    let doc = lopdf::Document::load_mem(pdf).unwrap();
+    let num = |o: &lopdf::Object| match o {
+        lopdf::Object::Integer(i) => *i as f64,
+        lopdf::Object::Real(r) => f64::from(*r),
+        other => panic!("not a number: {other:?}"),
+    };
+    doc.get_pages()
+        .into_values()
+        .map(|page| {
+            let content = doc.get_page_content(page).unwrap();
+            let ops = lopdf::content::Content::decode(&content).unwrap().operations;
+            let mut groups = Vec::new();
+            let mut subpaths: Vec<Vec<f64>> = Vec::new();
+            for op in ops {
+                match op.operator.as_str() {
+                    "m" => subpaths.push(vec![num(&op.operands[0])]),
+                    "l" => {
+                        if let Some(p) = subpaths.last_mut() {
+                            p.push(num(&op.operands[0]));
+                        }
+                    }
+                    "re" => {
+                        let (x, w) = (num(&op.operands[0]), num(&op.operands[2]));
+                        subpaths.push(vec![x, x + w]);
+                    }
+                    "f" | "f*" => {
+                        let rects: Vec<(f64, f64)> = std::mem::take(&mut subpaths)
+                            .into_iter()
+                            .map(|xs| {
+                                let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+                                let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                                (lo, hi - lo)
+                            })
+                            .collect();
+                        groups.push(rects);
+                    }
+                    "S" | "s" | "n" | "B" | "B*" | "b" | "b*" => subpaths.clear(),
+                    _ => {}
+                }
+            }
+            groups
+        })
+        .collect()
+}
+
+/// Turns bars back into Code 128 modules: the narrowest bar is one module.
+fn modules_of(rects: &[(f64, f64)]) -> Vec<bool> {
+    let mut rects = rects.to_vec();
+    rects.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let module = rects.iter().map(|r| r.1).fold(f64::INFINITY, f64::min);
+    let x0 = rects[0].0;
+    let mut out = Vec::new();
+    for (x, w) in rects {
+        let start = ((x - x0) / module).round() as usize;
+        let width = (w / module).round() as usize;
+        assert!(
+            (w / module - width as f64).abs() < 0.01,
+            "bar of {w} is not whole modules of {module}"
+        );
+        out.resize(start, false);
+        out.extend(std::iter::repeat_n(true, width));
+    }
+    out
+}
+
+/// E13-T04: the receipt number is drawn as a Code 128 barcode (vector bars, start, check
+/// and stop symbols) with the number in text below it, on both rolls and on A4, for sales,
+/// refunds and Z summaries.
+#[test]
+fn the_receipt_number_is_drawn_as_code128_bars() {
+    for name in ["sale", "return", "z_summary"] {
+        let d = doc(name);
+        let want = pos_receipts::code128::modules(&d.barcode).unwrap();
+        let bars = pos_receipts::code128::bars(&d.barcode).unwrap();
+        for format in [PdfFormat::Receipt58, PdfFormat::Receipt80, PdfFormat::A4] {
+            let pdf = render_pdf(&d, format).unwrap();
+            let pages = filled_rects(&pdf);
+            let groups: Vec<&Vec<(f64, f64)>> = pages.iter().flatten().collect();
+            assert_eq!(groups.len(), 1, "{name} {format:?}: one barcode");
+            let rects = groups[0];
+            assert_eq!(
+                rects.len(),
+                bars.len(),
+                "{name} {format:?}: one rectangle per bar"
+            );
+            assert_eq!(modules_of(rects), want, "{name} {format:?}: {}", d.barcode);
+            // At least 0.25 mm a module, and inside the page with its quiet zones.
+            let module = rects.iter().map(|r| r.1).fold(f64::INFINITY, f64::min);
+            assert!(
+                module >= f64::from(0.25 * MM) - 1e-3,
+                "{name} {format:?}: {module}"
+            );
+            let left = rects.iter().map(|r| r.0).fold(f64::INFINITY, f64::min);
+            let right = rects.iter().map(|r| r.0 + r.1).fold(0.0, f64::max);
+            let page_w = read(&pdf)[0].0.0;
+            assert!(
+                left >= 10.0 * module && right <= page_w - 10.0 * module,
+                "{name} {format:?}"
+            );
+            // The number is still there in text, under the bars.
+            let text: Vec<String> = read(&pdf).into_iter().flat_map(|(_, l)| l).collect();
+            assert!(text.contains(&d.barcode), "{name} {format:?}: {text:?}");
+        }
+    }
+    // A number too long for the paper, or not ASCII, is printed as text only.
+    let mut d = doc("sale");
+    d.barcode = "R01-ABCDEFGHIJKLMNOPQRST".into();
+    let pdf = render_pdf(&d, PdfFormat::Receipt58).unwrap();
+    assert!(filled_rects(&pdf).iter().all(Vec::is_empty));
+    assert!(read(&pdf)[0].1.contains(&d.barcode));
+    d.barcode = "R01-Ž".into();
+    let pdf = render_pdf(&d, PdfFormat::A4).unwrap();
+    assert!(filled_rects(&pdf).iter().all(Vec::is_empty));
+}
+
+/// The characters on the first page with their position (baseline y, x).
+fn placed_chars(pdf: &[u8]) -> Vec<(f64, f64, String)> {
+    let doc = lopdf::Document::load_mem(pdf).unwrap();
+    let mut out = Lines::default();
+    pdf_extract::output_doc(&doc, &mut out).unwrap();
+    out.pages.swap_remove(0).1
+}
+
+/// D-02: a line mixing Arabic with a Latin brand and digits is drawn in display order: the
+/// Arabic name reads right to left (its first word rightmost), "Rani 250" stays left to
+/// right in the middle, and the amounts stay in their column. (pdf-extract reports each
+/// character at the start of the run it was drawn in, which is enough to see the order.)
+#[test]
+fn mixed_arabic_and_latin_lines_are_drawn_right_to_left() {
+    let mut d = doc("sale");
+    d.lines[0].name = "عصير Rani 250 مل".into();
+    for format in [PdfFormat::Receipt58, PdfFormat::Receipt80, PdfFormat::A4] {
+        let pdf = render_pdf(&d, format).unwrap();
+        let chars = placed_chars(&pdf);
+        // The name's line: the baseline the Arabic letters are on.
+        let y = chars
+            .iter()
+            .find(|(_, _, s)| s == "م")
+            .expect("the name is drawn")
+            .0;
+        let x_of = |c: &str| {
+            let xs: Vec<f64> = chars
+                .iter()
+                .filter(|(cy, _, s)| s == c && (cy - y).abs() < 1.0)
+                .map(|(_, x, _)| *x)
+                .collect();
+            assert_eq!(xs.len(), 1, "{format:?}: {c} once");
+            xs[0]
+        };
+        let (rani, n) = (x_of("R"), x_of("n"));
+        // "Rani 250" is one left-to-right run (the run starts at its R).
+        assert!((rani - n).abs() < 0.01, "{format:?}");
+        // "مل" (ml), last in the text, is drawn left of it; "عصير" (juice), first, right.
+        for c in ["م", "ل"] {
+            assert!(x_of(c) < rani, "{format:?}: {c} left of Rani");
+        }
+        for c in ["ع", "ص", "ي"] {
+            assert!(x_of(c) > rani, "{format:?}: {c} right of Rani");
+        }
+        if format != PdfFormat::A4 {
+            assert!(
+                read(&pdf)[0].1.iter().any(|l| l == "2 x 2.50 5.00"),
+                "{format:?}: the amount line is unchanged"
+            );
+        }
+    }
+}

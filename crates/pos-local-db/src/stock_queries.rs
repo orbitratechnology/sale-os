@@ -183,26 +183,55 @@ impl StockQueries for SqliteStore {
     }
 
     async fn stock_drift(&self) -> Result<Vec<pos_application::records::StockDrift>, QueryError> {
-        let rows: Vec<(String, String, String, i64, i64)> = sqlx::query_as(
+        type Row = (
+            String,
+            String,
+            String,
+            i64,
+            i64,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
+        let rows: Vec<Row> = sqlx::query_as(
             "WITH m AS (SELECT location_id, variant_id, bucket, sum(quantity_delta_milli) AS q
-                        FROM stock_movements GROUP BY location_id, variant_id, bucket)
-             SELECT coalesce(m.location_id, b.location_id), coalesce(m.variant_id, b.variant_id),
-                    coalesce(m.bucket, b.bucket), coalesce(b.on_hand_milli, 0), coalesce(m.q, 0)
-             FROM m FULL OUTER JOIN stock_balances b
-               ON b.location_id = m.location_id AND b.variant_id = m.variant_id AND b.bucket = m.bucket
-             WHERE coalesce(b.on_hand_milli, 0) <> coalesce(m.q, 0)",
+                        FROM stock_movements GROUP BY location_id, variant_id, bucket),
+                  d AS (SELECT coalesce(m.location_id, b.location_id) AS location_id,
+                               coalesce(m.variant_id, b.variant_id) AS variant_id,
+                               coalesce(m.bucket, b.bucket) AS bucket,
+                               coalesce(b.on_hand_milli, 0) AS recorded, coalesce(m.q, 0) AS computed
+                        FROM m FULL OUTER JOIN stock_balances b
+                          ON b.location_id = m.location_id AND b.variant_id = m.variant_id
+                         AND b.bucket = m.bucket
+                        WHERE coalesce(b.on_hand_milli, 0) <> coalesce(m.q, 0))
+             SELECT d.location_id, d.variant_id, d.bucket, d.recorded, d.computed,
+                    p.name, v.label, v.sku, l.name
+             FROM d
+             LEFT JOIN product_variants v ON v.variant_id = d.variant_id
+             LEFT JOIN products p ON p.product_id = v.product_id
+             LEFT JOIN locations l ON l.location_id = d.location_id
+             ORDER BY p.name, v.label, d.variant_id, l.name, d.location_id, d.bucket DESC",
         )
         .fetch_all(self.db().readers())
         .await
         .map_err(q)?;
         rows.into_iter()
-            .map(|(l, v, bucket, recorded, sum)| {
+            .map(|(l, v, bucket, recorded, sum, name, label, sku, location)| {
+                let name = name.unwrap_or_default();
+                let item_name = match label.as_deref() {
+                    Some(label) if !label.is_empty() => format!("{name} {label}"),
+                    _ => name,
+                };
                 Ok(pos_application::records::StockDrift {
                     location_id: l.parse().map_err(q)?,
                     variant_id: v.parse().map_err(q)?,
                     bucket,
                     recorded: Quantity::from_milli(recorded),
                     from_movements: Quantity::from_milli(sum),
+                    item_name,
+                    sku: sku.filter(|s| !s.is_empty()),
+                    location_name: location.unwrap_or_default(),
                 })
             })
             .collect()

@@ -171,4 +171,28 @@ pub trait ReceiptOutputPort: Send + Sync {
     async fn status(&self) -> Result<PrinterStatus, DeviceError> {
         Ok(PrinterStatus::unknown())
     }
+
+    /// Whether the printer is pushing its own status right now (ESC/POS automatic status
+    /// back): its state is then known without asking, and polling is only a slow check.
+    fn pushes_status(&self) -> bool {
+        false
+    }
+
+    /// Every status the printer pushes, as it arrives. `None`: this printer never pushes
+    /// (it is polled with [`ReceiptOutputPort::status`]).
+    fn status_updates(&self) -> Option<tokio::sync::watch::Receiver<PushedStatus>> {
+        None
+    }
+}
+
+/// What a printer that pushes its status last said.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum PushedStatus {
+    /// Nothing pushed: not yet, or the printer turned out not to push (it is polled).
+    #[default]
+    None,
+    /// The printer's state, as it reported it.
+    Status(PrinterStatus),
+    /// The link the status arrives on was lost and could not be opened again.
+    Lost(String),
 }

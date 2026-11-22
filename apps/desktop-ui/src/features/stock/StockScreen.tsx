@@ -13,6 +13,10 @@ import { describeError } from "../shell/errors";
 import { useT } from "../../i18n";
 import { RecordView, type RecordRef } from "../records/RecordView";
 import { INITIAL_OVERVIEW, StockOverview, type OverviewState } from "./StockOverview";
+import { StockCheck } from "./StockCheck";
+
+/** The stock screen's views (managers and owners; a cashier sees stock on hand only). */
+type View = "post" | "onHand" | "check";
 
 /** The radio choices, in order; English, translated at render with `t`. */
 const KIND_COPY: Record<DocumentType, { label: string; post: string }> = {
@@ -59,24 +63,37 @@ function signedMilli(input: string, allowSign: boolean): string | null {
 export function StockScreen({
   workspace,
   canPost,
+  canRebuild,
   onBack,
   onReturn,
 }: {
   workspace: Workspace;
   canPost: boolean;
+  /** The owner may rebuild stock figures that do not match their history (E11-T06). */
+  canRebuild: boolean;
   onBack: () => void;
   /** "Return items" on a sale opened from the history. */
   onReturn: (receiptNumber: string) => void;
 }) {
   // Managers and owners land on posting (receiving is the common job); cashiers only see stock.
   const t = useT();
-  const [view, setView] = useState<"post" | "onHand">(canPost ? "post" : "onHand");
+  const [view, setView] = useState<View>(canPost ? "post" : "onHand");
   const [overview, setOverview] = useState<OverviewState>(INITIAL_OVERVIEW);
   const [record, setRecord] = useState<RecordRef | null>(null);
   if (record) {
     return <RecordView record={record} workspace={workspace} backLabel={t("Back to stock")} onBack={() => setRecord(null)} onReturn={onReturn} />;
   }
   const overviewPanel = <StockOverview state={overview} onState={setOverview} onRecord={setRecord} />;
+  if (view === "check" && canPost) {
+    return (
+      <main className="sales">
+        <StockHeader canPost view="check" onView={setView} onBack={onBack} />
+        <div className="stack" {...tabPanelProps("stock", "check")}>
+          <StockCheck canRebuild={canRebuild} />
+        </div>
+      </main>
+    );
+  }
   if (view === "onHand" || !canPost) {
     return (
       <main className="sales">
@@ -101,8 +118,8 @@ function StockHeader({
   onBack,
 }: {
   canPost: boolean;
-  view: "post" | "onHand";
-  onView: (v: "post" | "onHand") => void;
+  view: View;
+  onView: (v: View) => void;
   onBack: () => void;
 }) {
   const t = useT();
@@ -135,6 +152,7 @@ function StockHeader({
           tabs={[
             { value: "post", label: t("Receive and adjust") },
             { value: "onHand", label: t("On hand") },
+            { value: "check", label: t("Check figures") },
           ]}
           selected={view}
           onSelect={onView}
@@ -151,7 +169,7 @@ function PostDocument({
 }: {
   workspace: Workspace;
   onBack: () => void;
-  onView: (v: "post" | "onHand") => void;
+  onView: (v: View) => void;
 }) {
   const t = useT();
   const [kind, setKind] = useState<DocumentType>("receipt");

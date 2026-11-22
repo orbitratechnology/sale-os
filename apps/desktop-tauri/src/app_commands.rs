@@ -260,6 +260,24 @@ pub async fn staff_deactivate(
     StaffDto::from_record(&record)
 }
 
+/// Lets a deactivated staff member sign in again (owner, like deactivating).
+#[tauri::command]
+#[specta::specta]
+pub async fn staff_reactivate(
+    services: State<'_, AppServices>,
+    user_id: UserId,
+    base_version: u32,
+) -> Result<StaffDto, IpcError> {
+    let ctx = services.context().await?;
+    let record = services
+        .app()?
+        .staff
+        .reactivate(&ctx, user_id, u64::from(base_version))
+        .await
+        .map_err(err)?;
+    StaffDto::from_record(&record)
+}
+
 /// Sets a temporary PIN; the user must change it at next sign-in.
 #[tauri::command]
 #[specta::specta]

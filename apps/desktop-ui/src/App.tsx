@@ -235,6 +235,7 @@ export function App() {
           <StockScreen
             workspace={workspace}
             canPost={canEdit}
+            canRebuild={state.session.role === "owner"}
             onBack={() => setScreen({ kind: "till" })}
             onReturn={(receipt) => setScreen({ kind: "returns", receipt })}
           />

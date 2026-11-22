@@ -30,6 +30,115 @@ pub fn is_status_byte(b: u8) -> bool {
     b & 0b1001_0011 == 0b0001_0010
 }
 
+/// `GS a n`: automatic status back (ASB). `n` picks what is reported when it changes:
+/// bit 0 drawer sensor, bit 1 online/offline, bit 2 errors, bit 3 roll paper sensor.
+pub fn gs_a(n: u8) -> [u8; 3] {
+    [0x1D, 0x61, n]
+}
+
+/// Everything ASB can report.
+pub const ASB_ALL: u8 = 0x0F;
+
+/// The first byte of a 4-byte ASB block: bits 0, 1 and 7 clear, bit 4 set (`0xx1xx00`).
+/// It differs from a `DLE EOT` reply in bit 1 only.
+pub fn is_asb_first_byte(b: u8) -> bool {
+    b & 0b1001_0011 == 0b0001_0000
+}
+
+/// The second to fourth bytes of an ASB block: bits 4 and 7 clear (`0xx0xxxx`). Neither a
+/// `DLE EOT` reply nor a first ASB byte looks like this.
+pub fn is_asb_follow_byte(b: u8) -> bool {
+    b & 0b1001_0000 == 0
+}
+
+/// Reads one 4-byte ASB block (Epson TM series, `GS a`):
+///
+/// - byte 1: bit 2 drawer sensor (pin 3), bit 3 offline, bit 5 cover open;
+/// - byte 2: bit 2 mechanical error, bit 3 auto-cutter error, bit 5 unrecoverable error,
+///   bit 6 automatically recoverable error;
+/// - byte 3: bits 0-1 roll paper near end, bits 2-3 roll paper end;
+/// - byte 4: nothing used here.
+pub fn asb_to_status(block: [u8; 4], level: DrawerOpenLevel) -> PrinterStatus {
+    let [first, errors, paper, _] = block;
+    let mut st = PrinterStatus::unknown();
+    st.online = first & 0x08 == 0;
+    st.drawer_open = Some(drawer_open(first, level));
+    st.cover_open = first & 0x20 != 0;
+    if errors & 0x6C != 0 {
+        st.error = Some(describe_error(Some(errors)));
+    }
+    st.paper = if paper & 0x0C != 0 {
+        PaperLevel::Out
+    } else if paper & 0x03 != 0 {
+        PaperLevel::NearEnd
+    } else {
+        PaperLevel::Ok
+    };
+    st
+}
+
+/// What arrived from a printer that may push ASB blocks between real-time replies.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Incoming {
+    /// A reply to `DLE EOT n`.
+    Reply(u8),
+    /// A complete automatic status block.
+    Asb([u8; 4]),
+}
+
+/// Splits a printer's replies into `DLE EOT` answers and ASB blocks. The two never share a
+/// bit pattern (see [`is_status_byte`], [`is_asb_first_byte`], [`is_asb_follow_byte`]), so
+/// a reply that arrives in the middle of a block is told apart too. Anything else (a late
+/// `GS I` answer, line noise) is dropped, as is a block cut short.
+#[derive(Clone, Debug, Default)]
+pub struct StatusDemux {
+    block: Vec<u8>,
+    replies: std::collections::VecDeque<u8>,
+}
+
+impl StatusDemux {
+    /// Feeds received bytes; returns the ASB blocks they completed. Replies are queued for
+    /// [`StatusDemux::next_reply`].
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<[u8; 4]> {
+        let mut blocks = Vec::new();
+        for &b in bytes {
+            if let Some(Incoming::Asb(block)) = self.byte(b) {
+                blocks.push(block);
+            }
+        }
+        blocks
+    }
+
+    fn byte(&mut self, b: u8) -> Option<Incoming> {
+        if is_status_byte(b) {
+            self.replies.push_back(b);
+            return Some(Incoming::Reply(b));
+        }
+        if is_asb_first_byte(b) {
+            self.block.clear();
+            self.block.push(b);
+            return None;
+        }
+        if is_asb_follow_byte(b) && !self.block.is_empty() {
+            self.block.push(b);
+            if self.block.len() == 4 {
+                let block = [self.block[0], self.block[1], self.block[2], self.block[3]];
+                self.block.clear();
+                return Some(Incoming::Asb(block));
+            }
+            return None;
+        }
+        // Noise: whatever block was in progress cannot be trusted.
+        self.block.clear();
+        None
+    }
+
+    /// The oldest `DLE EOT` reply not yet taken.
+    pub fn next_reply(&mut self) -> Option<u8> {
+        self.replies.pop_front()
+    }
+}
+
 /// The drawer-kick sequence for a dialect, or `None` where it has none (plain text).
 pub fn drawer_kick(dialect: CommandDialect, pin: DrawerPin) -> Option<Vec<u8>> {
     match dialect {
@@ -235,6 +344,66 @@ mod tests {
             [0x1A]
         );
         assert_eq!(drawer_kick(CommandDialect::PlainText, DrawerPin::Pin2), None);
+    }
+
+    #[test]
+    fn asb_blocks_read_as_status() {
+        let ready = asb_to_status([0x10, 0x00, 0x00, 0x00], DrawerOpenLevel::High);
+        assert!(ready.online && !ready.cover_open && ready.error.is_none());
+        assert_eq!(ready.paper, PaperLevel::Ok);
+        assert_eq!(ready.drawer_open, Some(false));
+        assert_eq!(ready.blocking_failure(), None);
+
+        let out = asb_to_status([0x18, 0x00, 0x0C, 0x00], DrawerOpenLevel::High);
+        assert_eq!(out.paper, PaperLevel::Out);
+        assert_eq!(out.blocking_failure(), Some(PrintFailure::PaperOut));
+        let near = asb_to_status([0x14, 0x00, 0x03, 0x00], DrawerOpenLevel::High);
+        assert_eq!(near.paper, PaperLevel::NearEnd);
+        assert_eq!(near.drawer_open, Some(true));
+        let cover = asb_to_status([0x38, 0x00, 0x00, 0x00], DrawerOpenLevel::High);
+        assert!(cover.cover_open && !cover.online);
+        assert_eq!(cover.blocking_failure(), Some(PrintFailure::CoverOpen));
+        let cutter = asb_to_status([0x18, 0x08, 0x00, 0x00], DrawerOpenLevel::High);
+        assert!(cutter.error.as_deref().unwrap().contains("cutter"));
+        assert_eq!(cutter.blocking_failure(), Some(PrintFailure::Offline));
+        let offline = asb_to_status([0x18, 0x00, 0x00, 0x00], DrawerOpenLevel::High);
+        assert_eq!(offline.blocking_failure(), Some(PrintFailure::Offline));
+    }
+
+    #[test]
+    fn asb_and_replies_never_share_a_pattern() {
+        for b in 0..=255u8 {
+            let kinds = [is_status_byte(b), is_asb_first_byte(b), is_asb_follow_byte(b)];
+            assert!(kinds.iter().filter(|k| **k).count() <= 1, "{b:#04x}");
+        }
+        assert_eq!(gs_a(ASB_ALL), [0x1D, 0x61, 0x0F]);
+    }
+
+    #[test]
+    fn demux_tells_asb_blocks_from_dle_eot_replies() {
+        let mut d = StatusDemux::default();
+        // A reply, a whole block, a reply.
+        let blocks = d.feed(&[IDLE, 0x18, 0x00, 0x0C, 0x00, 0x16]);
+        assert_eq!(blocks, [[0x18, 0x00, 0x0C, 0x00]]);
+        assert_eq!(d.next_reply(), Some(IDLE));
+        assert_eq!(d.next_reply(), Some(0x16));
+        assert_eq!(d.next_reply(), None);
+
+        // A reply inside a block, and a block split over two reads.
+        let mut d = StatusDemux::default();
+        assert!(d.feed(&[0x10, 0x00]).is_empty());
+        assert!(d.feed(&[IDLE | 0x08]).is_empty());
+        assert_eq!(d.feed(&[0x03, 0x00]), [[0x10, 0x00, 0x03, 0x00]]);
+        assert_eq!(d.next_reply(), Some(IDLE | 0x08));
+
+        // Noise and a block cut short are dropped; a new first byte starts over.
+        let mut d = StatusDemux::default();
+        assert!(d.feed(&[0x5F, 0x01, 0x10, 0x00, 0x99, 0x00, 0x00]).is_empty());
+        assert_eq!(
+            d.feed(&[0x10, 0x10, 0x00, 0x00, 0x00]),
+            [[0x10, 0x00, 0x00, 0x00]]
+        );
+        assert_eq!(d.next_reply(), None);
     }
 
     #[test]

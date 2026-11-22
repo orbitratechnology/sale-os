@@ -29,9 +29,17 @@ switch or utility), choose its ESC/POS profile instead. Star TSP100/TSP143 (futu
 only and are not supported for text receipts.
 
 **Languages.** The till picks one of the printer's code pages for each line: Western European, Central European,
-Cyrillic, Greek, Turkish, Baltic, Hebrew, Arabic (CP864), Vietnamese (CP1258) and Japanese half-width katakana. Any
-character the printer can't print is transliterated (`€`→`E`, `ß`→`s`, Chinese→pinyin), never turned into `?`. For
-full CJK, Arabic shaping or Devanagari, print the PDF receipt on a driver printer.
+Cyrillic, Greek, Turkish, Baltic, Hebrew, Arabic (CP864), Vietnamese (CP1258) and Japanese half-width katakana. On an
+ESC/POS printer, a line with a character none of the printer's code pages has (Sinhala, Tamil, Arabic, Devanagari,
+Chinese, Japanese, Korean, or an accented letter the printer has no page for) prints as an image drawn with the till's
+own fonts: letters joined, Arabic right to left, in the same columns as the text lines, so amounts stay aligned. Arabic
+always prints as an image, because a code page prints its letters unjoined and in typed order. Lines the code pages can
+print stay text. Star Line Mode and plain-text printers transliterate what they can't print (`€`→`E`, `ß`→`s`,
+Chinese→pinyin), never `?`; so does every printer for Hebrew, which has no bundled font yet.
+
+**Printer status.** Network, serial and two-way USB printers that support Epson's *automatic status back* report
+"out of paper", "cover open" and errors the moment they happen, and the status bar shows it at once. Other printers
+are asked every 15 seconds. Printers that answer no status questions at all show "Printer set up" and still print.
 
 **What happens when it fails.**
 
@@ -71,7 +79,65 @@ value digits as zeros) or its item code. The till also reads the weight and pric
 **Serial scanners** (RS-232, USB-COM, Bluetooth SPP). Set them up in Settings → Devices. They reconnect by themselves
 after being unplugged.
 
-**Not supported yet:** USB HID-POS scanners. Most can be switched to keyboard or COM mode with a set-up barcode.
+**USB HID-POS scanners** (USB HID Point of Sale, the scanner's "HID-POS" or "USB OPOS" mode). In this mode the scanner
+sends each code to the till as data instead of typing it, so codes can't be mangled by the keyboard layout and long 2D
+codes arrive whole. Settings → Devices → USB HID-POS scanner → **Find USB scanners**, choose it, **Save USB scanner**.
+The till finds it again after it is unplugged, even in another USB port. A keyboard-wedge scanner keeps working beside
+it, and so does a serial one.
+
+- The till reads the code and its symbology from the scanner's reports (layout from the scanner's own description when
+  the system provides it; otherwise the common Honeywell / Zebra / Datalogic layout).
+- **Linux:** the scanner appears as `/dev/hidrawN`, which only root can open by default. Add a udev rule for it, for
+  example `/etc/udev/rules.d/70-hidpos-scanner.rules` containing
+  `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c2e", MODE="0660", TAG+="uaccess"` (use your scanner's vendor ID, shown in
+  the list as `vendor:product`), then unplug and replug it. Until then the scanner shows "could not be opened".
+- **Windows and macOS:** no driver or set-up needed.
+- Not found? Scan the "USB HID-POS" (sometimes "USB OPOS" or "HID POS") set-up barcode from the scanner's manual. To go
+  back to keyboard mode, scan its "USB keyboard" set-up barcode.
+- Emulated only so far: no real HID-POS scanner has been tried yet (D-07).
+
+## Customer displays
+
+Settings → Devices → Customer display. For the common 2-line, 20-character pole displays (VFD) on a COM port: RS-232
+or USB-serial (they appear as COM ports). Enter the port, the speed (usually 9600) and the command set:
+
+| Command set | Use it for |
+|---|---|
+| Epson ESC/POS | Epson DM-D110/D210 and displays sold as "ESC/POS compatible" |
+| CD5220 | Many unbranded pole displays; often chosen with a DIP switch on the display |
+
+Use **Test display**: the first line must read `SALE OS DISPLAY TEST` and the second a ruler `1234…890` filling the
+whole line. If you see odd characters or nothing, try the other command set, then the speed.
+
+The display shows the item just scanned with the running total, the total due at payment, the change after the sale,
+and "WELCOME" with the shop's name when the till is idle. It shows plain Latin letters only: accents are dropped
+(`Café` → `Cafe`) and Sinhala, Tamil and other scripts are written by sound (`කිරි` → `kiri`). Long names are shortened.
+A display that is unplugged or broken never stops a sale; Settings → Devices shows what is wrong.
+
+## Scales
+
+Settings → Devices → Scale. For counter scales on a COM port (RS-232, or USB-serial that appears as a COM port). Enter
+the port, the speed, the data format and the protocol your scale is set to (its manual or set-up menu says which):
+
+| Protocol | Use it for |
+|---|---|
+| Toledo 8217 | Scales set to "8217", "Toledo" or "NCR" mode (many CAS, Dibal, Mettler Toledo and scanner-scale combos). The till sends `W` and the scale answers with the weight when it is steady, or says it is moving or out of range. Also choose whether the scale weighs in kg or g. |
+| Continuous output | Indicator heads that keep sending lines like `ST,GS,+  1.234kg` (A&D and many unbranded ones). `ST` steady, `US` moving, `OL` out of range. |
+
+Typical settings are 9600 baud with 8N1 or 7E1. Use **Test scale** with something on the pan: it must show the weight
+and say "stable" once the item is still. Wrong characters or no answer mean the speed, data format or protocol is wrong.
+Set the scale to kilograms or grams: pounds and ounces are refused.
+
+**At the till.** Products sold by `kg` or `g` are weighed when they are scanned, picked in search or tapped on the quick
+grid: the till shows "Weighing…" and waits up to 3 seconds for a steady weight. Only a steady weight above zero is used;
+moving, nothing on the pan, below zero and overloaded are refused with a message, and **Weigh again** or **Type the
+weight** are offered. Each weighing is a line of its own. **Shift+F3** (Weigh) weighs the selected line again;
+**F3** still types a quantity. The price is the price per kg (or g) times the exact weight, rounded like every other
+line. Without a scale, items sold by weight are added as one unit and the weight is typed with F3. Price-embedded
+scale labels (weight or price in the barcode) work as before, with or without a scale.
+
+Emulated only so far: both protocols are written from their published descriptions and tested against emulated scales;
+no real scale has been tried yet (D-07).
 
 ## Card terminals
 

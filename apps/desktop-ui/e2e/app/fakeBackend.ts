@@ -27,6 +27,8 @@ export interface FakeProduct {
   quick?: boolean;
   category?: { categoryId: string; name: string };
   label?: string;
+  /** Sold by weight when `kg` or `g` (E20-T06); `ea` when absent. */
+  unit?: "ea" | "kg" | "g";
 }
 
 interface StaffUser extends SignInUser {
@@ -82,6 +84,10 @@ export interface FakeState {
   };
   /** Inventory documents posted so far (for their numbers). */
   documents: number;
+  /** E11-T06: stock figures that differ from their movements (what `stock_verify` finds), and
+   * the rebuilds made (each clears them, as Rust's does). */
+  stockDrift: { itemName: string; sku: string | null; locationName: string; bucket: string; recordedMilli: string; fromMovementsMilli: string }[];
+  stockRebuilds: number;
   /** CSV exports made. */
   exports: number;
   /** Business settings: key → value (JSON text) and version. */
@@ -94,6 +100,12 @@ export interface FakeState {
   devices: { deviceId: string; kind: string; role: string; name: string; configJson: string; enabled: boolean; version: number }[];
   /** Drawer pulses sent (no sale and cash sales). */
   drawerOpens: string[];
+  /** What the customer display was last told: "test" or "total_due". */
+  displayShown: string[];
+  /** What the scale reads next, one per reading (the last repeats): `stable`, `moving`, `overload`, `underload` or `failed`, with grams. */
+  scaleReadings: { outcome: string; grams: string | null }[];
+  /** USB HID-POS scanners attached (what `hid_scanners_list` finds); unplugged ones are offline. */
+  hidScanners: { path: string; vendorId: number; productId: number; serialNumber: string | null; manufacturer: string | null; product: string | null }[];
   /** Card-terminal attempts (E22-T02, sandbox rules: .01 declines, .02 uncertain). */
   attempts: Map<string, { cartId: string; amountMinor: string; status: string; polls: number; used: boolean; reason: string | null }>;
   printJobs: Map<string, { status: string; reprint: boolean; errorCode: string | null; attempts: number }>;
@@ -237,11 +249,16 @@ function initialStateInner(preset: Preset): FakeState {
     returns: new Map(),
     drawer: { required: false, seq: 0, session: null, lastClosed: null },
     documents: 0,
+    stockDrift: [],
+    stockRebuilds: 0,
     exports: 0,
     settings: new Map(FAKE_SETTINGS.map((d) => [d.key, { valueJson: d.defaultJson, version: 1 }])),
     printScript: [],
     devices: [],
     drawerOpens: [],
+    displayShown: [],
+    scaleReadings: [{ outcome: "stable", grams: "1234" }],
+    hidScanners: [{ path: "/dev/hidraw3", vendorId: 0x0c2e, productId: 0x0b61, serialNumber: "19200B1234", manufacturer: "Honeywell", product: "Xenon 1900" }],
     attempts: new Map(),
     printJobs: new Map(),
     printed: 0,
@@ -345,7 +362,7 @@ export function view(s: FakeState): CartView {
       name: p.name,
       label: "",
       sku: p.sku,
-      unit: "ea",
+      unit: p.unit ?? "ea",
       quantityMilli: l.qtyMilli.toString(),
       unitPriceMinor: p.priceMinor.toString(),
       priceOverridden: false,
@@ -389,7 +406,34 @@ export function view(s: FakeState): CartView {
 }
 
 function hit(p: FakeProduct): CatalogHit {
-  return { productId: p.productId, variantId: p.variantId, name: p.name, label: p.label ?? "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search", onHandMilli: null };
+  return { productId: p.productId, variantId: p.variantId, name: p.name, label: p.label ?? "", sku: p.sku, priceMinor: p.priceMinor.toString(), unit: p.unit ?? "ea", trackStock: true, scanQtyMilli: "1000", matchedBy: "search", onHandMilli: null };
+}
+
+/** The scale's next reading (the last one repeats). */
+function readScale(s: FakeState): { outcome: string; grams: string | null } {
+  const next = s.scaleReadings.length > 1 ? s.scaleReadings.shift() : s.scaleReadings[0];
+  return next ?? { outcome: "failed", grams: null };
+}
+
+/** A weighing as Rust's `weigh_stable` decides it: a stable weight above zero, else why not. */
+function weighFake(s: FakeState): { grams: string } | { reason: string; message: string } {
+  if (!s.devices.some((d) => d.kind === "scale")) return { reason: "no_scale", message: "no scale is set up on this till" };
+  const r = readScale(s);
+  if (r.outcome === "stable" && r.grams !== null) {
+    if (r.grams.startsWith("-")) return { reason: "negative", message: "" };
+    if (Number(r.grams) === 0) return { reason: "zero", message: "" };
+    return { grams: r.grams };
+  }
+  if (r.outcome === "moving") return { reason: "unstable", message: "" };
+  if (r.outcome === "overload" || r.outcome === "underload") return { reason: r.outcome, message: "" };
+  return { reason: "failed", message: "the device is not connected: COM3 not found" };
+}
+
+/** Grams as the quantity of an item sold in `unit` (whole grams here: what the fake scale gives). */
+function gramsToMilli(grams: string, unit: string): bigint {
+  const [whole = "0", frac = ""] = grams.split(".");
+  const mg = BigInt(whole) * 1000n + BigInt((frac + "000").slice(0, 3));
+  return unit === "g" ? mg : div(mg, 1000n);
 }
 
 /** The approval rule Rust applies (authorize_with_approval): cashiers need a covering token. */
@@ -499,6 +543,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const u = staffAt(s, String(a.userId), Number(a.baseVersion));
       if (u.role === "owner") lastOwner(s, u);
       u.active = false;
+      u.version = (u.version ?? 1) + 1;
+      return staffDto(u);
+    }
+    case "staff_reactivate": {
+      ownerOnly(s);
+      const u = staffAt(s, String(a.userId), Number(a.baseVersion));
+      if (u.active !== false) fail("VALIDATION_FAILED");
+      staffName(s, u.displayName, u.userId);
+      u.active = true;
       u.version = (u.version ?? 1) + 1;
       return staffDto(u);
     }
@@ -980,6 +1033,18 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
         { movementId: id(), localTime: "2026-11-07 08:30", movementType: "receipt", bucket: "sellable", deltaMilli: "24000", sourceType: "inventory_document", sourceId: FAKE_DOCUMENT, sourceNumber: "R01-IN-000001", actorName: "Mia" },
       ];
     }
+    case "stock_verify":
+    case "stock_rebuild": {
+      const me = needSession(s);
+      // Verify needs InventoryView (every role); rebuild is the owner's (SettingsEdit).
+      if (cmd === "stock_rebuild" && me.role !== "owner") fail("PERMISSION_DENIED");
+      const found = s.stockDrift.map((d) => ({ ...d, locationId: "0190a5b0-0000-7000-8000-0000000010c1", variantId: id() }));
+      if (cmd === "stock_rebuild") {
+        s.stockDrift = [];
+        s.stockRebuilds += 1;
+      }
+      return found;
+    }
     case "stock_document_get": {
       needSession(s);
       if (a.documentId !== FAKE_DOCUMENT) fail("VALIDATION_FAILED");
@@ -1413,6 +1478,15 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       const answer = s.saveAs.length ? s.saveAs.shift() : `tax-invoice-${sale.taxInvoice.number}.pdf`;
       return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
     }
+    case "cash_session_z_export_pdf": {
+      const me = needSession(s);
+      // As Rust: the Z summary needs CashSessionViewVariance, and a closed session.
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const z = s.drawer.lastClosed ?? fail("VALIDATION_FAILED");
+      if (a.sessionId != null && a.sessionId !== z.id) fail("VALIDATION_FAILED");
+      const answer = s.saveAs.length ? s.saveAs.shift() : `z-summary-${z.number}${a.paper === "a4" ? "-A4" : ""}.pdf`;
+      return answer == null ? null : { path: `/home/user/Documents/${answer}`, fileName: answer };
+    }
     case "tax_invoice_print":
     case "cash_session_z_print":
     case "return_receipt_print":
@@ -1615,6 +1689,7 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
       s.seenScans.add(String(a.scanEventId));
       const p = s.products.find((x) => raw in x.barcodes || x.sku.toLowerCase() === raw.toLowerCase());
       if (!p) return { outcome: "notFound", code: raw, hint: /[àéèçù]/.test(raw) ? "keyboard_layout:azerty_fr" : null };
+      if ((p.unit === "kg" || p.unit === "g") && s.devices.some((d) => d.kind === "scale")) return { outcome: "weigh", variantId: p.variantId, name: p.name, unit: p.unit };
       const before = s.lines.length;
       const lineId = add(s, p, BigInt(p.barcodes[raw] ?? 1) * 1000n);
       return { outcome: s.lines.length > before ? "added" : "incremented", cart: view(s), lineId, hint: null };
@@ -1651,8 +1726,32 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "cart_add_variant": {
       needSession(s);
       const p = s.products.find((x) => x.variantId === a.variantId) ?? fail("CATALOG_NOT_FOUND");
-      add(s, p, 1000n);
+      add(s, p, a.qtyMilli ? BigInt(String(a.qtyMilli)) : 1000n);
       return view(s);
+    }
+    // ---------- weighing (E20-T06) ----------
+    case "cart_add_weighed": {
+      needSession(s);
+      const p = s.products.find((x) => x.variantId === a.variantId) ?? fail("CATALOG_NOT_FOUND");
+      if (p.unit !== "kg" && p.unit !== "g") fail("VALIDATION_FAILED");
+      const typed = a.typedQtyMilli === null || a.typedQtyMilli === undefined ? null : BigInt(String(a.typedQtyMilli));
+      const w = typed === null ? weighFake(s) : { grams: (p.unit === "g" ? typed / 1000n : typed).toString() };
+      if ("reason" in w) return { outcome: "refused", ...w };
+      const lineId = id();
+      s.revision += 1;
+      s.lines.push({ lineId, variantId: p.variantId, qtyMilli: typed ?? gramsToMilli(w.grams, p.unit), discountPpm: null });
+      return { outcome: "weighed", cart: view(s), lineId, weightGrams: w.grams };
+    }
+    case "cart_weigh_line": {
+      needSession(s);
+      const l = s.lines.find((x) => x.lineId === a.lineId) ?? fail("VALIDATION_FAILED");
+      const p = s.products.find((x) => x.variantId === l.variantId) ?? fail("CATALOG_NOT_FOUND");
+      if (p.unit !== "kg" && p.unit !== "g") fail("VALIDATION_FAILED");
+      const w = weighFake(s);
+      if ("reason" in w) return { outcome: "refused", ...w };
+      l.qtyMilli = gramsToMilli(w.grams, p.unit);
+      s.revision += 1;
+      return { outcome: "weighed", cart: view(s), lineId: l.lineId, weightGrams: w.grams };
     }
     case "cart_set_quantity": {
       needSession(s);
@@ -1772,9 +1871,9 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "printer_status": {
       needSession(s);
       const p = s.devices.find((d) => d.kind === "receipt_printer");
-      if (!p) return { configured: false, adapter: "virtual", target: null, state: "unknown", message: null, drawer: false, drawerOpen: null };
+      if (!p) return { configured: false, adapter: "virtual", target: null, state: "unknown", message: null, drawer: false, drawerOpen: null, push: false };
       const c = JSON.parse(p.configJson) as { connection: { host?: string; port?: number } };
-      return { configured: true, adapter: "escpos_net", target: `${c.connection.host}:${c.connection.port}`, state: "ready", message: null, drawer: true, drawerOpen: false };
+      return { configured: true, adapter: "escpos_net", target: `${c.connection.host}:${c.connection.port}`, state: "ready", message: null, drawer: true, drawerOpen: false, push: true };
     }
     case "devices_list": {
       const me = needSession(s);
@@ -1800,18 +1899,81 @@ export function handle(s: FakeState, cmd: string, a: Record<string, unknown>): u
     case "device_save": {
       const me = needSession(s);
       if (me.role === "cashier") fail("PERMISSION_DENIED");
-      const input = a.input as { deviceId: string | null; kind: string; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
-      const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string };
+      const input = a.input as { deviceId: string | null; kind: string; role: string | null; name: string; configJson: string; enabled: boolean; baseVersion: number | null };
+      const config = JSON.parse(input.configJson) as { connection?: { kind: string; host?: string }; provider?: string; serial?: { port?: string } };
       if (input.kind === "receipt_printer" && config.connection?.kind === "network" && !config.connection.host) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "connection.host", value: null, ownerProductId: null, remainingMinor: null });
+      if ((input.kind === "customer_display" || input.kind === "scale") && !config.serial?.port) fail("VALIDATION_FAILED", { remainingAttempts: null, retryAtMs: null, scope: null, field: "serial.port", value: null, ownerProductId: null, remainingMinor: null });
       const old = s.devices.find((d) => d.deviceId === input.deviceId);
       if (old && old.version !== input.baseVersion) fail("CONFLICT_VERSION");
-      const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role: "main", name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
-      s.devices = [...s.devices.filter((d) => d.deviceId !== dev.deviceId && !(d.kind === dev.kind && !old)), dev];
+      const role = input.role ?? "main";
+      const dev = { deviceId: old?.deviceId ?? id(), kind: input.kind, role, name: input.name || "Device", configJson: input.configJson, enabled: input.enabled, version: (old?.version ?? 0) + 1 };
+      s.devices = [...s.devices.filter((d) => d.deviceId !== dev.deviceId && !(d.kind === dev.kind && d.role === role && !old)), dev];
       return dev;
     }
     case "device_remove":
       needSession(s);
       s.devices = s.devices.filter((d) => d.deviceId !== a.deviceId);
+      return null;
+    case "scale_status": {
+      needSession(s);
+      const d = s.devices.find((x) => x.kind === "scale");
+      if (!d) return { configured: false, target: null, state: "unknown", message: null };
+      const c = JSON.parse(d.configJson) as { serial: { port: string; baud?: number }; protocol?: string; unit?: string };
+      const target = `${c.serial.port} @ ${c.serial.baud ?? 9600}, ${c.protocol === "continuousAscii" ? "continuous ASCII" : `Toledo 8217 (${c.unit ?? "kg"})`}`;
+      const last = s.scaleReadings[0];
+      return { configured: true, target, state: last?.outcome === "failed" ? "offline" : "ready", message: last?.outcome === "failed" ? "the scale did not answer (check the cable, speed and protocol)" : null };
+    }
+    case "scale_test": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      if (!s.devices.some((x) => x.kind === "scale")) fail("DEVICE_UNAVAILABLE");
+      const r = readScale(s);
+      if (r.outcome === "failed") return { outcome: "failed", weightGrams: null, message: "the device did not answer in time" };
+      return { outcome: r.outcome, weightGrams: r.grams, message: null };
+    }
+    case "hid_scanners_list": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      return s.hidScanners;
+    }
+    case "scanner_status": {
+      needSession(s);
+      return s.devices
+        .filter((d) => d.kind === "scanner")
+        .map((d) => {
+          const c = JSON.parse(d.configJson) as { serial?: { port: string }; hidPos?: { vendorId: number; productId: number; label?: string | null } };
+          if (c.hidPos) {
+            const h = c.hidPos;
+            const target = h.label ?? "HID-POS scanner";
+            const here = s.hidScanners.some((x) => x.vendorId === h.vendorId && x.productId === h.productId);
+            return { deviceId: d.deviceId, name: d.name, connection: "hidPos", target, state: here ? "ready" : "offline", message: here ? null : `${target} is not connected` };
+          }
+          return { deviceId: d.deviceId, name: d.name, connection: "serial", target: c.serial?.port ?? "", state: "ready", message: null };
+        });
+    }
+    case "display_status": {
+      needSession(s);
+      const d = s.devices.find((x) => x.kind === "customer_display");
+      if (!d) return { configured: false, target: null, state: "unknown", message: null };
+      const c = JSON.parse(d.configJson) as { serial: { port: string; baud?: number }; protocol?: string };
+      const target = `${c.serial.port} @ ${c.serial.baud ?? 9600}, ${c.protocol === "cd5220" ? "CD5220" : "ESC/POS"}`;
+      const broken = c.serial.port.includes("missing");
+      const tested = s.displayShown.includes("test");
+      return { configured: true, target, state: broken && tested ? "offline" : tested ? "ready" : "unknown", message: broken && tested ? `${c.serial.port} not found: unplugged or wrong port` : null };
+    }
+    case "display_test": {
+      const me = needSession(s);
+      if (me.role === "cashier") fail("PERMISSION_DENIED");
+      const d = s.devices.find((x) => x.kind === "customer_display");
+      if (!d) return fail("DEVICE_UNAVAILABLE");
+      s.displayShown.push("test");
+      const c = JSON.parse(d.configJson) as { serial: { port: string } };
+      if (c.serial.port.includes("missing")) return { outcome: "failed", message: `the device is not connected: ${c.serial.port} not found: unplugged or wrong port` };
+      return { outcome: "shown", message: `${c.serial.port} @ 9600, ESC/POS` };
+    }
+    case "display_show_total":
+      needSession(s);
+      s.displayShown.push("total_due");
       return null;
     case "printer_test":
       needSession(s);

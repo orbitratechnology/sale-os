@@ -10,11 +10,6 @@ export const commands = {
 	/**  Version, build flavour and local database status. No session required. */
 	appInfo: () => typedError<AppInfo_Serialize, IpcError_Serialize>(__TAURI_INVOKE("app_info")),
 	/**
-	 *  Stage 0 demo: adds two amounts with `pos-domain` (the same crate the cloud uses) and
-	 *  formats the result. Money crosses IPC as minor-unit strings.
-	 */
-	devMoneyAdd: (aMinor: string, bMinor: string, currency: string) => typedError<MoneyAddResult, IpcError_Serialize>(__TAURI_INVOKE("dev_money_add", { aMinor, bMinor, currency })),
-	/**
 	 *  What the shell needs before anything else: set up yet? who is signed in? No session
 	 *  required.
 	 */
@@ -43,6 +38,8 @@ export const commands = {
 	staffCreate: (input: NewStaffInput) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_create", { input })),
 	staffUpdate: (input: StaffUpdateInput_Deserialize) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_update", { input })),
 	staffDeactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_deactivate", { userId, baseVersion })),
+	/**  Lets a deactivated staff member sign in again (owner, like deactivating). */
+	staffReactivate: (userId: UserId, baseVersion: number) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reactivate", { userId, baseVersion })),
 	/**  Sets a temporary PIN; the user must change it at next sign-in. */
 	staffResetPin: (userId: UserId, baseVersion: number, pin: string) => typedError<StaffDto, IpcError_Serialize>(__TAURI_INVOKE("staff_reset_pin", { userId, baseVersion, pin })),
 	/**
@@ -170,6 +167,16 @@ export const commands = {
 	cartRecoveryDiscard: (revision: number) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_recovery_discard", { revision })),
 	/**  From search or quick-select. `qtyMilli` defaults to the variant's scan quantity. */
 	cartAddVariant: (variantId: VariantId, qtyMilli: string | null, via: AddViaDto) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_variant", { variantId, qtyMilli, via })),
+	/**
+	 *  An item sold by weight, weighed on the scale (E20-T06): a stable weight becomes a new
+	 *  line's quantity; a moving, zero, negative or out-of-range weight is refused and nothing
+	 *  is added. `scanEventId` is the scan that answered `weigh` (via `scanner`).
+	 *  `typedQtyMilli`: the fallback, a weight typed instead (thousandths of the item's unit);
+	 *  it makes a line of its own too.
+	 */
+	cartAddWeighed: (variantId: VariantId, via: WeighViaDto, scanEventId: ScanEventId | null, typedQtyMilli: string | null) => typedError<WeighOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_add_weighed", { variantId, via, scanEventId, typedQtyMilli })),
+	/**  Weighs again for a line of an item sold by weight and sets its quantity (the Weigh key). */
+	cartWeighLine: (lineId: CartLineId) => typedError<WeighOutcomeDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_weigh_line", { lineId })),
 	/**  Zero is refused: use `cart_remove_line`. */
 	cartSetQuantity: (lineId: CartLineId, qtyMilli: string) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_set_quantity", { lineId, qtyMilli })),
 	cartRemoveLine: (lineId: CartLineId) => typedError<CartViewDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cart_remove_line", { lineId })),
@@ -284,7 +291,7 @@ export const commands = {
 	 */
 	inventoryPostDocument: (draft: DocumentDraftDto_Deserialize) => typedError<PostedDocumentDto, IpcError_Serialize>(__TAURI_INVOKE("inventory_post_document", { draft })),
 	/**  E11-T06: stock balances that differ from the sum of their movements (empty is healthy). */
-	stockVerify: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
+	stockVerify: () => typedError<StockDriftDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("stock_verify")),
 	/**
 	 *  E11-T05: stock on hand for every stock-tracked item (OK / Low / Negative), for anyone who
 	 *  can see inventory. `lowOnly` keeps low and negative items.
@@ -298,7 +305,7 @@ export const commands = {
 	 *  E11-T06 (owner, diagnostics): recomputes every balance from the movements in one
 	 *  transaction, audited. Returns what was wrong before.
 	 */
-	stockRebuild: () => typedError<StockDriftDto[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
+	stockRebuild: () => typedError<StockDriftDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("stock_rebuild")),
 	/**  Sales, discounts, tax, refunds and net sales per business day and for the range. */
 	reportsSalesSummary: (range: DateRangeDto) => typedError<SalesSummaryDto, IpcError_Serialize>(__TAURI_INVOKE("reports_sales_summary", { range })),
 	/**  Payments taken and refunded per tender type, split by who confirmed them. */
@@ -376,6 +383,13 @@ export const commands = {
 	cashSessionZGet: (sessionId: CashSessionId | null, widthMm: number | null) => typedError<ReceiptDto, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_get", { sessionId, widthMm })),
 	/**  Prints a closed session's Z summary (later copies are reprints). */
 	cashSessionZPrint: (sessionId: CashSessionId | null) => typedError<PrintJobDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_print", { sessionId })),
+	/**
+	 *  Saves a closed session's Z summary as a PDF (`sessionId: null`: the last one on this
+	 *  till), on the till's receipt paper or A4. As with receipts (E13-T04), Rust renders it,
+	 *  asks where to save it with the system dialog and writes the file; the WebView never
+	 *  names a path. `null` when the user cancels. Audited as `receipt.exported_pdf`.
+	 */
+	cashSessionZExportPdf: (sessionId: CashSessionId | null, paper: PdfPaperDto) => typedError<SavedFileDto | null, IpcError_Serialize>(__TAURI_INVOKE("cash_session_z_export_pdf", { sessionId, paper })),
 	/**  Pushes pending events now, with the retry delay reset (E17-T03). Any signed-in user. */
 	syncRetryNow: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("sync_retry_now")),
 	/**  Where sync stands. Any signed-in user. */
@@ -412,7 +426,10 @@ export const commands = {
 	/**  Adds or changes a device; a printer is used from the next print, a scanner restarts. */
 	deviceSave: (input: DeviceInputDto_Deserialize) => typedError<DeviceDto, IpcError_Serialize>(__TAURI_INVOKE("device_save", { input })),
 	deviceRemove: (deviceId: DeviceId) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("device_remove", { deviceId })),
-	/**  The receipt printer's live state (any signed-in user: the status bar). */
+	/**
+	 *  The receipt printer's live state (any signed-in user: the status bar). A printer that
+	 *  pushes its status also sends every change to the window as `printer://status`.
+	 */
 	printerStatus: () => typedError<PrinterStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("printer_status")),
 	/**  Prints a test page on the current printer: ruler, character set, barcode, cut. */
 	printerTest: () => typedError<TestPrintDto, IpcError_Serialize>(__TAURI_INVOKE("printer_test")),
@@ -425,6 +442,26 @@ export const commands = {
 	devicesDiscover: (subnet: string | null, port: number | null) => typedError<DiscoveryDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("devices_discover", { subnet, port })),
 	/**  "No sale": opens the cash drawer with a reason. Cashiers need a manager's approval. */
 	drawerOpen: (reason: string, approvalTokenId: ApprovalId | null) => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("drawer_open", { reason, approvalTokenId })),
+	/**  The USB HID-POS scanners attached now (Settings → Devices picks one). */
+	hidScannersList: () => typedError<HidPosDevice_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("hid_scanners_list")),
+	/**
+	 *  The serial and HID-POS scanners set up on this till and how each is doing (any
+	 *  signed-in user: the status bar).
+	 */
+	scannerStatus: () => typedError<ScannerStatusDto_Serialize[], IpcError_Serialize>(__TAURI_INVOKE("scanner_status")),
+	/**  How the scale is doing (any signed-in user: the till weighs only when one is set up). */
+	scaleStatus: () => typedError<ScaleStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scale_status")),
+	/**  Reads the scale once (Settings → Devices → Test scale; audited). */
+	scaleTest: () => typedError<ScaleTestDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("scale_test")),
+	/**  How the customer display is doing (any signed-in user). Its problems never stop a sale. */
+	displayStatus: () => typedError<DisplayStatusDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("display_status")),
+	/**  Shows a test pattern on the customer display (Settings → Devices; audited). */
+	displayTest: () => typedError<DisplayTestDto, IpcError_Serialize>(__TAURI_INVOKE("display_test")),
+	/**
+	 *  At payment: the customer display shows the open cart's total due. Never fails because
+	 *  of the display (it may be missing or unplugged).
+	 */
+	displayShowTotal: () => typedError<null, IpcError_Serialize>(__TAURI_INVOKE("display_show_total")),
 	/**  Sends `amountMinor` of the open cart to the terminal. */
 	paymentStart: (cartId: CartId, amountMinor: string) => typedError<PaymentAttemptDto_Serialize, IpcError_Serialize>(__TAURI_INVOKE("payment_start", { cartId, amountMinor })),
 	/**  Asks the terminal again (the UI calls this while the customer pays). */
@@ -1346,6 +1383,35 @@ export type DiscoveryDto_Serialize = {
 	networkProblem: string | null,
 };
 
+export type DisplayStatusDto = DisplayStatusDto_Serialize | DisplayStatusDto_Deserialize;
+
+export type DisplayStatusDto_Deserialize = {
+	/**  False: no customer display is set up. */
+	configured: boolean,
+	/**  Which display, e.g. `COM5 @ 9600, ESC/POS`. */
+	target?: string | null,
+	/**  `ready`, `offline` or `unknown` (nothing shown yet). */
+	state: string,
+	message?: string | null,
+};
+
+export type DisplayStatusDto_Serialize = {
+	/**  False: no customer display is set up. */
+	configured: boolean,
+	/**  Which display, e.g. `COM5 @ 9600, ESC/POS`. */
+	target: string | null,
+	/**  `ready`, `offline` or `unknown` (nothing shown yet). */
+	state: string,
+	message: string | null,
+};
+
+export type DisplayTestDto = {
+	/**  `shown` or `failed`. */
+	outcome: string,
+	/**  Which display it went to (`shown`), or why it did not take it (`failed`). */
+	message: string,
+};
+
 /**  What happens to the returned goods (INV-009). */
 export type Disposition = 
 /**  Back on the shelf: +sellable. */
@@ -1495,6 +1561,37 @@ export type FieldDiffDto = {
 	serverJson: string,
 };
 
+/**  A HID-POS scanner the system lists. */
+export type HidPosDevice = HidPosDevice_Serialize | HidPosDevice_Deserialize;
+
+/**  A HID-POS scanner the system lists. */
+export type HidPosDevice_Deserialize = {
+	/**
+	 *  The system's path for it (`/dev/hidraw3`, `\\?\HID#VID_0C2E…`); may change after
+	 *  unplugging.
+	 */
+	path: string,
+	vendorId: number,
+	productId: number,
+	serialNumber?: string | null,
+	manufacturer?: string | null,
+	product?: string | null,
+};
+
+/**  A HID-POS scanner the system lists. */
+export type HidPosDevice_Serialize = {
+	/**
+	 *  The system's path for it (`/dev/hidraw3`, `\\?\HID#VID_0C2E…`); may change after
+	 *  unplugging.
+	 */
+	path: string,
+	vendorId: number,
+	productId: number,
+	serialNumber: string | null,
+	manufacturer: string | null,
+	product: string | null,
+};
+
 /**  What the printer said about itself (`GS I`). */
 export type IdentifiedPrinter = IdentifiedPrinter_Serialize | IdentifiedPrinter_Deserialize;
 
@@ -1638,16 +1735,12 @@ export type LinkResultDto = {
 	signInAgain: boolean,
 };
 
+export type LocationId = string;
+
 /**  The file column (0-based) chosen for a meaning. */
 export type MappingEntryDto = {
 	column: Column,
 	index: number,
-};
-
-export type MoneyAddResult = {
-	/**  Decimal string of minor units (ADR-001): never a JS number. */
-	sumMinor: string,
-	formatted: string,
 };
 
 export type MovementId = string;
@@ -1877,6 +1970,11 @@ export type PrinterStatusDto_Deserialize = {
 	message?: string | null,
 	drawer: boolean,
 	drawerOpen?: boolean | null,
+	/**
+	 *  The printer pushes its status: changes arrive as `printer://status` events, and
+	 *  polling is only a slow check.
+	 */
+	push: boolean,
 };
 
 export type PrinterStatusDto_Serialize = {
@@ -1890,6 +1988,11 @@ export type PrinterStatusDto_Serialize = {
 	message: string | null,
 	drawer: boolean,
 	drawerOpen: boolean | null,
+	/**
+	 *  The printer pushes its status: changes arrive as `printer://status` events, and
+	 *  polling is only a slow check.
+	 */
+	push: boolean,
 };
 
 export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
@@ -2481,6 +2584,48 @@ export type SavedFileDto = {
 	fileName: string,
 };
 
+export type ScaleStatusDto = ScaleStatusDto_Serialize | ScaleStatusDto_Deserialize;
+
+export type ScaleStatusDto_Deserialize = {
+	/**  False: no scale is set up; items sold by weight take a typed quantity. */
+	configured: boolean,
+	/**  Which scale, e.g. `COM3 @ 9600, Toledo 8217 (kg)`. */
+	target?: string | null,
+	/**  `ready`, `offline` or `unknown` (not read yet). */
+	state: string,
+	message?: string | null,
+};
+
+export type ScaleStatusDto_Serialize = {
+	/**  False: no scale is set up; items sold by weight take a typed quantity. */
+	configured: boolean,
+	/**  Which scale, e.g. `COM3 @ 9600, Toledo 8217 (kg)`. */
+	target: string | null,
+	/**  `ready`, `offline` or `unknown` (not read yet). */
+	state: string,
+	message: string | null,
+};
+
+export type ScaleTestDto = ScaleTestDto_Serialize | ScaleTestDto_Deserialize;
+
+export type ScaleTestDto_Deserialize = {
+	/**  `stable`, `moving`, `overload`, `underload` or `failed`. */
+	outcome: string,
+	/**  The weight in grams, exact decimal text, when the scale gave one. */
+	weightGrams?: string | null,
+	/**  Why it failed (`failed`). */
+	message?: string | null,
+};
+
+export type ScaleTestDto_Serialize = {
+	/**  `stable`, `moving`, `overload`, `underload` or `failed`. */
+	outcome: string,
+	/**  The weight in grams, exact decimal text, when the scale gave one. */
+	weightGrams: string | null,
+	/**  Why it failed (`failed`). */
+	message: string | null,
+};
+
 export type ScanEventId = string;
 
 export type ScanOutcomeDto = ScanOutcomeDto_Serialize | ScanOutcomeDto_Deserialize;
@@ -2496,7 +2641,12 @@ export type ScanOutcomeDto_Deserialize =
  *  Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
  *  problem: `keyboard_layout:<layout>` or `check_digit`.
  */
-{ outcome: "notFound"; code: string; hint?: string | null };
+{ outcome: "notFound"; code: string; hint?: string | null } | 
+/**
+ *  An item sold by weight while a scale is set up (E20-T06): the cart is unchanged; weigh
+ *  it with `cart_add_weighed` (same `scanEventId`), or type its weight.
+ */
+{ outcome: "weigh"; variantId: VariantId; name: string; unit: Unit };
 
 export type ScanOutcomeDto_Serialize = 
 /**  A new line. */
@@ -2509,10 +2659,44 @@ export type ScanOutcomeDto_Serialize =
  *  Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
  *  problem: `keyboard_layout:<layout>` or `check_digit`.
  */
-{ outcome: "notFound"; code: string; hint: string | null };
+{ outcome: "notFound"; code: string; hint: string | null } | 
+/**
+ *  An item sold by weight while a scale is set up (E20-T06): the cart is unchanged; weigh
+ *  it with `cart_add_weighed` (same `scanEventId`), or type its weight.
+ */
+{ outcome: "weigh"; variantId: VariantId; name: string; unit: Unit };
 
 /**  How a code reached `scan_submit`. */
 export type ScanSourceDto = "scanner" | "manual";
+
+/**  A configured scanner and how it is doing (`scanner_status`). */
+export type ScannerStatusDto = ScannerStatusDto_Serialize | ScannerStatusDto_Deserialize;
+
+/**  A configured scanner and how it is doing (`scanner_status`). */
+export type ScannerStatusDto_Deserialize = {
+	deviceId: DeviceId,
+	name: string,
+	/**  `serial` or `hidPos`. */
+	connection: string,
+	/**  The port, or the HID-POS scanner's name and IDs. */
+	target: string,
+	/**  `ready`, `warning`, `offline` or `unknown`. */
+	state: string,
+	message?: string | null,
+};
+
+/**  A configured scanner and how it is doing (`scanner_status`). */
+export type ScannerStatusDto_Serialize = {
+	deviceId: DeviceId,
+	name: string,
+	/**  `serial` or `hidPos`. */
+	connection: string,
+	/**  The port, or the HID-POS scanner's name and IDs. */
+	target: string,
+	/**  `ready`, `warning`, `offline` or `unknown`. */
+	state: string,
+	message: string | null,
+};
 
 export type SerialCandidate = SerialCandidate_Serialize | SerialCandidate_Deserialize;
 
@@ -2675,10 +2859,37 @@ export type StockDocumentLineDto_Serialize = {
 	unitCostMinor: string | null,
 };
 
-export type StockDriftDto = {
+export type StockDriftDto = StockDriftDto_Serialize | StockDriftDto_Deserialize;
+
+export type StockDriftDto_Deserialize = {
+	locationId: LocationId,
+	/**  Empty when the location is not known on this device. */
+	locationName: string,
 	variantId: VariantId,
+	/**  Product name and variant label; empty when the item is not in this device's catalogue. */
+	itemName: string,
+	sku?: string | null,
+	/**  `sellable` or `damaged`. */
 	bucket: string,
+	/**  What the stock figure says. */
 	recordedMilli: string,
+	/**  The sum of the item's recorded movements: what a rebuild sets it to. */
+	fromMovementsMilli: string,
+};
+
+export type StockDriftDto_Serialize = {
+	locationId: LocationId,
+	/**  Empty when the location is not known on this device. */
+	locationName: string,
+	variantId: VariantId,
+	/**  Product name and variant label; empty when the item is not in this device's catalogue. */
+	itemName: string,
+	sku: string | null,
+	/**  `sellable` or `damaged`. */
+	bucket: string,
+	/**  What the stock figure says. */
+	recordedMilli: string,
+	/**  The sum of the item's recorded movements: what a rebuild sets it to. */
 	fromMovementsMilli: string,
 };
 
@@ -3011,6 +3222,40 @@ export type VariantInputDto_Serialize = {
 	scanQtyMilli: string | null,
 	barcodes: BarcodeInputDto_Serialize[],
 };
+
+/**  What a weighing did (`cart_add_weighed`, `cart_weigh_line`). */
+export type WeighOutcomeDto = WeighOutcomeDto_Serialize | WeighOutcomeDto_Deserialize;
+
+/**  What a weighing did (`cart_add_weighed`, `cart_weigh_line`). */
+export type WeighOutcomeDto_Deserialize = 
+/**  The line now holds the weight. */
+{ outcome: "weighed"; cart: CartViewDto_Deserialize; lineId: CartLineId; 
+/**  The stable weight in grams, exact decimal text (`1234.5`). */
+weightGrams: string } | 
+/**
+ *  Nothing changed. `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`,
+ *  `underload` or `failed` (then `message` says why).
+ */
+{ outcome: "refused"; reason: string; message: string };
+
+/**  What a weighing did (`cart_add_weighed`, `cart_weigh_line`). */
+export type WeighOutcomeDto_Serialize = 
+/**  The line now holds the weight. */
+{ outcome: "weighed"; cart: CartViewDto_Serialize; lineId: CartLineId; 
+/**  The stable weight in grams, exact decimal text (`1234.5`). */
+weightGrams: string } | 
+/**
+ *  Nothing changed. `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`,
+ *  `underload` or `failed` (then `message` says why).
+ */
+{ outcome: "refused"; reason: string; message: string };
+
+/**  How a weighed item was chosen (`cart_add_weighed`). */
+export type WeighViaDto = "search" | "quickSelect" | 
+/**  A scan that answered `weigh`: pass its `scanEventId`. */
+"scanner" | 
+/**  A typed code that answered `weigh`. */
+"manual";
 
 export type WorkspaceDto = {
 	businessName: string,

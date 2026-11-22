@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-hid-scanners-list"
+description = "Enables the hid_scanners_list command without any pre-configured scope."
+commands.allow = ["hid_scanners_list"]
+
+[[permission]]
+identifier = "deny-hid-scanners-list"
+description = "Denies the hid_scanners_list command without any pre-configured scope."
+commands.deny = ["hid_scanners_list"]

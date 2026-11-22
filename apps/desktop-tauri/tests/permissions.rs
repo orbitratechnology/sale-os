@@ -48,11 +48,6 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
     update["baseVersion"] = json!(1);
     vec![
         ("app_info", Public, json!({})),
-        (
-            "dev_money_add",
-            Public,
-            json!({"aMinor": "1", "bMinor": "2", "currency": "GBP"}),
-        ),
         ("app_bootstrap_state", Public, json!({})),
         (
             "setup_create_workspace",
@@ -123,6 +118,11 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
         ),
         (
             "staff_deactivate",
+            Perm(StaffManage),
+            json!({"userId": UNKNOWN_ID, "baseVersion": 1}),
+        ),
+        (
+            "staff_reactivate",
             Perm(StaffManage),
             json!({"userId": UNKNOWN_ID, "baseVersion": 1}),
         ),
@@ -249,6 +249,17 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             "cart_add_variant",
             Perm(SaleComplete),
             json!({"variantId": UNKNOWN_ID, "qtyMilli": null, "via": "search"}),
+        ),
+        // Weighing (E20-T06): unknown item / line, so allowed calls fail harmlessly.
+        (
+            "cart_add_weighed",
+            Perm(SaleComplete),
+            json!({"variantId": UNKNOWN_ID, "via": "search", "scanEventId": null, "typedQtyMilli": null}),
+        ),
+        (
+            "cart_weigh_line",
+            Perm(SaleComplete),
+            json!({"lineId": UNKNOWN_ID}),
         ),
         (
             "cart_set_quantity",
@@ -482,6 +493,12 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(CashSessionViewVariance),
             json!({"sessionId": null}),
         ),
+        // No dialog in tests: an allowed call finds no closed session (VALIDATION_FAILED).
+        (
+            "cash_session_z_export_pdf",
+            Perm(CashSessionViewVariance),
+            json!({"sessionId": null, "paper": "a4"}),
+        ),
         // Devices (E20-T11, ADR-024). No real device in tests: allowed calls reach the
         // virtual printer or report DEVICE_UNAVAILABLE.
         ("devices_list", Perm(DeviceConfigure), json!({})),
@@ -509,6 +526,17 @@ fn cases() -> Vec<(&'static str, Need, Value)> {
             Perm(DrawerOpen),
             json!({"reason": "harness", "approvalTokenId": null}),
         ),
+        // Customer display: none set up, so the test gets DEVICE_UNAVAILABLE and showing
+        // the total due does nothing.
+        // Scanners: listing USB HID-POS scanners is set-up; their status is for everyone.
+        ("hid_scanners_list", Perm(DeviceConfigure), json!({})),
+        ("scanner_status", Session, json!({})),
+        // Scale: none set up, so the test gets DEVICE_UNAVAILABLE.
+        ("scale_status", Session, json!({})),
+        ("scale_test", Perm(DeviceConfigure), json!({})),
+        ("display_status", Session, json!({})),
+        ("display_test", Perm(DeviceConfigure), json!({})),
+        ("display_show_total", Perm(SaleComplete), json!({})),
         // Card terminal (E22-T02): none configured, so allowed calls get DEVICE_UNAVAILABLE.
         (
             "payment_start",
@@ -1209,6 +1237,178 @@ fn a_receipt_pdf_over_ipc() {
             "refund-R01-R-000001.pdf"
         ]
     );
+}
+
+#[test]
+fn stock_figures_checked_and_rebuilt_over_ipc() {
+    // E11-T06 through the shell: a stock figure changed outside the app is found by
+    // `stock_verify`, named as the stock screen shows it, and `stock_rebuild` puts it back
+    // and audits it.
+    let (_dir, app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Tea");
+    product["product"]["variants"][0]["sku"] = json!("TEA");
+    let made = invoke(&w, "product_create", product).unwrap();
+    let variant = made["variants"][0]["variantId"].clone();
+    invoke(
+        &w,
+        "inventory_post_document",
+        json!({"draft": {"docType": "receipt", "reason": null, "supplierName": null, "reference": null, "note": null,
+                         "lines": [{"variantId": variant, "quantityMilli": "12000", "unitCostMinor": null}]}}),
+    )
+    .unwrap();
+    assert_eq!(invoke(&w, "stock_verify", json!({})).unwrap(), json!([]));
+
+    let db = app.state::<AppServices>().db.as_ref().unwrap().clone();
+    tauri::async_runtime::block_on(async {
+        sqlx::query("UPDATE stock_balances SET on_hand_milli = 999")
+            .execute(db.writer())
+            .await
+            .unwrap();
+    });
+    let drift = invoke(&w, "stock_verify", json!({})).unwrap();
+    let row = &drift.as_array().unwrap()[..];
+    assert_eq!(row.len(), 1, "{drift}");
+    assert_eq!(
+        (
+            row[0]["itemName"].as_str(),
+            row[0]["sku"].as_str(),
+            row[0]["bucket"].as_str(),
+            row[0]["recordedMilli"].as_str(),
+            row[0]["fromMovementsMilli"].as_str(),
+        ),
+        (
+            Some("Tea"),
+            Some("TEA"),
+            Some("sellable"),
+            Some("999"),
+            Some("12000")
+        )
+    );
+    assert!(!row[0]["locationName"].as_str().unwrap().is_empty());
+    assert_eq!(row[0]["variantId"], variant);
+
+    let fixed = invoke(&w, "stock_rebuild", json!({})).unwrap();
+    assert_eq!(fixed, drift, "the rebuild reports what it repaired");
+    assert_eq!(invoke(&w, "stock_verify", json!({})).unwrap(), json!([]));
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "inventory.projection_rebuilt", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn a_z_summary_pdf_over_ipc() {
+    // E15-T02 + E13-T04: a closed session's Z summary saved as a PDF through the same Save
+    // dialog as receipts. Rust renders the stored summary and writes the file; cancelling
+    // writes and records nothing; the save is audited with the session's number.
+    let out = tempfile::tempdir().unwrap();
+    let dialog = Arc::new(ScriptedDialog::default());
+    *dialog.answers.lock().unwrap() = vec![
+        None,
+        Some(out.path().join("z.pdf")),
+        Some(out.path().join("z-a4")),
+    ];
+    let (_dir, _app, w) = start_with(Some(dialog.clone()));
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let pdf = |args: Value| invoke(&w, "cash_session_z_export_pdf", args);
+    // No closed session yet: nothing to save, and the dialog is never shown.
+    let none = pdf(json!({"sessionId": null, "paper": "a4"})).unwrap_err();
+    assert_eq!(none["code"], "VALIDATION_FAILED");
+    assert!(dialog.suggested.lock().unwrap().is_empty());
+
+    invoke(&w, "cash_session_open", json!({"floatMinor": "5000"})).unwrap();
+    let closed = invoke(
+        &w,
+        "cash_session_close",
+        json!({"countedMinor": "4990", "note": "short a coin"}),
+    )
+    .unwrap();
+    let session = closed["session"]["cashSessionId"].clone();
+    let exported = || {
+        invoke(
+            &w,
+            "audit_list",
+            json!({"filter": {"action": "receipt.exported_pdf", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+        )
+        .unwrap()["rows"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+
+    // Cancelled: nothing saved, nothing recorded.
+    assert_eq!(
+        pdf(json!({"sessionId": session, "paper": "receipt"})).unwrap(),
+        Value::Null
+    );
+    assert!(exported().is_empty());
+    assert_eq!(std::fs::read_dir(out.path()).unwrap().count(), 0);
+    // The till's roll (80 mm by default), by session id.
+    let saved = pdf(json!({"sessionId": session, "paper": "receipt"})).unwrap();
+    assert_eq!(saved["fileName"], "z.pdf");
+    assert!(
+        std::fs::read(out.path().join("z.pdf"))
+            .unwrap()
+            .starts_with(b"%PDF-")
+    );
+    // A4, as the last closed session; ".pdf" is added to a bare name.
+    let saved = pdf(json!({"sessionId": null, "paper": "a4"})).unwrap();
+    assert_eq!(saved["fileName"], "z-a4.pdf");
+    let bytes = std::fs::read(out.path().join("z-a4.pdf")).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert_eq!(
+        *dialog.suggested.lock().unwrap(),
+        vec![
+            "z-summary-R01-Z-0001.pdf",
+            "z-summary-R01-Z-0001.pdf",
+            "z-summary-R01-Z-0001-A4.pdf"
+        ]
+    );
+    let rows = exported();
+    assert_eq!(rows.len(), 2);
+    let meta: Value = serde_json::from_str(rows[0]["metadata"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        (
+            meta["receiptNumber"].as_str(),
+            meta["format"].as_str(),
+            meta["file"].as_str()
+        ),
+        (Some("R01-Z-0001"), Some("a4"), Some("z-a4.pdf"))
+    );
+    assert_eq!(rows[0]["entityType"], "receipt");
+    // An unknown session: refused before the dialog.
+    let unknown = pdf(json!({"sessionId": UNKNOWN_ID, "paper": "a4"})).unwrap_err();
+    assert_eq!(unknown["code"], "VALIDATION_FAILED");
+    assert_eq!(dialog.suggested.lock().unwrap().len(), 3);
 }
 
 #[test]
@@ -2285,4 +2485,617 @@ fn a_network_printer_saved_over_ipc_prints_the_next_receipt_and_kicks_the_drawer
         invoke(&w, "printer_status", json!({})).unwrap()["configured"],
         false
     );
+}
+
+#[test]
+fn a_printer_that_pushes_its_status_shows_paper_out_without_being_asked() {
+    // E20-T11 / ASB through the shell: a saved network printer that answers `GS a` with
+    // automatic status back is followed by its status link; when its paper runs out while
+    // idle, `printer_status` says so at once, from what was pushed, without a new
+    // connection. A small TCP printer stands in for the hardware.
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let paper_out = Arc::new(AtomicBool::new(false));
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let (flag, count) = (paper_out.clone(), accepted.clone());
+    std::thread::spawn(move || {
+        for conn in listener.incoming() {
+            let Ok(mut c) = conn else { continue };
+            count.fetch_add(1, Ordering::SeqCst);
+            let flag = flag.clone();
+            std::thread::spawn(move || {
+                c.set_read_timeout(Some(std::time::Duration::from_millis(20)))
+                    .ok();
+                let block = |out: bool| if out { [0x18, 0, 0x0C, 0] } else { [0x10, 0, 0, 0] };
+                let (mut asb_on, mut sent_out) = (false, false);
+                let mut buf = [0u8; 4096];
+                loop {
+                    match c.read(&mut buf) {
+                        Ok(0) => return,
+                        Ok(n) => {
+                            if buf[..n].windows(3).any(|w| w == [0x1D, 0x61, 0x0F]) {
+                                asb_on = true;
+                                sent_out = flag.load(Ordering::SeqCst);
+                                if c.write_all(&block(sent_out)).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                        Err(e)
+                            if e.kind() == std::io::ErrorKind::WouldBlock
+                                || e.kind() == std::io::ErrorKind::TimedOut => {}
+                        Err(_) => return,
+                    }
+                    let out = flag.load(Ordering::SeqCst);
+                    if asb_on && out != sent_out {
+                        sent_out = out;
+                        if c.write_all(&block(out)).is_err() {
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Shop", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let config = json!({"connection": {"kind": "network", "host": "127.0.0.1", "port": port},
+                        "profileId": "TM-T88V", "statusQuery": true});
+    invoke(
+        &w,
+        "device_save",
+        json!({"input": {"deviceId": null, "kind": "receipt_printer", "role": null, "name": "Front",
+            "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+    )
+    .unwrap();
+    let wait = |what: &str, f: &dyn Fn(&Value) -> bool| {
+        let started = std::time::Instant::now();
+        loop {
+            let status = invoke(&w, "printer_status", json!({})).unwrap();
+            if f(&status) {
+                return status;
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(5),
+                "{what}: {status}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+    let ready = wait("pushing", &|s| s["push"] == true);
+    assert_eq!(ready["state"], "ready", "{ready}");
+    let connections = accepted.load(Ordering::SeqCst);
+
+    paper_out.store(true, Ordering::SeqCst);
+    let out = wait("paper out", &|s| s["state"] == "offline");
+    assert_eq!(out["message"], "Out of paper");
+    assert_eq!(out["push"], true);
+    assert_eq!(
+        accepted.load(Ordering::SeqCst),
+        connections,
+        "pushed, not asked: no new connection"
+    );
+}
+
+/// A customer display's side of a virtual null-modem cable: records every byte it gets.
+#[cfg(unix)]
+struct PtyDisplay {
+    path: String,
+    received: Arc<std::sync::Mutex<Vec<u8>>>,
+    _slave: serialport::TTYPort,
+}
+
+#[cfg(unix)]
+impl PtyDisplay {
+    fn start() -> Self {
+        use std::io::Read;
+        let (mut master, slave) = serialport::TTYPort::pair().expect("pty pair");
+        let path = serialport::SerialPort::name(&slave).expect("slave name");
+        serialport::SerialPort::set_timeout(&mut master, std::time::Duration::from_millis(20)).unwrap();
+        let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = received.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 512];
+            loop {
+                match master.read(&mut buf) {
+                    Ok(n) if n > 0 => sink.lock().unwrap().extend_from_slice(&buf[..n]),
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(_) => return,
+                }
+            }
+        });
+        Self {
+            path,
+            received,
+            _slave: slave,
+        }
+    }
+
+    /// Waits until `needle` has arrived after byte `from`; returns where it ends.
+    fn wait_for(&self, from: usize, needle: &[u8]) -> usize {
+        let started = std::time::Instant::now();
+        loop {
+            {
+                let got = self.received.lock().unwrap();
+                if let Some(at) = got[from.min(got.len())..]
+                    .windows(needle.len())
+                    .position(|w| w == needle)
+                {
+                    return from + at + needle.len();
+                }
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(5),
+                    "never received {:?}; got {:?}",
+                    String::from_utf8_lossy(needle),
+                    String::from_utf8_lossy(&got)
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_customer_display_on_a_serial_port_follows_a_sale_over_ipc() {
+    // Settings → Devices saves a pole display on a serial port; from then on the display
+    // greets with the shop's name, shows each scanned item with the running total, the
+    // total due at payment and the change after the sale, all as ESC/POS display bytes on
+    // the wire; "Test display" is audited; switching to CD5220 changes the bytes.
+    use pos_device_hw::DisplayProtocol;
+    use pos_device_hw::display::{frame_bytes, init_bytes};
+    use pos_device_ports::{DisplayFrame, DisplayLine};
+    let pair = |l: &str, r: &str| DisplayLine::Pair(l.into(), r.into());
+    let esc = |f: DisplayFrame| frame_bytes(DisplayProtocol::EscPos, &f);
+    let pty = PtyDisplay::start();
+
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Kamal Stores", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let status = invoke(&w, "display_status", json!({})).unwrap();
+    assert_eq!(status["configured"], false);
+    let none = invoke(&w, "display_test", json!({})).unwrap_err();
+    assert_eq!(none["code"], "DEVICE_UNAVAILABLE", "{none}");
+    // Showing the total with no display does nothing, and fails nothing.
+    invoke(&w, "display_show_total", json!({})).unwrap();
+
+    let save = |config: Value, id: Value, version: Value| {
+        invoke(
+            &w,
+            "device_save",
+            json!({"input": {"deviceId": id, "kind": "customer_display", "role": null, "name": "Pole",
+                "configJson": config.to_string(), "enabled": true, "baseVersion": version}}),
+        )
+    };
+    let bad = save(
+        json!({"serial": {"port": "", "baud": 9600}, "protocol": "escPos"}),
+        Value::Null,
+        Value::Null,
+    )
+    .unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    assert_eq!(bad["details"]["field"], "serial.port");
+
+    let saved = save(
+        json!({"serial": {"port": pty.path, "baud": 9600}, "protocol": "escPos"}),
+        Value::Null,
+        Value::Null,
+    )
+    .unwrap();
+    let mut welcome = init_bytes(DisplayProtocol::EscPos);
+    welcome.extend(esc(DisplayFrame::new(
+        DisplayLine::Centered("WELCOME".into()),
+        DisplayLine::Centered("Kamal Stores".into()),
+    )));
+    let mut at = pty.wait_for(0, &welcome);
+
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Café crème");
+    product["product"]["variants"][0]["sku"] = json!("CAFE");
+    product["product"]["variants"][0]["priceMinor"] = json!("250");
+    invoke(&w, "product_create", product).unwrap();
+    let scan = |n: u8| {
+        invoke(
+            &w,
+            "scan_submit",
+            json!({"scanEventId": format!("0190a5b0-0000-7000-8000-0000000000{n:02x}"), "raw": "CAFE", "source": "manual"}),
+        )
+        .unwrap()["cart"]
+            .clone()
+    };
+    scan(1);
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            pair("Cafe creme", "2.50"),
+            pair("TOTAL", "2.50"),
+        )),
+    );
+    let cart = scan(2);
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            pair("Cafe creme", "5.00"),
+            pair("TOTAL", "5.00"),
+        )),
+    );
+
+    invoke(&w, "display_show_total", json!({})).unwrap();
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            DisplayLine::Text("TOTAL DUE".into()),
+            pair("", "5.00"),
+        )),
+    );
+    invoke(
+        &w,
+        "checkout_complete",
+        json!({"cartId": cart["cartId"], "revision": cart["revision"],
+               "tenders": [{"kind": "cash", "amountMinor": "2000", "reference": null}], "terminal": null}),
+    )
+    .unwrap();
+    at = pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(pair("PAID", "20.00"), pair("CHANGE", "15.00"))),
+    );
+
+    let tested = invoke(&w, "display_test", json!({})).unwrap();
+    assert_eq!(tested["outcome"], "shown", "{tested}");
+    pty.wait_for(
+        at,
+        &esc(DisplayFrame::new(
+            DisplayLine::Centered("SALE OS DISPLAY TEST".into()),
+            DisplayLine::Text("12345678901234567890".into()),
+        )),
+    );
+    let status = invoke(&w, "display_status", json!({})).unwrap();
+    assert_eq!(status["configured"], true);
+    assert_eq!(status["state"], "ready");
+    assert_eq!(
+        status["target"],
+        format!("{} @ 9600, ESC/POS", pty.path),
+        "{status}"
+    );
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "device.test_displayed", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1, "{audited}");
+
+    // The CD5220 command set instead: the new device writes its own init and lines.
+    let from = pty.received.lock().unwrap().len();
+    save(
+        json!({"serial": {"port": pty.path, "baud": 9600}, "protocol": "cd5220"}),
+        saved["deviceId"].clone(),
+        saved["version"].clone(),
+    )
+    .unwrap();
+    let mut cd = init_bytes(DisplayProtocol::Cd5220);
+    cd.extend(frame_bytes(
+        DisplayProtocol::Cd5220,
+        &DisplayFrame::new(
+            DisplayLine::Centered("WELCOME".into()),
+            DisplayLine::Centered("Kamal Stores".into()),
+        ),
+    ));
+    pty.wait_for(from, &cd);
+}
+
+#[test]
+fn a_hid_pos_scanner_is_saved_and_its_scans_go_through_the_scan_pipeline() {
+    // Settings → Devices: the USB HID-POS list (none attached on this machine), a refused
+    // configuration, a saved one beside the serial scanner, its status for any signed-in
+    // user, and a scan as the scanner delivers it (AIM identifier in front) going through
+    // scan_submit with its scan-event id: found, and counted once when delivered twice.
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Kamal Stores", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let listed = invoke(&w, "hid_scanners_list", json!({})).unwrap();
+    assert!(listed.is_array(), "{listed}");
+    assert_eq!(invoke(&w, "scanner_status", json!({})).unwrap(), json!([]));
+
+    let save = |config: Value| {
+        invoke(
+            &w,
+            "device_save",
+            json!({"input": {"deviceId": null, "kind": "scanner", "role": "hidpos", "name": "USB scanner",
+                "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+        )
+    };
+    let bad = save(json!({"hidPos": {"vendorId": 0, "productId": 4864}})).unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED", "{bad}");
+    assert_eq!(bad["details"]["field"], "hidPos.vendorId");
+    let saved = save(
+        json!({"hidPos": {"vendorId": 1504, "productId": 4864, "serialNumber": null,
+        "path": "/dev/hidraw9", "label": "Zebra DS2208 (05e0:1300)"}}),
+    )
+    .unwrap();
+    let stored: Value = serde_json::from_str(saved["configJson"].as_str().unwrap()).unwrap();
+    assert_eq!(stored["hidPos"]["vendorId"], 1504);
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "device.saved", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1, "{audited}");
+
+    // Not plugged in here: the till says so, by name, and keeps trying.
+    let started = std::time::Instant::now();
+    let status = loop {
+        let s = invoke(&w, "scanner_status", json!({})).unwrap();
+        if s[0]["state"] == "offline" || started.elapsed() > std::time::Duration::from_secs(5) {
+            break s;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(status[0]["connection"], "hidPos", "{status}");
+    assert_eq!(status[0]["target"], "Zebra DS2208 (05e0:1300)");
+    assert_eq!(status[0]["state"], "offline", "{status}");
+    assert!(
+        status[0]["message"].as_str().unwrap().contains("Zebra DS2208"),
+        "{status}"
+    );
+
+    // The scan, as the HID-POS scanner hands it to the window.
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["variants"][0]["barcodes"] =
+        json!([{"raw": "4006381333931", "symbology": null, "qualifier": "primary", "packQtyMilli": null}]);
+    invoke(&w, "product_create", product).unwrap();
+    let scan = || {
+        invoke(
+            &w,
+            "scan_submit",
+            json!({"scanEventId": "0190a5b0-0000-7000-8000-0000000000a1", "raw": "]E04006381333931", "source": "scanner"}),
+        )
+        .unwrap()
+    };
+    let first = scan();
+    assert_eq!(first["outcome"], "added", "{first}");
+    let again = scan();
+    assert_eq!(again["outcome"], "duplicate", "{again}");
+    assert_eq!(again["cart"]["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(again["cart"]["lines"][0]["quantityMilli"], "1000");
+}
+
+/// A Toledo-8217 scale on the other end of a virtual null-modem cable: answers every `W`
+/// with the frame it currently holds.
+#[cfg(unix)]
+struct PtyScale {
+    path: String,
+    reply: Arc<std::sync::Mutex<Vec<u8>>>,
+    _slave: serialport::TTYPort,
+}
+
+#[cfg(unix)]
+impl PtyScale {
+    fn start(reply: &[u8]) -> Self {
+        use std::io::{Read, Write};
+        let (mut master, slave) = serialport::TTYPort::pair().expect("pty pair");
+        let path = serialport::SerialPort::name(&slave).expect("slave name");
+        serialport::SerialPort::set_timeout(&mut master, std::time::Duration::from_millis(20)).unwrap();
+        let reply = Arc::new(std::sync::Mutex::new(reply.to_vec()));
+        let frame = reply.clone();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 64];
+            loop {
+                match master.read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        for _ in buf[..n].iter().filter(|&&b| b == b'W') {
+                            let f = frame.lock().unwrap().clone();
+                            if master.write_all(&f).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(_) => return,
+                }
+            }
+        });
+        Self {
+            path,
+            reply,
+            _slave: slave,
+        }
+    }
+
+    fn set(&self, frame: &[u8]) {
+        *self.reply.lock().unwrap() = frame.to_vec();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_scale_on_a_serial_port_weighs_items_sold_by_weight_over_ipc() {
+    // Settings → Devices saves a Toledo-8217 scale on a serial port and tests it (audited);
+    // a scanned item sold by kilogram answers `weigh`, the till weighs it under that scan and
+    // the line gets the exact weight and price; an unstable weight is refused and adds
+    // nothing; the Weigh key re-weighs the line; typing the quantity still works.
+    let pty = PtyScale::start(b"\x0201.234\r");
+    let (_dir, _app, w) = start();
+    let created = invoke(
+        &w,
+        "setup_create_workspace",
+        json!({"input": workspace_input("Kamal Stores", "1234")}),
+    )
+    .unwrap();
+    invoke(
+        &w,
+        "auth_login",
+        json!({"userId": created["ownerUserId"], "pin": "1234"}),
+    )
+    .unwrap();
+    let status = invoke(&w, "scale_status", json!({})).unwrap();
+    assert_eq!(status["configured"], false);
+    let none = invoke(&w, "scale_test", json!({})).unwrap_err();
+    assert_eq!(none["code"], "DEVICE_UNAVAILABLE", "{none}");
+
+    let save = |config: Value| {
+        invoke(
+            &w,
+            "device_save",
+            json!({"input": {"deviceId": null, "kind": "scale", "role": null, "name": "Counter scale",
+                "configJson": config.to_string(), "enabled": true, "baseVersion": null}}),
+        )
+    };
+    let bad =
+        save(json!({"serial": {"port": pty.path, "baud": 1234}, "protocol": "toledo8217"})).unwrap_err();
+    assert_eq!(bad["code"], "VALIDATION_FAILED");
+    assert_eq!(bad["details"]["field"], "serial.baud");
+    save(json!({"serial": {"port": pty.path, "baud": 9600}, "protocol": "toledo8217", "unit": "kg"}))
+        .unwrap();
+    let tested = invoke(&w, "scale_test", json!({})).unwrap();
+    assert_eq!(
+        tested,
+        json!({"outcome": "stable", "weightGrams": "1234", "message": null})
+    );
+    let status = invoke(&w, "scale_status", json!({})).unwrap();
+    assert_eq!(status["state"], "ready", "{status}");
+    assert_eq!(status["target"], format!("{} @ 9600, Toledo 8217 (kg)", pty.path));
+    let audited = invoke(
+        &w,
+        "audit_list",
+        json!({"filter": {"action": "device.test_weighed", "userId": null, "from": null, "to": null}, "before": null, "limit": 10}),
+    )
+    .unwrap();
+    assert_eq!(audited["rows"].as_array().unwrap().len(), 1, "{audited}");
+
+    // Bananas at 450.00 a kilogram.
+    let tax = invoke(&w, "tax_list", json!({})).unwrap()[0]["taxCategoryId"].clone();
+    let mut product = cases().into_iter().find(|c| c.0 == "product_create").unwrap().2;
+    product["product"]["taxCategoryId"] = tax;
+    product["product"]["name"] = json!("Bananas");
+    product["product"]["unit"] = json!("kg");
+    product["product"]["variants"][0]["sku"] = json!("BANANA");
+    product["product"]["variants"][0]["priceMinor"] = json!("45000");
+    product["product"]["variants"][0]["trackStock"] = json!(false);
+    invoke(&w, "product_create", product).unwrap();
+
+    let scan_id = "0190a5b0-0000-7000-8000-0000000000b1";
+    let scanned = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": scan_id, "raw": "BANANA", "source": "scanner"}),
+    )
+    .unwrap();
+    assert_eq!(scanned["outcome"], "weigh", "{scanned}");
+    assert_eq!(scanned["name"], "Bananas");
+    assert_eq!(scanned["unit"], "kg");
+    let variant = scanned["variantId"].clone();
+    let weighed = invoke(
+        &w,
+        "cart_add_weighed",
+        json!({"variantId": variant, "via": "scanner", "scanEventId": scan_id, "typedQtyMilli": null}),
+    )
+    .unwrap();
+    assert_eq!(weighed["outcome"], "weighed", "{weighed}");
+    assert_eq!(weighed["weightGrams"], "1234");
+    let line = &weighed["cart"]["lines"][0];
+    // 1.234 kg × 450.00 = 555.30 exactly.
+    assert_eq!(line["quantityMilli"], "1234");
+    assert_eq!(weighed["cart"]["totalMinor"], "55530", "{weighed}");
+    let line_id = weighed["lineId"].clone();
+
+    // Still moving: refused after the settle time, nothing added.
+    pty.set(b"\x02?A\r");
+    let refused = invoke(
+        &w,
+        "cart_add_weighed",
+        json!({"variantId": variant, "via": "search", "scanEventId": null, "typedQtyMilli": null}),
+    )
+    .unwrap();
+    assert_eq!(refused["outcome"], "refused");
+    assert_eq!(refused["reason"], "unstable");
+    assert_eq!(refused["cart"], Value::Null);
+    // Typed instead: a line of its own (0.25 kg × 450.00 = 112.50), the weighed one unchanged.
+    let typed = invoke(
+        &w,
+        "cart_add_weighed",
+        json!({"variantId": variant, "via": "search", "scanEventId": null, "typedQtyMilli": "250"}),
+    )
+    .unwrap();
+    assert_eq!(typed["outcome"], "weighed", "{typed}");
+    assert_eq!(typed["weightGrams"], "250");
+    assert_eq!(typed["cart"]["lines"].as_array().unwrap().len(), 2);
+    assert_eq!(typed["cart"]["lines"][0]["quantityMilli"], "1234");
+    assert_eq!(typed["cart"]["lines"][1]["quantityMilli"], "250");
+    invoke(&w, "cart_remove_line", json!({"lineId": typed["lineId"]})).unwrap();
+    // Over capacity and nothing on the pan: refused at once.
+    pty.set(b"\x02?`\r");
+    assert_eq!(
+        invoke(&w, "cart_weigh_line", json!({"lineId": line_id})).unwrap()["reason"],
+        "overload"
+    );
+    pty.set(b"\x02?B\r");
+    assert_eq!(
+        invoke(&w, "cart_weigh_line", json!({"lineId": line_id})).unwrap()["reason"],
+        "zero"
+    );
+    // The Weigh key: the line takes the new weight. 0.333 kg × 450.00 = 149.85.
+    pty.set(b"\x0200.333\r");
+    let reweighed = invoke(&w, "cart_weigh_line", json!({"lineId": line_id})).unwrap();
+    assert_eq!(reweighed["outcome"], "weighed", "{reweighed}");
+    assert_eq!(reweighed["cart"]["lines"].as_array().unwrap().len(), 1);
+    assert_eq!(reweighed["cart"]["lines"][0]["quantityMilli"], "333");
+    assert_eq!(reweighed["cart"]["totalMinor"], "14985");
+    // Typed instead (the fallback).
+    let typed = invoke(
+        &w,
+        "cart_set_quantity",
+        json!({"lineId": line_id, "qtyMilli": "500"}),
+    )
+    .unwrap();
+    assert_eq!(typed["totalMinor"], "22500");
+    // The scanner's scan id counted once: a repeat delivery is a duplicate.
+    let again = invoke(
+        &w,
+        "scan_submit",
+        json!({"scanEventId": scan_id, "raw": "BANANA", "source": "scanner"}),
+    )
+    .unwrap();
+    assert_eq!(again["outcome"], "duplicate");
 }

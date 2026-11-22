@@ -17,8 +17,35 @@ import { roleName } from "../auth/SignIn";
 
 /** How often the status bar asks Rust where sync stands. */
 const SYNC_POLL_MS = 10_000;
-/** How often it asks how the receipt printer is (DEV-006). */
+/** How often it asks how the receipt printer is (DEV-006), unless the printer pushes it. */
 const PRINTER_POLL_MS = 15_000;
+/**
+ * A printer that pushes its status (automatic status back) sends every change as
+ * `printer://status`; asking is then only a slow check.
+ */
+const PRINTER_PUSH_POLL_MS = 60_000;
+
+/**
+ * Status the receipt printer pushes (`printer://status`), as it arrives. Outside the Tauri
+ * shell (browser tests, the dev harness) nothing is pushed.
+ */
+function usePrinterPushes(onStatus: (s: PrinterStatusDto) => void): void {
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let stop: (() => void) | null = null;
+    let live = true;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<PrinterStatusDto>("printer://status", (e) => onStatus(e.payload)).then((unlisten) => {
+        if (live) stop = unlisten;
+        else unlisten();
+      }),
+    );
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, [onStatus]);
+}
 
 /**
  * Always visible, never modal (E09-T06): who is signed in, which till, sandbox or live,
@@ -50,6 +77,7 @@ export function StatusBar({
     else setDiag(res.data ? t("Diagnostics saved to {path}", { path: res.data.path }) : null);
   }
   const [printer, setPrinter] = useState<PrinterStatusDto | null>(null);
+  const push = printer?.push ?? false;
   useEffect(() => {
     let live = true;
     const load = () =>
@@ -57,12 +85,13 @@ export function StatusBar({
         if (live && res.status === "ok") setPrinter(res.data);
       });
     load();
-    const timer = window.setInterval(load, PRINTER_POLL_MS);
+    const timer = window.setInterval(load, push ? PRINTER_PUSH_POLL_MS : PRINTER_POLL_MS);
     return () => {
       live = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [push]);
+  usePrinterPushes(setPrinter);
   useEffect(() => {
     let live = true;
     const load = () =>

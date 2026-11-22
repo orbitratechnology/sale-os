@@ -801,6 +801,41 @@ pub enum ScanOutcomeDto {
     /// Nothing matches. The cart is unchanged (BAR-006). `hint` explains a likely set-up
     /// problem: `keyboard_layout:<layout>` or `check_digit`.
     NotFound { code: String, hint: Option<String> },
+    /// An item sold by weight while a scale is set up (E20-T06): the cart is unchanged; weigh
+    /// it with `cart_add_weighed` (same `scanEventId`), or type its weight.
+    Weigh {
+        variant_id: VariantId,
+        name: String,
+        unit: pos_domain::catalog::Unit,
+    },
+}
+
+/// How a weighed item was chosen (`cart_add_weighed`).
+#[derive(Clone, Copy, Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum WeighViaDto {
+    Search,
+    QuickSelect,
+    /// A scan that answered `weigh`: pass its `scanEventId`.
+    Scanner,
+    /// A typed code that answered `weigh`.
+    Manual,
+}
+
+/// What a weighing did (`cart_add_weighed`, `cart_weigh_line`).
+#[derive(Debug, Serialize, Type)]
+#[serde(tag = "outcome", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum WeighOutcomeDto {
+    /// The line now holds the weight.
+    Weighed {
+        cart: Box<CartViewDto>,
+        line_id: CartLineId,
+        /// The stable weight in grams, exact decimal text (`1234.5`).
+        weight_grams: String,
+    },
+    /// Nothing changed. `reason`: `no_scale`, `unstable`, `zero`, `negative`, `overload`,
+    /// `underload` or `failed` (then `message` says why).
+    Refused { reason: String, message: String },
 }
 
 /// The scan hint as the UI receives it.
@@ -1534,9 +1569,18 @@ impl PostedDocumentDto {
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct StockDriftDto {
+    pub location_id: pos_domain::LocationId,
+    /// Empty when the location is not known on this device.
+    pub location_name: String,
     pub variant_id: VariantId,
+    /// Product name and variant label; empty when the item is not in this device's catalogue.
+    pub item_name: String,
+    pub sku: Option<String>,
+    /// `sellable` or `damaged`.
     pub bucket: String,
+    /// What the stock figure says.
     pub recorded_milli: String,
+    /// The sum of the item's recorded movements: what a rebuild sets it to.
     pub from_movements_milli: String,
 }
 
@@ -1544,7 +1588,11 @@ impl StockDriftDto {
     pub fn list(d: &[pos_application::records::StockDrift]) -> Vec<Self> {
         d.iter()
             .map(|d| Self {
+                location_id: d.location_id,
+                location_name: d.location_name.clone(),
                 variant_id: d.variant_id,
+                item_name: d.item_name.clone(),
+                sku: d.sku.clone(),
                 bucket: d.bucket.clone(),
                 recorded_milli: qty(d.recorded),
                 from_movements_milli: qty(d.from_movements),
